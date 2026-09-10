@@ -1,6 +1,10 @@
 import path from "node:path";
 
-import type { LibraryFilters, SaveSetInput } from "@orbis/contracts";
+import type {
+  LibraryFilters,
+  SaveSetInput,
+  UpdateSetTitleInput,
+} from "@orbis/contracts";
 import { Schema } from "effect";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
@@ -37,6 +41,7 @@ const PlaylistsResponse = Schema.Struct({
 const ErrorResponse = Schema.Struct({ message: Schema.String });
 type RequestBody =
   | SaveSetInput
+  | UpdateSetTitleInput
   | { name: string }
   | { setIds: string[] }
   | { tags: string[] };
@@ -133,6 +138,14 @@ const registerApi = () => {
   );
   handle("orbis:update-tags", (id: string, tags: string[]) =>
     request(`/sets/${encodeURIComponent(id)}/tags`, SavedSet, "PATCH", { tags })
+  );
+  handle("orbis:update-title", (id: string, title: string) =>
+    request(`/sets/${encodeURIComponent(id)}/title`, SavedSet, "PATCH", {
+      title,
+    })
+  );
+  handle("orbis:delete-set", (id: string) =>
+    request(`/sets/${encodeURIComponent(id)}`, SavedSet, "DELETE")
   );
   handle("orbis:open-source", async (value: string) => {
     try {

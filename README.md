@@ -2,7 +2,7 @@
 
 A personal library for YouTube and SoundCloud music and DJ sets.
 
-The first slice saves links and titles, supports ordered playlists, tag editing and suggestions, and combines text, source, and tag filters. SQLite keeps the library across server restarts. Click a title to open the original source in your browser.
+The first slice saves links and titles, supports title and tag editing, deletion, ordered playlists, tag suggestions, and combined text, source, and tag filters. SQLite keeps the library across server restarts. Click a title to open the original source in your browser.
 
 ## Workspace
 

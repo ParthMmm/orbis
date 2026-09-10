@@ -1,6 +1,6 @@
 import type { LibraryFilters, SavedSet, SetSource } from "@orbis/contracts";
-import { useEffect, useState } from "react";
-import type { FormEvent } from "react";
+import { useEffect, useRef, useState } from "react";
+import type { FormEvent, ReactNode } from "react";
 
 import { Playlists } from "./playlists";
 import { TagInput } from "./tag-input";
@@ -58,18 +58,205 @@ const SetCard = ({
   set,
   suggestions,
   onUpdated,
+  onDeleted,
 }: {
   set: SavedSet;
   suggestions: string[];
-  onUpdated: () => void;
+  onUpdated: (message: string) => void;
+  onDeleted: (message: string) => void;
 }) => {
-  const [editing, setEditing] = useState(false);
+  const [editingTags, setEditingTags] = useState(false);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [title, setTitle] = useState(set.title);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const deleteButtonRef = useRef<HTMLButtonElement>(null);
+  const cancelDeleteButtonRef = useRef<HTMLButtonElement>(null);
+  const wasConfirmingDelete = useRef(false);
+  useEffect(() => {
+    if (confirmingDelete) {
+      cancelDeleteButtonRef.current?.focus();
+    } else if (wasConfirmingDelete.current) {
+      deleteButtonRef.current?.focus();
+    }
+    wasConfirmingDelete.current = confirmingDelete;
+  }, [confirmingDelete]);
   const openSource = async (event: React.MouseEvent<HTMLAnchorElement>) => {
     event.preventDefault();
     const result = await window.orbis.openSource(set.url);
     setError(result.ok ? "" : result.message);
   };
+  const saveTitle = async (event: FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    const result = await window.orbis.updateTitle(set.id, title);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    setTitle(result.data.title);
+    setEditingTitle(false);
+    onUpdated("Title saved.");
+  };
+  const deleteSet = async () => {
+    setBusy(true);
+    setError("");
+    const result = await window.orbis.deleteSet(set.id);
+    setBusy(false);
+    if (!result.ok) {
+      setError(result.message);
+      return;
+    }
+    onDeleted(`Deleted ${set.title}.`);
+  };
+  let titleContent: ReactNode = (
+    <h3>
+      <a href={set.url} onClick={openSource}>
+        {set.title}
+      </a>
+    </h3>
+  );
+  if (editingTitle) {
+    titleContent = (
+      <form
+        className="title-editor"
+        onSubmit={saveTitle}
+        aria-label={`Edit title for ${set.title}`}
+      >
+        <fieldset disabled={busy}>
+          <label htmlFor={`title-${set.id}`}>Title</label>
+          <input
+            id={`title-${set.id}`}
+            required
+            maxLength={200}
+            autoFocus
+            value={title}
+            onChange={(event) => setTitle(event.target.value)}
+          />
+          <div className="input-row">
+            <button type="submit">{busy ? "Saving…" : "Save title"}</button>
+            <button
+              type="button"
+              onClick={() => {
+                setTitle(set.title);
+                setError("");
+                setEditingTitle(false);
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        </fieldset>
+        {error && (
+          <p role="alert" className="error">
+            {error}
+          </p>
+        )}
+      </form>
+    );
+  }
+  let controls: ReactNode = null;
+  if (editingTags) {
+    controls = (
+      <TagEditor
+        set={set}
+        suggestions={suggestions}
+        onCancel={() => setEditingTags(false)}
+        onSaved={() => {
+          setEditingTags(false);
+          onUpdated("Tags saved.");
+        }}
+      />
+    );
+  } else if (editingTitle) {
+    controls = null;
+  } else if (confirmingDelete) {
+    controls = (
+      <div
+        className="delete-confirmation"
+        role="group"
+        aria-labelledby={`delete-prompt-${set.id}`}
+      >
+        <p id={`delete-prompt-${set.id}`}>
+          Delete “{set.title}” from your library? The original source will not
+          be affected.
+        </p>
+        <div className="set-actions">
+          <button
+            type="button"
+            className="danger"
+            onClick={deleteSet}
+            disabled={busy}
+          >
+            {busy ? "Deleting…" : "Delete set"}
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setError("");
+              setConfirmingDelete(false);
+            }}
+            ref={cancelDeleteButtonRef}
+            disabled={busy}
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    );
+  } else {
+    controls = (
+      <div className="card-bottom">
+        <ul className="tag-list">
+          {set.tags.map((tag) => (
+            <li key={tag}>
+              <span className="tag">{tag}</span>
+            </li>
+          ))}
+        </ul>
+        <div className="set-actions">
+          <button
+            type="button"
+            onClick={() => {
+              setError("");
+              setEditingTitle(true);
+            }}
+            aria-label={`Edit title for ${set.title}`}
+            disabled={busy}
+          >
+            Edit title
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setError("");
+              setEditingTags(true);
+            }}
+            aria-label={`Edit tags for ${set.title}`}
+            disabled={busy}
+          >
+            Edit tags
+          </button>
+          <button
+            type="button"
+            className="danger"
+            onClick={() => {
+              setError("");
+              setConfirmingDelete(true);
+            }}
+            aria-label={`Delete ${set.title}`}
+            ref={deleteButtonRef}
+            disabled={busy}
+          >
+            Delete
+          </button>
+        </div>
+      </div>
+    );
+  }
   return (
     <li className="set-card">
       <div className="set-heading">
@@ -78,43 +265,10 @@ const SetCard = ({
           {new Date(set.createdAt).toLocaleDateString()}
         </time>
       </div>
-      <h3>
-        <a href={set.url} onClick={openSource}>
-          {set.title}
-        </a>
-      </h3>
+      {titleContent}
       <p className="source-url">{set.url}</p>
-      {editing ? (
-        <TagEditor
-          set={set}
-          suggestions={suggestions}
-          onCancel={() => setEditing(false)}
-          onSaved={() => {
-            setEditing(false);
-            onUpdated();
-          }}
-        />
-      ) : (
-        <>
-          <div className="card-bottom">
-            <ul className="tag-list">
-              {set.tags.map((tag) => (
-                <li key={tag}>
-                  <span className="tag">{tag}</span>
-                </li>
-              ))}
-            </ul>
-            <button
-              type="button"
-              onClick={() => setEditing(true)}
-              aria-label={`Edit tags for ${set.title}`}
-            >
-              Edit tags
-            </button>
-          </div>
-        </>
-      )}
-      {error && (
+      {controls}
+      {error && !editingTitle && (
         <p role="alert" className="error">
           {error}
         </p>
@@ -140,6 +294,7 @@ export const App = () => {
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
   const [notice, setNotice] = useState("");
+  const libraryHeadingRef = useRef<HTMLHeadingElement>(null);
   const reload = () => setRevision((value) => value + 1);
 
   useEffect(() => {
@@ -293,7 +448,9 @@ export const App = () => {
         </div>
         <section className="library" aria-labelledby="library-heading">
           <div className="library-heading">
-            <h2 id="library-heading">Your library</h2>
+            <h2 id="library-heading" ref={libraryHeadingRef} tabIndex={-1}>
+              Your library
+            </h2>
             <button type="button" onClick={reload}>
               Refresh
             </button>
@@ -394,8 +551,13 @@ export const App = () => {
                     key={set.id}
                     set={set}
                     suggestions={suggestions}
-                    onUpdated={() => {
-                      setNotice("Tags saved.");
+                    onUpdated={(message) => {
+                      setNotice(message);
+                      reload();
+                    }}
+                    onDeleted={(message) => {
+                      setNotice(message);
+                      libraryHeadingRef.current?.focus();
                       reload();
                     }}
                   />

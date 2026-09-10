@@ -49,6 +49,11 @@ export class Library extends Context.Service<
       id: string,
       tags: readonly string[]
     ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly updateTitle: (
+      id: string,
+      title: string
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly remove: (id: string) => Effect.Effect<SavedSet, LibraryError>;
     readonly tags: () => Effect.Effect<string[], LibraryError>;
     readonly playlists: () => Effect.Effect<Playlist[], LibraryError>;
     readonly createPlaylist: (
@@ -186,6 +191,50 @@ export class Library extends Context.Service<
               return decodeRow(row);
             })
         );
+        const updateTitle = Effect.fn("Library.updateTitle")(
+          (id: string, title: string) =>
+            execute(() => {
+              const trimmedTitle = title.trim();
+              if (!trimmedTitle) {
+                throw new LibraryError({
+                  message: "Enter a title for this set.",
+                  statusCode: 400,
+                });
+              }
+              const row = db
+                .query<SetRow, [string, string]>(
+                  "UPDATE sets SET title = ? WHERE id = ? RETURNING id, url, title, source, tags, created_at AS createdAt"
+                )
+                .get(trimmedTitle, id);
+              if (!row) {
+                throw new LibraryError({
+                  message: "Set not found.",
+                  statusCode: 404,
+                });
+              }
+              return decodeRow(row);
+            })
+        );
+        const remove = Effect.fn("Library.remove")((id: string) =>
+          execute(() =>
+            db.transaction(() => {
+              const row = db
+                .query<SetRow, [string]>(
+                  "SELECT id, url, title, source, tags, created_at AS createdAt FROM sets WHERE id = ?"
+                )
+                .get(id);
+              if (!row) {
+                throw new LibraryError({
+                  message: "Set not found.",
+                  statusCode: 404,
+                });
+              }
+              db.query("DELETE FROM playlist_sets WHERE set_id = ?").run(id);
+              db.query("DELETE FROM sets WHERE id = ?").run(id);
+              return decodeRow(row);
+            })()
+          )
+        );
         const tags = Effect.fn("Library.tags")(() =>
           execute(() =>
             db
@@ -272,10 +321,12 @@ export class Library extends Context.Service<
           createPlaylist,
           list,
           playlists,
+          remove,
           save,
           setPlaylistMembers,
           tags,
           updateTags,
+          updateTitle,
         };
       })
     );

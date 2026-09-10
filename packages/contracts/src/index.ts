@@ -19,6 +19,10 @@ export interface SaveSetInput {
   tags: string[];
 }
 
+export interface UpdateSetTitleInput {
+  title: string;
+}
+
 export interface LibraryFilters {
   playlistId?: string;
   q?: string;

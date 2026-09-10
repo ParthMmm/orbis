@@ -250,6 +250,102 @@ test("edits and clears tags while retaining the set and updating tag suggestions
   }
 });
 
+test("updates a set title without changing its source or tags", async () => {
+  const app = createApp();
+  try {
+    const saved = await request(app, {
+      method: "POST",
+      payload: {
+        tags: ["ambient"],
+        title: "Old title",
+        url: "https://youtu.be/abcdefghijk",
+      },
+      url: "/sets",
+    });
+    const original = saved.json();
+    const updated = await request(app, {
+      method: "PATCH",
+      payload: { title: "  New title  " },
+      url: `/sets/${original.id}/title`,
+    });
+    expect(updated.statusCode).toBe(200);
+    expect(updated.json()).toEqual({ ...original, title: "New title" });
+
+    const library = await request(app, { method: "GET", url: "/sets" });
+    expect(library.json()).toEqual({
+      sets: [{ ...original, title: "New title" }],
+    });
+    const blank = await request(app, {
+      method: "PATCH",
+      payload: { title: "   " },
+      url: `/sets/${original.id}/title`,
+    });
+    expect(blank.statusCode).toBe(400);
+    const missing = await request(app, {
+      method: "PATCH",
+      payload: { title: "Missing" },
+      url: "/sets/missing/title",
+    });
+    expect(missing.statusCode).toBe(404);
+  } finally {
+    await app.dispose();
+  }
+});
+
+test("deletes a set and keeps its playlists while removing membership", async () => {
+  const app = createApp();
+  try {
+    const saved = await request(app, {
+      method: "POST",
+      payload: {
+        tags: ["live"],
+        title: "To remove",
+        url: "https://soundcloud.com/artist/track",
+      },
+      url: "/sets",
+    });
+    const set = saved.json();
+    const created = await request(app, {
+      method: "POST",
+      payload: { name: "Keep this playlist" },
+      url: "/playlists",
+    });
+    const playlist = created.json();
+    await request(app, {
+      method: "PUT",
+      payload: { setIds: [set.id] },
+      url: `/playlists/${playlist.id}/sets`,
+    });
+
+    const deleted = await request(app, {
+      method: "DELETE",
+      url: `/sets/${set.id}`,
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toEqual(set);
+    const library = await request(app, { method: "GET", url: "/sets" });
+    expect(library.json()).toEqual({ sets: [] });
+    const playlistSets = await request(app, {
+      method: "GET",
+      url: `/sets?playlistId=${playlist.id}`,
+    });
+    expect(playlistSets.json()).toEqual({ sets: [] });
+    const playlists = await request(app, {
+      method: "GET",
+      url: "/playlists",
+    });
+    expect(playlists.json()).toEqual({ playlists: [playlist] });
+
+    const missing = await request(app, {
+      method: "DELETE",
+      url: `/sets/${set.id}`,
+    });
+    expect(missing.statusCode).toBe(404);
+  } finally {
+    await app.dispose();
+  }
+});
+
 test("rejects browser origins and non-loopback hosts before accessing the private library", async () => {
   const app = createApp();
   try {

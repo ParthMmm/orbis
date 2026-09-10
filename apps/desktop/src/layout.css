@@ -227,6 +227,30 @@ a {
 .card-bottom > button {
   flex-shrink: 0;
 }
+.set-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+}
+.title-editor {
+  margin: 12px 0 16px;
+}
+.title-editor input {
+  margin-bottom: 12px;
+}
+.delete-confirmation {
+  border: 1px solid var(--destructive);
+  border-radius: 8px;
+  padding: 12px;
+}
+.delete-confirmation p {
+  margin-bottom: 12px;
+}
+button.danger {
+  color: var(--destructive);
+  border-color: var(--destructive);
+}
 .tag-input {
   margin-bottom: 12px;
 }
@@ -278,6 +302,10 @@ a {
   }
   .card-bottom {
     flex-wrap: wrap;
+  }
+  .set-actions {
+    justify-content: flex-start;
+    width: 100%;
   }
 }
 

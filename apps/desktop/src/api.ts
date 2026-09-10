@@ -21,6 +21,8 @@ export interface OrbisClient {
   ) => Promise<ApiResult<LibraryResponse>>;
   save: (input: SaveSetInput) => Promise<ApiResult<SavedSet>>;
   updateTags: (id: string, tags: string[]) => Promise<ApiResult<SavedSet>>;
+  updateTitle: (id: string, title: string) => Promise<ApiResult<SavedSet>>;
+  deleteSet: (id: string) => Promise<ApiResult<SavedSet>>;
   openSource: (url: string) => Promise<ApiResult<null>>;
 }
 

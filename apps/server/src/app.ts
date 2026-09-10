@@ -18,6 +18,7 @@ interface RawFilters {
 const Tags = Schema.Array(Schema.String.check(Schema.isMaxLength(40))).check(
   Schema.isMaxLength(20)
 );
+const Title = Schema.String.check(Schema.isMaxLength(200));
 const Filters = Schema.Struct({
   playlistId: Schema.String.check(Schema.isMaxLength(100)),
   q: Schema.String.check(Schema.isMaxLength(200)),
@@ -26,7 +27,7 @@ const Filters = Schema.Struct({
 });
 const SaveInput = Schema.Struct({
   tags: Tags,
-  title: Schema.String.check(Schema.isMaxLength(200)),
+  title: Title,
   url: Schema.String.check(Schema.isMaxLength(2048)),
 });
 
@@ -124,6 +125,29 @@ export const createApp = ({ databasePath = ":memory:" } = {}) => {
               Schema.Struct({ tags: Tags })
             );
             return yield* library.updateTags(params.id ?? "", input.tags);
+          })
+        )
+      );
+      yield* router.add(
+        "PATCH",
+        "/sets/:id/title",
+        respond(
+          Effect.gen(function* updateTitle() {
+            const { params } = yield* HttpRouter.RouteContext;
+            const input = yield* HttpServerRequest.schemaBodyJson(
+              Schema.Struct({ title: Title })
+            );
+            return yield* library.updateTitle(params.id ?? "", input.title);
+          })
+        )
+      );
+      yield* router.add(
+        "DELETE",
+        "/sets/:id",
+        respond(
+          Effect.gen(function* removeSet() {
+            const { params } = yield* HttpRouter.RouteContext;
+            return yield* library.remove(params.id ?? "");
           })
         )
       );

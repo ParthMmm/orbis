@@ -95,32 +95,73 @@ try {
   await page.getByRole("checkbox", { exact: true, name: "ambient" }).waitFor();
   await page.reload();
   await page.getByRole("link", { name: "Night session" }).waitFor();
+  await page
+    .getByRole("button", { name: "Edit title for Night session" })
+    .click();
+  const titleEditor = page.getByRole("form", {
+    name: "Edit title for Night session",
+  });
+  await titleEditor.getByLabel("Title", { exact: true }).fill("Night renamed");
+  await titleEditor.getByRole("button", { name: "Save title" }).click();
+  await page.getByRole("link", { name: "Night renamed" }).waitFor();
   await page.getByLabel("New playlist", { exact: true }).fill("Evenings");
   await page.getByRole("button", { exact: true, name: "Create" }).click();
   await page.getByRole("heading", { name: "This playlist is empty" }).waitFor();
   await page
     .getByLabel("Add a saved set", { exact: true })
-    .selectOption({ label: "Night session" });
+    .selectOption({ label: "Night renamed" });
   await page
     .getByRole("button", { exact: true, name: "Add to playlist" })
     .click();
-  await page.getByRole("link", { name: "Night session" }).waitFor();
+  await page.getByRole("link", { name: "Night renamed" }).waitFor();
   await page
     .getByRole("button", {
       exact: true,
-      name: "Remove Night session from playlist",
+      name: "Remove Night renamed from playlist",
     })
     .click();
   await page.getByRole("heading", { name: "This playlist is empty" }).waitFor();
   await page.getByLabel("View", { exact: true }).selectOption("");
-  await page.getByRole("link", { name: "Night session" }).waitFor();
+  await page.getByRole("link", { name: "Night renamed" }).waitFor();
+  const deleteButton = page.getByRole("button", {
+    name: "Delete Night renamed",
+  });
+  await deleteButton.click();
+  const cancelDelete = page.getByRole("button", {
+    exact: true,
+    name: "Cancel",
+  });
+  await cancelDelete.waitFor();
+  assert.equal(
+    await cancelDelete.evaluate(
+      (element) => element === document.activeElement
+    ),
+    true
+  );
+  await cancelDelete.click();
+  assert.equal(
+    await deleteButton.evaluate(
+      (element) => element === document.activeElement
+    ),
+    true
+  );
+  await deleteButton.click();
+  await page.getByRole("button", { name: "Delete set" }).click();
+  await page.getByRole("heading", { name: "Start your collection" }).waitFor();
+  const libraryHeading = page.getByRole("heading", { name: "Your library" });
+  assert.equal(
+    await libraryHeading.evaluate(
+      (element) => element === document.activeElement
+    ),
+    true
+  );
   await page.screenshot({
     fullPage: true,
     path: path.join(tmpdir(), "orbis-desktop-smoke.png"),
   });
   assert.deepEqual(errors, []);
   console.log(
-    `Desktop smoke passed: save, search, source + tags, tag editing, reload, playlist creation and membership. Screenshot: ${path.join(tmpdir(), "orbis-desktop-smoke.png")}`
+    `Desktop smoke passed: save, search, source + tags, title and tag editing, reload, playlist membership, and deletion. Screenshot: ${path.join(tmpdir(), "orbis-desktop-smoke.png")}`
   );
 } catch (error) {
   if (app) {
