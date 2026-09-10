@@ -1,0 +1,6 @@
+bun.lock
+node_modules/
+.turbo/
+dist/
+out/
+.vite/
