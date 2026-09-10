@@ -1,4 +1,5 @@
 {
+	"$schema": "./node_modules/@effect/tsgo/schema.json",
 	"compilerOptions": {
 		"target": "ES2022",
 		"lib": ["ES2022"],
@@ -7,6 +8,16 @@
 		"esModuleInterop": true,
 		"forceConsistentCasingInFileNames": true,
 		"resolveJsonModule": true,
-		"noUncheckedIndexedAccess": true
+		"noUncheckedIndexedAccess": true,
+		"incremental": true,
+		"composite": true,
+		"moduleDetection": "force",
+		"verbatimModuleSyntax": true,
+		"rewriteRelativeImportExtensions": true,
+		"exactOptionalPropertyTypes": true,
+		"noUnusedLocals": true,
+		"noImplicitOverride": true,
+		"declarationMap": true,
+		"sourceMap": true
 	}
 }

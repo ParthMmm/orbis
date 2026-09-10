@@ -1,5 +1,5 @@
 {
-	"name": "sets",
+	"name": "orbis",
 	"private": true,
 	"packageManager": "bun@1.4.1",
 	"workspaces": [
@@ -11,13 +11,17 @@
 		"build": "turbo run build",
 		"typecheck": "turbo run typecheck",
 		"test": "turbo run test",
+		"prepare": "effect-tsgo patch --typescript --no-oxlint --skip-missing",
 		"format": "prettier --write .",
-		"format:check": "prettier --check ."
+		"format:check": "prettier --check .",
+		"smoke:desktop": "node scripts/smoke-desktop.mjs"
 	},
 	"devDependencies": {
-		"turbo": "^2.5.0",
-		"typescript": "^5.9.0",
+		"@effect/tsgo": "0.41.0",
+		"@types/node": "^24.0.0",
+		"playwright": "^1.55.0",
 		"prettier": "^3.6.0",
-		"@types/node": "^24.0.0"
+		"turbo": "^2.5.0",
+		"typescript": "7.0.2"
 	}
 }

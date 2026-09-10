@@ -1,38 +1,66 @@
-# Sets
+# Orbis
 
-A self-hosted library for YouTube and SoundCloud music and DJ sets.
+A personal library for YouTube and SoundCloud music and DJ sets.
+
+The first slice saves links and titles, supports ordered playlists, tag editing and suggestions, and combines text, source, and tag filters. SQLite keeps the library across server restarts. Click a title to open the original source in your browser.
 
 ## Workspace
 
-- `apps/desktop`: Electron Forge + Vite + React desktop shell.
-- `apps/server`: Fastify API running on Node.js.
+- `apps/desktop`: Electron Forge + Vite + React desktop app.
+- `apps/server`: Bun + Effect v4 RC HTTP API and Bun SQLite storage.
+- `packages/contracts`: shared TypeScript API types.
 - `apps/raycast`: reserved extension workspace, not implemented.
 - `apps/ios`: reserved app directory; framework undecided.
-- `packages/contracts`: shared API types.
 
 ## Development
 
-Requires Node.js 24 and Bun 1.4.1. Bun manages packages; the API runs on Node.js.
+Requires Bun 1.4.1 and Node.js 24 (Electron Forge and smoke tooling). TypeScript 7 is pinned and patched with Effect diagnostics by the install preparation script. The server runs on Bun, not Node.js.
 
 ```sh
 bun install
-bun run build --filter=@sets/contracts
 bun run dev
 ```
 
-The API binds to loopback at `http://127.0.0.1:4310/health`. Desktop development opens Electron. To run only the API: `bun run --filter @sets/server dev`.
+The desktop connects to `http://127.0.0.1:4310`. Run only the API with `bun run --filter @orbis/server dev`. Run only the desktop with `bun run --filter @orbis/desktop dev`.
+
+The server stores `library.sqlite` under `data/` in its working directory (`apps/server/data/` with the workspace scripts). Set `ORBIS_DATA_DIR` to an absolute path for a stable custom location. `ORBIS_PORT` overrides the loopback port; set the same value for both processes. This development setup does not launch a bundled server from the packaged desktop app.
+
+## Checks
 
 ```sh
 bun run typecheck
 bun run test
 bun run build
+bun run smoke:desktop
 bun run format:check
 ```
 
-Desktop builds package the current host platform into `apps/desktop/out/`; signing, installers, and cross-platform release automation are not configured.
+Run the build before the smoke check. The smoke check launches Electron and a separate Bun server on an ephemeral port, uses a temporary database, and cleans up both processes and data. It leaves a screenshot in the system temporary directory. It needs a desktop session, not a headless shell.
 
-## Scope
+Desktop builds package the current host platform into `apps/desktop/out/`. Signing, installers, and cross-platform release automation are not configured. Server builds need Bun and installed workspace dependencies.
 
-This is a scaffold, not a working library. SQLite persistence, downloads, playback, tags, filters, group permissions, Tailscale identity, and optional Versos integration remain to implement. The current API exposes only health and is not ready for remote use. Never expose future private endpoints before identity and authorization are implemented.
+## API
 
-The planned deployment uses Tailscale device sharing, keeping friends outside the owner’s personal tailnet. Server and device downloads will have independent retention rules.
+| Method     | Route                 | Purpose                                                                            |
+| ---------- | --------------------- | ---------------------------------------------------------------------------------- |
+| GET        | `/health`             | Health status                                                                      |
+| POST       | `/sets`               | Save `{ url, title, tags }`                                                        |
+| GET        | `/sets`               | List newest first; optional `q`, `source`, `playlistId`, repeated `tag` parameters |
+| PATCH      | `/sets/:id/tags`      | Replace tags with `{ tags }`                                                       |
+| GET        | `/tags`               | Existing tags for suggestions                                                      |
+| GET / POST | `/playlists`          | List playlists or create one with `{ name }`                                       |
+| PUT        | `/playlists/:id/sets` | Replace ordered membership with `{ setIds }`                                       |
+
+Tags are trimmed, lowercased, and deduplicated; each set accepts up to 20 tags of 40 characters. Tag filters use AND semantics. Text search checks titles and URLs. Duplicate normalized links return 409; invalid input returns 400. Metadata is entered manually; short SoundCloud share links and private track links are not supported yet.
+
+Playlists contain whole sets, not individual tracks. A set can belong to multiple playlists; removing membership keeps the library entry. Each playlist supports up to 500 unique sets. Library views sort newest first; playlist views keep playlist order. Folders are deferred.
+
+The desktop uses shadcn preset `b1VlIttI`, Tailwind v4, and the Inter variable font. Layout styles are separate from the generated theme tokens.
+
+## Security and next steps
+
+**Local-only for now.** The server binds to loopback and rejects browser Origin headers and non-loopback Host headers. It is not a multi-user or authenticated server; local processes can access it. Do not publish it through Tailscale Serve, a proxy, or a public endpoint before identity and authorization are implemented.
+
+The renderer is sandboxed and uses a narrow preload API. Only the main process performs local HTTP requests and opens allowlisted source URLs.
+
+Downloads, playback, retention, shared groups, Tailscale device sharing, iOS, Raycast, Versos, and MCP remain planned. See [the first-slice scope](docs/specs/first-library-slice.md). Specs and tickets belong in [GitHub Issues](https://github.com/ParthMmm/orbis/issues).

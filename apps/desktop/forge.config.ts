@@ -6,8 +6,13 @@ const config: ForgeConfig = {
 		new VitePlugin({
 			build: [
 				{ entry: "src/main.ts", config: "vite.main.config.ts", target: "main" },
+				{
+					entry: "src/preload.ts",
+					config: "vite.main.config.ts",
+					target: "preload",
+				},
 			],
-			renderer: [{ name: "main_window", config: "vite.renderer.config.ts" }],
+			renderer: [{ name: "main_window", config: "vite.config.ts" }],
 		}),
 	],
 };
