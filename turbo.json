@@ -28,5 +28,6 @@
       "outputs": []
     }
   },
+  "globalPassThroughEnv": ["ORBIS_DATA_DIR", "ORBIS_PORT"],
   "globalDependencies": ["tsconfig.base.json"]
 }
