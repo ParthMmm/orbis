@@ -1,9 +1,12 @@
 import { Schema } from "effect";
 
-export class LibraryError extends Schema.TaggedError<LibraryError>()(
-	"LibraryError",
-	{
-		message: Schema.String,
-		statusCode: Schema.Number,
-	}
+// TaggedError is a curried schema factory, not an Error constructor.
+const { TaggedError: taggedFailure } = Schema;
+
+export class LibraryError extends taggedFailure<LibraryError>()(
+  "LibraryError",
+  {
+    message: Schema.String,
+    statusCode: Schema.Number,
+  }
 ) {}

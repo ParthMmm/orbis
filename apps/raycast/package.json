@@ -1,6 +1,6 @@
 {
-	"name": "@orbis/raycast",
-	"version": "0.0.0",
-	"private": true,
-	"description": "Reserved workspace for the Orbis Raycast extension"
+  "name": "@orbis/raycast",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Reserved workspace for the Orbis Raycast extension"
 }
