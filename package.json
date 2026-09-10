@@ -1,27 +1,34 @@
 {
-	"name": "orbis",
-	"private": true,
-	"packageManager": "bun@1.4.1",
-	"workspaces": [
-		"apps/*",
-		"packages/*"
-	],
-	"scripts": {
-		"dev": "turbo run dev",
-		"build": "turbo run build",
-		"typecheck": "turbo run typecheck",
-		"test": "turbo run test",
-		"prepare": "effect-tsgo patch --typescript --no-oxlint --skip-missing",
-		"format": "prettier --write .",
-		"format:check": "prettier --check .",
-		"smoke:desktop": "node scripts/smoke-desktop.mjs"
-	},
-	"devDependencies": {
-		"@effect/tsgo": "0.41.0",
-		"@types/node": "^24.0.0",
-		"playwright": "^1.55.0",
-		"prettier": "^3.6.0",
-		"turbo": "^2.5.0",
-		"typescript": "7.0.2"
-	}
+  "name": "orbis",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "type": "module",
+  "scripts": {
+    "dev": "turbo run dev",
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "prepare": "effect-tsgo patch --typescript --no-oxlint --skip-missing",
+    "format": "ultracite fix",
+    "format:check": "oxfmt --check .",
+    "lint": "oxlint .",
+    "smoke:desktop": "node scripts/smoke-desktop.mjs",
+    "check": "turbo run lint format:check typecheck test diagnostics --concurrency=100% --continue=dependencies-successful",
+    "fix": "ultracite fix",
+    "check:force": "turbo run lint format:check typecheck test diagnostics --concurrency=100% --continue=dependencies-successful --force"
+  },
+  "devDependencies": {
+    "@effect/tsgo": "0.41.0",
+    "@types/node": "^24.0.0",
+    "oxfmt": "^0.66.0",
+    "oxlint": "^1.81.0",
+    "playwright": "^1.55.0",
+    "turbo": "^2.5.0",
+    "typescript": "7.0.2",
+    "ultracite": "7.11.0"
+  },
+  "packageManager": "bun@1.4.1"
 }

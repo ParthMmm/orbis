@@ -27,6 +27,12 @@ The server stores `library.sqlite` under `data/` in its working directory (`apps
 
 ## Checks
 
+Run `bun run check` locally or in CI for cached lint, formatting, TypeScript, tests, and Effect diagnostics. Turbo runs independent tasks in parallel, bounded by the available CPU count, and builds shared contracts before consumers. `bun run check:force` bypasses task-cache reads. `bun run fix` applies Ultracite fixes; it is never cached.
+
+GitHub Actions cancels superseded runs and runs React Doctor alongside the quality job. Bun downloads and Turbo results use separate caches; each workflow run saves a new Turbo snapshot. Cache restores stay within the same OS and CPU architecture. No remote-cache account is required. Typechecks use separate incremental files so they do not race with builds.
+
+Individual checks and packaging remain available:
+
 ```sh
 bun run typecheck
 bun run test
@@ -41,15 +47,15 @@ Desktop builds package the current host platform into `apps/desktop/out/`. Signi
 
 ## API
 
-| Method     | Route                 | Purpose                                                                            |
-| ---------- | --------------------- | ---------------------------------------------------------------------------------- |
-| GET        | `/health`             | Health status                                                                      |
-| POST       | `/sets`               | Save `{ url, title, tags }`                                                        |
-| GET        | `/sets`               | List newest first; optional `q`, `source`, `playlistId`, repeated `tag` parameters |
-| PATCH      | `/sets/:id/tags`      | Replace tags with `{ tags }`                                                       |
-| GET        | `/tags`               | Existing tags for suggestions                                                      |
-| GET / POST | `/playlists`          | List playlists or create one with `{ name }`                                       |
-| PUT        | `/playlists/:id/sets` | Replace ordered membership with `{ setIds }`                                       |
+| Method | Route | Purpose |
+| --- | --- | --- |
+| GET | `/health` | Health status |
+| POST | `/sets` | Save `{ url, title, tags }` |
+| GET | `/sets` | List newest first; optional `q`, `source`, `playlistId`, repeated `tag` parameters |
+| PATCH | `/sets/:id/tags` | Replace tags with `{ tags }` |
+| GET | `/tags` | Existing tags for suggestions |
+| GET / POST | `/playlists` | List playlists or create one with `{ name }` |
+| PUT | `/playlists/:id/sets` | Replace ordered membership with `{ setIds }` |
 
 Tags are trimmed, lowercased, and deduplicated; each set accepts up to 20 tags of 40 characters. Tag filters use AND semantics. Text search checks titles and URLs. Duplicate normalized links return 409; invalid input returns 400. Metadata is entered manually; short SoundCloud share links and private track links are not supported yet.
 

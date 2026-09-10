@@ -1,20 +1,32 @@
 {
-	"$schema": "https://turbo.build/schema.json",
-	"tasks": {
-		"dev": {
-			"cache": false,
-			"persistent": true
-		},
-		"build": {
-			"dependsOn": ["^build"],
-			"outputs": ["dist/**", ".vite/**", "out/**"]
-		},
-		"typecheck": {
-			"dependsOn": ["^build"]
-		},
-		"test": {
-			"dependsOn": ["^build"],
-			"outputs": []
-		}
-	}
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".vite/**", "out/**", "*.tsbuildinfo"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": [".cache/typecheck.tsbuildinfo"]
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "diagnostics": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "//#lint": {
+      "outputs": []
+    },
+    "//#format:check": {
+      "outputs": []
+    }
+  },
+  "globalDependencies": ["tsconfig.base.json"]
 }

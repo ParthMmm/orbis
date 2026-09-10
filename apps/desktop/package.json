@@ -1,36 +1,36 @@
 {
-	"name": "@orbis/desktop",
-	"productName": "Orbis",
-	"version": "0.0.0",
-	"private": true,
-	"description": "A personal DJ set library",
-	"main": ".vite/build/main.js",
-	"scripts": {
-		"dev": "electron-forge start",
-		"build": "electron-forge package",
-		"typecheck": "tsc --noEmit"
-	},
-	"dependencies": {
-		"@base-ui/react": "^1.8.0",
-		"@fontsource-variable/inter": "^5.3.0",
-		"@orbis/contracts": "workspace:*",
-		"class-variance-authority": "^0.7.1",
-		"cn": "^0.2.6",
-		"lucide-react": "^1.41.0",
-		"react": "^19.1.0",
-		"react-dom": "^19.1.0",
-		"shadcn": "^4.21.0",
-		"tw-animate-css": "^1.4.0"
-	},
-	"devDependencies": {
-		"@electron-forge/cli": "^7.8.0",
-		"@electron-forge/plugin-vite": "^7.8.0",
-		"@electron-forge/shared-types": "^7.8.0",
-		"@tailwindcss/vite": "^4.3.3",
-		"@types/react": "^19.1.0",
-		"@types/react-dom": "^19.1.0",
-		"electron": "^38.0.0",
-		"tailwindcss": "^4.3.3",
-		"vite": "^6.1.0"
-	}
+  "name": "@orbis/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "A personal DJ set library",
+  "main": ".vite/build/main.js",
+  "scripts": {
+    "dev": "electron-forge start",
+    "build": "electron-forge package",
+    "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo"
+  },
+  "dependencies": {
+    "@base-ui/react": "^1.8.0",
+    "@fontsource-variable/inter": "^5.3.0",
+    "@orbis/contracts": "workspace:*",
+    "class-variance-authority": "^0.7.1",
+    "cn": "^0.2.6",
+    "lucide-react": "^1.41.0",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "shadcn": "^4.21.0",
+    "tw-animate-css": "^1.4.0"
+  },
+  "devDependencies": {
+    "@electron-forge/cli": "^7.8.0",
+    "@electron-forge/plugin-vite": "^7.8.0",
+    "@electron-forge/shared-types": "^7.8.0",
+    "@tailwindcss/vite": "^4.3.3",
+    "@types/react": "^19.1.0",
+    "@types/react-dom": "^19.1.0",
+    "electron": "^38.0.0",
+    "tailwindcss": "^4.3.3",
+    "vite": "^6.1.0"
+  },
+  "productName": "Orbis"
 }
