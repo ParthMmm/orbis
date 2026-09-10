@@ -11,3 +11,5 @@ coverage/
 data/
 *.tsbuildinfo
 .cache/
+deploy/cobalt/keys.json
+deploy/cobalt/*.report.json

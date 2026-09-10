@@ -1,0 +1,24 @@
+services:
+  cobalt:
+    image: ghcr.io/imputnet/cobalt:11@sha256:df14a3b3fe4390d4e1c2d4761ed58981d34aa5fc82d0df2091bab890e7dfaa8b
+    platform: linux/amd64
+    init: true
+    read_only: true
+    restart: unless-stopped
+    container_name: orbis-cobalt-trial
+    ports:
+      - "${VANTA_TAILSCALE_IP:?VANTA_TAILSCALE_IP must be set}:9000:9000/tcp"
+    environment:
+      API_URL: "${COBALT_API_URL:?COBALT_API_URL must be set}"
+      API_KEY_URL: "file:///keys.json"
+      API_AUTH_REQUIRED: "1"
+      DISABLED_SERVICES: "bilibili,bsky,dailymotion,facebook,instagram,loom,newgrounds,ok,pinterest,reddit,rutube,snapchat,streamable,tiktok,tumblr,twitch,twitter,vimeo,vk"
+      DURATION_LIMIT: "21600"
+      RATELIMIT_WINDOW: "60"
+      RATELIMIT_MAX: "10"
+      SESSION_RATELIMIT_WINDOW: "60"
+      SESSION_RATELIMIT_MAX: "10"
+      TUNNEL_RATELIMIT_WINDOW: "60"
+      TUNNEL_RATELIMIT_MAX: "20"
+    volumes:
+      - ./keys.json:/keys.json:ro
