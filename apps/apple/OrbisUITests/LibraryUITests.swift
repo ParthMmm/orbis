@@ -25,6 +25,22 @@ final class LibraryUITests: XCTestCase {
         add(attachment)
     }
 
+    /// Search is a tab on a compact width class and a sidebar item on a regular one, so the
+    /// journey proves the platform's navigation rather than assuming one shape.
+    private func openSearch(in app: XCUIApplication) {
+        let tab = app.tabBars.buttons["Search"]
+        if tab.waitForExistence(timeout: 8) {
+            tab.tap()
+            return
+        }
+        let sidebarSearch = app.buttons["sidebar-search"]
+        XCTAssertTrue(
+            sidebarSearch.waitForExistence(timeout: 15),
+            "Search must be reachable from a tab bar or the sidebar\n\(app.debugDescription)"
+        )
+        sidebarSearch.tap()
+    }
+
     func testConnectsBrowsesAndSearchesTheLibrary() throws {
         let app = try launch()
 
@@ -46,7 +62,7 @@ final class LibraryUITests: XCTestCase {
         XCTAssertTrue(row.waitForExistence(timeout: 60), "a saved Set must appear after connecting\n\(app.debugDescription)")
         capture("02-library-loaded")
 
-        app.tabBars.buttons["Search"].tap()
+        openSearch(in: app)
         let field = app.searchFields.firstMatch
         XCTAssertTrue(field.waitForExistence(timeout: 30), "the Search destination must offer a field")
         field.tap()
