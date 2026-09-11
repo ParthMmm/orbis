@@ -29,7 +29,9 @@ struct ConnectionView: View {
                 Text("Orbis service")
             } footer: {
                 Text(
-                    "The address of your Orbis service. Pair this device on the host to get a token."
+                    model.hasStoredToken
+                        ? "The address of your Orbis service. Leave the token empty to keep the one this device has."
+                        : "The address of your Orbis service. Pair this device on the host to get a token."
                 )
                 .font(.orbis.caption)
             }
@@ -47,7 +49,7 @@ struct ConnectionView: View {
                 .buttonStyle(OrbisPrimaryButtonStyle())
                 .disabled(
                     model.connectionAddress.isEmpty
-                        || model.connectionToken.isEmpty
+                        || (model.connectionToken.isEmpty && !model.hasStoredToken)
                         || model.isTestingConnection
                 )
                 .accessibilityIdentifier("connection-test")

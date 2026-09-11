@@ -23,6 +23,19 @@ final class ConnectionEditorTests: XCTestCase {
         }
     }
 
+    /// A wrong address is the common reason to open this screen, and correcting it must not
+    /// require pairing again on a device that already holds a token.
+    func testAnEmptyTokenKeepsTheOneTheDeviceHasAndATypedOneReplacesIt() {
+        let model = AppModel()
+        model.connectionAddress = "https://library.example"
+        model.connectionToken = "typed on this screen"
+        model.editConnection()
+        XCTAssertTrue(model.connectionToken.isEmpty, "the field opens empty")
+        model.connectionAddress = "https://library.example:8444"
+        model.connectionToken = "   "
+        XCTAssertTrue(model.connectionToken.trimmingCharacters(in: .whitespaces).isEmpty)
+    }
+
     func testLeavingTheEditorKeepsWhatWasWorking() {
         let model = AppModel()
         model.library = .loaded([])

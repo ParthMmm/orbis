@@ -145,12 +145,20 @@ final class AppModel {
         connectionError = nil
         isTestingConnection = true
         defer { isTestingConnection = false }
+        // An empty field means keep the token this device already holds, which is what correcting
+        // an address needs. A typed token replaces it.
+        let typed = connectionToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        let token = typed.isEmpty ? (ClientSettings.deviceToken ?? "") : typed
+        guard !token.isEmpty else {
+            connectionError = OrbisError.notPaired.message
+            return
+        }
         do {
             let url = try OrbisClient.address(from: connectionAddress)
-            let candidate = OrbisClient(address: url, token: connectionToken)
+            let candidate = OrbisClient(address: url, token: token)
             _ = try await candidate.health()
             ClientSettings.serviceAddress = url.absoluteString
-            ClientSettings.deviceToken = connectionToken
+            ClientSettings.deviceToken = token
             client = candidate
             isEditingConnection = false
             await loadLibrary()
@@ -161,8 +169,15 @@ final class AppModel {
         }
     }
 
-    /// Opens the connection screen with the address in place and the token left out, so the
-    /// address can be read and corrected without discarding the pairing.
+    /// True when this device already holds a token, which makes the token field optional: a
+    /// wrong address is corrected without pairing again.
+    var hasStoredToken: Bool {
+        ClientSettings.deviceToken?.isEmpty == false
+    }
+
+    /// Opens the connection screen with the address in place and the token left out. Leaving the
+    /// token field empty keeps the token this device already has, so a wrong address can be
+    /// corrected without pairing again.
     func editConnection() {
         connectionAddress = ClientSettings.serviceAddress ?? connectionAddress
         connectionToken = ""
