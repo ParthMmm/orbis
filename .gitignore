@@ -14,3 +14,11 @@ data/
 .pi/
 deploy/cobalt/keys.json
 deploy/cobalt/*.report.json
+
+# Agent skill installs (machine-local)
+.agents/
+.claude/
+
+# SwiftPM
+.build/
+.swiftpm/

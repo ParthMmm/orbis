@@ -9,8 +9,9 @@ The first slice saves links and titles, supports title and tag editing, deletion
 - `apps/desktop`: Electron Forge + Vite + React desktop app.
 - `apps/server`: Bun + Effect v4 RC HTTP API and Bun SQLite storage.
 - `packages/contracts`: shared TypeScript API types.
+- `apps/apple/OrbisDesign`: SwiftUI design system (tokens, styles, components) shared by the planned macOS and iOS apps. See [ADR 0001](docs/adr/0001-client-platform-strategy.md).
 - `apps/raycast`: reserved extension workspace, not implemented.
-- `apps/ios`: reserved app directory; framework undecided.
+- `apps/ios`: reserved app directory; the native app will import `OrbisDesign`.
 
 ## Development
 
@@ -62,6 +63,8 @@ Tags are trimmed, lowercased, and deduplicated; each set accepts up to 20 tags o
 Playlists contain whole sets, not individual tracks. A set can belong to multiple playlists; removing membership keeps the library entry. Each playlist supports up to 500 unique sets. Library views sort newest first; playlist views keep playlist order. Folders are deferred.
 
 The desktop uses shadcn preset `b1VlIttI`, Tailwind v4, and the Inter variable font. Layout styles are separate from the generated theme tokens.
+
+Design tokens live in `docs/design/tokens.json`. `node scripts/design-tokens.mjs` regenerates the Swift colors in `OrbisDesign` and `docs/design/tokens.css`.
 
 ## Security and next steps
 
