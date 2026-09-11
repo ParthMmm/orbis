@@ -373,13 +373,15 @@ struct SearchDestination: View {
     .onSubmit(of: .search) { Task { await model.runSearch() } }
     .onChange(of: model.searchQuery) { _, query in
       if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        model.search = .idle
+        model.clearSearch()
       }
     }
   }
 
+  /// The heading names the query the results answer, not whatever sits in the field: typing
+  /// a second query before submitting must not relabel the results still on screen.
   private var heading: Text {
-    let query = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    let query = model.searchResultsFor ?? ""
     return Text(query.isEmpty ? "Search" : "Results for \"\(query)\"")
   }
 

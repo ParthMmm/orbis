@@ -28,12 +28,23 @@ final class AppModel {
   var searchQuery = ""
   var search: Loadable<[SavedSet]> = .idle
 
+  /// The query the loaded search results answer. Held beside the results rather than read
+  /// back from the field, so the heading never names results with a query that was typed
+  /// but not submitted.
+  private(set) var searchResultsFor: String?
+
   /// The tag the Library is filtered by. One tag at a time, because the row marks the one
   /// tag a view is filtered by and a Set carries several.
   var activeTag: String?
 
   /// How many times a cancelled load has been restarted without a success in between.
   private var reloadsAfterCancellation = 0
+
+  /// Which request each stream is on. Every start moves its stream's generation on, so a
+  /// response that arrives after a newer one began cannot publish over it.
+  private var libraryGeneration = 0
+  private var searchGeneration = 0
+  private var connectionGeneration = 0
 
   /// What the person has pasted but not filed yet, and what the last filing said.
   var linkToFile = ""
@@ -146,9 +157,16 @@ final class AppModel {
   /// Tests the connection before storing anything, so a wrong address or token never
   /// replaces a working configuration.
   func connect() async {
+    connectionGeneration += 1
+    let generation = connectionGeneration
     connectionFailure = nil
     isTestingConnection = true
-    defer { isTestingConnection = false }
+    // A superseded test leaves the flag alone, because a newer test still owns it.
+    defer {
+      if generation == connectionGeneration {
+        isTestingConnection = false
+      }
+    }
     // An empty field means keep the token this device already holds, which is what correcting
     // an address needs. A typed token replaces it.
     let typed = connectionToken.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -164,6 +182,9 @@ final class AppModel {
       let candidate = OrbisClient(
         address: url, token: token, session: client?.session ?? .shared)
       _ = try await candidate.health()
+      // The screen that opened this test may be gone, and a newer test may have started;
+      // neither may replace what this device trusts.
+      guard generation == connectionGeneration, !Task.isCancelled else { return }
       ClientSettings.serviceAddress = url.absoluteString
       ClientSettings.deviceToken = token
       client = candidate
@@ -172,8 +193,10 @@ final class AppModel {
       // The sidebar reads playlists separately from the library, so pairing fills both.
       await loadPlaylists()
     } catch let error as OrbisError {
+      guard generation == connectionGeneration else { return }
       connectionFailure = error.failure(at: URL(string: connectionAddress))
     } catch {
+      guard generation == connectionGeneration else { return }
       connectionFailure = OrbisError.unreachable.failure(at: URL(string: connectionAddress))
     }
   }
@@ -188,6 +211,9 @@ final class AppModel {
   /// token field empty keeps the token this device already has, so a wrong address can be
   /// corrected without pairing again.
   func editConnection() {
+    // The screen reopening is itself a change of mind: a connection test that was already
+    // out belongs to the screen that closed, not to this one.
+    connectionGeneration += 1
     connectionAddress = ClientSettings.serviceAddress ?? connectionAddress
     connectionToken = ""
     connectionFailure = nil
@@ -195,11 +221,19 @@ final class AppModel {
   }
 
   func closeConnectionEditor() {
+    // Closing dismisses a connection test that is still out, so its answer cannot commit
+    // into a screen the person has already left.
+    connectionGeneration += 1
     connectionFailure = nil
     isEditingConnection = false
   }
 
   func forget() {
+    // Everything the old service could still answer becomes unpublishable the moment this
+    // runs, so no pending response repopulates a pairing this device no longer holds.
+    connectionGeneration += 1
+    libraryGeneration += 1
+    searchGeneration += 1
     ClientSettings.serviceAddress = nil
     ClientSettings.deviceToken = nil
     client = nil
@@ -207,16 +241,28 @@ final class AppModel {
     connectionAddress = ""
     library = .idle
     search = .idle
+    searchResultsFor = nil
+    playlists = .idle
+    selectedPlaylistId = nil
+    activeTag = nil
+    openedSetId = nil
+    reveal = nil
+    revealFailure = nil
     isEditingConnection = false
   }
 
   func loadLibrary() async {
     guard let client else { return }
+    libraryGeneration += 1
+    let generation = libraryGeneration
     library = .loading
     do {
-      library = .loaded(try await client.library(playlistId: selectedPlaylistId))
+      let sets = try await client.library(playlistId: selectedPlaylistId)
+      guard generation == libraryGeneration, !Task.isCancelled else { return }
+      library = .loaded(sets)
       reloadsAfterCancellation = 0
     } catch OrbisError.cancelled {
+      guard generation == libraryGeneration, !Task.isCancelled else { return }
       // The screen that asked for this went away, which is not a failure. The retry runs
       // in a task that is not a child of this one, because a cancelled task cancels
       // everything it waits on, and it is bounded so a screen that keeps vanishing cannot
@@ -224,11 +270,13 @@ final class AppModel {
       library = .idle
       if reloadsAfterCancellation < 2 {
         reloadsAfterCancellation += 1
-        Task { await loadLibrary() }
+        Task { [weak self] in await self?.loadLibrary() }
       }
     } catch let error as OrbisError {
+      guard generation == libraryGeneration else { return }
       library = .failed(error.failure(at: client.address))
     } catch {
+      guard generation == libraryGeneration else { return }
       library = .failed(OrbisError.unreachable.failure(at: client.address))
     }
   }
@@ -254,6 +302,9 @@ final class AppModel {
         tags: saved.tags
       )
       if case .loaded(let sets) = library {
+        // Filing moves the stream on, so a load that was already out cannot arrive later
+        // and erase the Set that was just filed.
+        libraryGeneration += 1
         library = .loaded([saved] + sets.filter { $0.id != saved.id })
       } else {
         await loadLibrary()
@@ -297,10 +348,14 @@ final class AppModel {
       var updated = open.set
       if let title = open.renamedTitle {
         updated = try await client.updateTitle(open.set.id, title: title)
+        // The reveal may have been closed while the request was out; a late response
+        // never reopens a screen the person left.
+        guard reveal?.set.id == open.set.id, !Task.isCancelled else { return }
         replace(updated)
       }
       if open.tags != open.set.tags {
         updated = try await client.updateTags(open.set.id, tags: open.tags)
+        guard reveal?.set.id == open.set.id, !Task.isCancelled else { return }
         replace(updated)
       }
       closeReveal(with: updated)
@@ -322,6 +377,7 @@ final class AppModel {
     defer { isSavingReveal = false }
     do {
       let updated = try await client.retryMetadata(open.set.id)
+      guard reveal?.set.id == open.set.id, !Task.isCancelled else { return }
       replace(updated)
       reveal = Reveal(
         set: updated, title: open.titleUntouched ? updated.title : open.title,
@@ -471,19 +527,36 @@ final class AppModel {
     guard let client else { return }
     let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !query.isEmpty else {
-      search = .idle
+      clearSearch()
       return
     }
+    searchGeneration += 1
+    let generation = searchGeneration
     search = .loading
+    searchResultsFor = query
     do {
-      search = .loaded(try await client.library(query: query))
+      let sets = try await client.library(query: query)
+      guard generation == searchGeneration, !Task.isCancelled else { return }
+      search = .loaded(sets)
     } catch OrbisError.cancelled {
+      guard generation == searchGeneration else { return }
       search = .idle
+      searchResultsFor = nil
     } catch let error as OrbisError {
+      guard generation == searchGeneration else { return }
       search = .failed(error.failure(at: client.address))
     } catch {
+      guard generation == searchGeneration else { return }
       search = .failed(OrbisError.unreachable.failure(at: client.address))
     }
+  }
+
+  /// Empties the search. The results and the name they answer to go together, so a cleared
+  /// field cannot leave a heading naming results that are no longer on screen.
+  func clearSearch() {
+    searchGeneration += 1
+    search = .idle
+    searchResultsFor = nil
   }
 }
 
