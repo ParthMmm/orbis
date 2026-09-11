@@ -184,4 +184,35 @@ final class SetPageTests: XCTestCase {
     await model.move("1", to: "same")
     XCTAssertNil(StubProtocol.lastRequest)
   }
+
+  /// While the Library is showing one playlist, a Set that moves out of it must leave the
+  /// list; keeping the row would say the move did nothing.
+  func testMovingASetOutOfThePlaylistBeingViewedTakesItsRowWithIt() async {
+    let model = model(
+      sets: [set(id: "1", playlists: ["viewed"]), set(id: "2", title: "Stays", playlists: ["viewed"])]
+    )
+    model.selectedPlaylistId = "viewed"
+
+    await model.move("1", to: nil)
+
+    guard case .loaded(let sets) = model.library else {
+      return XCTFail("expected a loaded library")
+    }
+    XCTAssertEqual(sets.map(\.id), ["2"], "the row must leave with the playlist it moved out of")
+  }
+
+  /// A change that does not touch membership keeps the row where it was.
+  func testRenamingASetInThePlaylistBeingViewedKeepsItsRow() async {
+    let body = OrbisClientTests.savedSet(title: "Renamed", tags: []).replacingOccurrences(
+      of: "\"playlistIds\":[]", with: "\"playlistIds\":[\"viewed\"]")
+    let model = model(sets: [set(id: "1", playlists: ["viewed"])], body: body)
+    model.selectedPlaylistId = "viewed"
+
+    await model.rename("1", to: "Renamed")
+
+    guard case .loaded(let sets) = model.library else {
+      return XCTFail("expected a loaded library")
+    }
+    XCTAssertEqual(sets.map(\.title), ["Renamed"], "membership is unchanged, so the row stays")
+  }
 }

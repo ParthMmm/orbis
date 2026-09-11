@@ -59,6 +59,19 @@ struct SetDetailScreen: View {
         .padding()
         .orbisRaised(radius: Radius.row)
         .padding()
+      } else if model.isWorkingOnSet {
+        // The five writes a page can make otherwise leave the screen looking idle, which
+        // reads as a tap that did nothing.
+        HStack(spacing: 8) {
+          ProgressView()
+          Text("Saving")
+            .font(.orbis.mono)
+            .foregroundStyle(.secondary)
+        }
+        .padding()
+        .orbisRaised(radius: Radius.row)
+        .padding()
+        .accessibilityIdentifier("detail-saving")
       }
     }
     .alert("Title", isPresented: $isRenaming) {

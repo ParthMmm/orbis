@@ -305,7 +305,11 @@ final class AppModel {
         // Filing moves the stream on, so a load that was already out cannot arrive later
         // and erase the Set that was just filed.
         libraryGeneration += 1
-        library = .loaded([saved] + sets.filter { $0.id != saved.id })
+        // While the Library is showing one playlist, a filed Set joins the list only when
+        // it belongs there; anything else would say the view holds what it does not.
+        let belongs = selectedPlaylistId.map(saved.playlistIds.contains) ?? true
+        library = .loaded(
+          belongs ? [saved] + sets.filter { $0.id != saved.id } : sets.filter { $0.id != saved.id })
       } else {
         await loadLibrary()
       }
@@ -403,9 +407,15 @@ final class AppModel {
     fileConfirmation = "Filed “\(closed.title)”"
   }
 
-  /// Swaps one Set in the loaded library for a newer copy of it.
+  /// Swaps one Set in the loaded library for a newer copy of it. While the Library is
+  /// showing one playlist, a Set that moved out of it leaves the list; keeping the row
+  /// would say the move did nothing.
   private func replace(_ set: SavedSet) {
     guard case .loaded(let sets) = library else { return }
+    if let selectedPlaylistId, !set.playlistIds.contains(selectedPlaylistId) {
+      library = .loaded(sets.filter { $0.id != set.id })
+      return
+    }
     library = .loaded(sets.map { $0.id == set.id ? set : $0 })
   }
 

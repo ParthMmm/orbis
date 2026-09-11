@@ -6,9 +6,9 @@ import XCTest
 /// what it leaves behind are both worth pinning.
 @MainActor
 final class RevealTests: XCTestCase {
-  private func set(title: String = "Night session", tags: [String] = []) -> SavedSet {
+  private func set(id: String = "1", title: String = "Night session", tags: [String] = []) -> SavedSet {
     SavedSet(
-      id: "1",
+      id: id,
       url: "https://www.youtube.com/watch?v=abcdefghijk",
       title: title,
       source: .youtube,
@@ -100,5 +100,42 @@ final class RevealTests: XCTestCase {
     XCTAssertNil(model.reveal)
     XCTAssertNil(model.revealFailure)
     XCTAssertEqual(model.fileConfirmation, "Filed “Night session”")
+  }
+
+  /// While the Library is showing one playlist, filing keeps that list truthful: a Set the
+  /// playlist holds joins the top, and one it does not hold stays out instead of inventing
+  /// a row the playlist does not have.
+  func testFilingIntoThePlaylistBeingViewedKeepsTheListTruthful() async {
+    let saveBody = OrbisClientTests.savedSet(title: "Fresh paste", tags: [])
+    let belonging = saveBody.replacingOccurrences(
+      of: "\"playlistIds\":[]", with: "\"playlistIds\":[\"viewed\"]")
+    for (body, expected) in [(belonging, ["Fresh paste", "First"]), (saveBody, ["First"])] {
+      let model = AppModel(
+        client: OrbisClient(
+          address: URL(string: "https://vanta.example.ts.net")!,
+          token: "token",
+          session: StubProtocol.session { request in
+            request.url?.path() == "/sets" && request.httpMethod == "POST"
+              ? (201, body) : (500, "{}")
+          }
+        ))
+      model.library = .loaded([self.set(id: "2", title: "First")])
+      model.selectedPlaylistId = "viewed"
+      model.linkToFile = "https://youtu.be/abcdefghijk"
+
+      await model.fileLink()
+
+      guard case .loaded(let sets) = model.library else {
+        return XCTFail("expected a loaded library")
+      }
+      XCTAssertEqual(
+        sets.map(\.title), expected,
+        "a filed Set \(belongsCaseName(expected)) the playlist being viewed")
+      XCTAssertEqual(model.linkToFile, "", "a filed link leaves the field")
+    }
+  }
+
+  private func belongsCaseName(_ expected: [String]) -> String {
+    expected.count > 1 ? "joins" : "stays out of"
   }
 }
