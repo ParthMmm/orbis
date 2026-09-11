@@ -159,13 +159,18 @@ final class AppModel {
     }
     do {
       let url = try OrbisClient.address(from: connectionAddress)
-      let candidate = OrbisClient(address: url, token: token)
+      // The candidate keeps the session the model already uses, so tests inject one session
+      // and it covers the connection test too.
+      let candidate = OrbisClient(
+        address: url, token: token, session: client?.session ?? .shared)
       _ = try await candidate.health()
       ClientSettings.serviceAddress = url.absoluteString
       ClientSettings.deviceToken = token
       client = candidate
       isEditingConnection = false
       await loadLibrary()
+      // The sidebar reads playlists separately from the library, so pairing fills both.
+      await loadPlaylists()
     } catch let error as OrbisError {
       connectionFailure = error.failure(at: URL(string: connectionAddress))
     } catch {
@@ -439,8 +444,9 @@ final class AppModel {
     }
   }
 
-  /// The playlists a sidebar offers. A failure is not shown on its own, because the Library is
-  /// still readable without it and an empty sidebar reads as no playlists.
+  /// The playlists a sidebar offers. A failure keeps its reason and a retry, because an
+  /// empty section reads as "no playlists" and sends a person relaunching the app instead
+  /// of trying again where the answer belongs.
   func loadPlaylists() async {
     guard let client else { return }
     playlists = .loading
@@ -448,8 +454,10 @@ final class AppModel {
       playlists = .loaded(try await client.playlists())
     } catch OrbisError.cancelled {
       playlists = .idle
+    } catch let error as OrbisError {
+      playlists = .failed(error.failure(at: client.address))
     } catch {
-      playlists = .loaded([])
+      playlists = .failed(OrbisError.unreachable.failure(at: client.address))
     }
   }
 

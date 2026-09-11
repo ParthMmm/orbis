@@ -309,9 +309,23 @@ final class StubProtocol: URLProtocol {
   nonisolated(unsafe) static var lastRequest: URLRequest?
   nonisolated(unsafe) static var lastBody: Data?
 
+  /// Answers each request from its own path, so one model run can walk health, library, and
+  /// playlists in a single test. Set only through `session(responder:)`; the static shorthands
+  /// clear it.
+  nonisolated(unsafe) static var responder: ((URLRequest) -> (Int, String))?
+
   static func session(status: Int, body: String) -> URLSession {
     Self.status = status
     Self.body = body
+    Self.failure = nil
+    Self.responder = nil
+    Self.lastRequest = nil
+    Self.lastBody = nil
+    return makeSession()
+  }
+
+  static func session(responder: @escaping (URLRequest) -> (Int, String)) -> URLSession {
+    Self.responder = responder
     Self.failure = nil
     Self.lastRequest = nil
     Self.lastBody = nil
@@ -320,6 +334,7 @@ final class StubProtocol: URLProtocol {
 
   static func session(failure: URLError) -> URLSession {
     Self.failure = failure
+    Self.responder = nil
     Self.lastRequest = nil
     Self.lastBody = nil
     return makeSession()
@@ -342,14 +357,22 @@ final class StubProtocol: URLProtocol {
       client?.urlProtocol(self, didFailWithError: failure)
       return
     }
+    let status: Int
+    let body: String
+    if let responder = StubProtocol.responder {
+      (status, body) = responder(request)
+    } else {
+      status = StubProtocol.status
+      body = StubProtocol.body
+    }
     let response = HTTPURLResponse(
       url: request.url!,
-      statusCode: StubProtocol.status,
+      statusCode: status,
       httpVersion: nil,
       headerFields: nil
     )!
     client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
-    client?.urlProtocol(self, didLoad: Data(StubProtocol.body.utf8))
+    client?.urlProtocol(self, didLoad: Data(body.utf8))
     client?.urlProtocolDidFinishLoading(self)
   }
 

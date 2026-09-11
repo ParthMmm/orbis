@@ -101,6 +101,9 @@ struct SidebarShell: View {
           ForEach(model.playlistItems) { playlist in
             playlistRow(playlist.id, name: playlist.name, count: playlist.setCount)
           }
+          if case .failed(let failure) = model.playlists {
+            playlistsErrorRow(failure)
+          }
         }
       }
       .navigationTitle("Orbis")
@@ -110,6 +113,21 @@ struct SidebarShell: View {
         DestinationView(model: model, destination: model.destination)
       }
     }
+  }
+
+  /// A playlist section that failed to load must say so, because an empty section reads
+  /// as "no playlists" and invites relaunching the app instead of trying again here.
+  private func playlistsErrorRow(_ failure: OrbisFailure) -> some View {
+    VStack(alignment: .leading, spacing: 4) {
+      Text(failure.message)
+        .font(.orbis.caption)
+        .foregroundStyle(.secondary)
+      Button("Try again") { Task { await model.loadPlaylists() } }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.orbis.tint)
+        .accessibilityIdentifier("playlists-retry")
+    }
+    .accessibilityIdentifier("playlists-error")
   }
 
   /// A playlist in the sidebar. Everything is the whole library, so it carries no colour, and
