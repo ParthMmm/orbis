@@ -10,8 +10,10 @@ enum ClientSettings {
     /// token from `~/.orbis/config.json`, so neither is retyped after a settings reset or a
     /// fresh install. The file sits outside the repository, so no credential is committed, and
     /// a stored value always wins over it.
+    ///
+    /// macOS only, because the file is a path on the Mac and a phone has no such home directory.
     static var developmentConfiguration: (address: String, token: String)? {
-        #if DEBUG
+        #if DEBUG && os(macOS)
             let file = FileManager.default.homeDirectoryForCurrentUser
                 .appending(path: ".orbis/config.json")
             guard let data = try? Data(contentsOf: file),

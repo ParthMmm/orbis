@@ -102,6 +102,22 @@ final class OrbisClientTests: XCTestCase {
         XCTAssertEqual(json["tags"] as? [String], [])
     }
 
+    func testACancelledRequestIsNotReportedAsUnreachable() async {
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: StubProtocol.session(failure: URLError(.cancelled))
+        )
+        do {
+            _ = try await client.health()
+            XCTFail("expected a cancellation")
+        } catch let error as OrbisError {
+            XCTAssertEqual(error, .cancelled)
+        } catch {
+            XCTFail("unexpected \(error)")
+        }
+    }
+
     func testTransportFailureIsUnreachable() async {
         let client = OrbisClient(
             address: URL(string: "https://vanta.example.ts.net")!,

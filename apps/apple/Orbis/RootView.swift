@@ -23,19 +23,29 @@ struct RootView: View {
     #endif
 
     var body: some View {
-        if model.isConfigured {
-            #if os(macOS)
-            SidebarShell(model: model)
-            #else
-            if sizeClass == .compact {
-                CompactShell(model: model)
+        Group {
+            if model.isConfigured {
+                #if os(macOS)
+                    SidebarShell(model: model)
+                #else
+                    if sizeClass == .compact {
+                        CompactShell(model: model)
+                    } else {
+                        SidebarShell(model: model)
+                    }
+                #endif
             } else {
-                SidebarShell(model: model)
+                NavigationStack {
+                    ConnectionView(model: model)
+                }
             }
-            #endif
-        } else {
-            NavigationStack {
-                ConnectionView(model: model)
+        }
+        // The first load starts here rather than on the Library screen, because a screen the
+        // window builds and discards while laying itself out takes its task down with it, and a
+        // cancelled task cancels the request it is waiting on.
+        .task {
+            if model.isConfigured, model.library == .idle {
+                await model.loadLibrary()
             }
         }
     }
@@ -124,11 +134,6 @@ struct DestinationView: View {
             )
             .navigationTitle("Library")
             .toolbar { settingsMenu }
-            .task {
-                if model.library == .idle {
-                    await model.loadLibrary()
-                }
-            }
         case .search:
             SearchDestination(model: model)
         }

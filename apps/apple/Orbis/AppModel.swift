@@ -28,6 +28,9 @@ final class AppModel {
     /// tag a view is filtered by and a Set carries several.
     var activeTag: String?
 
+    /// How many times a cancelled load has been restarted without a success in between.
+    private var reloadsAfterCancellation = 0
+
     /// What the person has pasted but not filed yet, and what the last filing said.
     var linkToFile = ""
     var isFiling = false
@@ -121,6 +124,17 @@ final class AppModel {
         library = .loading
         do {
             library = .loaded(try await client.library())
+            reloadsAfterCancellation = 0
+        } catch OrbisError.cancelled {
+            // The screen that asked for this went away, which is not a failure. The retry runs
+            // in a task that is not a child of this one, because a cancelled task cancels
+            // everything it waits on, and it is bounded so a screen that keeps vanishing cannot
+            // spin forever.
+            library = .idle
+            if reloadsAfterCancellation < 2 {
+                reloadsAfterCancellation += 1
+                Task { await loadLibrary() }
+            }
         } catch let error as OrbisError {
             library = .failed(error.message)
         } catch {
@@ -147,6 +161,8 @@ final class AppModel {
             } else {
                 await loadLibrary()
             }
+        } catch OrbisError.cancelled {
+            return
         } catch let error as OrbisError {
             fileError = error.message
         } catch {
@@ -164,6 +180,8 @@ final class AppModel {
         search = .loading
         do {
             search = .loaded(try await client.library(query: query))
+        } catch OrbisError.cancelled {
+            search = .idle
         } catch let error as OrbisError {
             search = .failed(error.message)
         } catch {

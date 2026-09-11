@@ -7,6 +7,9 @@ enum OrbisError: Error, Equatable {
     case notPaired
     case refused
     case duplicate
+    /// The view that started the request went away before it finished. Not a failure, and never
+    /// shown to anyone, because the screen that replaces it loads on its own.
+    case cancelled
     case server(status: Int, message: String)
     case malformed
     case badAddress
@@ -21,6 +24,8 @@ enum OrbisError: Error, Equatable {
             "The service refused the request. Check the address points at your Orbis service."
         case .duplicate:
             "That set is already in your library."
+        case .cancelled:
+            "The request was interrupted."
         case let .server(status, message):
             "The service reported \(status). \(message)"
         case .malformed:
@@ -102,6 +107,8 @@ struct OrbisClient: Sendable {
         let response: URLResponse
         do {
             (data, response) = try await session.data(for: request)
+        } catch let error as URLError where error.code == .cancelled {
+            throw OrbisError.cancelled
         } catch {
             #if DEBUG
                 // A transport failure is otherwise invisible, which makes a wrong address, a
