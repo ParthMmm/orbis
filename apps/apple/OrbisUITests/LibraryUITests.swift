@@ -94,6 +94,14 @@ final class LibraryUITests: XCTestCase {
     token.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_TOKEN"] ?? "")
 
     app.buttons["connection-test"].tap()
+
+    // The pairing is now stored, and iOS offers to save the typed token into Passwords for
+    // reuse. The token belongs to this app's keychain alone, so the offer is declined
+    // whenever the system rises it.
+    let notNow = app.sheets.buttons["Not Now"].firstMatch
+    if notNow.waitForExistence(timeout: 5) {
+      notNow.tap()
+    }
   }
 
   /// Filing is the one action the app takes on the library, and the design promises a naming

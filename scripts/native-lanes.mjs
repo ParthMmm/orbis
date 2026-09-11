@@ -157,9 +157,9 @@ try {
       "Orbis",
       "-destination",
       `platform=iOS Simulator,name=${simulator}`,
-      // Lanes do not sign, so the committed project stays device-ready.
-      "CODE_SIGNING_ALLOWED=NO",
-      "CODE_SIGNING_REQUIRED=NO",
+      // Ad-hoc signing gives the simulator build the entitlement its keychain needs, while
+      // leaving the committed project device-ready.
+      "CODE_SIGN_IDENTITY=-",
       "-derivedDataPath",
       derived,
       "-resultBundlePath",

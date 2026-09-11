@@ -34,14 +34,19 @@ enum ClientSettings {
   }
 
   static var deviceToken: String? {
-    get { Keychain.read() ?? developmentConfiguration?.token }
-    set {
-      if let newValue {
-        Keychain.write(newValue)
-      } else {
-        Keychain.delete()
-      }
+    Keychain.read() ?? developmentConfiguration?.token
+  }
+
+  /// Stores the pairing, answering whether this device really holds it. A write that fails
+  /// must not read as a saved token: the caller learns the truth here instead of on the
+  /// next launch.
+  @discardableResult
+  static func store(deviceToken newToken: String?) -> Bool {
+    guard let newToken else {
+      Keychain.delete()
+      return true
     }
+    return Keychain.write(newToken)
   }
 
   static var isConfigured: Bool {
@@ -50,7 +55,7 @@ enum ClientSettings {
 
   static func configuredClient(session: URLSession = .shared) -> OrbisClient? {
     guard let address = serviceAddress, let token = deviceToken,
-      let url = URL(string: address), !token.isEmpty
+      let url = URL(string: address), OrbisClient.accepts(url), !token.isEmpty
     else { return nil }
     return OrbisClient(address: url, token: token, session: session)
   }
@@ -68,13 +73,25 @@ private enum Keychain {
     ]
   }
 
-  static func write(_ token: String) {
-    SecItemDelete(base as CFDictionary)
+  static func write(_ token: String) -> Bool {
     var attributes = base
     attributes[kSecValueData as String] = Data(token.utf8)
     attributes[kSecAttrAccessible as String] =
-      kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
-    SecItemAdd(attributes as CFDictionary, nil)
+      kSecAttrAccessibleWhenUnlockedThisDeviceOnly
+    // Update first, so a token that is already held stays held even when a write fails.
+    // Adding only when there is nothing to update keeps a failed first save from reading
+    // as a stored pairing. An item that cannot be updated in place is replaced whole,
+    // because the new token is complete either way.
+    switch SecItemUpdate(base as CFDictionary, attributes as CFDictionary) {
+    case errSecSuccess:
+      return true
+    // Nothing stored yet, so adding is the whole job.
+    case errSecItemNotFound:
+      return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+    default:
+      SecItemDelete(base as CFDictionary)
+      return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+    }
   }
 
   static func read() -> String? {

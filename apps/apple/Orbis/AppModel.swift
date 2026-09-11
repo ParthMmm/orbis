@@ -133,7 +133,7 @@ final class AppModel {
     // A journey lane starts from a clean install so it exercises the connection screen.
     if ProcessInfo.processInfo.arguments.contains("-orbisResetSettings") {
       ClientSettings.serviceAddress = nil
-      ClientSettings.deviceToken = nil
+      ClientSettings.store(deviceToken: nil)
     }
     // A lane that checks the filtered Library starts already filtered, because the design's
     // filter control is a custom toggle a UI test cannot drive reliably.
@@ -210,8 +210,13 @@ final class AppModel {
       // The screen that opened this test may be gone, and a newer test may have started;
       // neither may replace what this device trusts.
       guard generation == connectionGeneration, !Task.isCancelled else { return }
+      // The token is stored before anything commits, so a device that would not hold it
+      // changes nothing and says so where the address was typed.
+      guard ClientSettings.store(deviceToken: token) else {
+        connectionFailure = OrbisError.storageRefused.failure(at: url)
+        return
+      }
       ClientSettings.serviceAddress = url.absoluteString
-      ClientSettings.deviceToken = token
       client = candidate
       hasStoredToken = true
       isEditingConnection = false
@@ -255,7 +260,7 @@ final class AppModel {
     libraryGeneration += 1
     searchGeneration += 1
     ClientSettings.serviceAddress = nil
-    ClientSettings.deviceToken = nil
+    ClientSettings.store(deviceToken: nil)
     client = nil
     connectionToken = ""
     connectionAddress = ""

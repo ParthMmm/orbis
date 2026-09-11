@@ -18,7 +18,8 @@ settings:
     # Signing is stated here because this file is the source the project is generated from, and
     # the project itself is gitignored. Setting a team in Xcode writes it into a file that the
     # next `xcodegen generate` replaces, which is why the team kept disappearing. The lanes still
-    # override both on the command line: ad-hoc for a Mac build, and no signing for a simulator.
+    # override on the command line: ad-hoc signing for a Mac build, and ad-hoc signing for the
+    # simulator, which is what gives the lane build the entitlement its keychain needs.
     DEVELOPMENT_TEAM: JR398S689Z
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES

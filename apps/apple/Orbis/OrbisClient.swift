@@ -15,6 +15,8 @@ enum OrbisError: Error, Equatable {
   /// A web server answered instead of Orbis. Usually the address is missing the port the
   /// service runs on, which is worth saying rather than calling the answer unreadable.
   case notOrbis
+  /// The device refused to hold the pairing, so nothing was saved and nothing was changed.
+  case storageRefused
   case badAddress
 
   var message: String {
@@ -35,6 +37,8 @@ enum OrbisError: Error, Equatable {
       "The service sent a response this app does not understand. Update the app."
     case .notOrbis:
       "Something answered at that address, but it was not Orbis. A web page came back instead."
+    case .storageRefused:
+      "This device would not save the pairing, so nothing was changed. Try again."
     case .badAddress:
       "Enter the full service address, including https://."
     }
@@ -107,6 +111,13 @@ extension OrbisError {
         symbol: "globe",
         isRetryable: false
       )
+    case .storageRefused:
+      failure = OrbisFailure(
+        title: "This device could not save the pairing",
+        message: message,
+        symbol: "key.slash",
+        isRetryable: true
+      )
     case .badAddress:
       failure = OrbisFailure(
         title: "That is not a service address",
@@ -142,10 +153,21 @@ struct OrbisClient: Sendable {
 
   static func address(from input: String) throws -> URL {
     let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let url = URL(string: trimmed), url.scheme != nil, url.host != nil else {
+    guard let url = URL(string: trimmed), accepts(url) else {
       throw OrbisError.badAddress
     }
     return url
+  }
+
+  /// An address is accepted only when it would carry the pairing safely: TLS, or the
+  /// loopback service the server itself trusts, which is what the temporary lane services
+  /// run on.
+  static func accepts(_ url: URL) -> Bool {
+    guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else {
+      return false
+    }
+    let loopback = ["127.0.0.1", "localhost", "::1", "[::1]"]
+    return scheme == "https" || (scheme == "http" && loopback.contains(host))
   }
 
   func health() async throws -> String {
