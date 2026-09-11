@@ -75,6 +75,35 @@ jobs:
           path: .turbo
           key: ${{ steps.turbo-cache.outputs.cache-primary-key }}
 
+  swift-design:
+    name: OrbisDesign on macOS
+    runs-on: macos-26
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Restore SwiftPM build
+        uses: actions/cache@v4
+        with:
+          path: apps/apple/OrbisDesign/.build
+          key: ${{ runner.os }}-spm-${{ hashFiles('apps/apple/OrbisDesign/Package.swift') }}
+
+      - name: Set up Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.1
+
+      - name: Check Swift style
+        run: bun run native:format
+
+      - name: Test the design package
+        run: swift test --package-path apps/apple/OrbisDesign
+
   react-doctor:
     name: React Doctor
     runs-on: ubuntu-latest

@@ -36,6 +36,8 @@ Run `bun run check` locally or in CI for cached lint, formatting, TypeScript, te
 
 GitHub Actions cancels superseded runs and runs React Doctor alongside the quality job. Bun downloads and Turbo results use separate caches; each workflow run saves a new Turbo snapshot. Cache restores stay within the same OS and CPU architecture. No remote-cache account is required. Typechecks use separate incremental files so they do not race with builds.
 
+The quality workflow also runs the Swift style check and `swift test` for `OrbisDesign` on a macOS runner, so the Swift package is verified even when no Mac is present.
+
 Individual checks and packaging remain available:
 
 ```sh
