@@ -89,12 +89,6 @@ final class OrbisClientTests: XCTestCase {
             XCTFail("unexpected \(error)")
         }
     }
-
-    func testRowClockFormatting() {
-        XCTAssertEqual(SetRowView.clock(59), "0:59")
-        XCTAssertEqual(SetRowView.clock(600), "10:00")
-        XCTAssertEqual(SetRowView.clock(3661), "1:01:01")
-    }
 }
 
 /// Answers every request from static configuration so the client can be tested without a

@@ -58,7 +58,8 @@ final class LibraryUITests: XCTestCase {
 
         app.buttons["connection-test"].tap()
 
-        let row = app.staticTexts["Night session"]
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
         XCTAssertTrue(row.waitForExistence(timeout: 60), "a saved Set must appear after connecting\n\(app.debugDescription)")
         capture("02-library-loaded")
 
@@ -75,7 +76,8 @@ final class LibraryUITests: XCTestCase {
         field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 5))
         field.typeText("zzzznothing")
         field.typeText("\n")
-        let noResults = app.staticTexts["No matching sets"]
+        let noResults = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "No matching sets")).firstMatch
         XCTAssertTrue(noResults.waitForExistence(timeout: 30), "an unmatched search must say so\n\(app.debugDescription)")
         capture("04-search-no-results")
     }

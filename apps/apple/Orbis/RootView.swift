@@ -104,6 +104,7 @@ struct DestinationView: View {
         case .library:
             SetList(
                 state: model.library,
+                heading: "All sets",
                 emptyTitle: "Start your collection",
                 emptyMessage: "Sets you save appear here.",
                 emptySymbol: "music.note.list",
@@ -142,6 +143,7 @@ struct SearchDestination: View {
     var body: some View {
         SetList(
             state: displayedState,
+            heading: heading,
             emptyTitle: "No matching sets",
             emptyMessage: "Try a different title, tag, or source link.",
             emptySymbol: "magnifyingglass",
@@ -156,6 +158,11 @@ struct SearchDestination: View {
                 model.search = .idle
             }
         }
+    }
+
+    private var heading: String {
+        let query = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        return query.isEmpty ? "Search" : "Results for \"\(query)\""
     }
 
     private var displayedState: Loadable<[SavedSet]> {

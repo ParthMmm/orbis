@@ -29,6 +29,7 @@ struct ConnectionView: View {
                 Text(
                     "The address of your Orbis service. Pair this device on the host to get a token."
                 )
+                .font(.orbis.caption)
             }
 
             Section {
@@ -59,6 +60,8 @@ struct ConnectionView: View {
             }
         }
         .formStyle(.grouped)
+        .font(.orbis.body)
+        .background(Color.orbis.paper)
         .navigationTitle("Connect to Orbis")
         .onAppear { focus = .address }
     }
