@@ -11,6 +11,9 @@ struct SetList: View {
     let emptyMessage: String
     let emptySymbol: String
     let emptyIdentifier: String
+    /// A screen that files Sets puts its paste field here, so it scrolls with the rows and is
+    /// absent on a screen that only reads, such as Search.
+    let hero: AnyView?
     let retry: () async -> Void
 
     var body: some View {
@@ -33,12 +36,7 @@ struct SetList: View {
                 .accessibilityIdentifier("library-error")
             case let .loaded(sets):
                 if sets.isEmpty {
-                    ContentUnavailableView {
-                        Label(emptyTitle, systemImage: emptySymbol)
-                    } description: {
-                        Text(emptyMessage)
-                    }
-                    .accessibilityIdentifier(emptyIdentifier)
+                    emptyPresentation
                 } else {
                     rows(sets)
                 }
@@ -48,15 +46,44 @@ struct SetList: View {
         .background(Color.orbis.paper)
     }
 
+    /// An empty Library keeps the paste field, so filing the first Set never means hunting for
+    /// a control that disappeared when the list emptied.
+    @ViewBuilder
+    private var emptyPresentation: some View {
+        if let hero {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 0) {
+                    hero.padding(.bottom, 16)
+                    emptyMessageView.frame(maxWidth: .infinity)
+                }
+                .padding()
+            }
+        } else {
+            emptyMessageView
+        }
+    }
+
+    private var emptyMessageView: some View {
+        ContentUnavailableView {
+            Label(emptyTitle, systemImage: emptySymbol)
+        } description: {
+            Text(emptyMessage)
+        }
+        .accessibilityIdentifier(emptyIdentifier)
+    }
+
     private func rows(_ sets: [SavedSet]) -> some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
+                if let hero {
+                    hero.padding(.bottom, 16)
+                }
                 Text(heading)
                     .font(.orbis.sectionTitle)
                     .padding(.bottom, 12)
                 VStack(spacing: 0) {
                     ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
-                        let model = SetPresentation.row(set, index: index)
+                        let model = SetPresentation.row(set, position: index)
                         SetRow(
                             index: model.index,
                             source: model.source,

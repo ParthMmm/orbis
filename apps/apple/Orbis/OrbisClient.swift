@@ -6,6 +6,7 @@ enum OrbisError: Error, Equatable {
     case unreachable
     case notPaired
     case refused
+    case duplicate
     case server(status: Int, message: String)
     case malformed
     case badAddress
@@ -18,6 +19,8 @@ enum OrbisError: Error, Equatable {
             "This device is not paired with your library. Pair it on the host and enter the new token."
         case .refused:
             "The service refused the request. Check the address points at your Orbis service."
+        case .duplicate:
+            "That set is already in your library."
         case let .server(status, message):
             "The service reported \(status). \(message)"
         case .malformed:
@@ -72,6 +75,15 @@ struct OrbisClient: Sendable {
         return decoded.sets
     }
 
+    func save(url: String, tags: [String] = []) async throws -> SavedSet {
+        let body = try JSONEncoder().encode(SaveSetRequest(tags: tags, url: url))
+        let response = try await send(path: "sets", method: "POST", body: body)
+        guard let decoded = try? JSONDecoder().decode(SavedSet.self, from: response) else {
+            throw OrbisError.malformed
+        }
+        return decoded
+    }
+
     private func send(path: String, method: String, body: Data?) async throws -> Data {
         guard let url = URL(string: path, relativeTo: address) else {
             throw OrbisError.badAddress
@@ -103,6 +115,8 @@ struct OrbisClient: Sendable {
             throw OrbisError.notPaired
         case 403:
             throw OrbisError.refused
+        case 409:
+            throw OrbisError.duplicate
         default:
             let message = (try? JSONDecoder().decode(ServerMessage.self, from: data))?.message
             throw OrbisError.server(status: http.statusCode, message: message ?? "")

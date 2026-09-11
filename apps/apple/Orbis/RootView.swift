@@ -1,3 +1,4 @@
+import OrbisDesign
 import SwiftUI
 
 @main
@@ -99,6 +100,10 @@ struct DestinationView: View {
     @Bindable var model: AppModel
     let destination: Destination
 
+    #if os(iOS)
+    @Environment(\.horizontalSizeClass) private var sizeClass
+    #endif
+
     var body: some View {
         switch destination {
         case .library:
@@ -106,9 +111,10 @@ struct DestinationView: View {
                 state: model.library,
                 heading: "All sets",
                 emptyTitle: "Start your collection",
-                emptyMessage: "Sets you save appear here.",
+                emptyMessage: "Paste a link above to file your first set.",
                 emptySymbol: "music.note.list",
                 emptyIdentifier: "library-empty",
+                hero: AnyView(pasteHero),
                 retry: { await model.loadLibrary() }
             )
             .navigationTitle("Library")
@@ -121,6 +127,39 @@ struct DestinationView: View {
         case .search:
             SearchDestination(model: model)
         }
+    }
+
+    /// The design's Library screen opens with the paste field, and the outcome of the last
+    /// filing sits under it so the answer appears where the action was taken.
+    private var pasteHero: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            PasteHero(
+                link: $model.linkToFile,
+                compact: isCompact,
+                hint: "The title and artist come from the link."
+            ) {
+                Task { await model.fileLink() }
+            }
+            if let fileError = model.fileError {
+                Text(fileError)
+                    .font(.orbis.caption)
+                    .foregroundStyle(OrbisColor.destructive)
+                    .accessibilityIdentifier("file-error")
+            } else if let confirmation = model.fileConfirmation {
+                Text(confirmation)
+                    .font(.orbis.mono)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("file-confirmation")
+            }
+        }
+    }
+
+    private var isCompact: Bool {
+        #if os(iOS)
+        sizeClass == .compact
+        #else
+        false
+        #endif
     }
 
     @ToolbarContentBuilder
@@ -148,6 +187,7 @@ struct SearchDestination: View {
             emptyMessage: "Try a different title, tag, or source link.",
             emptySymbol: "magnifyingglass",
             emptyIdentifier: "search-no-results",
+            hero: nil,
             retry: { await model.runSearch() }
         )
         .navigationTitle("Search")

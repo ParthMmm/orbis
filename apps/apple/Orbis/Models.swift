@@ -39,3 +39,10 @@ struct LibraryResponse: Decodable {
 struct HealthResponse: Decodable {
     let status: String
 }
+
+/// The save request. `tags` goes out empty on the first save, and the server takes the title,
+/// the creator, and the rest from the link, so a save needs nothing the person has not typed.
+struct SaveSetRequest: Encodable {
+    let tags: [String]
+    let url: String
+}

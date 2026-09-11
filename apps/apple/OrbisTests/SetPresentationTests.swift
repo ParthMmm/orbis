@@ -25,9 +25,9 @@ final class SetPresentationTests: XCTestCase {
     }
 
     func testRowCarriesIdentitySourceTagsAndDate() throws {
-        let model = SetPresentation.row(try makeSet(), index: 2)
+        let model = SetPresentation.row(try makeSet(), position: 2)
 
-        XCTAssertEqual(model.index, 2)
+        XCTAssertEqual(model.index, 3)
         XCTAssertEqual(model.source, "YouTube")
         XCTAssertEqual(model.title, "Night session")
         XCTAssertEqual(model.url, "youtube.com/watch?v=abcdefghijk")
@@ -42,8 +42,8 @@ final class SetPresentationTests: XCTestCase {
     }
 
     func testTagColourIsStableAndIndependentOfOtherTags() throws {
-        let alone = SetPresentation.row(try makeSet(tags: #"["techno"]"#), index: 0)
-        let mixed = SetPresentation.row(try makeSet(tags: #"["breaks","techno"]"#), index: 0)
+        let alone = SetPresentation.row(try makeSet(tags: #"["techno"]"#), position: 0)
+        let mixed = SetPresentation.row(try makeSet(tags: #"["breaks","techno"]"#), position: 0)
 
         let technoAlone = alone.tags.first { $0.name == "techno" }?.category
         let technoMixed = mixed.tags.first { $0.name == "techno" }?.category
@@ -57,17 +57,17 @@ final class SetPresentationTests: XCTestCase {
     }
 
     func testStateAppearsOnlyWhenThereIsSomethingToSay() throws {
-        XCTAssertNil(SetPresentation.row(try makeSet(), index: 0).state)
-        XCTAssertNil(SetPresentation.row(try makeSet(downloadState: "none"), index: 0).state)
+        XCTAssertNil(SetPresentation.row(try makeSet(), position: 0).state)
+        XCTAssertNil(SetPresentation.row(try makeSet(downloadState: "none"), position: 0).state)
 
         let both = try XCTUnwrap(
-            SetPresentation.row(try makeSet(playbackPositionSeconds: 3661, downloadState: "queued"), index: 0).state
+            SetPresentation.row(try makeSet(playbackPositionSeconds: 3661, downloadState: "queued"), position: 0).state
         )
         XCTAssertEqual(both.resumeAt, 3661)
         XCTAssertEqual(both.label, "Resume at 1:01:01 · Download queued")
 
         let downloadOnly = try XCTUnwrap(
-            SetPresentation.row(try makeSet(downloadState: "ready"), index: 0).state
+            SetPresentation.row(try makeSet(downloadState: "ready"), position: 0).state
         )
         XCTAssertNil(downloadOnly.resumeAt)
         XCTAssertEqual(downloadOnly.label, "Audio ready")

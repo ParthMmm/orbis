@@ -24,6 +24,12 @@ final class AppModel {
     var searchQuery = ""
     var search: Loadable<[SavedSet]> = .idle
 
+    /// What the person has pasted but not filed yet, and what the last filing said.
+    var linkToFile = ""
+    var isFiling = false
+    var fileConfirmation: String?
+    var fileError: String?
+
     var destination: Destination = .library
 
     init() {
@@ -78,6 +84,32 @@ final class AppModel {
             library = .failed(error.message)
         } catch {
             library = .failed(OrbisError.unreachable.message)
+        }
+    }
+
+    /// Files the pasted link and puts the saved Set at the top of the list it belongs in.
+    /// The list is not reloaded through a spinner, so filing does not blank the screen.
+    func fileLink() async {
+        guard let client else { return }
+        let link = linkToFile.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !link.isEmpty else { return }
+        isFiling = true
+        fileError = nil
+        fileConfirmation = nil
+        defer { isFiling = false }
+        do {
+            let saved = try await client.save(url: link)
+            linkToFile = ""
+            fileConfirmation = "Filed “\(saved.title)”"
+            if case let .loaded(sets) = library {
+                library = .loaded([saved] + sets.filter { $0.id != saved.id })
+            } else {
+                await loadLibrary()
+            }
+        } catch let error as OrbisError {
+            fileError = error.message
+        } catch {
+            fileError = OrbisError.unreachable.message
         }
     }
 

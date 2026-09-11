@@ -53,6 +53,7 @@ final class OrbisClientTests: XCTestCase {
         let cases: [(Int, String, OrbisError)] = [
             (401, #"{"message":"nope"}"#, .notPaired),
             (403, #"{"message":"nope"}"#, .refused),
+            (409, #"{"message":"This set is already in your library."}"#, .duplicate),
             (500, #"{"message":"Broken."}"#, .server(status: 500, message: "Broken.")),
             (200, "not json", .malformed),
         ]
@@ -72,6 +73,33 @@ final class OrbisClientTests: XCTestCase {
                 XCTFail("unexpected \(error)")
             }
         }
+    }
+
+    func testSavePostsTheLinkAndDecodesTheSavedSet() async throws {
+        let body = """
+        {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
+        "title":"Night session","source":"youtube","tags":[],"createdAt":"2026-01-01T00:00:00.000Z",
+        "creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
+        "downloadState":"none","playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
+        "lastListenedAt":null}
+        """
+        let session = StubProtocol.session(status: 201, body: body)
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: session
+        )
+        let saved = try await client.save(url: "https://youtu.be/abcdefghijk")
+        XCTAssertEqual(saved.title, "Night session")
+        XCTAssertEqual(saved.creator, "Ada Lovelace")
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets")
+        let sent = try XCTUnwrap(StubProtocol.lastBody)
+        let json = try XCTUnwrap(
+            try JSONSerialization.jsonObject(with: sent) as? [String: Any]
+        )
+        XCTAssertEqual(json["url"] as? String, "https://youtu.be/abcdefghijk")
+        XCTAssertEqual(json["tags"] as? [String], [])
     }
 
     func testTransportFailureIsUnreachable() async {
@@ -99,18 +127,21 @@ final class StubProtocol: URLProtocol {
     nonisolated(unsafe) static var body = ""
     nonisolated(unsafe) static var failure: URLError?
     nonisolated(unsafe) static var lastRequest: URLRequest?
+    nonisolated(unsafe) static var lastBody: Data?
 
     static func session(status: Int, body: String) -> URLSession {
         Self.status = status
         Self.body = body
         Self.failure = nil
         Self.lastRequest = nil
+        Self.lastBody = nil
         return makeSession()
     }
 
     static func session(failure: URLError) -> URLSession {
         Self.failure = failure
         Self.lastRequest = nil
+        Self.lastBody = nil
         return makeSession()
     }
 
@@ -126,6 +157,7 @@ final class StubProtocol: URLProtocol {
 
     override func startLoading() {
         StubProtocol.lastRequest = request
+        StubProtocol.lastBody = Self.readBody(request)
         if let failure = StubProtocol.failure {
             client?.urlProtocol(self, didFailWithError: failure)
             return
@@ -142,4 +174,27 @@ final class StubProtocol: URLProtocol {
     }
 
     override func stopLoading() {}
+
+    /// URLSession hands URLProtocol a stream rather than `httpBody`, so a test asserting on a
+    /// request body would otherwise always read nil.
+    private static func readBody(_ request: URLRequest) -> Data? {
+        if let body = request.httpBody {
+            return body
+        }
+        guard let stream = request.httpBodyStream else {
+            return nil
+        }
+        stream.open()
+        defer { stream.close() }
+        var data = Data()
+        var buffer = [UInt8](repeating: 0, count: 4096)
+        while stream.hasBytesAvailable {
+            let read = stream.read(&buffer, maxLength: buffer.count)
+            if read <= 0 {
+                break
+            }
+            data.append(buffer, count: read)
+        }
+        return data.isEmpty ? nil : data
+    }
 }
