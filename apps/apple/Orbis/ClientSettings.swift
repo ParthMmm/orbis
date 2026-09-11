@@ -6,13 +6,33 @@ import Security
 enum ClientSettings {
     private static let addressKey = "orbis.serviceAddress"
 
+    /// A development convenience. A build on this machine reads the service address and a device
+    /// token from `~/.orbis/config.json`, so neither is retyped after a settings reset or a
+    /// fresh install. The file sits outside the repository, so no credential is committed, and
+    /// a stored value always wins over it.
+    static var developmentConfiguration: (address: String, token: String)? {
+        #if DEBUG
+            let file = FileManager.default.homeDirectoryForCurrentUser
+                .appending(path: ".orbis/config.json")
+            guard let data = try? Data(contentsOf: file),
+                let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
+                let address = json["serviceAddress"],
+                let token = json["deviceToken"],
+                !address.isEmpty, !token.isEmpty
+            else { return nil }
+            return (address, token)
+        #else
+            return nil
+        #endif
+    }
+
     static var serviceAddress: String? {
-        get { UserDefaults.standard.string(forKey: addressKey) }
+        get { UserDefaults.standard.string(forKey: addressKey) ?? developmentConfiguration?.address }
         set { UserDefaults.standard.set(newValue, forKey: addressKey) }
     }
 
     static var deviceToken: String? {
-        get { Keychain.read() }
+        get { Keychain.read() ?? developmentConfiguration?.token }
         set {
             if let newValue {
                 Keychain.write(newValue)

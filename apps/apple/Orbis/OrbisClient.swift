@@ -103,6 +103,11 @@ struct OrbisClient: Sendable {
         do {
             (data, response) = try await session.data(for: request)
         } catch {
+            #if DEBUG
+                // A transport failure is otherwise invisible, which makes a wrong address, a
+                // blocked connection, and a rejected certificate look identical.
+                print("Orbis transport failure \(request.url?.absoluteString ?? "?") \(error)")
+            #endif
             throw OrbisError.unreachable
         }
         guard let http = response as? HTTPURLResponse else {
