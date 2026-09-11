@@ -14,6 +14,7 @@ Native clients authenticate per device. See [`docs/adr/0004-native-service-ident
 | --- | --- |
 | `deploy/orbis-server/orbis-server.service` | The unit, templated on `%h` so it is not tied to one home directory. |
 | `~/orbis-service` | A checkout of this repository on the branch being deployed. |
+| `~/orbis` | The working checkout. Holds `apps/server/.env.local`, which supplies provider credentials and is ignored by git. |
 | `~/orbis-service-data` | `ORBIS_DATA_DIR`. Holds `library.sqlite` and `devices.json`, outside the checkout so a pull cannot touch it. |
 | `~/.config/systemd/user/orbis-server.service` | The installed unit. |
 

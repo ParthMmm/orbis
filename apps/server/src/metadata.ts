@@ -11,11 +11,15 @@ export interface EnrichedMetadata {
   readonly title: string;
 }
 
+export interface EnrichInput {
+  readonly source: SetSource;
+  readonly url: string;
+}
+
 export interface MetadataService {
-  readonly enrich: (input: {
-    readonly source: SetSource;
-    readonly url: string;
-  }) => Effect.Effect<EnrichedMetadata, MetadataError>;
+  readonly enrich: (
+    input: EnrichInput
+  ) => Effect.Effect<EnrichedMetadata, MetadataError>;
 }
 
 export interface MetadataOptions {

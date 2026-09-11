@@ -3,12 +3,15 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { SetSource } from "@orbis/contracts";
 import { Effect } from "effect";
 
 import { createApp } from "./app.js";
 import { MetadataError } from "./metadata-error.js";
-import type { EnrichedMetadata, MetadataOptions } from "./metadata.js";
+import type {
+  EnrichedMetadata,
+  EnrichInput,
+  MetadataOptions,
+} from "./metadata.js";
 import { Metadata } from "./metadata.js";
 import { request } from "./test-http.js";
 
@@ -24,11 +27,6 @@ const providerDown = () =>
     message: "The provider is unreachable.",
     reason: "provider-unavailable",
   });
-
-interface EnrichInput {
-  readonly source: SetSource;
-  readonly url: string;
-}
 
 type Enrich = (
   input: EnrichInput
