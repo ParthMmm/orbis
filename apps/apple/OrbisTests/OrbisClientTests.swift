@@ -51,6 +51,27 @@ final class OrbisClientTests: XCTestCase {
 
   /// The bare tailnet name answers with Caddy's page, which is the trap this whole thread is
   /// about. It must read as a web page, not as an unreadable answer or a refusal.
+  /// A source the app does not know must not make the library unreadable. One new word
+  /// from the service once failed every Set at once; it reads as its own name instead.
+  func testASetFromANewerServiceWithAnUnknownSourceStillDecodes() async throws {
+    let newer = Self.savedSet(title: "Night session", tags: []).replacingOccurrences(
+      of: "\"source\":\"youtube\"", with: "\"source\":\"bandcamp\"")
+    let client = OrbisClient(
+      address: URL(string: "https://vanta.example.ts.net")!,
+      token: "token",
+      session: StubProtocol.session(status: 200, body: "{\"sets\": [" + newer + "]}"))
+    let sets = try await client.library()
+    XCTAssertEqual(sets.count, 1)
+    XCTAssertEqual(sets[0].source.label, "bandcamp")
+  }
+
+  func testTheKnownSourcesKeepTheirNames() throws {
+    for (raw, name) in [("youtube", "YouTube"), ("soundcloud", "SoundCloud")] {
+      let source = try JSONDecoder().decode(SetSource.self, from: Data("\"\(raw)\"".utf8))
+      XCTAssertEqual(source.label, name)
+    }
+  }
+
   func testAWebPageIsItsOwnFailure() async {
     for status in [200, 403] {
       let client = OrbisClient(

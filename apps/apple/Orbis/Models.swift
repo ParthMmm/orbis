@@ -56,14 +56,19 @@ extension SavedSet {
   }
 }
 
-enum SetSource: String, Decodable, Hashable {
+enum SetSource: Hashable, Decodable {
   case youtube
   case soundcloud
+  /// The service named a source this build does not know. The Set stays readable and
+  /// shows the name the service used, because a source arriving later than the app is a
+  /// version skew, not a broken library.
+  case unknown(String)
 
   var label: String {
     switch self {
     case .youtube: "YouTube"
     case .soundcloud: "SoundCloud"
+    case .unknown(let name): name
     }
   }
 
@@ -81,6 +86,20 @@ enum SetSource: String, Decodable, Hashable {
     let soundCloud = ["soundcloud.com", "www.soundcloud.com", "m.soundcloud.com"]
     if soundCloud.contains(host) { return .soundcloud }
     return nil
+  }
+}
+
+/// The decode is written out because a source the app does not know must not fail the Set
+/// it rides on. A closed enum turned one new word from the service into a library that
+/// would not decode at all, and the silent decode that reported it hid the reason.
+extension SetSource {
+  init(from decoder: any Decoder) throws {
+    let raw = try decoder.singleValueContainer().decode(String.self)
+    switch raw {
+    case "youtube": self = .youtube
+    case "soundcloud": self = .soundcloud
+    case let name: self = .unknown(name)
+    }
   }
 }
 
