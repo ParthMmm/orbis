@@ -73,6 +73,11 @@ final class AppModel {
 
     var destination: Destination = .library
 
+    /// True while the connection screen is open over a configured library. An address that stops
+    /// working used to leave Forget this device as the only way back to it, which throws away a
+    /// working token to fix a typo.
+    var isEditingConnection = false
+
     init() {
         // A journey lane starts from a clean install so it exercises the connection screen.
         if ProcessInfo.processInfo.arguments.contains("-orbisResetSettings") {
@@ -147,12 +152,27 @@ final class AppModel {
             ClientSettings.serviceAddress = url.absoluteString
             ClientSettings.deviceToken = connectionToken
             client = candidate
+            isEditingConnection = false
             await loadLibrary()
         } catch let error as OrbisError {
             connectionError = error.message
         } catch {
             connectionError = OrbisError.unreachable.message
         }
+    }
+
+    /// Opens the connection screen with the address in place and the token left out, so the
+    /// address can be read and corrected without discarding the pairing.
+    func editConnection() {
+        connectionAddress = ClientSettings.serviceAddress ?? connectionAddress
+        connectionToken = ""
+        connectionError = nil
+        isEditingConnection = true
+    }
+
+    func closeConnectionEditor() {
+        connectionError = nil
+        isEditingConnection = false
     }
 
     func forget() {
@@ -163,6 +183,7 @@ final class AppModel {
         connectionAddress = ""
         library = .idle
         search = .idle
+        isEditingConnection = false
     }
 
     func loadLibrary() async {
@@ -182,9 +203,9 @@ final class AppModel {
                 Task { await loadLibrary() }
             }
         } catch let error as OrbisError {
-            library = .failed(error.failure)
+            library = .failed(error.failure(at: client.address))
         } catch {
-            library = .failed(OrbisError.unreachable.failure)
+            library = .failed(OrbisError.unreachable.failure(at: client.address))
         }
     }
 
@@ -417,9 +438,9 @@ final class AppModel {
         } catch OrbisError.cancelled {
             search = .idle
         } catch let error as OrbisError {
-            search = .failed(error.failure)
+            search = .failed(error.failure(at: client.address))
         } catch {
-            search = .failed(OrbisError.unreachable.failure)
+            search = .failed(OrbisError.unreachable.failure(at: client.address))
         }
     }
 }

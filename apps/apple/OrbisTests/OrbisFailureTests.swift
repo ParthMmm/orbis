@@ -8,27 +8,27 @@ import XCTest
 /// when retrying could change the answer.
 final class OrbisFailureTests: XCTestCase {
     func testAVersionSkewDoesNotBlameTheNetwork() {
-        let failure = OrbisError.malformed.failure
+        let failure = OrbisError.malformed.failure(at: URL(string: "https://library.example"))
         XCTAssertFalse(
             failure.title.localizedCaseInsensitiveContains("cannot reach"),
             "an unreadable answer is not an unreachable service"
         )
         XCTAssertFalse(failure.isRetryable, "a version skew does not mend itself by trying again")
-        XCTAssertTrue(failure.message.contains("updated together"))
+        XCTAssertTrue(failure.message.contains("library.example"), "the message must name the address it asked")
     }
 
     func testAnUnreachableServiceOffersARetry() {
-        let failure = OrbisError.unreachable.failure
+        let failure = OrbisError.unreachable.failure()
         XCTAssertEqual(failure.title, "Cannot reach your library")
         XCTAssertTrue(failure.isRetryable)
     }
 
     func testAServerFaultCanBeRetriedAndAClientMistakeCannot() {
-        XCTAssertTrue(OrbisError.server(status: 500, message: "Busy.").failure.isRetryable)
-        XCTAssertFalse(OrbisError.server(status: 400, message: "No.").failure.isRetryable)
-        XCTAssertFalse(OrbisError.notPaired.failure.isRetryable)
-        XCTAssertFalse(OrbisError.refused.failure.isRetryable)
-        XCTAssertFalse(OrbisError.badAddress.failure.isRetryable)
+        XCTAssertTrue(OrbisError.server(status: 500, message: "Busy.").failure().isRetryable)
+        XCTAssertFalse(OrbisError.server(status: 400, message: "No.").failure().isRetryable)
+        XCTAssertFalse(OrbisError.notPaired.failure().isRetryable)
+        XCTAssertFalse(OrbisError.refused.failure().isRetryable)
+        XCTAssertFalse(OrbisError.badAddress.failure().isRetryable)
     }
 
     func testEveryFailureSaysSomethingAndCarriesASymbol() {
@@ -37,9 +37,9 @@ final class OrbisFailureTests: XCTestCase {
             .server(status: 503, message: "Busy."), .malformed, .badAddress,
         ]
         for failure in failures {
-            XCTAssertFalse(failure.failure.title.isEmpty, "\(failure) has no heading")
-            XCTAssertFalse(failure.failure.message.isEmpty, "\(failure) has no message")
-            XCTAssertFalse(failure.failure.symbol.isEmpty, "\(failure) has no symbol")
+            XCTAssertFalse(failure.failure().title.isEmpty, "\(failure) has no heading")
+            XCTAssertFalse(failure.failure().message.isEmpty, "\(failure) has no message")
+            XCTAssertFalse(failure.failure().symbol.isEmpty, "\(failure) has no symbol")
         }
     }
 }

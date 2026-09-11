@@ -24,7 +24,7 @@ struct RootView: View {
 
     var body: some View {
         Group {
-            if model.isConfigured {
+            if model.isConfigured, !model.isEditingConnection {
                 #if os(macOS)
                     SidebarShell(model: model)
                 #else
@@ -36,7 +36,7 @@ struct RootView: View {
                 #endif
             } else {
                 NavigationStack {
-                    ConnectionView(model: model)
+                    ConnectionView(model: model, cancellable: model.isConfigured)
                 }
             }
         }
@@ -312,6 +312,8 @@ struct DestinationView: View {
         ToolbarItem {
             Menu {
                 Button("Refresh") { Task { await model.loadLibrary() } }
+                Button("Connection settings") { model.editConnection() }
+                    .accessibilityIdentifier("library-connection-settings")
                 Button("Forget this device", role: .destructive) { model.forget() }
             } label: {
                 Label("Library actions", systemImage: "ellipsis.circle")

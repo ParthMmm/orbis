@@ -50,7 +50,9 @@ struct OrbisFailure: Equatable {
 }
 
 extension OrbisError {
-    var failure: OrbisFailure {
+    /// `address` is where the app was looking. Anything other than Orbis answering is the first
+    /// thing worth knowing, and the person reading the screen can check it in one look.
+    func failure(at address: URL? = nil) -> OrbisFailure {
         switch self {
         case .unreachable:
             OrbisFailure(
@@ -75,8 +77,8 @@ extension OrbisError {
             )
         case .malformed:
             OrbisFailure(
-                title: "Your library answered in a way this app cannot read",
-                message: "\(message) The service and the app have to be updated together.",
+                title: "That address is not your library",
+                message: "\(message)\(address.map { " The app asked \($0.absoluteString)." } ?? "") Check that the address points at Orbis itself, and that the service is not older or newer than this app.",
                 symbol: "doc.questionmark",
                 isRetryable: false
             )
@@ -242,6 +244,17 @@ struct OrbisClient: Sendable {
         guard let http = response as? HTTPURLResponse else {
             throw OrbisError.malformed
         }
+        #if DEBUG
+            // A body that is not JSON means something other than Orbis answered, which looks the
+            // same as a version skew from inside the app. Print the address and what arrived, so
+            // the next time this happens it is a fact in the log rather than a hunt.
+            let head = data.prefix(160)
+            if head.first != UInt8(ascii: "{"), head.first != UInt8(ascii: "[") {
+                let line =
+                    "Orbis read a non-JSON body from \(request.url?.absoluteString ?? "?"): \(String(decoding: head, as: UTF8.self))\n"
+                FileHandle.standardError.write(Data(line.utf8))
+            }
+        #endif
         switch http.statusCode {
         case 200 ..< 300:
             return data

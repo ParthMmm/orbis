@@ -5,6 +5,8 @@ import SwiftUI
 /// wrong entry never replaces a working configuration.
 struct ConnectionView: View {
     @Bindable var model: AppModel
+    /// True when a working library is behind this screen, which makes leaving it an option.
+    var cancellable = false
     @FocusState private var focus: Field?
 
     private enum Field {
@@ -49,6 +51,12 @@ struct ConnectionView: View {
                         || model.isTestingConnection
                 )
                 .accessibilityIdentifier("connection-test")
+
+                if cancellable {
+                    Button("Keep the library I have") { model.closeConnectionEditor() }
+                        .buttonStyle(.plain)
+                        .accessibilityIdentifier("connection-cancel")
+                }
             }
 
             if let error = model.connectionError {
