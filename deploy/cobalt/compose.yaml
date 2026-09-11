@@ -1,6 +1,13 @@
 services:
   cobalt:
-    image: ghcr.io/imputnet/cobalt:11@sha256:df14a3b3fe4390d4e1c2d4761ed58981d34aa5fc82d0df2091bab890e7dfaa8b
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        YOUTUBEI_VERSION: "18.0.0"
+    # Built from the Dockerfile, which pins the upstream image by digest and
+    # swaps its vendored youtubei.js for the release that has VISIONOS.
+    image: orbis-cobalt:11.7.1-youtubei18.0.0
     platform: linux/amd64
     init: true
     read_only: true
@@ -12,6 +19,9 @@ services:
       API_URL: "${COBALT_API_URL:?COBALT_API_URL must be set}"
       API_KEY_URL: "file:///keys.json"
       API_AUTH_REQUIRED: "1"
+      # VISIONOS is the only client cobalt can reach whose stream URLs YouTube
+      # serves in full. Every other one returns 403 past roughly the first MiB.
+      CUSTOM_INNERTUBE_CLIENT: "VISIONOS"
       DISABLED_SERVICES: "bilibili,bsky,dailymotion,facebook,instagram,loom,newgrounds,ok,pinterest,reddit,rutube,snapchat,streamable,tiktok,tumblr,twitch,twitter,vimeo,vk"
       DURATION_LIMIT: "21600"
       RATELIMIT_WINDOW: "60"

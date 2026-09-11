@@ -1,0 +1,22 @@
+# Run a derived Cobalt image whose client returns YouTube stream URLs that work
+
+The first trial left YouTube Downloads returning an empty file, and read that as a restriction that needed cookies, a session server, or a proxy. The cause is narrower and needs none of them.
+
+Cobalt reaches YouTube through `youtubei.js`, and 11.7.1 vendors version 17.0.1. Every client that version can produce a usable stream URL for, `IOS`, `MWEB`, `ANDROID_VR`, and `TV_SIMPLY`, now returns a URL YouTube will only serve a prefix of. Measured against the deployment, a request with no `Range` header is refused with 403, a range that ends past roughly the first MiB is refused with 403, and only ranges inside that first MiB succeed. No chunk sequence can reassemble a ten megabyte Set from such a URL, so the download cannot complete however the downloader behaves.
+
+Cobalt's own reader then hides the failure. YouTube service names are routed through `handleChunkedStream`, which learns the file size from a bodyless `HEAD`. A URL that refuses that `HEAD` makes the handler call `cleanup()`, which ends the response with status 200 and no body and logs nothing. That is the empty tunnel the trial recorded, and it is why the container looked healthy while every download was zero bytes.
+
+`youtubei.js` 18.0.0 adds the `VISIONOS` client. Its stream URLs are not restricted: `HEAD` returns 200 with the correct length, an 8 MiB range returns 206 with all 8,388,609 bytes, and a range deep inside the file returns 206. Cobalt's reader is unmodified and correct against such a URL, which is what makes this a client swap rather than a patch.
+
+`deploy/cobalt/Dockerfile` therefore builds one derived image: the upstream Cobalt image pinned by digest, with its vendored `youtubei.js` replaced by the pinned release that has `VISIONOS`. `CUSTOM_INNERTUBE_CLIENT=VISIONOS` selects it. The image is built rather than pulled, because a locally built image carries no registry digest to pin, so the Dockerfile pins the two things that determine its contents instead: the base digest and the `YOUTUBEI_VERSION` build argument. Nothing else about the deployment changes, and the API key, port binding, service scope, duration limit, and rate limits are untouched.
+
+Rejected alternatives:
+
+- **Keep the stock image and add cookies from a signed-in YouTube account.** It is the remedy upstream reports most often, and rejected because it puts an account identity behind every Download and needs periodic renewal, which the trial excluded on purpose.
+- **Keep the stock image and run a `yt-session-generator`.** Account-free, and rejected on evidence: Cobalt POSTs `/get_pot` while the current generator serves `/token`, so the two do not interoperate, and a generator running on Vanta could not mint a token at all, failing every attempt with `timeout waiting for outgoing API request`.
+- **Keep the stock image and route Downloads through a proxy.** Addresses none of the observed failure. The refusal follows the URL, not the requester's address: the same URL returned the same 403 from both the Vanta host and the container, and over both IPv4 and IPv6.
+- **Patch Cobalt's reader instead.** The reader is not defective against a URL that works, and a patch cannot make a URL serve bytes it refuses to serve. Patching it would also put this repository in the position of maintaining a fork of an AGPL-3.0 service, where swapping one vendored library does not.
+- **Accept YouTube as unsupported.** The five seed Links in the program are all YouTube, so the Library would hold Sets that can never gain Retained Audio.
+- **Make the failure honest and leave it there.** Worth doing, but it is not a fix, and it was the smaller half of what was asked.
+
+The trade this accepts is a dependency on one client YouTube has not yet tightened. `yt-dlp` relies on the same client today, and the `IOS` client shows how quickly that can change, so a future failure of this kind is expected and is a version bump in one place. A second consequence belongs to [Select an Apple-compatible Cobalt output](https://github.com/ParthMmm/orbis/issues/10): with `VISIONOS`, the codec cobalt selects for audio changes, and `audioFormat: "best"` now returns Opus in a Matroska container rather than AAC. AVFoundation does not play that container, so the output decision must be made against these URLs. `mp3`, `ogg`, `opus`, and `wav` conversion all still complete and decode.

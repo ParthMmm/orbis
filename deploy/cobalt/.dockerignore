@@ -1,0 +1,5 @@
+# The build installs youtubei.js from npm and copies nothing from here into the
+# image, so keep the whole context out. This is what keeps keys.json, .env, and
+# sanitized reports from ever reaching a build.
+*
+!Dockerfile

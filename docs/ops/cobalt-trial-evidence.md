@@ -2,6 +2,8 @@
 
 This records the observed result of the private Cobalt trial on Vanta. It separates deployment health from per-source download results, as the ticket requires, and ends with a go or no-go recommendation.
 
+> The YouTube failure this file records has since been diagnosed and fixed. Read [the follow-up](#follow-up-the-youtube-failure-diagnosed-and-fixed) before acting on the recommendation below, and [the decision record](../adr/0003-cobalt-youtube-client.md) for the change itself.
+
 Keep the sanitized JSON reports out of Git. They are ignored at `deploy/cobalt/*.report.json`.
 
 ## Baseline and scope
@@ -132,3 +134,64 @@ The audio format decision can proceed now. SoundCloud returned complete mp3 audi
 - Interrupted-transfer cleanup.
 - Behaviour over a long period, since this trial ran within one hour.
 - Whether the pinned digest still resolves upstream at a later date.
+
+## Follow-up: the YouTube failure diagnosed and fixed
+
+The operator authorized a further investigation of the empty YouTube tunnel, which [Decide how Orbis handles YouTube downloads](https://github.com/ParthMmm/orbis/issues/18) listed as its fourth option. It ran on the same host against the same base image, and this section records what the first run could not: the cause, and the change that fixes it.
+
+### The cause
+
+The failure needs three facts together, and only the last of them is about YouTube's restrictions.
+
+1. Cobalt routes `youtube` through `handleChunkedStream` in `api/src/stream/internal.js`, which learns the file size from a bodyless `HEAD`. When that `HEAD` is refused, the handler calls `cleanup()`, which ends the response with status 200, no body, and no log line. That is the empty tunnel, and it is why the container looked healthy while every download was zero bytes.
+2. The `HEAD` is refused because YouTube returns restricted stream URLs to the client Cobalt asks for. Measured on the deployment for the `IOS` client and itag 140:
+
+| Request                       | Result |
+| ----------------------------- | ------ |
+| `HEAD`, no `Range`            | 403    |
+| No `Range` header at all      | 403    |
+| `bytes=0-0`, `bytes=100-1023` | 206    |
+| `bytes=0-1048576`             | 206    |
+| `bytes=1048577-2097152`       | 403    |
+| `bytes=5000000-5001023`       | 403    |
+| `bytes=0-`, the whole file    | 403    |
+
+Only roughly the first MiB is reachable, so no chunk sequence can reassemble a file. The same URL returned the same 403 from the Vanta host and from inside the container, and from both an IPv4-bound and an IPv6-bound instance of it, so neither the network path nor the address explains it.
+
+3. Every client the vendored `youtubei.js` 17.0.1 can reach behaves the same. `IOS`, `MWEB`, `ANDROID_VR`, and `TV_SIMPLY` each returned 403 for a plain request and for a deep range, and `WEB` and `ANDROID` returned no usable URL at all.
+
+### The change
+
+`youtubei.js` 18.0.0 is the first release with the `VISIONOS` client, whose URLs Cobalt's reader handles without modification:
+
+|  | `IOS` on 17.0.1 | `VISIONOS` on 18.0.0 |
+| --- | --- | --- |
+| The `HEAD` Cobalt uses to size the file | 403 | 200 with the correct `content-length` |
+| An 8 MiB range | 403 | 206 with all 8,388,609 bytes |
+| A range deep inside the file | 403 | 206 |
+
+`deploy/cobalt/Dockerfile` builds one derived image: the same base pinned by digest, with the vendored library replaced by 18.0.0, selected with `CUSTOM_INNERTUBE_CLIENT=VISIONOS`. No Cobalt source changed, and no cookie, session server, or proxy was added.
+
+### Result
+
+Run with `scripts/smoke-cobalt.mjs` from the repository root on Vanta, against the deployed endpoint.
+
+| Case | Result | Observed |
+| --- | --- | --- |
+| Reachability, API URL, service scope | Passed | Services `["soundcloud", "youtube"]` |
+| Missing key, invalid key, unsupported link | Passed | `error.api.auth.key.missing`, `error.api.auth.key.not_found`, `error.api.link.invalid`, each HTTP 400 |
+| YouTube | Passed | 10,258,925 bytes, Opus in Matroska, 634.601 seconds against 634 expected, complete decode, 2,460 ms |
+| SoundCloud | Passed | 110,440,068 bytes, mp3, 6902.49 seconds against 6903 expected, complete decode, 10,272 ms |
+| Long set | Blocked | No permitted fixture over three hours, and no partial file to clean up. Unchanged from the first run. |
+
+The YouTube case used Big Buck Bunny (Blender Foundation, CC-BY) instead of the operator's seed links, because those links are recorded only in redacted form. The two `best` measurements differ in container as well as source: with `VISIONOS`, `audioFormat: "best"` yields Opus in Matroska rather than AAC in MP4, which is a change to the input of [Select an Apple-compatible Cobalt output](https://github.com/ParthMmm/orbis/issues/10).
+
+### What this corrects
+
+- The three mechanisms the trial named as the way forward, cookies, a session server, and a proxy, do not address the cause. The refusal follows the URL, not the requester.
+- The session-server option is broken independently of this failure. Cobalt 11.7.1 POSTs `/get_pot`, while `imputnet/yt-session-generator` serves `/token`, so a current generator does not answer the call Cobalt makes. A generator started on Vanta during this investigation never minted a token, failing every attempt with `timeout waiting for outgoing API request`.
+- The recommendation above, that YouTube be treated as not working, no longer holds. It is superseded by [the decision record](../adr/0003-cobalt-youtube-client.md).
+
+### A diagnostic trap worth recording
+
+`ffmpeg-static` in this container cannot resolve an external hostname, so running it directly against a googlevideo URL fails with `Failed to resolve hostname ... System error`. That is a property of the static binary and says nothing about the deployment, because Cobalt never hands it an external URL: `wrapStream` rewrites the media URL to an internal tunnel on `127.0.0.1` first. An offline diagnosis that passes the raw URL to ffmpeg will find a fault that the service does not have.

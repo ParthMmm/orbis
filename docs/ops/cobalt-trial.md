@@ -4,19 +4,23 @@ This is an isolated feasibility trial for audio downloads. It does not add downl
 
 The implementation baseline checked before remote work was `23d0c82` on `main`.
 
-Read [the trial evidence](cobalt-trial-evidence.md) before repeating the deployment. It records what the first run measured, including a YouTube failure that is expected to reproduce. Keep Cobalt as a separate, unmodified service. The Cobalt API is licensed under AGPL-3.0; review the license before modifying or redistributing it.
+Read [the trial evidence](cobalt-trial-evidence.md) before repeating the deployment. It records what the first run measured, including a YouTube failure that the derived image below fixes. Keep Cobalt as a separate service, and keep its own code unmodified: the one departure from upstream is a vendored client library, and [the decision record](../adr/0003-cobalt-youtube-client.md) explains why. The Cobalt API is licensed under AGPL-3.0; review the license before modifying or redistributing it.
 
 ## Fixed deployment
 
-The Compose file is [`deploy/cobalt/compose.yaml`](../../deploy/cobalt/compose.yaml). It uses:
+The Compose file is [`deploy/cobalt/compose.yaml`](../../deploy/cobalt/compose.yaml) and the image is built by [`deploy/cobalt/Dockerfile`](../../deploy/cobalt/Dockerfile). The deployment uses:
 
-- Official Cobalt version 11, pinned to the Linux amd64 image manifest `sha256:df14a3b3fe4390d4e1c2d4761ed58981d34aa5fc82d0df2091bab890e7dfaa8b`.
-- Image index digest `sha256:63186dd68afd57ce3bb1f62cc4c139f5fa95b9c3e87a3cf5c6e4c7a570523f62` for cross-checking the tag resolution.
+- Official Cobalt version 11 as the base, pinned to the Linux amd64 image manifest `sha256:df14a3b3fe4390d4e1c2d4761ed58981d34aa5fc82d0df2091bab890e7dfaa8b`.
+- The base image's index digest `sha256:63186dd68afd57ce3bb1f62cc4c139f5fa95b9c3e87a3cf5c6e4c7a570523f62`, for cross-checking the tag resolution.
+- `youtubei.js` 18.0.0 in place of the 17.0.1 that Cobalt 11.7.1 vendors, pinned by the `YOUTUBEI_VERSION` build argument. Version 18.0.0 is the first release with the `VISIONOS` client, whose YouTube stream URLs are the only ones this deployment can download in full.
+- `CUSTOM_INNERTUBE_CLIENT=VISIONOS`, which selects that client.
 - A distinct `orbis-cobalt-trial` container with a read-only filesystem, an init process, and `unless-stopped` restart policy.
 - Port `9000` published only on Vanta's Tailscale IPv4 address.
 - API-key authentication required for processing requests. The key file is mounted read-only and is not tracked by Git.
 - YouTube and SoundCloud only. Both the global disabled-service list and the generated API key restrict the trial to these sources.
 - A six-hour (`21600` second) duration limit and finite rate limits.
+
+The base image is pinned by digest, so it carries no tag to resolve and no registry digest of its own to compare against. What identifies the built image instead is the pair recorded in the Dockerfile plus the local image ID, `sha256:814f3e023bf6a7a2529e26ee89e3f8af010d483eaf0938e6cd2791dc7c4cd80a` at the time of writing. Rebuilding from the same base digest and the same `YOUTUBEI_VERSION` reproduces it.
 
 The `.env.example` file records the address observed during the initial read-only check. Recheck it on Vanta before every deployment; do not assume the Tailscale address is permanent.
 
@@ -25,7 +29,7 @@ The `.env.example` file records the address observed during the initial read-onl
 Run the deployment and live smoke check on Vanta. The Mac can review the configuration but is not the download host.
 
 - SSH access with `ssh vanta`.
-- Docker and Docker Compose.
+- Docker and Docker Compose, with network access from the host for the image build, which installs one npm package.
 - A current Tailscale IPv4 address and no service using port 9000.
 - Node.js 24, `ffmpeg`, and `ffprobe` on the machine running the smoke check.
 - Public YouTube and SoundCloud URLs that the operator is allowed to download. Include one set longer than three hours and no longer than six hours.
@@ -80,16 +84,17 @@ docker buildx imagetools inspect \
   ghcr.io/imputnet/cobalt:11
 ```
 
-Check that the inspected amd64 manifest digest is the one recorded above. Start only this Compose service:
+Check that the inspected amd64 manifest digest is the base digest recorded above. Build and start only this Compose service. The build reads nothing from the directory, and `deploy/cobalt/.dockerignore` enforces that, so no key or environment file can enter the image:
 
 ```sh
-docker compose --env-file .env -f compose.yaml pull cobalt
+docker compose --env-file .env -f compose.yaml build cobalt
 docker compose --env-file .env -f compose.yaml up -d cobalt
 docker compose --env-file .env -f compose.yaml ps
-docker inspect orbis-cobalt-trial --format '{{json .Config.Image}}'
+docker exec orbis-cobalt-trial node -p \
+  "require('/app/node_modules/.pnpm/youtubei.js@17.0.1/node_modules/youtubei.js/package.json').version"
 ```
 
-The `docker inspect` result must contain the pinned digest. The published port must show the Tailscale address, not `0.0.0.0`:
+The version must print `18.0.0`. That is what separates a working deployment from the one the first trial measured, and a rebuild that silently reused a stale layer would otherwise look identical. The published port must show the Tailscale address, not `0.0.0.0`:
 
 ```sh
 ss -ltnp | grep ':9000 '
@@ -163,7 +168,7 @@ The report separates `checks`, `samples`, `interruption`, and `coverage`. A miss
 These were measured on 2026-09-11 against the pinned image on Vanta. See [the trial evidence](cobalt-trial-evidence.md) for the numbers.
 
 - Authentication rejections return HTTP 400 with an `error.api.auth.*` code, not 401 or 403. A request without a key returns `error.api.auth.key.missing` and a request with an unknown key returns `error.api.auth.key.not_found`. Both are refusals.
-- YouTube tunnels are created with the correct filename and then serve zero bytes, for every audio format. Metadata resolution succeeds and the media does not arrive. Resolving this needs a session generator, cookies, or a proxy, each of which is an operator decision rather than part of this trial.
+- YouTube drains a full download. With `VISIONOS` selected, Cobalt's reader works against these URLs unchanged: the `HEAD` it uses to learn the file size returns 200, and its 8 MiB ranges return 206. A YouTube audio `best` response arrives as Opus in a Matroska container, not as AAC, because the codec Cobalt selects changes with the client. Conversions to `mp3`, `ogg`, `opus`, and `wav` also complete and decode. Before this change, every client Cobalt could reach returned a URL YouTube served only a prefix of, and the reader turned that refusal into an empty tunnel.
 - The first processing request after the container was created from a freshly pulled image returned `error.api.fetch.fail` for both sources. Later attempts, including immediately after recreating the container from the cached image, succeeded. Do not treat a first-attempt failure as a source verdict. Rerun with a fresh request.
 
 ## Restart, retest, and rollback
@@ -176,11 +181,14 @@ docker compose --env-file .env -f compose.yaml restart cobalt
 docker compose --env-file .env -f compose.yaml ps
 ```
 
-For rollback, stop and remove only the named Compose service. This does not remove the pinned image or unrelated containers:
+For rollback, stop and remove only the named Compose service. This does not remove the base image or unrelated containers. Remove the locally built image as well when the change is being reverted, since it exists only on this host:
 
 ```sh
 docker compose --env-file .env -f compose.yaml down
+docker image rm orbis-cobalt:11.7.1-youtubei18.0.0
 ```
+
+Rolling back to the upstream image restores the empty YouTube download that [the decision record](../adr/0003-cobalt-youtube-client.md) describes.
 
 After a rollback, verify that existing containers, port listeners, Caddy, and Tailscale routes match the pre-trial read-only check. Remove `keys.json`, `.env`, and sanitized reports only when the evidence has been retained elsewhere:
 
