@@ -74,6 +74,7 @@ test("fills title, creator, artwork, and duration from the provider when the sav
       listenCount: 0,
       metadataState: "enriched",
       playbackPositionSeconds: 0,
+      playlistIds: [],
       retainedAudioBytes: null,
       retainedAudioFormat: null,
       source: "youtube",

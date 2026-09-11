@@ -325,7 +325,7 @@ test("deletes a set and keeps its playlists while removing membership", async ()
       url: `/sets/${set.id}`,
     });
     expect(deleted.statusCode).toBe(200);
-    expect(deleted.json()).toEqual(set);
+    expect(deleted.json()).toEqual({ ...set, playlistIds: [playlist.id] });
     const library = await request(app, { method: "GET", url: "/sets" });
     expect(library.json()).toEqual({ sets: [] });
     const playlistSets = await request(app, {
@@ -425,7 +425,12 @@ test("keeps ordered playlists independent of each other and the saved library", 
       payload: { setIds: [second.id, first.id] },
       url: `/playlists/${playlist.id}/sets`,
     });
-    expect(members.json()).toEqual({ sets: [second, first] });
+    expect(members.json()).toEqual({
+      sets: [
+        { ...second, playlistIds: [playlist.id] },
+        { ...first, playlistIds: [playlist.id] },
+      ],
+    });
     const anotherMembers = await request(app, {
       method: "PUT",
       payload: { setIds: [first.id] },
@@ -436,18 +441,30 @@ test("keeps ordered playlists independent of each other and the saved library", 
       method: "GET",
       url: `/sets?playlistId=${playlist.id}`,
     });
-    expect(ordered.json()).toEqual({ sets: [second, first] });
+    expect(ordered.json()).toEqual({
+      sets: [
+        { ...second, playlistIds: [playlist.id] },
+        { ...first, playlistIds: expect.arrayContaining([playlist.id]) },
+      ],
+    });
     const tagged = await request(app, {
       method: "GET",
       url: `/sets?playlistId=${playlist.id}&tag=live`,
     });
-    expect(tagged.json()).toEqual({ sets: [first] });
+    expect(tagged.json()).toEqual({
+      sets: [{ ...first, playlistIds: expect.arrayContaining([playlist.id]) }],
+    });
     const reordered = await request(app, {
       method: "PUT",
       payload: { setIds: [first.id, second.id] },
       url: `/playlists/${playlist.id}/sets`,
     });
-    expect(reordered.json()).toEqual({ sets: [first, second] });
+    expect(reordered.json()).toEqual({
+      sets: [
+        { ...first, playlistIds: expect.arrayContaining([playlist.id]) },
+        { ...second, playlistIds: [playlist.id] },
+      ],
+    });
     const missingMember = await request(app, {
       method: "PUT",
       payload: { setIds: ["missing"] },
@@ -464,7 +481,12 @@ test("keeps ordered playlists independent of each other and the saved library", 
       method: "GET",
       url: `/sets?playlistId=${playlist.id}`,
     });
-    expect(unchanged.json()).toEqual({ sets: [first, second] });
+    expect(unchanged.json()).toEqual({
+      sets: [
+        { ...first, playlistIds: expect.arrayContaining([playlist.id]) },
+        { ...second, playlistIds: [playlist.id] },
+      ],
+    });
     const cleared = await request(app, {
       method: "PUT",
       payload: { setIds: [] },
@@ -475,9 +497,96 @@ test("keeps ordered playlists independent of each other and the saved library", 
       method: "GET",
       url: `/sets?playlistId=${another.id}`,
     });
-    expect(independent.json()).toEqual({ sets: [first] });
+    expect(independent.json()).toEqual({
+      sets: [{ ...first, playlistIds: expect.arrayContaining([another.id]) }],
+    });
     const library = await request(app, { method: "GET", url: "/sets" });
     expect(library.json().sets).toHaveLength(2);
+  } finally {
+    await app.dispose();
+  }
+});
+
+test("states a Set's Playlists in one request and lets it leave them", async () => {
+  const app = createApp();
+  try {
+    const created = await request(app, {
+      method: "POST",
+      payload: {
+        tags: [],
+        title: "Movable",
+        url: "https://youtu.be/abcdefghijk",
+      },
+      url: "/sets",
+    });
+    const set = created.json();
+    const evenResponse = await request(app, {
+      method: "POST",
+      payload: { name: "Evenings" },
+      url: "/playlists",
+    });
+    const even = evenResponse.json();
+    const lateResponse = await request(app, {
+      method: "POST",
+      payload: { name: "Late" },
+      url: "/playlists",
+    });
+    const late = lateResponse.json();
+
+    const joined = await request(app, {
+      method: "PUT",
+      payload: { playlistIds: [even.id] },
+      url: `/sets/${set.id}/playlists`,
+    });
+    expect(joined.statusCode).toBe(200);
+    expect(joined.json()).toEqual({ ...set, playlistIds: [even.id] });
+
+    // The caller states the membership it wants, so naming another Playlist is a move rather
+    // than a second membership, and the one it left does not keep a phantom row.
+    const moved = await request(app, {
+      method: "PUT",
+      payload: { playlistIds: [late.id] },
+      url: `/sets/${set.id}/playlists`,
+    });
+    expect(moved.json()).toEqual({ ...set, playlistIds: [late.id] });
+    const inLate = await request(app, {
+      method: "GET",
+      url: `/sets?playlistId=${late.id}`,
+    });
+    expect(inLate.json().sets.map((each: { id: string }) => each.id)).toEqual([
+      set.id,
+    ]);
+    const inEven = await request(app, {
+      method: "GET",
+      url: `/sets?playlistId=${even.id}`,
+    });
+    expect(inEven.json()).toEqual({ sets: [] });
+
+    const left = await request(app, {
+      method: "PUT",
+      payload: { playlistIds: [] },
+      url: `/sets/${set.id}/playlists`,
+    });
+    expect(left.json()).toEqual({ ...set, playlistIds: [] });
+
+    const missingSet = await request(app, {
+      method: "PUT",
+      payload: { playlistIds: [even.id] },
+      url: "/sets/missing/playlists",
+    });
+    expect(missingSet.statusCode).toBe(404);
+    const missingPlaylist = await request(app, {
+      method: "PUT",
+      payload: { playlistIds: ["missing"] },
+      url: `/sets/${set.id}/playlists`,
+    });
+    expect(missingPlaylist.statusCode).toBe(404);
+    const twice = await request(app, {
+      method: "PUT",
+      payload: { playlistIds: [even.id, even.id] },
+      url: `/sets/${set.id}/playlists`,
+    });
+    expect(twice.statusCode).toBe(400);
   } finally {
     await app.dispose();
   }

@@ -158,6 +158,26 @@ export const createApp = (
         )
       );
       yield* router.add(
+        "PUT",
+        "/sets/:id/playlists",
+        respond(
+          Effect.gen(function* replaceSetPlaylists() {
+            const { params } = yield* HttpRouter.RouteContext;
+            const input = yield* HttpServerRequest.schemaBodyJson(
+              Schema.Struct({
+                playlistIds: Schema.Array(
+                  Schema.String.check(Schema.isMaxLength(100))
+                ).check(Schema.isMaxLength(100)),
+              })
+            );
+            return yield* library.setPlaylistMemberships(
+              params.id ?? "",
+              input.playlistIds
+            );
+          })
+        )
+      );
+      yield* router.add(
         "GET",
         "/tags",
         respond(library.tags().pipe(Effect.map((tags) => ({ tags }))))

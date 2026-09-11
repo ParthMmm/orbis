@@ -26,6 +26,7 @@ export interface SavedSet {
   durationSeconds: number | null;
   metadataState: MetadataState;
   titleEditedByUser: boolean;
+  playlistIds: string[];
   downloadState: DownloadState;
   retainedAudioBytes: number | null;
   retainedAudioFormat: string | null;

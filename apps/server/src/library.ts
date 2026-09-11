@@ -13,9 +13,10 @@ import { LibraryError } from "./errors.js";
 import type { EnrichedMetadata } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
 
-type SetRow = Omit<SavedSet, "tags" | "titleEditedByUser"> & {
+type SetRow = Omit<SavedSet, "tags" | "titleEditedByUser" | "playlistIds"> & {
   tags: string;
   titleEditedByUser: number;
+  playlistIds: string;
 };
 
 const SET_COLUMNS = `id, url, title, source, tags, created_at AS createdAt, creator,
@@ -25,7 +26,9 @@ const SET_COLUMNS = `id, url, title, source, tags, created_at AS createdAt, crea
   retained_audio_format AS retainedAudioFormat,
   playback_position_seconds AS playbackPositionSeconds,
   listen_count AS listenCount, finish_count AS finishCount,
-  last_listened_at AS lastListenedAt`;
+  last_listened_at AS lastListenedAt,
+  (SELECT COALESCE(json_group_array(playlist_id ORDER BY playlist_id), '[]')
+   FROM playlist_sets WHERE playlist_sets.set_id = sets.id) AS playlistIds`;
 
 const CURRENT_SCHEMA_VERSION = 1;
 
@@ -108,6 +111,9 @@ const normalizeTags = (tags: readonly string[]) => [
 ];
 const decodeRow = (row: SetRow): SavedSet => ({
   ...row,
+  playlistIds: Schema.decodeUnknownSync(
+    Schema.mutable(Schema.Array(Schema.String))
+  )(JSON.parse(row.playlistIds)),
   tags: Schema.decodeUnknownSync(Schema.mutable(Schema.Array(Schema.String)))(
     JSON.parse(row.tags)
   ),
@@ -163,6 +169,10 @@ export class Library extends Context.Service<
       id: string,
       setIds: readonly string[]
     ) => Effect.Effect<SavedSet[], LibraryError>;
+    readonly setPlaylistMemberships: (
+      id: string,
+      playlistIds: readonly string[]
+    ) => Effect.Effect<SavedSet, LibraryError>;
   }
 >()("@orbis/Library") {
   static layer(databasePath: string) {
@@ -451,6 +461,62 @@ export class Library extends Context.Service<
             return yield* list({ playlistId: id });
           }
         );
+        const setPlaylistMemberships = Effect.fn(
+          "Library.setPlaylistMemberships"
+        )(function* setPlaylistMemberships(
+          setId: string,
+          playlistIds: readonly string[]
+        ) {
+          return yield* execute(() =>
+            db.transaction(() => {
+              if (!db.query("SELECT id FROM sets WHERE id = ?").get(setId)) {
+                throw setNotFound();
+              }
+              if (new Set(playlistIds).size !== playlistIds.length) {
+                throw new LibraryError({
+                  message: "A set can only appear once in a playlist.",
+                  statusCode: 400,
+                });
+              }
+              for (const playlistId of playlistIds) {
+                requirePlaylist(playlistId);
+              }
+              // The caller states the membership it wants, so the playlists it left are the
+              // ones it did not name. Doing that here rather than with a read-modify-write
+              // from each client keeps two clients from overwriting each other.
+              const kept = playlistIds.map(() => "?").join(", ");
+              db.query(
+                playlistIds.length > 0
+                  ? `DELETE FROM playlist_sets WHERE set_id = ? AND playlist_id NOT IN (${kept})`
+                  : "DELETE FROM playlist_sets WHERE set_id = ?"
+              ).run(setId, ...playlistIds);
+              const insert = db.query(
+                "INSERT OR IGNORE INTO playlist_sets VALUES (?, ?, ?)"
+              );
+              const nextPosition = db.query<{ position: number }, [string]>(
+                "SELECT COALESCE(MAX(position) + 1, 0) AS position FROM playlist_sets WHERE playlist_id = ?"
+              );
+              for (const playlistId of playlistIds) {
+                const next = nextPosition.get(playlistId);
+                // SAFETY: MAX over an empty group still returns one row, and COALESCE
+                // gives it a position, so the cast cannot be undefined.
+                insert.run(
+                  playlistId,
+                  setId,
+                  (next as { position: number }).position
+                );
+              }
+              const row = db
+                .query<SetRow, [string]>(
+                  `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
+                )
+                .get(setId);
+              // SAFETY: the row was found at the top of this transaction and nothing in it
+              // deletes the Set, so it is still there.
+              return decodeRow(row as SetRow);
+            })()
+          );
+        });
         return {
           createPlaylist,
           find,
@@ -461,6 +527,7 @@ export class Library extends Context.Service<
           remove,
           save,
           setPlaylistMembers,
+          setPlaylistMemberships,
           tags,
           updateTags,
           updateTitle,

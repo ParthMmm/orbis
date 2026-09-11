@@ -73,6 +73,7 @@ test("keeps sets and playlist membership saved before the extended columns exist
           listenCount: 0,
           metadataState: "pending",
           playbackPositionSeconds: 0,
+          playlistIds: ["legacy-playlist"],
           retainedAudioBytes: null,
           retainedAudioFormat: null,
           source: "youtube",
