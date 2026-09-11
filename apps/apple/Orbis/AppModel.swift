@@ -1,476 +1,495 @@
 import Foundation
 import Observation
+import OrbisDesign
 
 /// What a screen is showing. Keeps loading, failure, and the two distinct empty cases
 /// explicit instead of inferring them from a list being empty.
 enum Loadable<Value: Equatable>: Equatable {
-    case idle
-    case loading
-    case loaded(Value)
-    case failed(OrbisFailure)
+  case idle
+  case loading
+  case loaded(Value)
+  case failed(OrbisFailure)
 }
 
 @MainActor
 @Observable
 final class AppModel {
-    private(set) var client: OrbisClient?
+  private(set) var client: OrbisClient?
 
-    var connectionAddress: String
-    var connectionToken = ""
-    var connectionFailure: OrbisFailure?
-    var isTestingConnection = false
+  var connectionAddress: String
+  var connectionToken = ""
+  var connectionFailure: OrbisFailure?
+  var isTestingConnection = false
 
-    var library: Loadable<[SavedSet]> = .idle
-    var playlists: Loadable<[Playlist]> = .idle
-    /// The playlist the Library is showing. Nil is everything the library holds.
-    var selectedPlaylistId: String?
-    var searchQuery = ""
-    var search: Loadable<[SavedSet]> = .idle
+  var library: Loadable<[SavedSet]> = .idle
+  var playlists: Loadable<[Playlist]> = .idle
+  /// The playlist the Library is showing. Nil is everything the library holds.
+  var selectedPlaylistId: String?
+  var searchQuery = ""
+  var search: Loadable<[SavedSet]> = .idle
 
-    /// The tag the Library is filtered by. One tag at a time, because the row marks the one
-    /// tag a view is filtered by and a Set carries several.
-    var activeTag: String?
+  /// The tag the Library is filtered by. One tag at a time, because the row marks the one
+  /// tag a view is filtered by and a Set carries several.
+  var activeTag: String?
 
-    /// How many times a cancelled load has been restarted without a success in between.
-    private var reloadsAfterCancellation = 0
+  /// How many times a cancelled load has been restarted without a success in between.
+  private var reloadsAfterCancellation = 0
 
-    /// What the person has pasted but not filed yet, and what the last filing said.
-    var linkToFile = ""
-    var isFiling = false
-    var fileConfirmation: String?
-    /// What the last filing refused, kept as the error so the field can tell an address Orbis
-    /// does not know from one the library already holds.
-    var fileFailure: OrbisError?
+  /// What the person has pasted but not filed yet, and what the last filing said.
+  var linkToFile = ""
+  var isFiling = false
+  /// What the clipboard had to say when it held nothing Orbis takes. Said beside the button rather
+  /// than written into the field, so a paste that cannot be filed changes nothing.
+  var pasteNotice: String?
+  var fileConfirmation: String?
+  /// What the last filing refused, kept as the error so the field can tell an address Orbis
+  /// does not know from one the library already holds.
+  var fileFailure: OrbisError?
 
-    /// The Set filed moments ago, whose title and Tags the service read from the link. This is
-    /// the person's chance to overrule that reading, and it closes without a change.
-    struct Reveal: Equatable {
-        let set: SavedSet
-        var title: String
-        var tags: [String]
+  /// The Set filed moments ago, whose title and Tags the service read from the link. This is
+  /// the person's chance to overrule that reading, and it closes without a change.
+  struct Reveal: Equatable {
+    let set: SavedSet
+    var title: String
+    var tags: [String]
 
-        /// The title to send, or nil when there is nothing to send: an empty field means "leave the
-        /// title that came with the Set", which is what a failed enrichment leaves behind, and an
-        /// unchanged one is not worth a request.
-        var renamedTitle: String? {
-            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)
-            guard !trimmed.isEmpty, String(trimmed) != set.title else { return nil }
-            return String(trimmed)
-        }
-
-        /// True while the title is still whatever arrived with the Set, including the placeholder
-        /// a failed enrichment leaves, so a later retry may replace it.
-        var titleUntouched: Bool {
-            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || title == set.title
-        }
-
-        var hasChanges: Bool { renamedTitle != nil || tags != set.tags }
+    /// The title to send, or nil when there is nothing to send: an empty field means "leave the
+    /// title that came with the Set", which is what a failed enrichment leaves behind, and an
+    /// unchanged one is not worth a request.
+    var renamedTitle: String? {
+      let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)
+      guard !trimmed.isEmpty, String(trimmed) != set.title else { return nil }
+      return String(trimmed)
     }
 
-    var reveal: Reveal?
-    var isSavingReveal = false
-    var revealFailure: OrbisFailure?
-
-    var destination: Destination = .library
-
-    /// True while the connection screen is open over a configured library. An address that stops
-    /// working used to leave Forget this device as the only way back to it, which throws away a
-    /// working token to fix a typo.
-    var isEditingConnection = false
-
-    init() {
-        // A journey lane starts from a clean install so it exercises the connection screen.
-        if ProcessInfo.processInfo.arguments.contains("-orbisResetSettings") {
-            ClientSettings.serviceAddress = nil
-            ClientSettings.deviceToken = nil
-        }
-        // A lane that checks the filtered Library starts already filtered, because the design's
-        // filter control is a custom toggle a UI test cannot drive reliably.
-        let arguments = ProcessInfo.processInfo.arguments
-        if let flag = arguments.firstIndex(of: "-orbisStartTagFiltered"),
-            arguments.indices.contains(flag + 1)
-        {
-            activeTag = arguments[flag + 1]
-        }
-        connectionAddress = ClientSettings.serviceAddress ?? ""
-        client = ClientSettings.configuredClient()
+    /// True while the title is still whatever arrived with the Set, including the placeholder
+    /// a failed enrichment leaves, so a later retry may replace it.
+    var titleUntouched: Bool {
+      title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || title == set.title
     }
 
-    /// A model already paired with a service. The launch screen and the settings file are the real
-    /// path; this one exists so tests and previews can drive a change without either.
-    init(client: OrbisClient) {
-        self.client = client
-        connectionAddress = client.address.absoluteString
+    var hasChanges: Bool { renamedTitle != nil || tags != set.tags }
+  }
+
+  var reveal: Reveal?
+  var isSavingReveal = false
+  var revealFailure: OrbisFailure?
+
+  var destination: Destination = .library
+
+  /// True while the connection screen is open over a configured library. An address that stops
+  /// working used to leave Forget this device as the only way back to it, which throws away a
+  /// working token to fix a typo.
+  var isEditingConnection = false
+
+  init() {
+    // A journey lane starts from a clean install so it exercises the connection screen.
+    if ProcessInfo.processInfo.arguments.contains("-orbisResetSettings") {
+      ClientSettings.serviceAddress = nil
+      ClientSettings.deviceToken = nil
     }
-
-    var isConfigured: Bool { client != nil }
-
-    /// Every tag in the loaded library, in a stable order, so the filter row does not reshuffle
-    /// between loads. Derived from the Sets rather than fetched, because the Library already
-    /// holds all of them.
-    var availableTags: [String] {
-        guard case let .loaded(sets) = library else { return [] }
-        return Set(sets.flatMap(\.tags)).sorted()
+    // A lane that checks the filtered Library starts already filtered, because the design's
+    // filter control is a custom toggle a UI test cannot drive reliably.
+    let arguments = ProcessInfo.processInfo.arguments
+    if let flag = arguments.firstIndex(of: "-orbisStartTagFiltered"),
+      arguments.indices.contains(flag + 1)
+    {
+      activeTag = arguments[flag + 1]
     }
+    connectionAddress = ClientSettings.serviceAddress ?? ""
+    client = ClientSettings.configuredClient()
+  }
 
-    /// The Sets the filter admits. Unfiltered, it is the library itself.
-    var visibleSets: Loadable<[SavedSet]> {
-        guard case let .loaded(sets) = library else { return library }
-        guard let activeTag else { return .loaded(sets) }
-        return .loaded(sets.filter { $0.tags.contains(activeTag) })
+  /// A model already paired with a service. The launch screen and the settings file are the real
+  /// path; this one exists so tests and previews can drive a change without either.
+  init(client: OrbisClient) {
+    self.client = client
+    connectionAddress = client.address.absoluteString
+  }
+
+  var isConfigured: Bool { client != nil }
+
+  /// Every tag in the loaded library, in a stable order, so the filter row does not reshuffle
+  /// between loads. Derived from the Sets rather than fetched, because the Library already
+  /// holds all of them.
+  var availableTags: [String] {
+    guard case .loaded(let sets) = library else { return [] }
+    return Set(sets.flatMap(\.tags)).sorted()
+  }
+
+  /// The Sets the filter admits. Unfiltered, it is the library itself.
+  var visibleSets: Loadable<[SavedSet]> {
+    guard case .loaded(let sets) = library else { return library }
+    guard let activeTag else { return .loaded(sets) }
+    return .loaded(sets.filter { $0.tags.contains(activeTag) })
+  }
+
+  var visibleCount: Int {
+    guard case .loaded(let sets) = visibleSets else { return 0 }
+    return sets.count
+  }
+
+  var totalCount: Int {
+    guard case .loaded(let sets) = library else { return 0 }
+    return sets.count
+  }
+
+  var playlistItems: [Playlist] {
+    guard case .loaded(let items) = playlists else { return [] }
+    return items
+  }
+
+  func setTagFilter(_ tag: String?) {
+    activeTag = tag
+  }
+
+  /// Tests the connection before storing anything, so a wrong address or token never
+  /// replaces a working configuration.
+  func connect() async {
+    connectionFailure = nil
+    isTestingConnection = true
+    defer { isTestingConnection = false }
+    // An empty field means keep the token this device already holds, which is what correcting
+    // an address needs. A typed token replaces it.
+    let typed = connectionToken.trimmingCharacters(in: .whitespacesAndNewlines)
+    let token = typed.isEmpty ? (ClientSettings.deviceToken ?? "") : typed
+    guard !token.isEmpty else {
+      connectionFailure = OrbisError.notPaired.failure(at: URL(string: connectionAddress))
+      return
     }
-
-    var visibleCount: Int {
-        guard case let .loaded(sets) = visibleSets else { return 0 }
-        return sets.count
+    do {
+      let url = try OrbisClient.address(from: connectionAddress)
+      let candidate = OrbisClient(address: url, token: token)
+      _ = try await candidate.health()
+      ClientSettings.serviceAddress = url.absoluteString
+      ClientSettings.deviceToken = token
+      client = candidate
+      isEditingConnection = false
+      await loadLibrary()
+    } catch let error as OrbisError {
+      connectionFailure = error.failure(at: URL(string: connectionAddress))
+    } catch {
+      connectionFailure = OrbisError.unreachable.failure(at: URL(string: connectionAddress))
     }
+  }
 
-    var totalCount: Int {
-        guard case let .loaded(sets) = library else { return 0 }
-        return sets.count
+  /// True when this device already holds a token, which makes the token field optional: a
+  /// wrong address is corrected without pairing again.
+  var hasStoredToken: Bool {
+    ClientSettings.deviceToken?.isEmpty == false
+  }
+
+  /// Opens the connection screen with the address in place and the token left out. Leaving the
+  /// token field empty keeps the token this device already has, so a wrong address can be
+  /// corrected without pairing again.
+  func editConnection() {
+    connectionAddress = ClientSettings.serviceAddress ?? connectionAddress
+    connectionToken = ""
+    connectionFailure = nil
+    isEditingConnection = true
+  }
+
+  func closeConnectionEditor() {
+    connectionFailure = nil
+    isEditingConnection = false
+  }
+
+  func forget() {
+    ClientSettings.serviceAddress = nil
+    ClientSettings.deviceToken = nil
+    client = nil
+    connectionToken = ""
+    connectionAddress = ""
+    library = .idle
+    search = .idle
+    isEditingConnection = false
+  }
+
+  func loadLibrary() async {
+    guard let client else { return }
+    library = .loading
+    do {
+      library = .loaded(try await client.library(playlistId: selectedPlaylistId))
+      reloadsAfterCancellation = 0
+    } catch OrbisError.cancelled {
+      // The screen that asked for this went away, which is not a failure. The retry runs
+      // in a task that is not a child of this one, because a cancelled task cancels
+      // everything it waits on, and it is bounded so a screen that keeps vanishing cannot
+      // spin forever.
+      library = .idle
+      if reloadsAfterCancellation < 2 {
+        reloadsAfterCancellation += 1
+        Task { await loadLibrary() }
+      }
+    } catch let error as OrbisError {
+      library = .failed(error.failure(at: client.address))
+    } catch {
+      library = .failed(OrbisError.unreachable.failure(at: client.address))
     }
+  }
 
-    var playlistItems: [Playlist] {
-        guard case let .loaded(items) = playlists else { return [] }
-        return items
-    }
-
-    func setTagFilter(_ tag: String?) {
-        activeTag = tag
-    }
-
-    /// Tests the connection before storing anything, so a wrong address or token never
-    /// replaces a working configuration.
-    func connect() async {
-        connectionFailure = nil
-        isTestingConnection = true
-        defer { isTestingConnection = false }
-        // An empty field means keep the token this device already holds, which is what correcting
-        // an address needs. A typed token replaces it.
-        let typed = connectionToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        let token = typed.isEmpty ? (ClientSettings.deviceToken ?? "") : typed
-        guard !token.isEmpty else {
-            connectionFailure = OrbisError.notPaired.failure(at: URL(string: connectionAddress))
-            return
-        }
-        do {
-            let url = try OrbisClient.address(from: connectionAddress)
-            let candidate = OrbisClient(address: url, token: token)
-            _ = try await candidate.health()
-            ClientSettings.serviceAddress = url.absoluteString
-            ClientSettings.deviceToken = token
-            client = candidate
-            isEditingConnection = false
-            await loadLibrary()
-        } catch let error as OrbisError {
-            connectionFailure = error.failure(at: URL(string: connectionAddress))
-        } catch {
-            connectionFailure = OrbisError.unreachable.failure(at: URL(string: connectionAddress))
-        }
-    }
-
-    /// True when this device already holds a token, which makes the token field optional: a
-    /// wrong address is corrected without pairing again.
-    var hasStoredToken: Bool {
-        ClientSettings.deviceToken?.isEmpty == false
-    }
-
-    /// Opens the connection screen with the address in place and the token left out. Leaving the
-    /// token field empty keeps the token this device already has, so a wrong address can be
-    /// corrected without pairing again.
-    func editConnection() {
-        connectionAddress = ClientSettings.serviceAddress ?? connectionAddress
-        connectionToken = ""
-        connectionFailure = nil
-        isEditingConnection = true
-    }
-
-    func closeConnectionEditor() {
-        connectionFailure = nil
-        isEditingConnection = false
-    }
-
-    func forget() {
-        ClientSettings.serviceAddress = nil
-        ClientSettings.deviceToken = nil
-        client = nil
-        connectionToken = ""
-        connectionAddress = ""
-        library = .idle
-        search = .idle
-        isEditingConnection = false
-    }
-
-    func loadLibrary() async {
-        guard let client else { return }
-        library = .loading
-        do {
-            library = .loaded(try await client.library(playlistId: selectedPlaylistId))
-            reloadsAfterCancellation = 0
-        } catch OrbisError.cancelled {
-            // The screen that asked for this went away, which is not a failure. The retry runs
-            // in a task that is not a child of this one, because a cancelled task cancels
-            // everything it waits on, and it is bounded so a screen that keeps vanishing cannot
-            // spin forever.
-            library = .idle
-            if reloadsAfterCancellation < 2 {
-                reloadsAfterCancellation += 1
-                Task { await loadLibrary() }
-            }
-        } catch let error as OrbisError {
-            library = .failed(error.failure(at: client.address))
-        } catch {
-            library = .failed(OrbisError.unreachable.failure(at: client.address))
-        }
-    }
-
-    /// Files the pasted link and puts the saved Set at the top of the list it belongs in.
-    /// The list is not reloaded through a spinner, so filing does not blank the screen.
-    func fileLink() async {
-        guard let client else { return }
-        let link = linkToFile.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !link.isEmpty else { return }
-        isFiling = true
-        fileFailure = nil
-        fileConfirmation = nil
-        defer { isFiling = false }
-        do {
-            let saved = try await client.save(url: link)
-            linkToFile = ""
-            // A failed enrichment leaves a placeholder title, so the field starts empty rather
-            // than inviting the placeholder to be kept.
-            reveal = Reveal(
-                set: saved,
-                title: saved.metadataState == "failed" ? "" : saved.title,
-                tags: saved.tags
-            )
-            if case let .loaded(sets) = library {
-                library = .loaded([saved] + sets.filter { $0.id != saved.id })
-            } else {
-                await loadLibrary()
-            }
-        } catch OrbisError.cancelled {
-            return
-        } catch let error as OrbisError {
-            fileFailure = error
-        } catch {
-            fileFailure = .unreachable
-        }
-    }
-
-    /// Names the Set that was just filed. Only what changed goes to the service, and each change
-    /// lands in the list as it is accepted, so a failure halfway keeps the part that worked.
-    func saveReveal() async {
-        guard let open = reveal else { return }
-        guard open.hasChanges else {
-            closeReveal()
-            return
-        }
-        guard let client else { return }
-        isSavingReveal = true
-        revealFailure = nil
-        defer { isSavingReveal = false }
-        do {
-            var updated = open.set
-            if let title = open.renamedTitle {
-                updated = try await client.updateTitle(open.set.id, title: title)
-                replace(updated)
-            }
-            if open.tags != open.set.tags {
-                updated = try await client.updateTags(open.set.id, tags: open.tags)
-                replace(updated)
-            }
-            closeReveal(with: updated)
-        } catch OrbisError.cancelled {
-            return
-        } catch let error as OrbisError {
-            revealFailure = error.failure(at: client.address)
-        } catch {
-            revealFailure = OrbisError.unreachable.failure(at: client.address)
-        }
-    }
-
-    /// Asks the service again to name a Set, which is what a link it could not read leaves
-    /// behind. A title the person typed over the guess stays theirs.
-    func retryMetadata() async {
-        guard let client, let open = reveal else { return }
-        isSavingReveal = true
-        revealFailure = nil
-        defer { isSavingReveal = false }
-        do {
-            let updated = try await client.retryMetadata(open.set.id)
-            replace(updated)
-            reveal = Reveal(
-                set: updated, title: open.titleUntouched ? updated.title : open.title,
-                tags: open.tags)
-        } catch OrbisError.cancelled {
-            return
-        } catch let error as OrbisError {
-            revealFailure = error.failure(at: client.address)
-        } catch {
-            revealFailure = OrbisError.unreachable.failure(at: client.address)
-        }
-    }
-
-    /// Closes the reveal, leaving nothing behind when the person filed the Set and walked away.
-    func closeReveal(with set: SavedSet? = nil) {        guard let closed = set ?? reveal?.set else {
-            reveal = nil
-            revealFailure = nil
-            return
-        }
-        reveal = nil
-        revealFailure = nil
-        fileConfirmation = "Filed “\(closed.title)”"
-    }
-
-    /// Swaps one Set in the loaded library for a newer copy of it.
-    private func replace(_ set: SavedSet) {
-        guard case let .loaded(sets) = library else { return }
-        library = .loaded(sets.map { $0.id == set.id ? set : $0 })
-    }
-
-    // MARK: - One Set's page
-
-    /// The Set whose page is open. Held as an identifier rather than a copy, so an edit shows on
-    /// the page and a removal closes it instead of leaving a stale Set on screen.
-    var openedSetId: String?
-
-    /// What the last change from the page said. The Set stays where it is and the message stays
-    /// in front of the person, who can try the same action again.
-    var setFailure: OrbisFailure?
-    var isWorkingOnSet = false
-
-    func savedSet(_ id: String) -> SavedSet? {
-        guard case let .loaded(sets) = library else { return nil }
-        return sets.first { $0.id == id }
-    }
-
-    func openSet(_ id: String) {
-        setFailure = nil
-        openedSetId = id
-    }
-
-    func closeSet() {
-        setFailure = nil
-        openedSetId = nil
-    }
-
-    /// Runs one change from the page. Every path reports through `setError`, so a refusal is
-    /// readable where the action was taken and nothing disappears before it is understood.
-    private func change(
-        _ id: String, _ work: (OrbisClient) async throws -> SavedSet
-    ) async {
-        guard let client else { return }
-        isWorkingOnSet = true
-        setFailure = nil
-        defer { isWorkingOnSet = false }
-        do {
-            replace(try await work(client))
-        } catch OrbisError.cancelled {
-            return
-        } catch let error as OrbisError {
-            setFailure = error.failure(at: client.address)
-        } catch {
-            setFailure = OrbisError.unreachable.failure(at: client.address)
-        }
-    }
-
-    func rename(_ id: String, to title: String) async {
-        let trimmed = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
-        guard !trimmed.isEmpty, trimmed != savedSet(id)?.title else { return }
-        await change(id) { try await $0.updateTitle(id, title: trimmed) }
-    }
-
-    func replaceTags(_ id: String, with tags: [String]) async {
-        guard tags != savedSet(id)?.tags else { return }
-        await change(id) { try await $0.updateTags(id, tags: tags) }
-    }
-
-    /// Moves a Set to a Playlist, or out of every one. Orbis holds a Set in one Playlist, so
-    /// choosing another is a move rather than a second membership.
-    func move(_ id: String, to playlistId: String?) async {
-        let wanted = playlistId.map { [$0] } ?? []
-        guard wanted != savedSet(id)?.playlistIds else { return }
-        await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
-    }
-
-    func nameAgain(_ id: String) async {
-        await change(id) { try await $0.retryMetadata(id) }
-    }
-
-    func remove(_ id: String) async {
-        guard let client else { return }
-        isWorkingOnSet = true
-        setFailure = nil
-        defer { isWorkingOnSet = false }
-        do {
-            let removed = try await client.deleteSet(id)
-            if case let .loaded(sets) = library {
-                library = .loaded(sets.filter { $0.id != removed.id })
-            }
-            if openedSetId == removed.id {
-                closeSet()
-            }
-        } catch OrbisError.cancelled {
-            return
-        } catch let error as OrbisError {
-            setFailure = error.failure(at: client.address)
-        } catch {
-            setFailure = OrbisError.unreachable.failure(at: client.address)
-        }
-    }
-
-    /// The playlists a sidebar offers. A failure is not shown on its own, because the Library is
-    /// still readable without it and an empty sidebar reads as no playlists.
-    func loadPlaylists() async {
-        guard let client else { return }
-        playlists = .loading
-        do {
-            playlists = .loaded(try await client.playlists())
-        } catch OrbisError.cancelled {
-            playlists = .idle
-        } catch {
-            playlists = .loaded([])
-        }
-    }
-
-    func selectPlaylist(_ id: String?) async {
-        guard selectedPlaylistId != id else { return }
-        selectedPlaylistId = id
+  /// Files the pasted link and puts the saved Set at the top of the list it belongs in.
+  /// The list is not reloaded through a spinner, so filing does not blank the screen.
+  func fileLink() async {
+    guard let client else { return }
+    let link = linkToFile.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !link.isEmpty else { return }
+    isFiling = true
+    fileFailure = nil
+    fileConfirmation = nil
+    defer { isFiling = false }
+    do {
+      let saved = try await client.save(url: link)
+      linkToFile = ""
+      // A failed enrichment leaves a placeholder title, so the field starts empty rather
+      // than inviting the placeholder to be kept.
+      reveal = Reveal(
+        set: saved,
+        title: saved.metadataState == "failed" ? "" : saved.title,
+        tags: saved.tags
+      )
+      if case .loaded(let sets) = library {
+        library = .loaded([saved] + sets.filter { $0.id != saved.id })
+      } else {
         await loadLibrary()
+      }
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      fileFailure = error
+    } catch {
+      fileFailure = .unreachable
     }
+  }
 
-    func runSearch() async {
-        guard let client else { return }
-        let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
-            search = .idle
-            return
-        }
-        search = .loading
-        do {
-            search = .loaded(try await client.library(query: query))
-        } catch OrbisError.cancelled {
-            search = .idle
-        } catch let error as OrbisError {
-            search = .failed(error.failure(at: client.address))
-        } catch {
-            search = .failed(OrbisError.unreachable.failure(at: client.address))
-        }
+  /// Files the link the clipboard holds, once it is confirmed as one Orbis takes.
+  ///
+  /// The confirmation happens here, before the round trip, so pasting something else costs no
+  /// request and leaves the field as it was.
+  func pasteAndFile(_ text: String) async {
+    pasteNotice = nil
+    guard let url = LinkField.address(of: text), SetSource.named(by: url) != nil else {
+      pasteNotice = "The clipboard holds no YouTube or SoundCloud link."
+      return
     }
+    linkToFile = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    await fileLink()
+  }
+
+  /// Names the Set that was just filed. Only what changed goes to the service, and each change
+  /// lands in the list as it is accepted, so a failure halfway keeps the part that worked.
+  func saveReveal() async {
+    guard let open = reveal else { return }
+    guard open.hasChanges else {
+      closeReveal()
+      return
+    }
+    guard let client else { return }
+    isSavingReveal = true
+    revealFailure = nil
+    defer { isSavingReveal = false }
+    do {
+      var updated = open.set
+      if let title = open.renamedTitle {
+        updated = try await client.updateTitle(open.set.id, title: title)
+        replace(updated)
+      }
+      if open.tags != open.set.tags {
+        updated = try await client.updateTags(open.set.id, tags: open.tags)
+        replace(updated)
+      }
+      closeReveal(with: updated)
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      revealFailure = error.failure(at: client.address)
+    } catch {
+      revealFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Asks the service again to name a Set, which is what a link it could not read leaves
+  /// behind. A title the person typed over the guess stays theirs.
+  func retryMetadata() async {
+    guard let client, let open = reveal else { return }
+    isSavingReveal = true
+    revealFailure = nil
+    defer { isSavingReveal = false }
+    do {
+      let updated = try await client.retryMetadata(open.set.id)
+      replace(updated)
+      reveal = Reveal(
+        set: updated, title: open.titleUntouched ? updated.title : open.title,
+        tags: open.tags)
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      revealFailure = error.failure(at: client.address)
+    } catch {
+      revealFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Closes the reveal, leaving nothing behind when the person filed the Set and walked away.
+  func closeReveal(with set: SavedSet? = nil) {
+    guard let closed = set ?? reveal?.set else {
+      reveal = nil
+      revealFailure = nil
+      return
+    }
+    reveal = nil
+    revealFailure = nil
+    fileConfirmation = "Filed “\(closed.title)”"
+  }
+
+  /// Swaps one Set in the loaded library for a newer copy of it.
+  private func replace(_ set: SavedSet) {
+    guard case .loaded(let sets) = library else { return }
+    library = .loaded(sets.map { $0.id == set.id ? set : $0 })
+  }
+
+  // MARK: - One Set's page
+
+  /// The Set whose page is open. Held as an identifier rather than a copy, so an edit shows on
+  /// the page and a removal closes it instead of leaving a stale Set on screen.
+  var openedSetId: String?
+
+  /// What the last change from the page said. The Set stays where it is and the message stays
+  /// in front of the person, who can try the same action again.
+  var setFailure: OrbisFailure?
+  var isWorkingOnSet = false
+
+  func savedSet(_ id: String) -> SavedSet? {
+    guard case .loaded(let sets) = library else { return nil }
+    return sets.first { $0.id == id }
+  }
+
+  func openSet(_ id: String) {
+    setFailure = nil
+    openedSetId = id
+  }
+
+  func closeSet() {
+    setFailure = nil
+    openedSetId = nil
+  }
+
+  /// Runs one change from the page. Every path reports through `setError`, so a refusal is
+  /// readable where the action was taken and nothing disappears before it is understood.
+  private func change(
+    _ id: String, _ work: (OrbisClient) async throws -> SavedSet
+  ) async {
+    guard let client else { return }
+    isWorkingOnSet = true
+    setFailure = nil
+    defer { isWorkingOnSet = false }
+    do {
+      replace(try await work(client))
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  func rename(_ id: String, to title: String) async {
+    let trimmed = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
+    guard !trimmed.isEmpty, trimmed != savedSet(id)?.title else { return }
+    await change(id) { try await $0.updateTitle(id, title: trimmed) }
+  }
+
+  func replaceTags(_ id: String, with tags: [String]) async {
+    guard tags != savedSet(id)?.tags else { return }
+    await change(id) { try await $0.updateTags(id, tags: tags) }
+  }
+
+  /// Moves a Set to a Playlist, or out of every one. Orbis holds a Set in one Playlist, so
+  /// choosing another is a move rather than a second membership.
+  func move(_ id: String, to playlistId: String?) async {
+    let wanted = playlistId.map { [$0] } ?? []
+    guard wanted != savedSet(id)?.playlistIds else { return }
+    await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
+  }
+
+  func nameAgain(_ id: String) async {
+    await change(id) { try await $0.retryMetadata(id) }
+  }
+
+  func remove(_ id: String) async {
+    guard let client else { return }
+    isWorkingOnSet = true
+    setFailure = nil
+    defer { isWorkingOnSet = false }
+    do {
+      let removed = try await client.deleteSet(id)
+      if case .loaded(let sets) = library {
+        library = .loaded(sets.filter { $0.id != removed.id })
+      }
+      if openedSetId == removed.id {
+        closeSet()
+      }
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// The playlists a sidebar offers. A failure is not shown on its own, because the Library is
+  /// still readable without it and an empty sidebar reads as no playlists.
+  func loadPlaylists() async {
+    guard let client else { return }
+    playlists = .loading
+    do {
+      playlists = .loaded(try await client.playlists())
+    } catch OrbisError.cancelled {
+      playlists = .idle
+    } catch {
+      playlists = .loaded([])
+    }
+  }
+
+  func selectPlaylist(_ id: String?) async {
+    guard selectedPlaylistId != id else { return }
+    selectedPlaylistId = id
+    await loadLibrary()
+  }
+
+  func runSearch() async {
+    guard let client else { return }
+    let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else {
+      search = .idle
+      return
+    }
+    search = .loading
+    do {
+      search = .loaded(try await client.library(query: query))
+    } catch OrbisError.cancelled {
+      search = .idle
+    } catch let error as OrbisError {
+      search = .failed(error.failure(at: client.address))
+    } catch {
+      search = .failed(OrbisError.unreachable.failure(at: client.address))
+    }
+  }
 }
 
 enum Destination: String, CaseIterable, Identifiable, Hashable {
-    case library = "Library"
-    case search = "Search"
+  case library = "Library"
+  case search = "Search"
 
-    /// Identity is the destination itself, so a list binding can select the case directly.
-    var id: Self { self }
+  /// Identity is the destination itself, so a list binding can select the case directly.
+  var id: Self { self }
 
-    var symbol: String {
-        switch self {
-        case .library: "music.note.list"
-        case .search: "magnifyingglass"
-        }
+  var symbol: String {
+    switch self {
+    case .library: "music.note.list"
+    case .search: "magnifyingglass"
     }
+  }
 }
