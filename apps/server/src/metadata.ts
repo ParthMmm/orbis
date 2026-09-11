@@ -2,6 +2,7 @@ import type { SetSource } from "@orbis/contracts";
 import { Context, Effect, Layer, Option, Schema } from "effect";
 
 import { MetadataError } from "./metadata-error.js";
+import { youTubeVideoId } from "./source-url.js";
 
 export interface EnrichedMetadata {
   readonly artworkUrl: string | null;
@@ -15,7 +16,6 @@ export interface MetadataService {
     readonly source: SetSource;
     readonly url: string;
   }) => Effect.Effect<EnrichedMetadata, MetadataError>;
-  readonly isConfigured: (source: SetSource) => boolean;
 }
 
 export interface MetadataOptions {
@@ -67,14 +67,6 @@ const parseDurationSeconds = (duration: string): number | null => {
     unitSeconds(groups.minutes, 60) +
     unitSeconds(groups.seconds, 1)
   );
-};
-
-const youTubeVideoId = (url: string): string | null => {
-  try {
-    return new URL(url).searchParams.get("v");
-  } catch {
-    return null;
-  }
 };
 
 const youTubeRequest = (videoId: string, apiKey: string): string => {
@@ -228,6 +220,15 @@ const soundCloudProvider = (request: RequestFetch): Provider => ({
     }),
 });
 
+const noProviders: MetadataService = {
+  enrich: (input) =>
+    Effect.fail(
+      notConfigured(
+        `${input.source} enrichment is not configured on this server.`
+      )
+    ),
+};
+
 export class Metadata extends Context.Service<Metadata, MetadataService>()(
   "@orbis/Metadata"
 ) {
@@ -241,13 +242,7 @@ export class Metadata extends Context.Service<Metadata, MetadataService>()(
     }
     return Layer.succeed(Metadata, {
       enrich: (input) =>
-        providers[input.source]?.enrich(input.url) ??
-        Effect.fail(
-          notConfigured(
-            `${input.source} enrichment is not configured on this server.`
-          )
-        ),
-      isConfigured: (source) => providers[source] !== undefined,
+        providers[input.source]?.enrich(input.url) ?? noProviders.enrich(input),
     });
   }
 
@@ -256,15 +251,7 @@ export class Metadata extends Context.Service<Metadata, MetadataService>()(
    * unless a caller asks for providers, which keeps tests offline by construction.
    */
   static unconfigured(): Layer.Layer<Metadata> {
-    return Layer.succeed(Metadata, {
-      enrich: (input) =>
-        Effect.fail(
-          notConfigured(
-            `${input.source} enrichment is not configured on this server.`
-          )
-        ),
-      isConfigured: () => false,
-    });
+    return Layer.succeed(Metadata, noProviders);
   }
 
   static layerOf(metadata: MetadataService): Layer.Layer<Metadata> {

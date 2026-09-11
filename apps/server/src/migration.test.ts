@@ -54,10 +54,9 @@ const writeLegacyDatabase = (databasePath: string) => {
 test("keeps sets and playlist membership saved before the extended columns existed", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-migration-"));
   const databasePath = path.join(directory, "library.sqlite");
+  writeLegacyDatabase(databasePath);
   const app = createApp({ databasePath });
   try {
-    writeLegacyDatabase(databasePath);
-
     const library = await request(app, { method: "GET", url: "/sets" });
     expect(library.statusCode).toBe(200);
     expect(library.json()).toEqual({
@@ -79,7 +78,7 @@ test("keeps sets and playlist membership saved before the extended columns exist
           source: "youtube",
           tags: ["techno"],
           title: "Saved before the extended columns",
-          titleEditedByUser: false,
+          titleEditedByUser: true,
           url: "https://www.youtube.com/watch?v=abcdefghijk",
         },
       ],
@@ -145,7 +144,6 @@ test("does not replace the title of a set saved before the column existed", asyn
           durationSeconds: 120,
           title: "The provider's title",
         }),
-      isConfigured: () => true,
     }),
   });
   try {

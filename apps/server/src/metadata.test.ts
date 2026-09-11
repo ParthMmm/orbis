@@ -38,7 +38,7 @@ const startApp = async (enrich: Enrich) => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-metadata-"));
   const app = createApp({
     databasePath: path.join(directory, "library.sqlite"),
-    metadata: Metadata.layerOf({ enrich, isConfigured: () => true }),
+    metadata: Metadata.layerOf({ enrich }),
   });
   return {
     app,
@@ -465,25 +465,4 @@ test("reports each provider failure with its own reason", async () => {
     { source: "soundcloud", url: "https://soundcloud.com/artist/track" }
   );
   expect(unreachableSoundCloud.reason).toBe("provider-unavailable");
-});
-
-test("reports which sources the host has configured", () => {
-  const configured = Effect.runSync(
-    Effect.gen(function* readConfig() {
-      const metadata = yield* Metadata;
-      return {
-        soundcloud: metadata.isConfigured("soundcloud"),
-        youtube: metadata.isConfigured("youtube"),
-      };
-    }).pipe(Effect.provide(Metadata.layer({ youTubeApiKey: "test-key" })))
-  );
-  expect(configured).toEqual({ soundcloud: true, youtube: true });
-
-  const bare = Effect.runSync(
-    Effect.gen(function* readConfig() {
-      const metadata = yield* Metadata;
-      return metadata.isConfigured("youtube");
-    }).pipe(Effect.provide(Metadata.layer()))
-  );
-  expect(bare).toBe(false);
 });

@@ -8,6 +8,31 @@ const invalid = () =>
     statusCode: 400,
   });
 
+const videoIdFrom = (url: URL): string | null => {
+  if (url.hostname === "youtu.be") {
+    return url.pathname.slice(1) || null;
+  }
+  if (url.pathname === "/watch") {
+    return url.searchParams.get("v");
+  }
+  return (
+    /^\/(?:shorts|live|embed)\/(?<id>[\w-]{11})\/?$/u.exec(url.pathname)?.groups
+      ?.id ?? null
+  );
+};
+
+/**
+ * The video identifier in any YouTube URL form. Metadata reading shares this rule so the
+ * reader and the validator cannot disagree about what names a video.
+ */
+export const youTubeVideoId = (value: string): string | null => {
+  try {
+    return videoIdFrom(new URL(value));
+  } catch {
+    return null;
+  }
+};
+
 export const normalizeSourceUrl = (
   value: string
 ): Pick<SavedSet, "url" | "source"> => {
@@ -35,16 +60,7 @@ export const normalizeSourceUrl = (
       "youtu.be",
     ].includes(host)
   ) {
-    let id: string | null = null;
-    if (host === "youtu.be") {
-      id = url.pathname.slice(1);
-    } else if (url.pathname === "/watch") {
-      id = url.searchParams.get("v");
-    } else {
-      id =
-        /^\/(?:shorts|live|embed)\/(?<id>[\w-]{11})\/?$/u.exec(url.pathname)
-          ?.groups?.id ?? null;
-    }
+    const id = videoIdFrom(url);
     if (!id || !/^[\w-]{11}$/u.test(id)) {
       throw invalid();
     }

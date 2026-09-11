@@ -40,7 +40,7 @@ const CREATE_SCHEMA = `CREATE TABLE IF NOT EXISTS sets (
  source TEXT NOT NULL, tags TEXT NOT NULL, created_at TEXT NOT NULL,
  creator TEXT, artwork_url TEXT, duration_seconds INTEGER,
  metadata_state TEXT NOT NULL DEFAULT 'pending',
- title_edited_by_user INTEGER NOT NULL DEFAULT 0,
+ title_edited_by_user INTEGER NOT NULL DEFAULT 1,
  download_state TEXT NOT NULL DEFAULT 'none',
  retained_audio_bytes INTEGER, retained_audio_format TEXT,
  playback_position_seconds INTEGER NOT NULL DEFAULT 0,
@@ -70,6 +70,12 @@ const MIGRATIONS = [
    ALTER TABLE sets ADD COLUMN finish_count INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE sets ADD COLUMN last_listened_at TEXT;`,
 ];
+
+const setNotFound = () =>
+  new LibraryError({
+    message: "Set not found.",
+    statusCode: 404,
+  });
 
 const ensureSchema = (db: Database) => {
   db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
@@ -267,10 +273,7 @@ export class Library extends Context.Service<
                 )
                 .get(JSON.stringify(normalizeTags(tags)), id);
               if (!row) {
-                throw new LibraryError({
-                  message: "Set not found.",
-                  statusCode: 404,
-                });
+                throw setNotFound();
               }
               return decodeRow(row);
             })
@@ -291,10 +294,7 @@ export class Library extends Context.Service<
                 )
                 .get(trimmedTitle, id);
               if (!row) {
-                throw new LibraryError({
-                  message: "Set not found.",
-                  statusCode: 404,
-                });
+                throw setNotFound();
               }
               return decodeRow(row);
             })
@@ -307,10 +307,7 @@ export class Library extends Context.Service<
               )
               .get(id);
             if (!row) {
-              throw new LibraryError({
-                message: "Set not found.",
-                statusCode: 404,
-              });
+              throw setNotFound();
             }
             return decodeRow(row);
           })
@@ -336,10 +333,7 @@ export class Library extends Context.Service<
                   id
                 );
               if (!row) {
-                throw new LibraryError({
-                  message: "Set not found.",
-                  statusCode: 404,
-                });
+                throw setNotFound();
               }
               return decodeRow(row);
             })
@@ -354,10 +348,7 @@ export class Library extends Context.Service<
               )
               .get(id);
             if (!row) {
-              throw new LibraryError({
-                message: "Set not found.",
-                statusCode: 404,
-              });
+              throw setNotFound();
             }
             return decodeRow(row);
           })
@@ -371,10 +362,7 @@ export class Library extends Context.Service<
                 )
                 .get(id);
               if (!row) {
-                throw new LibraryError({
-                  message: "Set not found.",
-                  statusCode: 404,
-                });
+                throw setNotFound();
               }
               db.query("DELETE FROM playlist_sets WHERE set_id = ?").run(id);
               db.query("DELETE FROM sets WHERE id = ?").run(id);
@@ -444,10 +432,7 @@ export class Library extends Context.Service<
                   if (
                     !db.query("SELECT id FROM sets WHERE id = ?").get(setId)
                   ) {
-                    throw new LibraryError({
-                      message: "Set not found.",
-                      statusCode: 404,
-                    });
+                    throw setNotFound();
                   }
                 }
                 db.query("DELETE FROM playlist_sets WHERE playlist_id = ?").run(
