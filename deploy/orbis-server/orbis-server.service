@@ -1,0 +1,15 @@
+[Unit]
+Description=Orbis library API
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/orbis-service/apps/server
+Environment=ORBIS_DATA_DIR=%h/orbis-service-data
+Environment=ORBIS_PORT=4310
+ExecStart=%h/.local/share/mise/installs/bun/1.4.0/bin/bun src/index.ts
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=default.target
