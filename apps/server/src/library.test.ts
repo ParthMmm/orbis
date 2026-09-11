@@ -315,6 +315,10 @@ test("deletes a set and keeps its playlists while removing membership", async ()
       payload: { setIds: [set.id] },
       url: `/playlists/${playlist.id}/sets`,
     });
+    const withMember = await request(app, { method: "GET", url: "/playlists" });
+    // The sidebar shows this number without asking once per playlist, so it has to track
+    // membership on its own.
+    expect(withMember.json().playlists[0].setCount).toBe(1);
 
     const deleted = await request(app, {
       method: "DELETE",

@@ -383,7 +383,9 @@ export class Library extends Context.Service<
           execute(() =>
             db
               .query<Playlist, []>(
-                "SELECT id, name, created_at AS createdAt FROM playlists ORDER BY name COLLATE NOCASE"
+                `SELECT id, name, created_at AS createdAt,
+                 (SELECT COUNT(*) FROM playlist_sets WHERE playlist_id = playlists.id) AS setCount
+                 FROM playlists ORDER BY name COLLATE NOCASE`
               )
               .all()
           )
@@ -401,6 +403,7 @@ export class Library extends Context.Service<
                 createdAt: new Date().toISOString(),
                 id: crypto.randomUUID(),
                 name: name.trim(),
+                setCount: 0,
               };
               const result = db
                 .query(

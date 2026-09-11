@@ -61,4 +61,6 @@ export interface Playlist {
   id: string;
   name: string;
   createdAt: string;
+  /** How many Sets the playlist holds, so a sidebar can show the number without a request each. */
+  setCount: number;
 }
