@@ -249,6 +249,10 @@ final class LibraryUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "Cannot reach your library")
         ).firstMatch
         XCTAssertTrue(error.waitForExistence(timeout: 60), "an unreachable address must explain itself\n\(app.debugDescription)")
+        XCTAssertTrue(
+            app.buttons["copy-failure"].exists,
+            "a failure must offer its details to copy\n\(app.debugDescription)"
+        )
         capture("05-connection-error")
     }
 }

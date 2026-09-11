@@ -47,63 +47,69 @@ struct OrbisFailure: Equatable {
     let message: String
     let symbol: String
     let isRetryable: Bool
+    /// Where the app was looking when this happened, which is the first thing worth checking and
+    /// the first thing a person forgets to mention.
+    var address: String?
 }
 
 extension OrbisError {
     /// `address` is where the app was looking. Anything other than Orbis answering is the first
     /// thing worth knowing, and the person reading the screen can check it in one look.
     func failure(at address: URL? = nil) -> OrbisFailure {
+        var failure: OrbisFailure
         switch self {
         case .unreachable:
-            OrbisFailure(
+            failure = OrbisFailure(
                 title: "Cannot reach your library",
                 message: message,
                 symbol: "wifi.exclamationmark",
                 isRetryable: true
             )
         case .notPaired:
-            OrbisFailure(
+            failure = OrbisFailure(
                 title: "This device is not paired",
                 message: message,
                 symbol: "key.slash",
                 isRetryable: false
             )
         case .refused:
-            OrbisFailure(
+            failure = OrbisFailure(
                 title: "The service refused the request",
                 message: message,
                 symbol: "hand.raised",
                 isRetryable: false
             )
         case .malformed:
-            OrbisFailure(
+            failure = OrbisFailure(
                 title: "That address is not your library",
-                message: "\(message)\(address.map { " The app asked \($0.absoluteString)." } ?? "") Check that the address points at Orbis itself, and that the service is not older or newer than this app.",
+                message: "\(message) Check that the address points at Orbis itself, and that the service is not older or newer than this app.",
                 symbol: "doc.questionmark",
                 isRetryable: false
             )
         case let .server(status, _):
-            OrbisFailure(
+            failure = OrbisFailure(
                 title: "Your library reported an error",
                 message: message,
                 symbol: "exclamationmark.triangle",
                 isRetryable: status >= 500
             )
         case .badAddress:
-            OrbisFailure(
+            failure = OrbisFailure(
                 title: "That is not a service address",
                 message: message,
                 symbol: "questionmark.circle",
                 isRetryable: false
             )
         case .duplicate, .cancelled:
-            OrbisFailure(
+            failure = OrbisFailure(
                 title: "Something went wrong",
                 message: message,
                 symbol: "exclamationmark.triangle",
                 isRetryable: true
             )
         }
+        failure.address = address?.absoluteString
+        return failure
     }
 }
 

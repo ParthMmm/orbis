@@ -98,7 +98,7 @@ final class RevealTests: XCTestCase {
         let model = model(reveal: AppModel.Reveal(set: set(), title: "Night session", tags: []))
         model.closeReveal()
         XCTAssertNil(model.reveal)
-        XCTAssertNil(model.revealError)
+        XCTAssertNil(model.revealFailure)
         XCTAssertEqual(model.fileConfirmation, "Filed “Night session”")
     }
 }

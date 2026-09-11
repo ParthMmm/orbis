@@ -17,7 +17,7 @@ final class AppModel {
 
     var connectionAddress: String
     var connectionToken = ""
-    var connectionError: String?
+    var connectionFailure: OrbisFailure?
     var isTestingConnection = false
 
     var library: Loadable<[SavedSet]> = .idle
@@ -69,7 +69,7 @@ final class AppModel {
 
     var reveal: Reveal?
     var isSavingReveal = false
-    var revealError: String?
+    var revealFailure: OrbisFailure?
 
     var destination: Destination = .library
 
@@ -142,7 +142,7 @@ final class AppModel {
     /// Tests the connection before storing anything, so a wrong address or token never
     /// replaces a working configuration.
     func connect() async {
-        connectionError = nil
+        connectionFailure = nil
         isTestingConnection = true
         defer { isTestingConnection = false }
         // An empty field means keep the token this device already holds, which is what correcting
@@ -150,7 +150,7 @@ final class AppModel {
         let typed = connectionToken.trimmingCharacters(in: .whitespacesAndNewlines)
         let token = typed.isEmpty ? (ClientSettings.deviceToken ?? "") : typed
         guard !token.isEmpty else {
-            connectionError = OrbisError.notPaired.message
+            connectionFailure = OrbisError.notPaired.failure(at: URL(string: connectionAddress))
             return
         }
         do {
@@ -163,9 +163,9 @@ final class AppModel {
             isEditingConnection = false
             await loadLibrary()
         } catch let error as OrbisError {
-            connectionError = error.message
+            connectionFailure = error.failure(at: URL(string: connectionAddress))
         } catch {
-            connectionError = OrbisError.unreachable.message
+            connectionFailure = OrbisError.unreachable.failure(at: URL(string: connectionAddress))
         }
     }
 
@@ -181,12 +181,12 @@ final class AppModel {
     func editConnection() {
         connectionAddress = ClientSettings.serviceAddress ?? connectionAddress
         connectionToken = ""
-        connectionError = nil
+        connectionFailure = nil
         isEditingConnection = true
     }
 
     func closeConnectionEditor() {
-        connectionError = nil
+        connectionFailure = nil
         isEditingConnection = false
     }
 
@@ -268,7 +268,7 @@ final class AppModel {
         }
         guard let client else { return }
         isSavingReveal = true
-        revealError = nil
+        revealFailure = nil
         defer { isSavingReveal = false }
         do {
             var updated = open.set
@@ -284,9 +284,9 @@ final class AppModel {
         } catch OrbisError.cancelled {
             return
         } catch let error as OrbisError {
-            revealError = error.message
+            revealFailure = error.failure(at: client.address)
         } catch {
-            revealError = OrbisError.unreachable.message
+            revealFailure = OrbisError.unreachable.failure(at: client.address)
         }
     }
 
@@ -295,7 +295,7 @@ final class AppModel {
     func retryMetadata() async {
         guard let client, let open = reveal else { return }
         isSavingReveal = true
-        revealError = nil
+        revealFailure = nil
         defer { isSavingReveal = false }
         do {
             let updated = try await client.retryMetadata(open.set.id)
@@ -306,20 +306,20 @@ final class AppModel {
         } catch OrbisError.cancelled {
             return
         } catch let error as OrbisError {
-            revealError = error.message
+            revealFailure = error.failure(at: client.address)
         } catch {
-            revealError = OrbisError.unreachable.message
+            revealFailure = OrbisError.unreachable.failure(at: client.address)
         }
     }
 
     /// Closes the reveal, leaving nothing behind when the person filed the Set and walked away.
     func closeReveal(with set: SavedSet? = nil) {        guard let closed = set ?? reveal?.set else {
             reveal = nil
-            revealError = nil
+            revealFailure = nil
             return
         }
         reveal = nil
-        revealError = nil
+        revealFailure = nil
         fileConfirmation = "Filed “\(closed.title)”"
     }
 
@@ -337,7 +337,7 @@ final class AppModel {
 
     /// What the last change from the page said. The Set stays where it is and the message stays
     /// in front of the person, who can try the same action again.
-    var setError: String?
+    var setFailure: OrbisFailure?
     var isWorkingOnSet = false
 
     func savedSet(_ id: String) -> SavedSet? {
@@ -346,12 +346,12 @@ final class AppModel {
     }
 
     func openSet(_ id: String) {
-        setError = nil
+        setFailure = nil
         openedSetId = id
     }
 
     func closeSet() {
-        setError = nil
+        setFailure = nil
         openedSetId = nil
     }
 
@@ -362,16 +362,16 @@ final class AppModel {
     ) async {
         guard let client else { return }
         isWorkingOnSet = true
-        setError = nil
+        setFailure = nil
         defer { isWorkingOnSet = false }
         do {
             replace(try await work(client))
         } catch OrbisError.cancelled {
             return
         } catch let error as OrbisError {
-            setError = error.message
+            setFailure = error.failure(at: client.address)
         } catch {
-            setError = OrbisError.unreachable.message
+            setFailure = OrbisError.unreachable.failure(at: client.address)
         }
     }
 
@@ -401,7 +401,7 @@ final class AppModel {
     func remove(_ id: String) async {
         guard let client else { return }
         isWorkingOnSet = true
-        setError = nil
+        setFailure = nil
         defer { isWorkingOnSet = false }
         do {
             let removed = try await client.deleteSet(id)
@@ -414,9 +414,9 @@ final class AppModel {
         } catch OrbisError.cancelled {
             return
         } catch let error as OrbisError {
-            setError = error.message
+            setFailure = error.failure(at: client.address)
         } catch {
-            setError = OrbisError.unreachable.message
+            setFailure = OrbisError.unreachable.failure(at: client.address)
         }
     }
 

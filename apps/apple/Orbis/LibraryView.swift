@@ -17,6 +17,8 @@ struct SetList: View {
     let state: Loadable<[SavedSet]>
     let heading: Text
     let empty: EmptyPresentation
+    /// What the app was doing when a failure happened, in the words the screen would use.
+    var failureContext = "loading the library"
     /// The tag the list is filtered by, so the row marks it as the active one.
     let activeTag: String?
     /// Filter controls shown beside the heading, absent on a screen that only reads.
@@ -50,6 +52,8 @@ struct SetList: View {
                             .buttonStyle(OrbisPrimaryButtonStyle())
                             .accessibilityIdentifier("library-retry")
                     }
+                    CopyFailureButton(
+                        report: FailureReport(failure: failure, context: failureContext))
                 }
                 .accessibilityIdentifier("library-error")
             case let .loaded(sets):

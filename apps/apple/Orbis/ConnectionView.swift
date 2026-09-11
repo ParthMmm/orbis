@@ -61,11 +61,14 @@ struct ConnectionView: View {
                 }
             }
 
-            if let error = model.connectionError {
+            if let failure = model.connectionFailure {
                 Section {
-                    Text(error)
+                    Text(failure.message)
                         .foregroundStyle(OrbisColor.destructive)
                         .accessibilityIdentifier("connection-error")
+                    CopyFailureButton(
+                        report: FailureReport(
+                            failure: failure, context: "testing a connection address"))
                 }
             }
         }
@@ -74,5 +77,12 @@ struct ConnectionView: View {
         .background(Color.orbis.paper)
         .navigationTitle("Connect to Orbis")
         .onAppear { focus = .address }
+        // A refusal is written under the button, which on a phone is where the keyboard sits. Put
+        // the keyboard away so the answer, and the way to copy it, are actually on screen.
+        .onChange(of: model.connectionFailure) { _, failure in
+            if failure != nil {
+                focus = nil
+            }
+        }
     }
 }

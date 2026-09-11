@@ -157,6 +157,7 @@ struct DestinationView: View {
                     symbol: "music.note.list",
                     identifier: "library-empty"
                 ),
+                failureContext: "loading the library",
                 activeTag: model.activeTag,
                 filters: model.availableTags.isEmpty ? nil : tagFilters,
                 hero: AnyView(pasteHero),
@@ -278,11 +279,15 @@ struct DestinationView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("reveal-dismiss")
             }
-            if let error = model.revealError {
-                Text(error)
-                    .font(.orbis.mono)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("reveal-error")
+            if let failure = model.revealFailure {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(failure.message)
+                        .font(.orbis.mono)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("reveal-error")
+                    CopyFailureButton(
+                        report: FailureReport(failure: failure, context: "naming a filed set"))
+                }
             } else if reveal.set.metadataState == "failed" {
                 HStack(spacing: 6) {
                     Text("Orbis could not name this set.")
@@ -336,6 +341,7 @@ struct SearchDestination: View {
                 symbol: "magnifyingglass",
                 identifier: "search-no-results"
             ),
+            failureContext: "searching the library",
             activeTag: nil,
             filters: nil,
             hero: nil,

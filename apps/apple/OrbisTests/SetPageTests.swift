@@ -103,7 +103,7 @@ final class SetPageTests: XCTestCase {
         }
         XCTAssertEqual(sets.map(\.id), ["2"])
         XCTAssertNil(model.openedSetId)
-        XCTAssertNil(model.setError)
+        XCTAssertNil(model.setFailure)
     }
 
     /// The Set stays on screen with the reason beside it, so the removal can be tried again
@@ -119,7 +119,8 @@ final class SetPageTests: XCTestCase {
         }
         XCTAssertEqual(sets.map(\.id), ["1"])
         XCTAssertEqual(
-            model.setError, OrbisError.server(status: 500, message: "The library is busy.").message
+            model.setFailure?.message,
+            OrbisError.server(status: 500, message: "The library is busy.").failure().message
         )
     }
 

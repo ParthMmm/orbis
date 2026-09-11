@@ -47,14 +47,18 @@ struct SetDetailScreen: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if let error = model.setError {
-                Text(error)
-                    .font(.orbis.mono)
-                    .foregroundStyle(.secondary)
-                    .padding()
-                    .orbisRaised(radius: Radius.row)
-                    .padding()
-                    .accessibilityIdentifier("detail-error")
+            if let failure = model.setFailure {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(failure.message)
+                        .font(.orbis.mono)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("detail-error")
+                    CopyFailureButton(
+                        report: FailureReport(failure: failure, context: "changing a set"))
+                }
+                .padding()
+                .orbisRaised(radius: Radius.row)
+                .padding()
             }
         }
         .alert("Title", isPresented: $isRenaming) {
