@@ -21,7 +21,8 @@
     "check": "turbo run lint format:check typecheck test diagnostics --concurrency=100% --continue=dependencies-successful",
     "fix": "ultracite fix",
     "check:force": "turbo run lint format:check typecheck test diagnostics --concurrency=100% --continue=dependencies-successful --force",
-    "native:lanes": "node scripts/native-lanes.mjs"
+    "native:lanes": "node scripts/native-lanes.mjs",
+    "native:perf": "node scripts/native-perf.mjs"
   },
   "devDependencies": {
     "@effect/tsgo": "0.41.0",
