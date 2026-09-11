@@ -22,15 +22,18 @@ const videoIdFrom = (url: URL): string | null => {
 };
 
 /**
- * The video identifier in any YouTube URL form. Metadata reading shares this rule so the
- * reader and the validator cannot disagree about what names a video.
+ * The video identifier in any YouTube URL form, or null. YouTube reading shares this rule so
+ * the reader and the validator cannot disagree about what names a video.
  */
 export const youTubeVideoId = (value: string): string | null => {
+  let url: URL;
   try {
-    return videoIdFrom(new URL(value));
+    url = new URL(value);
   } catch {
     return null;
   }
+  const id = videoIdFrom(url);
+  return id && /^[\w-]{11}$/u.test(id) ? id : null;
 };
 
 export const normalizeSourceUrl = (
@@ -60,8 +63,8 @@ export const normalizeSourceUrl = (
       "youtu.be",
     ].includes(host)
   ) {
-    const id = videoIdFrom(url);
-    if (!id || !/^[\w-]{11}$/u.test(id)) {
+    const id = youTubeVideoId(value);
+    if (!id) {
       throw invalid();
     }
     return { source: "youtube", url: `https://www.youtube.com/watch?v=${id}` };
