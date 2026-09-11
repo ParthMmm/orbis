@@ -1,3 +1,5 @@
+import path from "node:path";
+
 import { Effect, Layer, Schema } from "effect";
 import {
   HttpRouter,
@@ -6,6 +8,7 @@ import {
 } from "effect/unstable/http";
 
 import { LibraryError } from "./errors.js";
+import { decideAccess, readDevices } from "./identity.js";
 import { Library } from "./library.js";
 
 interface RawFilters {
@@ -46,7 +49,18 @@ const respond = <A, E, R>(effect: Effect.Effect<A, E, R>, status = 200) =>
     onSuccess: (body) => HttpServerResponse.jsonUnsafe(body, { status }),
   });
 
-export const createApp = ({ databasePath = ":memory:" } = {}) => {
+export const createApp = (
+  options: {
+    databasePath?: string;
+    devicesPath?: string;
+  } = {}
+) => {
+  const databasePath = options.databasePath ?? ":memory:";
+  const devicesPath =
+    options.devicesPath ??
+    (databasePath === ":memory:"
+      ? undefined
+      : path.join(path.dirname(databasePath), "devices.json"));
   const routes = HttpRouter.use((router) =>
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
@@ -187,15 +201,19 @@ export const createApp = ({ databasePath = ":memory:" } = {}) => {
     dispose: app.dispose,
     handler: (request: Request): Promise<Response> => {
       const host = request.headers.get("host") ?? new URL(request.url).host;
-      // This slice is local-only. The Electron main process calls without a browser Origin.
-      if (
-        request.headers.has("origin") ||
-        !/^(?:127\.0\.0\.1|localhost)(?::\d+)?$/u.test(host)
-      ) {
+      const authorization = request.headers.get("authorization");
+      const decision = decideAccess({
+        authorization,
+        // Only a claimed token needs the trust store, so local requests never read it.
+        devices: authorization ? readDevices(devicesPath) : [],
+        hasOrigin: request.headers.has("origin"),
+        host,
+      });
+      if (decision.kind === "rejected") {
         return Promise.resolve(
           Response.json(
-            { message: "Only local app requests are allowed." },
-            { status: 403 }
+            { message: decision.message },
+            { status: decision.statusCode }
           )
         );
       }

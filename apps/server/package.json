@@ -9,7 +9,8 @@
     "start": "bun dist/index.js",
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
     "test": "bun test",
-    "diagnostics": "effect-tsgo diagnostics --project tsconfig.json --format text"
+    "diagnostics": "effect-tsgo diagnostics --project tsconfig.json --format text",
+    "trust": "bun src/trust.ts"
   },
   "dependencies": {
     "@orbis/contracts": "workspace:*",

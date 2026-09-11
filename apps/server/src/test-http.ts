@@ -7,6 +7,7 @@ export const request = async (
     url: string;
     payload?: unknown;
     headers?: Record<string, string>;
+    host?: string;
   }
 ) => {
   const headers: Record<string, string> = {};
@@ -16,8 +17,11 @@ export const request = async (
     init.body = JSON.stringify(options.payload);
   }
   Object.assign(headers, options.headers);
+  const base = options.host
+    ? `http://${options.host}`
+    : "http://127.0.0.1:4310";
   const response = await app.handler(
-    new Request(`http://127.0.0.1:4310${options.url}`, init)
+    new Request(`${base}${options.url}`, init)
   );
   const body = await response.json();
   return { json: () => body, statusCode: response.status };
