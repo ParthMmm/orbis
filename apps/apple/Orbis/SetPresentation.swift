@@ -98,4 +98,34 @@ enum SetPresentation {
         }
         return .distantPast
     }
+
+    /// The line under a Set's title: who made it, how long it runs, when it arrived. Only the
+    /// parts the service filled in, so a Set no provider could name shows a date and nothing else.
+    static func subtitle(_ set: SavedSet) -> String? {
+        var parts: [String] = []
+        if let creator = set.creator, !creator.isEmpty {
+            parts.append(creator)
+        }
+        if let seconds = set.durationSeconds, seconds > 0 {
+            parts.append(length(seconds))
+        }
+        parts.append(added(set.createdAt))
+        return parts.joined(separator: " · ")
+    }
+
+    static func length(_ seconds: Int) -> String {
+        let hours = seconds / 3600
+        let minutes = (seconds % 3600) / 60
+        return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
+    }
+
+    static func added(_ timestamp: String) -> String {
+        date(from: timestamp).formatted(.dateTime.month(.abbreviated).day())
+    }
+
+    /// Where playback left off, said the way a person says it, or nothing when it never started.
+    static func playbackPosition(_ set: SavedSet) -> String? {
+        guard set.playbackPositionSeconds > 0 else { return nil }
+        return "\(length(set.playbackPositionSeconds)) in"
+    }
 }

@@ -99,7 +99,7 @@ public struct SetDetail: View {
             .foregroundStyle(.secondary)
         }
         VStack(spacing: 0) {
-          DetailRow(label: "Tags", action: editTags) {
+          DetailRow(label: "Tags", action: editTags, identifier: "detail-tags-row") {
             if tags.isEmpty {
               Text("None")
                 .foregroundStyle(.secondary)
@@ -115,7 +115,8 @@ public struct SetDetail: View {
           PlaylistPicker(selection: $playlistId, choices: playlists, category: category)
             .padding(.vertical, 10)
           Divider()
-          DetailRow(label: "Title", value: title, action: rename)
+          DetailRow(
+            label: "Title", value: title, action: rename, identifier: "detail-title-row")
         }
         .padding(.horizontal)
         .orbisRaised()
@@ -171,6 +172,7 @@ private struct DetailRow<Value: View>: View {
   let label: String
   var value: String?
   let action: () -> Void
+  let identifier: String
   @ViewBuilder let content: () -> Value
 
   var body: some View {
@@ -193,12 +195,13 @@ private struct DetailRow<Value: View>: View {
     .buttonStyle(.plain)
     .orbisRowHeight()
     .padding(.vertical, 10)
+    .accessibilityIdentifier(identifier)
   }
 }
 
 extension DetailRow where Value == EmptyView {
-  init(label: String, value: String, action: @escaping () -> Void) {
-    self.init(label: label, value: value, action: action) { EmptyView() }
+  init(label: String, value: String, action: @escaping () -> Void, identifier: String) {
+    self.init(label: label, value: value, action: action, identifier: identifier) { EmptyView() }
   }
 }
 

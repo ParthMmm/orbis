@@ -32,7 +32,7 @@ final class OrbisClientTests: XCTestCase {
         {"sets":[{"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
         "title":"Night session","source":"youtube","tags":["techno"],"createdAt":"2026-01-01T00:00:00.000Z",
         "creator":null,"artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
-        "downloadState":"none","playbackPositionSeconds":1800,"listenCount":2,"finishCount":0,
+        "downloadState":"none","playlistIds":[],"playbackPositionSeconds":1800,"listenCount":2,"finishCount":0,
         "lastListenedAt":null}]}
         """
         let session = StubProtocol.session(status: 200, body: body)
@@ -80,7 +80,7 @@ final class OrbisClientTests: XCTestCase {
         {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
         "title":"Night session","source":"youtube","tags":[],"createdAt":"2026-01-01T00:00:00.000Z",
         "creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
-        "downloadState":"none","playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
+        "downloadState":"none","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
         "lastListenedAt":null}
         """
         let session = StubProtocol.session(status: 201, body: body)
@@ -136,6 +136,37 @@ final class OrbisClientTests: XCTestCase {
         XCTAssertEqual(json["tags"] as? [String], ["techno", "live"])
     }
 
+    func testPlaylistMembershipIsStatedInFullOnTheSet() async throws {
+        let session = StubProtocol.session(
+            status: 200, body: Self.savedSet(title: "Night session", tags: []))
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: session
+        )
+        _ = try await client.updatePlaylists("42", playlistIds: ["p1", "p2"])
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PUT")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42/playlists")
+        let sent = try XCTUnwrap(StubProtocol.lastBody)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
+        XCTAssertEqual(json["playlistIds"] as? [String], ["p1", "p2"])
+    }
+
+    func testDeleteAsksTheServiceToRemoveTheSet() async throws {
+        let session = StubProtocol.session(
+            status: 200, body: Self.savedSet(title: "Night session", tags: []))
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: session
+        )
+        let removed = try await client.deleteSet("42")
+        XCTAssertEqual(removed.id, "1")
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42")
+        XCTAssertNil(StubProtocol.lastBody)
+    }
+
     func testMetadataRetryAsksAgainForTheName() async throws {
         let session = StubProtocol.session(
             status: 200, body: Self.savedSet(title: "Named at last", tags: []))
@@ -156,7 +187,7 @@ final class OrbisClientTests: XCTestCase {
         {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
         "title":"\(title)","source":"youtube","tags":\(encode(tags)),"createdAt":"2026-01-01T00:00:00.000Z",
         "creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
-        "downloadState":"none","playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
+        "downloadState":"none","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
         "lastListenedAt":null}
         """
     }

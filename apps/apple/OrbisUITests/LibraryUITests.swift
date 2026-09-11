@@ -135,6 +135,87 @@ final class LibraryUITests: XCTestCase {
         capture("09-filed")
     }
 
+    /// The Set page is where a Set is corrected or thrown away, so the journey walks the two
+    /// actions that change the library, and the confirmation that guards the second one.
+    func testOpensASetRenamesItAndRemovesIt() throws {
+        let app = try launch()
+        connect(app)
+
+        let row = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
+        XCTAssertTrue(
+            row.waitForExistence(timeout: 60),
+            "a saved Set must appear after connecting\n\(app.debugDescription)"
+        )
+        row.tap()
+
+        let title = app.staticTexts["detail-title"]
+        XCTAssertTrue(
+            title.waitForExistence(timeout: 30),
+            "pressing a row must open the Set's page\n\(app.debugDescription)"
+        )
+        XCTAssertTrue(app.buttons["detail-open"].exists, "the page must offer Open")
+        capture("10-set-page")
+
+        app.buttons["detail-title-row"].tap()
+        let field = app.alerts.textFields.firstMatch
+        XCTAssertTrue(
+            field.waitForExistence(timeout: 15),
+            "renaming must offer a field\n\(app.debugDescription)"
+        )
+        field.tap()
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 24))
+        field.typeText("Renamed by the journey")
+        app.alerts.buttons["Save"].tap()
+
+        XCTAssertTrue(
+            app.staticTexts["Renamed by the journey"].waitForExistence(timeout: 30),
+            "the page must show the name the service accepted\n\(app.debugDescription)"
+        )
+        capture("11-set-renamed")
+
+        // Removal asks first. On iOS 26 the confirmation rises as a popover with no cancel
+        // button, so it is dismissed the way a person dismisses one: by tapping outside it.
+        app.buttons["detail-remove"].tap()
+        XCTAssertTrue(
+            app.sheets.firstMatch.waitForExistence(timeout: 10),
+            "removing must ask first\n\(app.debugDescription)"
+        )
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92)).tap()
+        XCTAssertTrue(app.staticTexts["detail-title"].exists, "dismissing must keep the Set")
+
+        app.buttons["detail-remove"].tap()
+        confirmationButton("Remove from library", in: app).tap()
+
+        // The page closes because the Set it was showing is gone, and the row goes with it.
+        XCTAssertFalse(
+            app.staticTexts["detail-title"].waitForExistence(timeout: 10),
+            "removing must close the page\n\(app.debugDescription)"
+        )
+        let gone = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "Renamed by the journey")).firstMatch
+        XCTAssertFalse(
+            gone.waitForExistence(timeout: 5),
+            "the removed Set must leave the library\n\(app.debugDescription)"
+        )
+        capture("12-set-removed")
+    }
+
+    /// A confirmation dialog is a sheet on a phone and an alert on a Mac, so a journey asks for
+    /// both rather than assuming one shape. Each is waited for, because a dialog that is still
+    /// rising has not been found yet.
+    private func confirmationButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
+        let sheet = app.sheets.buttons[label]
+        if sheet.waitForExistence(timeout: 5) {
+            return sheet
+        }
+        let alert = app.alerts.buttons[label]
+        if alert.waitForExistence(timeout: 5) {
+            return alert
+        }
+        return app.buttons[label]
+    }
+
     /// The design names the active filter in its heading, which is the state that distinguishes
     /// a filtered list from an unfiltered one.
     func testFiltersTheLibraryByTag() throws {

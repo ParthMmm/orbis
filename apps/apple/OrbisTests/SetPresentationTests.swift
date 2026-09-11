@@ -17,7 +17,7 @@ final class SetPresentationTests: XCTestCase {
         {"id":"one","url":"\(url)","title":"\(title)","source":"youtube","tags":\(tags),
         "createdAt":"\(createdAt)","creator":null,"artworkUrl":null,"durationSeconds":null,
         "metadataState":"pending","titleEditedByUser":false,"downloadState":"\(downloadState)",
-        "retainedAudioBytes":null,"retainedAudioFormat":null,
+        "playlistIds":[],"retainedAudioBytes":null,"retainedAudioFormat":null,
         "playbackPositionSeconds":\(playbackPositionSeconds),"listenCount":0,"finishCount":0,
         "lastListenedAt":null}
         """

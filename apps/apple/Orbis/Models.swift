@@ -14,6 +14,7 @@ struct SavedSet: Identifiable, Decodable, Hashable {
     let durationSeconds: Int?
     let metadataState: String
     let downloadState: String
+    let playlistIds: [String]
     let playbackPositionSeconds: Int
     let listenCount: Int
     let finishCount: Int
@@ -67,4 +68,10 @@ struct SetTitleRequest: Encodable {
 
 struct SetTagsRequest: Encodable {
     let tags: [String]
+}
+
+/// The Playlists a Set belongs to. The service treats this as the whole membership, so naming
+/// another Playlist moves the Set rather than adding a second one.
+struct SetPlaylistsRequest: Encodable {
+    let playlistIds: [String]
 }

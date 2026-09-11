@@ -161,10 +161,14 @@ struct DestinationView: View {
                 filters: model.availableTags.isEmpty ? nil : tagFilters,
                 hero: AnyView(pasteHero),
                 footer: libraryFooter,
-                retry: { await model.loadLibrary() }
+                retry: { await model.loadLibrary() },
+                select: { set in model.openSet(set.id) }
             )
             .navigationTitle("Library")
             .toolbar { settingsMenu }
+            .navigationDestination(item: $model.openedSetId) { id in
+                SetDetailScreen(model: model, setId: id)
+            }
         case .search:
             SearchDestination(model: model)
         }

@@ -120,6 +120,19 @@ struct OrbisClient: Sendable {
         return try decodedSet(response)
     }
 
+    /// States the Playlists a Set belongs to. Sending the whole membership is what lets the
+    /// service work out which Playlist the Set left.
+    func updatePlaylists(_ id: String, playlistIds: [String]) async throws -> SavedSet {
+        let body = try JSONEncoder().encode(SetPlaylistsRequest(playlistIds: playlistIds))
+        let response = try await send(path: "sets/\(id)/playlists", method: "PUT", body: body)
+        return try decodedSet(response)
+    }
+
+    func deleteSet(_ id: String) async throws -> SavedSet {
+        let response = try await send(path: "sets/\(id)", method: "DELETE", body: nil)
+        return try decodedSet(response)
+    }
+
     private func decodedSet(_ response: Data) throws -> SavedSet {
         guard let decoded = try? JSONDecoder().decode(SavedSet.self, from: response) else {
             throw OrbisError.malformed

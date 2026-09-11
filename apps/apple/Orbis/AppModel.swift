@@ -91,6 +91,13 @@ final class AppModel {
         client = ClientSettings.configuredClient()
     }
 
+    /// A model already paired with a service. The launch screen and the settings file are the real
+    /// path; this one exists so tests and previews can drive a change without either.
+    init(client: OrbisClient) {
+        self.client = client
+        connectionAddress = client.address.absoluteString
+    }
+
     var isConfigured: Bool { client != nil }
 
     /// Every tag in the loaded library, in a stable order, so the filter row does not reshuffle
@@ -270,8 +277,7 @@ final class AppModel {
     }
 
     /// Closes the reveal, leaving nothing behind when the person filed the Set and walked away.
-    func closeReveal(with set: SavedSet? = nil) {
-        guard let closed = set ?? reveal?.set else {
+    func closeReveal(with set: SavedSet? = nil) {        guard let closed = set ?? reveal?.set else {
             reveal = nil
             revealError = nil
             return
@@ -285,6 +291,97 @@ final class AppModel {
     private func replace(_ set: SavedSet) {
         guard case let .loaded(sets) = library else { return }
         library = .loaded(sets.map { $0.id == set.id ? set : $0 })
+    }
+
+    // MARK: - One Set's page
+
+    /// The Set whose page is open. Held as an identifier rather than a copy, so an edit shows on
+    /// the page and a removal closes it instead of leaving a stale Set on screen.
+    var openedSetId: String?
+
+    /// What the last change from the page said. The Set stays where it is and the message stays
+    /// in front of the person, who can try the same action again.
+    var setError: String?
+    var isWorkingOnSet = false
+
+    func savedSet(_ id: String) -> SavedSet? {
+        guard case let .loaded(sets) = library else { return nil }
+        return sets.first { $0.id == id }
+    }
+
+    func openSet(_ id: String) {
+        setError = nil
+        openedSetId = id
+    }
+
+    func closeSet() {
+        setError = nil
+        openedSetId = nil
+    }
+
+    /// Runs one change from the page. Every path reports through `setError`, so a refusal is
+    /// readable where the action was taken and nothing disappears before it is understood.
+    private func change(
+        _ id: String, _ work: (OrbisClient) async throws -> SavedSet
+    ) async {
+        guard let client else { return }
+        isWorkingOnSet = true
+        setError = nil
+        defer { isWorkingOnSet = false }
+        do {
+            replace(try await work(client))
+        } catch OrbisError.cancelled {
+            return
+        } catch let error as OrbisError {
+            setError = error.message
+        } catch {
+            setError = OrbisError.unreachable.message
+        }
+    }
+
+    func rename(_ id: String, to title: String) async {
+        let trimmed = String(title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200))
+        guard !trimmed.isEmpty, trimmed != savedSet(id)?.title else { return }
+        await change(id) { try await $0.updateTitle(id, title: trimmed) }
+    }
+
+    func replaceTags(_ id: String, with tags: [String]) async {
+        guard tags != savedSet(id)?.tags else { return }
+        await change(id) { try await $0.updateTags(id, tags: tags) }
+    }
+
+    /// Moves a Set to a Playlist, or out of every one. Orbis holds a Set in one Playlist, so
+    /// choosing another is a move rather than a second membership.
+    func move(_ id: String, to playlistId: String?) async {
+        let wanted = playlistId.map { [$0] } ?? []
+        guard wanted != savedSet(id)?.playlistIds else { return }
+        await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
+    }
+
+    func nameAgain(_ id: String) async {
+        await change(id) { try await $0.retryMetadata(id) }
+    }
+
+    func remove(_ id: String) async {
+        guard let client else { return }
+        isWorkingOnSet = true
+        setError = nil
+        defer { isWorkingOnSet = false }
+        do {
+            let removed = try await client.deleteSet(id)
+            if case let .loaded(sets) = library {
+                library = .loaded(sets.filter { $0.id != removed.id })
+            }
+            if openedSetId == removed.id {
+                closeSet()
+            }
+        } catch OrbisError.cancelled {
+            return
+        } catch let error as OrbisError {
+            setError = error.message
+        } catch {
+            setError = OrbisError.unreachable.message
+        }
     }
 
     /// The playlists a sidebar offers. A failure is not shown on its own, because the Library is

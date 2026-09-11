@@ -24,7 +24,8 @@ deploy/cobalt/*.report.json
 .swiftpm/
 
 # Generated Xcode project and build output for the native app.
-apps/apple/DerivedData/
+# Any build directory the Apple lanes write, including a one-off platform check.
+apps/apple/DerivedData*/
 apps/apple/*.xcodeproj/
 *.xcresult
 

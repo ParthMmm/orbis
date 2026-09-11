@@ -19,6 +19,7 @@ final class LibraryFilterTests: XCTestCase {
             durationSeconds: nil,
             metadataState: "enriched",
             downloadState: "none",
+            playlistIds: [],
             playbackPositionSeconds: 0,
             listenCount: 0,
             finishCount: 0,

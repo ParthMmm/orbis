@@ -26,6 +26,11 @@ struct SetList: View {
     let hero: AnyView?
     let footer: String
     let retry: () async -> Void
+    /// A screen that opens a Set puts its action here, so a row knows it can be pressed and a
+    /// screen that only reads does not pretend otherwise.
+    var select: ((SavedSet) -> Void)?
+
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         Group {
@@ -74,6 +79,11 @@ struct SetList: View {
         }
     }
 
+    private func open(_ url: String) {
+        guard let link = URL(string: url) else { return }
+        openURL(link)
+    }
+
     private var emptyMessageView: some View {
         ContentUnavailableView {
             Label(empty.title, systemImage: empty.symbol)
@@ -103,7 +113,7 @@ struct SetList: View {
                         let model = SetPresentation.row(
                             set, position: index, activeTag: activeTag
                         )
-                        SetRow(
+                        let row = SetRow(
                             index: model.index,
                             source: model.source,
                             title: model.title,
@@ -113,7 +123,17 @@ struct SetList: View {
                             state: model.state
                         )
                         .padding(.horizontal)
+                        .contentShape(.rect)
                         .accessibilityIdentifier("set-row-\(set.id)")
+                        .contextMenu {
+                            Button("Open Source") { open(set.url) }
+                        }
+                        if let select {
+                            Button { select(set) } label: { row }
+                                .buttonStyle(.plain)
+                        } else {
+                            row
+                        }
                         if index < sets.count - 1 {
                             Divider().padding(.leading)
                         }

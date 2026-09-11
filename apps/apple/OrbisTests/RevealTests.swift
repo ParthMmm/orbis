@@ -19,6 +19,7 @@ final class RevealTests: XCTestCase {
             durationSeconds: 5400,
             metadataState: "enriched",
             downloadState: "none",
+            playlistIds: [],
             playbackPositionSeconds: 0,
             listenCount: 0,
             finishCount: 0,
