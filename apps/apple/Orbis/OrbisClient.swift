@@ -105,8 +105,10 @@ struct OrbisClient: Sendable {
         } catch {
             #if DEBUG
                 // A transport failure is otherwise invisible, which makes a wrong address, a
-                // blocked connection, and a rejected certificate look identical.
-                print("Orbis transport failure \(request.url?.absoluteString ?? "?") \(error)")
+                // blocked connection, and a rejected certificate look identical. Written to
+                // standard error because stdout is buffered and a killed run loses it.
+                let line = "Orbis transport failure \(request.url?.absoluteString ?? "?"): \(error)\n"
+                FileHandle.standardError.write(Data(line.utf8))
             #endif
             throw OrbisError.unreachable
         }
