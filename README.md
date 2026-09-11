@@ -11,7 +11,7 @@ The first slice saves links and titles, supports title and tag editing, deletion
 - `packages/contracts`: shared TypeScript API types.
 - `apps/apple/OrbisDesign`: SwiftUI design system (tokens, styles, components) shared by the planned macOS and iOS apps. See [ADR 0001](docs/adr/0001-client-platform-strategy.md).
 - `apps/raycast`: reserved extension workspace, not implemented.
-- `apps/ios`: reserved app directory; the native app will import `OrbisDesign`.
+- `apps/native`: one SwiftUI multiplatform app for iOS and macOS, generated with xcodegen. It imports `OrbisDesign`.
 
 ## Development
 
@@ -66,9 +66,22 @@ The desktop uses shadcn preset `b1VlIttI`, Tailwind v4, and the Inter variable f
 
 Design tokens live in `docs/design/tokens.json`. `node scripts/design-tokens.mjs` regenerates the Swift colors in `OrbisDesign` and `docs/design/tokens.css`.
 
+## Native clients
+
+`apps/native` builds one SwiftUI app for iOS and macOS from an xcodegen specification. The generated project and derived data are not tracked.
+
+```sh
+bun run native:lanes          # unit tests and native journeys against a temporary service
+bun run native:lanes --unit   # unit tests only
+```
+
+A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Copy the xcodegen output path from `apps/native/DerivedData` when opening the project in Xcode.
+
 ## Security and next steps
 
-**Local-only for now.** The server binds to loopback and rejects browser Origin headers and non-loopback Host headers. It is not a multi-user or authenticated server; local processes can access it. Do not publish it through Tailscale Serve, a proxy, or a public endpoint before identity and authorization are implemented.
+**Local-only by default.** The server binds to loopback. A request carrying a browser `Origin` header is refused, a request from a non-loopback host is refused unless it carries a valid device token, and loopback requests need no credential, which is what the desktop client relies on. Device tokens are enrolled with `bun run --filter @orbis/server trust add --label "<name>"` and the host stores only their digest, so a copy of the trust store cannot authenticate. See `docs/adr/0004-native-service-identity.md`.
+
+Vanta runs the API as a systemd user service behind a tailnet-only Tailscale Serve bridge, so nothing is published publicly. Setup and rollback are in `deploy/orbis-server/README.md`.
 
 The renderer is sandboxed and uses a narrow preload API. Only the main process performs local HTTP requests and opens allowlisted source URLs.
 

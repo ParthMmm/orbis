@@ -1,0 +1,79 @@
+name: Orbis
+options:
+  bundleIdPrefix: app.orbis
+  createIntermediateGroups: true
+  deploymentTarget:
+    iOS: "26.0"
+    macOS: "26.0"
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    GENERATE_INFOPLIST_FILE: YES
+    CODE_SIGNING_ALLOWED: NO
+    CURRENT_PROJECT_VERSION: 1
+    MARKETING_VERSION: 0.1.0
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    # The client talks to the server over the tailnet, which uses a real certificate.
+    # Local networking is allowed so lanes can run against a temporary loopback server.
+    INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
+targets:
+  Orbis:
+    type: application
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - Orbis
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client
+        PRODUCT_NAME: Orbis
+        INFOPLIST_KEY_CFBundleDisplayName: Orbis
+        INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  OrbisTests:
+    type: bundle.unit-test
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - OrbisTests
+    dependencies:
+      - target: Orbis
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.tests
+        # A multiplatform unit test bundle needs the host path per platform. xcodegen
+        # writes the flat iOS layout for both, and the macOS bundle puts the binary
+        # under Contents/MacOS, so the SDK condition supplies the right one.
+        TEST_HOST[sdk=macosx*]: "$(BUILT_PRODUCTS_DIR)/Orbis.app/Contents/MacOS/Orbis"
+        BUNDLE_LOADER[sdk=macosx*]: "$(TEST_HOST)"
+  OrbisUITests:
+    type: bundle.ui-testing
+    # iOS only. The macOS UI test runner is killed before bootstrap on the build machine,
+    # so macOS verification uses the Accessibility driver in scripts/native-macos-drive.mjs.
+    supportedDestinations: [iOS]
+    sources:
+      - OrbisUITests
+    dependencies:
+      - target: Orbis
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.uitests
+schemes:
+  Orbis:
+    build:
+      targets:
+        Orbis: all
+        OrbisTests: [test]
+        OrbisUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OrbisTests
+        - OrbisUITests
+      environmentVariables:
+        # Substituted at generation time, so the lane's temporary service is what the
+        # journey tests type into the connection screen.
+        ORBIS_UI_TEST_ADDRESS: ${ORBIS_UI_TEST_ADDRESS}
+        ORBIS_UI_TEST_TOKEN: ${ORBIS_UI_TEST_TOKEN}
