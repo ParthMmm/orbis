@@ -31,12 +31,8 @@ Use a single root glossary and ADR directory. Before exploring domain behavior, 
 
 ## Verifying the Mac UI
 
-Verify quietly. Read state, and leave the operator's display alone: they work on this machine while you run on it, so a check that raises a window or moves the pointer costs them the screen, and the same answer usually sat in a test result, a log line, or their description of what they see. Spend the screen when the pixels are the answer, and ask first.
-
-Three tools, quietest first:
+Verify 
 
 - **agent-device** reads a macOS or iOS app through accessibility. Its snapshot answers most questions.
 - **agent-browser** drives web pages through the executor MCP. Run it headless.
 - **Codex computer use** acts on the visible screen. Four integrations carry it and only `codex-computer-use` holds the full set, including `set_value` and `scroll`; reach it with `tools.search` from the executor's `execute` tool.
-
-A session or a server outlives the turn that started it and clutters a machine the operator is using, so close the session and stop every process you started.
