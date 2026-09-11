@@ -6,10 +6,13 @@ import { Metadata } from "./metadata.js";
 
 const dataDirectory = path.resolve(process.env.ORBIS_DATA_DIR ?? "data");
 await mkdir(dataDirectory, { recursive: true });
+const databasePath = path.join(dataDirectory, "library.sqlite");
+const youTubeApiKey = process.env.ORBIS_YOUTUBE_API_KEY;
 const app = createApp({
-  databasePath: path.join(dataDirectory, "library.sqlite"),
+  databasePath,
+  logging: { environment: process.env.NODE_ENV ?? "development" },
   metadata: Metadata.layer({
-    youTubeApiKey: process.env.ORBIS_YOUTUBE_API_KEY,
+    youTubeApiKey,
   }),
 });
 const port = Number(process.env.ORBIS_PORT ?? 4310);
@@ -22,7 +25,13 @@ const server = Bun.serve({
   maxRequestBodySize: 65_536,
   port,
 });
-console.log(`Orbis API: ${server.url}`);
+console.log(`Orbis API listening on ${server.url}`);
+console.log(`Library database: ${databasePath}`);
+if (!youTubeApiKey) {
+  console.warn(
+    "ORBIS_YOUTUBE_API_KEY is not set, so YouTube metadata enrichment is unavailable."
+  );
+}
 let stopping = false;
 const stop = async () => {
   if (stopping) {
@@ -32,6 +41,7 @@ const stop = async () => {
   try {
     await server.stop();
     await app.dispose();
+    console.log("Orbis API stopped.");
   } catch (error) {
     console.error(error);
     process.exitCode = 1;

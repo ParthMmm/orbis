@@ -26,6 +26,10 @@ The desktop connects to `http://127.0.0.1:4310`. Run only the API with `bun run 
 
 The server stores `library.sqlite` under `data/` in its working directory (`apps/server/data/` with the workspace scripts). Set `ORBIS_DATA_DIR` to an absolute path for a stable custom location. `ORBIS_PORT` overrides the loopback port; set the same value for both processes. This development setup does not launch a bundled server from the packaged desktop app.
 
+### Server logs
+
+The server writes one structured event per request when the request settles: request id, method, path with the query string removed, status, outcome, and elapsed time. An `Effect.log*` call made while handling a request is folded into that event instead of a second line. Authorization headers, cookies, request bodies, source links, and raw error stacks are never recorded, and credential-shaped values are redacted before output. Redaction follows key names, so a credential written as free text can still reach a line: treat logged free text as public. `NODE_ENV` sets the event `environment`, which defaults to `development`; in production each event is one JSON line, where `info` goes to standard output and `warn` and `error` go to standard error, and development prints readable lines. The wiring lives in `apps/server/src/logging.ts`; `createApp({ logging })` overrides the environment, quiets output (`silent`), or receives every event (`onEvent`), which the tests use.
+
 ## Checks
 
 Run `bun run check` locally or in CI for cached lint, formatting, TypeScript, tests, and Effect diagnostics. Turbo runs independent tasks in parallel, bounded by the available CPU count, and builds shared contracts before consumers. `bun run check:force` bypasses task-cache reads. `bun run fix` applies Ultracite fixes; it is never cached.

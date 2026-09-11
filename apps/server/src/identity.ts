@@ -50,20 +50,36 @@ export const readDevicesStrict = (
 };
 
 /**
- * Reads the trust store for the request path. Any failure, including a missing or malformed
- * file, is an empty registry, so a damaged store refuses remote clients and leaves local
- * access alone.
+ * The device registry as the request path sees it. `storeError` is set instead of
+ * throwing, so a caller can tell "no paired devices" from "no readable store".
  */
-export const readDevices = (
+export interface DeviceRegistry {
+  readonly devices: readonly DeviceRecord[];
+  readonly storeError?: "unreadable";
+}
+
+/** A file that was never created is not a damaged store, so it stays quiet. */
+const isMissingFile = (error: Error): boolean =>
+  "code" in error && error.code === "ENOENT";
+
+/**
+ * Reads the trust store for the request path. A missing store is an empty registry, and a
+ * store that exists but cannot be parsed is an empty registry with `storeError` set, so a
+ * damaged store refuses remote clients, leaves local access alone, and says why.
+ */
+export const readDeviceRegistry = (
   devicesPath: string | undefined
-): readonly DeviceRecord[] => {
+): DeviceRegistry => {
   if (!devicesPath) {
-    return [];
+    return { devices: [] };
   }
   try {
-    return readDevicesStrict(devicesPath);
-  } catch {
-    return [];
+    return { devices: readDevicesStrict(devicesPath) };
+  } catch (error) {
+    if (error instanceof Error && isMissingFile(error)) {
+      return { devices: [] };
+    }
+    return { devices: [], storeError: "unreadable" };
   }
 };
 

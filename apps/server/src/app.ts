@@ -9,8 +9,17 @@ import {
 } from "effect/unstable/http";
 
 import { LibraryError } from "./errors.js";
-import { decideAccess, readDevices } from "./identity.js";
+import { decideAccess, readDeviceRegistry } from "./identity.js";
 import { Library } from "./library.js";
+import type { LoggingOptions } from "./logging.js";
+import {
+  configureLogging,
+  finishRequestLog,
+  makeRequestLogMiddleware,
+  safeRequestPath,
+  startRequestLog,
+} from "./logging.js";
+import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
 
 interface RawFilters {
@@ -36,8 +45,25 @@ const SaveInput = Schema.Struct({
   url: Schema.String.check(Schema.isMaxLength(2048)),
 });
 
+/**
+ * A failed library call is the one server-side failure the response status does not
+ * explain on its own, so it is logged with the status the client receives. A rejected
+ * request body is not logged: its 400 already appears on the request event.
+ */
+const logLibraryFailure = <E>(error: E) =>
+  error instanceof LibraryError
+    ? (error.statusCode >= 500 ? Effect.logError : Effect.logWarning)(
+        "library request failed"
+      ).pipe(
+        Effect.annotateLogs({
+          errorTag: error._tag,
+          status: error.statusCode,
+        })
+      )
+    : Effect.void;
+
 const respond = <A, E, R>(effect: Effect.Effect<A, E, R>, status = 200) =>
-  Effect.match(effect, {
+  Effect.match(effect.pipe(Effect.tapError(logLibraryFailure)), {
     onFailure: (error) =>
       HttpServerResponse.jsonUnsafe(
         {
@@ -55,9 +81,11 @@ export const createApp = (
   options: {
     databasePath?: string;
     devicesPath?: string;
+    logging?: LoggingOptions;
     metadata?: Layer.Layer<Metadata>;
   } = {}
 ) => {
+  configureLogging(options.logging);
   const databasePath = options.databasePath ?? ":memory:";
   const devicesPath =
     options.devicesPath ??
@@ -68,16 +96,21 @@ export const createApp = (
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
       const metadata = yield* Metadata;
-      const enrichSavedSet = Effect.fn("enrichSavedSet")((set: SavedSet) =>
-        metadata.enrich({ source: set.source, url: set.url }).pipe(
+      // Enrichment failure is swallowed so the save still succeeds, so it is the
+      // one outcome a client cannot see. The log records which set and which reason.
+      const enrichSavedSet = Effect.fn("enrichSavedSet")((set: SavedSet) => {
+        const onMetadataFailure = (error: MetadataError) =>
+          Effect.logWarning("set metadata enrichment failed").pipe(
+            Effect.annotateLogs({ reason: error.reason, set: set.id }),
+            Effect.andThen(library.recordEnrichmentFailure(set.id))
+          );
+        return metadata.enrich({ source: set.source, url: set.url }).pipe(
           Effect.flatMap((enriched) =>
             library.recordEnrichment(set.id, enriched)
           ),
-          Effect.catchTag("MetadataError", () =>
-            library.recordEnrichmentFailure(set.id)
-          )
-        )
-      );
+          Effect.catchTag("MetadataError", onMetadataFailure)
+        );
+      });
       yield* router.add(
         "GET",
         "/health",
@@ -94,6 +127,9 @@ export const createApp = (
               title: input.title ?? "",
               url: input.url,
             });
+            yield* Effect.logInfo("set saved").pipe(
+              Effect.annotateLogs({ set: saved.id, source: saved.source })
+            );
             // A typed title is final, so the desktop client keeps its offline save path.
             if (saved.titleEditedByUser) {
               return saved;
@@ -251,21 +287,42 @@ export const createApp = (
       Layer.provide(Library.layer(databasePath)),
       Layer.provide(options.metadata ?? Metadata.unconfigured())
     ),
-    { disableLogger: true }
+    {
+      disableLogger: true,
+      middleware: makeRequestLogMiddleware(options.logging),
+    }
   );
   return {
     dispose: app.dispose,
     handler: (request: Request): Promise<Response> => {
       const host = request.headers.get("host") ?? new URL(request.url).host;
       const authorization = request.headers.get("authorization");
+      // Only a claimed token needs the trust store, so local requests never read it.
+      const registry = authorization
+        ? readDeviceRegistry(devicesPath)
+        : { devices: [] };
       const decision = decideAccess({
         authorization,
-        // Only a claimed token needs the trust store, so local requests never read it.
-        devices: authorization ? readDevices(devicesPath) : [],
+        devices: registry.devices,
         hasOrigin: request.headers.has("origin"),
         host,
       });
       if (decision.kind === "rejected") {
+        const logger = startRequestLog({
+          method: request.method,
+          path: safeRequestPath(request.url),
+          requestId: crypto.randomUUID(),
+        });
+        if (registry.storeError !== undefined) {
+          // A damaged trust store refuses every device. Without this field the
+          // only visible symptom is a sudden run of 401 responses.
+          logger.set({ trustStore: registry.storeError });
+        }
+        finishRequestLog(
+          logger,
+          { outcome: "rejected", status: decision.statusCode },
+          options.logging
+        );
         return Promise.resolve(
           Response.json(
             { message: decision.message },
