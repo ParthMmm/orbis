@@ -21,6 +21,12 @@ export const DEFAULT_INTERRUPT_AFTER_BYTES = 1024 ** 2;
 export const EXPECTED_SERVICES = ["soundcloud", "youtube"];
 
 const INVALID_API_KEY = "00000000-0000-4000-8000-000000000001";
+const AUTH_ERROR_CODES = new Set([
+  "error.api.auth.key.invalid",
+  "error.api.auth.key.missing",
+  "error.api.auth.key.not_found",
+  "error.api.auth.not_configured",
+]);
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const MAX_JSON_BODY_BYTES = 1024 * 1024;
@@ -760,10 +766,20 @@ async function checkAuthorization(
       sourceUrl: sample.url,
       timeoutMs: options.processingTimeoutMs,
     });
+    if (
+      response.kind === "cobalt_error" &&
+      AUTH_ERROR_CODES.has(response.code)
+    ) {
+      return resultPassed({
+        errorCode: response.code,
+        httpStatus: response.httpStatus,
+      });
+    }
     if (response.httpStatus === 401 || response.httpStatus === 403) {
       return resultPassed({ httpStatus: response.httpStatus });
     }
     return resultFailed(`${label}_not_rejected`, {
+      errorCode: response.code,
       httpStatus: response.httpStatus,
     });
   } catch (error) {
