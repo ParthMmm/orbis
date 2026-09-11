@@ -27,3 +27,6 @@ deploy/cobalt/*.report.json
 apps/apple/DerivedData/
 apps/apple/*.xcodeproj/
 *.xcresult
+
+# Agent tooling state, not part of the project.
+skills-lock.json
