@@ -2,7 +2,9 @@
 
 This is an isolated feasibility trial for audio downloads. It does not add downloads to Orbis and does not publish the Orbis server.
 
-The implementation baseline checked before remote work was `23d0c82` on `main`. Keep Cobalt as a separate, unmodified service. The Cobalt API is licensed under AGPL-3.0; review the license before modifying or redistributing it.
+The implementation baseline checked before remote work was `23d0c82` on `main`.
+
+Read [the trial evidence](cobalt-trial-evidence.md) before repeating the deployment. It records what the first run measured, including a YouTube failure that is expected to reproduce. Keep Cobalt as a separate, unmodified service. The Cobalt API is licensed under AGPL-3.0; review the license before modifying or redistributing it.
 
 ## Fixed deployment
 
@@ -152,7 +154,17 @@ Exit status is meaningful:
 - `1`: a required check failed. Do not call this a successful trial.
 - `2`: usage or setup input was invalid.
 
+A run whose cases are `blocked` rather than `failed` also exits `1`. Read `overall` and `coverage` in the report rather than the exit code alone.
+
 The report separates `checks`, `samples`, `interruption`, and `coverage`. A missing fixture or unavailable `ffprobe`/`ffmpeg` is `blocked`, not a pass. A YouTube failure does not hide a SoundCloud result, and vice versa.
+
+## Observed behaviour on this deployment
+
+These were measured on 2026-09-11 against the pinned image on Vanta. See [the trial evidence](cobalt-trial-evidence.md) for the numbers.
+
+- Authentication rejections return HTTP 400 with an `error.api.auth.*` code, not 401 or 403. A request without a key returns `error.api.auth.key.missing` and a request with an unknown key returns `error.api.auth.key.not_found`. Both are refusals.
+- YouTube tunnels are created with the correct filename and then serve zero bytes, for every audio format. Metadata resolution succeeds and the media does not arrive. Resolving this needs a session generator, cookies, or a proxy, each of which is an operator decision rather than part of this trial.
+- The first processing request after the container was created from a freshly pulled image returned `error.api.fetch.fail` for both sources. Later attempts, including immediately after recreating the container from the cached image, succeeded. Do not treat a first-attempt failure as a source verdict. Rerun with a fresh request.
 
 ## Restart, retest, and rollback
 
