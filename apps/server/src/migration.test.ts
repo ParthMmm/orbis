@@ -4,7 +4,10 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { Effect } from "effect";
+
 import { createApp } from "./app.js";
+import { Metadata } from "./metadata.js";
 import { request } from "./test-http.js";
 
 const LEGACY_SCHEMA = `PRAGMA journal_mode = WAL;
@@ -121,6 +124,42 @@ test("applies the extended columns once and keeps them on a later open", async (
         { title: "Saved after migration" },
         { title: "Saved before the extended columns" },
       ],
+    });
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("does not replace the title of a set saved before the column existed", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-migration-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  writeLegacyDatabase(databasePath);
+  const app = createApp({
+    databasePath,
+    metadata: Metadata.layerOf({
+      enrich: () =>
+        Effect.succeed({
+          artworkUrl: null,
+          creator: "Some Channel",
+          durationSeconds: 120,
+          title: "The provider's title",
+        }),
+      isConfigured: () => true,
+    }),
+  });
+  try {
+    const retried = await request(app, {
+      method: "POST",
+      url: "/sets/legacy-set/metadata",
+    });
+    expect(retried.statusCode).toBe(200);
+    // A title was required before this column existed, so every pre-existing title came
+    // from a person and a retry must leave it alone.
+    expect(retried.json()).toMatchObject({
+      creator: "Some Channel",
+      title: "Saved before the extended columns",
+      titleEditedByUser: true,
     });
   } finally {
     await app.dispose();

@@ -58,7 +58,10 @@ const MIGRATIONS = [
    ALTER TABLE sets ADD COLUMN artwork_url TEXT;
    ALTER TABLE sets ADD COLUMN duration_seconds INTEGER;
    ALTER TABLE sets ADD COLUMN metadata_state TEXT NOT NULL DEFAULT 'pending';
-   ALTER TABLE sets ADD COLUMN title_edited_by_user INTEGER NOT NULL DEFAULT 0;
+   -- A title was required before this column existed, so every row that predates it holds a
+   -- title a person typed. The default backfills them as edited, which keeps a metadata retry
+   -- from replacing a title someone chose. New rows always state the value themselves.
+   ALTER TABLE sets ADD COLUMN title_edited_by_user INTEGER NOT NULL DEFAULT 1;
    ALTER TABLE sets ADD COLUMN download_state TEXT NOT NULL DEFAULT 'none';
    ALTER TABLE sets ADD COLUMN retained_audio_bytes INTEGER;
    ALTER TABLE sets ADD COLUMN retained_audio_format TEXT;
