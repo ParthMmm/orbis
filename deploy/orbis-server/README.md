@@ -56,9 +56,9 @@ tailscale funnel status
 
 The Serve rule must read `tailnet only`. The existing jellyfin Funnel on `8443` must be unchanged.
 
-**Port 443 is not available on this host.** Caddy runs as a container bound directly to the tailnet address on `443`, so `tailscale serve` cannot bind there. The failure is silent in the worst way. `tailscale serve` prints `Serve started and running in the background`, and then `tailscale serve status` does not list the rule at all, because Tailscale drops a mapping it cannot bind. A client that asks for the bare hostname therefore reaches whatever Caddy is serving and gets that application's HTML, not a connection error and not a 403.
+**Port 443 is not available on this host.** Caddy runs as a container bound directly to the tailnet address on `443`, so `tailscale serve` cannot bind there. The failure is silent. `tailscale serve` prints `Serve started and running in the background`, and then `tailscale serve status` does not list the rule at all, because Tailscale drops a mapping it cannot bind. A client that asks for the bare hostname therefore reaches whatever Caddy is serving and gets that application's HTML, not a connection error and not a 403.
 
-Orbis is therefore served at `https://vanta.tail01d084.ts.net:8444`, and a client must be given that address with the port. Untangling `443` is the host owner's decision and is not needed for Orbis to work.
+Orbis is therefore served at `https://vanta.tail01d084.ts.net:8444`, and a client must be given that address with the port. Resolving the `443` conflict is the host owner's decision and is not needed for Orbis to work.
 
 ## Check from another tailnet machine
 
@@ -75,18 +75,18 @@ A 401 instead of a 403 means the token is present but not enrolled, so check the
 
 ## Give the service provider credentials
 
-Metadata enrichment reads a YouTube API key from the environment. The key lives in `apps/server/.env.local` in the working checkout, which is ignored by git, and reaches the service through a drop-in rather than being copied into the deployment checkout.
+Metadata enrichment reads a YouTube API key from the environment. The key lives in `apps/server/.env.local` in the working checkout at `~/orbis`, which is ignored by git. It reaches the service through a drop-in rather than being copied into the deployment checkout at `~/orbis-service`.
 
 ```sh
 mkdir -p ~/.config/systemd/user/orbis-server.service.d
 cat > ~/.config/systemd/user/orbis-server.service.d/key.conf <<'CONF'
 [Service]
-EnvironmentFile=/home/parth/orbis/apps/server/.env.local
+EnvironmentFile=%h/orbis/apps/server/.env.local
 CONF
 systemctl --user daemon-reload && systemctl --user restart orbis-server
 ```
 
-Nothing is required for SoundCloud, which uses oEmbed and no key. Without a key the server still saves a Set and records a failed metadata state, which the client offers to retry, so a missing key degrades rather than breaks.
+Nothing is required for SoundCloud, which uses oEmbed. Without a key the server still saves a Set and records a failed metadata state, which the client offers to retry, so a missing key degrades rather than breaks.
 
 `systemctl --user show -p Environment` will not show this value, because systemd reads the file at exec time. Check it by saving a Source Link with no title and reading `metadataState` in the response.
 
