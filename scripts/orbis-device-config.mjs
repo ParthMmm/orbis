@@ -16,10 +16,13 @@ const argument = (name) => {
 
 const address = argument("address") ?? process.env.ORBIS_SERVICE_ADDRESS;
 const tokenFile = argument("token-file");
+let tokenFromFile;
+if (tokenFile) {
+  const contents = await readFile(tokenFile, "utf-8");
+  tokenFromFile = contents.trim();
+}
 const token =
-  argument("token") ??
-  process.env.ORBIS_DEVICE_TOKEN ??
-  (tokenFile ? (await readFile(tokenFile, "utf8")).trim() : undefined);
+  argument("token") ?? process.env.ORBIS_DEVICE_TOKEN ?? tokenFromFile;
 
 if (!address || !token) {
   console.error(
