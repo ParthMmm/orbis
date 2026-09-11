@@ -36,6 +36,75 @@ enum OrbisError: Error, Equatable {
     }
 }
 
+/// A failure as a screen needs to show it: a heading that says what went wrong, the sentence
+/// underneath, and whether trying again could change the answer.
+///
+/// Every library failure used to wear the same heading, so a person whose service was older than
+/// their app was told their network was down. A Try again button that cannot change the answer is
+/// its own kind of lie, which is why retryability is part of the failure rather than of the view.
+struct OrbisFailure: Equatable {
+    let title: String
+    let message: String
+    let symbol: String
+    let isRetryable: Bool
+}
+
+extension OrbisError {
+    var failure: OrbisFailure {
+        switch self {
+        case .unreachable:
+            OrbisFailure(
+                title: "Cannot reach your library",
+                message: message,
+                symbol: "wifi.exclamationmark",
+                isRetryable: true
+            )
+        case .notPaired:
+            OrbisFailure(
+                title: "This device is not paired",
+                message: message,
+                symbol: "key.slash",
+                isRetryable: false
+            )
+        case .refused:
+            OrbisFailure(
+                title: "The service refused the request",
+                message: message,
+                symbol: "hand.raised",
+                isRetryable: false
+            )
+        case .malformed:
+            OrbisFailure(
+                title: "Your library answered in a way this app cannot read",
+                message: "\(message) The service and the app have to be updated together.",
+                symbol: "doc.questionmark",
+                isRetryable: false
+            )
+        case let .server(status, _):
+            OrbisFailure(
+                title: "Your library reported an error",
+                message: message,
+                symbol: "exclamationmark.triangle",
+                isRetryable: status >= 500
+            )
+        case .badAddress:
+            OrbisFailure(
+                title: "That is not a service address",
+                message: message,
+                symbol: "questionmark.circle",
+                isRetryable: false
+            )
+        case .duplicate, .cancelled:
+            OrbisFailure(
+                title: "Something went wrong",
+                message: message,
+                symbol: "exclamationmark.triangle",
+                isRetryable: true
+            )
+        }
+    }
+}
+
 /// Talks to the Orbis service. Every request carries the device token, and the same
 /// failure mapping is used everywhere, so a view only has to render `message`.
 struct OrbisClient: Sendable {

@@ -136,6 +136,26 @@ final class OrbisClientTests: XCTestCase {
         XCTAssertEqual(json["tags"] as? [String], ["techno", "live"])
     }
 
+    /// A service older than this field must not make the library unreadable, which is exactly
+    /// what happened when the field arrived.
+    func testASetFromAnOlderServiceStillDecodes() async throws {
+        let older = """
+        {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
+        "title":"Night session","source":"youtube","tags":["techno"],"createdAt":"2026-01-01T00:00:00.000Z",
+        "creator":null,"artworkUrl":null,"durationSeconds":null,"metadataState":"enriched",
+        "downloadState":"none","playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
+        "lastListenedAt":null}
+        """
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: StubProtocol.session(status: 200, body: #"{"sets":["# + older + "]}")) 
+        let sets = try await client.library()
+        XCTAssertEqual(sets.count, 1)
+        XCTAssertEqual(sets[0].title, "Night session")
+        XCTAssertEqual(sets[0].playlistIds, [])
+    }
+
     func testPlaylistMembershipIsStatedInFullOnTheSet() async throws {
         let session = StubProtocol.session(
             status: 200, body: Self.savedSet(title: "Night session", tags: []))

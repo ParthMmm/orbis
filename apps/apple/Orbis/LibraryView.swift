@@ -39,15 +39,17 @@ struct SetList: View {
                 ProgressView("Loading library")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .accessibilityIdentifier("library-loading")
-            case let .failed(message):
+            case let .failed(failure):
                 ContentUnavailableView {
-                    Label("Cannot reach your library", systemImage: "wifi.exclamationmark")
+                    Label(failure.title, systemImage: failure.symbol)
                 } description: {
-                    Text(message)
+                    Text(failure.message)
                 } actions: {
-                    Button("Try again") { Task { await retry() } }
-                        .buttonStyle(OrbisPrimaryButtonStyle())
-                        .accessibilityIdentifier("library-retry")
+                    if failure.isRetryable {
+                        Button("Try again") { Task { await retry() } }
+                            .buttonStyle(OrbisPrimaryButtonStyle())
+                            .accessibilityIdentifier("library-retry")
+                    }
                 }
                 .accessibilityIdentifier("library-error")
             case let .loaded(sets):

@@ -7,7 +7,7 @@ enum Loadable<Value: Equatable>: Equatable {
     case idle
     case loading
     case loaded(Value)
-    case failed(String)
+    case failed(OrbisFailure)
 }
 
 @MainActor
@@ -182,9 +182,9 @@ final class AppModel {
                 Task { await loadLibrary() }
             }
         } catch let error as OrbisError {
-            library = .failed(error.message)
+            library = .failed(error.failure)
         } catch {
-            library = .failed(OrbisError.unreachable.message)
+            library = .failed(OrbisError.unreachable.failure)
         }
     }
 
@@ -417,9 +417,9 @@ final class AppModel {
         } catch OrbisError.cancelled {
             search = .idle
         } catch let error as OrbisError {
-            search = .failed(error.message)
+            search = .failed(error.failure)
         } catch {
-            search = .failed(OrbisError.unreachable.message)
+            search = .failed(OrbisError.unreachable.failure)
         }
     }
 }
