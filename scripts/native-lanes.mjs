@@ -146,6 +146,9 @@ try {
       "Orbis",
       "-destination",
       `platform=iOS Simulator,name=${simulator}`,
+      // Lanes do not sign, so the committed project stays device-ready.
+      "CODE_SIGNING_ALLOWED=NO",
+      "CODE_SIGNING_REQUIRED=NO",
       "-derivedDataPath",
       derived,
       "-resultBundlePath",
@@ -166,6 +169,9 @@ try {
     }
   );
 
+  // The export refuses to write into a directory that already holds a manifest, so a second
+  // run would fail after the tests passed.
+  rmSync(shots, { force: true, recursive: true });
   mkdirSync(shots, { recursive: true });
   run(
     [
