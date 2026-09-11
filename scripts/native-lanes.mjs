@@ -85,6 +85,14 @@ process.on("SIGINT", () => {
 });
 
 try {
+  // The design system is a package the app links, so its own rules are verified in the same run
+  // as the app's tests rather than by a separate command someone has to remember.
+  const design = run(["swift", "test"], {
+    cwd: path.join(native, "OrbisDesign"),
+  });
+  const designSummary = /Test run with [^\n]*passed[^\n]*/u.exec(design);
+  console.log(`design package: ${designSummary?.[0] ?? "tests passed"}`);
+
   // A real service on a real port with its own database and trust store, so a lane never
   // touches a developer's library.
   server = spawn("bun", ["apps/server/src/index.ts"], {

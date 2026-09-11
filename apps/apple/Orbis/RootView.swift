@@ -215,25 +215,84 @@ struct DestinationView: View {
     /// filing sits under it so the answer appears where the action was taken.
     private var pasteHero: some View {
         VStack(alignment: .leading, spacing: 8) {
-            PasteHero(
-                link: $model.linkToFile,
-                compact: isCompact,
-                hint: "The title and artist come from the link."
-            ) {
-                Task { await model.fileLink() }
-            }
-            if let fileError = model.fileError {
-                Text(fileError)
-                    .font(.orbis.caption)
-                    .foregroundStyle(OrbisColor.destructive)
-                    .accessibilityIdentifier("file-error")
-            } else if let confirmation = model.fileConfirmation {
-                Text(confirmation)
-                    .font(.orbis.mono)
-                    .foregroundStyle(.secondary)
-                    .accessibilityIdentifier("file-confirmation")
+            if let reveal = model.reveal {
+                revealPanel(reveal)
+            } else {
+                PasteHero(
+                    link: $model.linkToFile,
+                    state: SetPresentation.linkState(
+                        isFiling: model.isFiling, failure: model.fileFailure),
+                    compact: isCompact
+                ) {
+                    Task { await model.fileLink() }
+                }
+                if let confirmation = model.fileConfirmation {
+                    Text(confirmation)
+                        .font(.orbis.mono)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("file-confirmation")
+                }
             }
         }
+    }
+
+    /// The step the hero promises: the title and Tags the service read from the link, open to
+    /// correction. Nothing here is required, so pressing Done is the common case.
+    private func revealPanel(_ reveal: AppModel.Reveal) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Text("Name this set")
+                    .font(.orbis.sectionTitle)
+                SourceStamp(reveal.set.source.label)
+            }
+            TextField(
+                "Title",
+                text: Binding(
+                    get: { model.reveal?.title ?? "" },
+                    set: { model.reveal?.title = $0 }
+                )
+            )
+            .textFieldStyle(.plain)
+            .padding(.leading)
+            .padding(.vertical, 8)
+            .padding(.trailing)
+            .background(Color.orbis.field, in: .rect(cornerRadius: Radius.field))
+            .accessibilityIdentifier("reveal-title")
+            TagInput(
+                tags: Binding(
+                    get: { model.reveal?.tags ?? [] },
+                    set: { model.reveal?.tags = $0 }
+                ),
+                suggestions: model.availableTags
+            )
+            HStack {
+                Button("Done") { Task { await model.saveReveal() } }
+                    .buttonStyle(OrbisPrimaryButtonStyle())
+                    .disabled(model.isSavingReveal)
+                    .accessibilityIdentifier("reveal-done")
+                Button("Not now") { model.closeReveal() }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("reveal-dismiss")
+            }
+            if let error = model.revealError {
+                Text(error)
+                    .font(.orbis.mono)
+                    .foregroundStyle(.secondary)
+                    .accessibilityIdentifier("reveal-error")
+            } else if reveal.set.metadataState == "failed" {
+                HStack(spacing: 6) {
+                    Text("Orbis could not name this set.")
+                        .font(.orbis.mono)
+                        .foregroundStyle(.secondary)
+                    Button("Try again") { Task { await model.retryMetadata() } }
+                        .buttonStyle(.plain)
+                        .foregroundStyle(Color.orbis.tint)
+                        .accessibilityIdentifier("reveal-retry")
+                }
+            }
+        }
+        .padding()
+        .orbisRaised(radius: Radius.hero)
     }
 
     private var isCompact: Bool {

@@ -95,6 +95,46 @@ final class LibraryUITests: XCTestCase {
         app.buttons["connection-test"].tap()
     }
 
+    /// Filing is the one action the app takes on the library, and the design promises a naming
+    /// step after it: "Title and tags come next." This proves that step arrives, and that it can
+    /// be left without naming anything.
+    func testFilingALinkOpensTheNamingStep() throws {
+        let app = try launch()
+        connect(app)
+
+        let link = app.textFields["Paste a link"]
+        XCTAssertTrue(
+            link.waitForExistence(timeout: 60),
+            "the Library must open with the paste field\n\(app.debugDescription)"
+        )
+        link.tap()
+        link.typeText("https://youtu.be/tPEMP9oYxTo")
+        capture("07-link-pasted")
+
+        app.buttons["File it"].tap()
+
+        let title = app.textFields["reveal-title"]
+        XCTAssertTrue(
+            title.waitForExistence(timeout: 60),
+            "filing must open the step where the Set is named\n\(app.debugDescription)"
+        )
+        XCTAssertTrue(app.buttons["reveal-done"].exists, "the naming step must offer Done")
+        let chosen = app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Press Return to add")
+        ).firstMatch
+        XCTAssertTrue(chosen.exists, "the naming step must offer Tags\n\(app.debugDescription)")
+        capture("08-naming-step")
+
+        app.buttons["reveal-dismiss"].tap()
+
+        let confirmation = app.staticTexts["file-confirmation"]
+        XCTAssertTrue(
+            confirmation.waitForExistence(timeout: 30),
+            "leaving the naming step must say what was filed\n\(app.debugDescription)"
+        )
+        capture("09-filed")
+    }
+
     /// The design names the active filter in its heading, which is the state that distinguishes
     /// a filtered list from an unfiltered one.
     func testFiltersTheLibraryByTag() throws {

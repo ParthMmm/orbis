@@ -58,3 +58,13 @@ struct SaveSetRequest: Encodable {
     let tags: [String]
     let url: String
 }
+
+/// The two edits the reveal makes. The service caps a title at 200 characters, so a longer one
+/// is cut rather than refused.
+struct SetTitleRequest: Encodable {
+    let title: String
+}
+
+struct SetTagsRequest: Encodable {
+    let tags: [String]
+}

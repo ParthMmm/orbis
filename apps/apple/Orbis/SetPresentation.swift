@@ -46,9 +46,22 @@ enum SetPresentation {
     }
 
     /// A Tag's colour is its identity. The rule lives in the design system, so a Tag looks the
-    /// same in every app and in every preview.
+    /// same in every app and in every preview. Main actor because the design package defaults its
+    /// types to the main actor, like the other mappers here.
+    @MainActor
     static func category(for tag: String) -> OrbisColor.Category {
         OrbisColor.Category.forTag(tag)
+    }
+
+    /// The link field speaks in three outcomes: a check in flight, a link the library already
+    /// holds, and anything else the service refused.
+    @MainActor
+    static func linkState(isFiling: Bool, failure: OrbisError?) -> LinkFieldState {
+        if isFiling { return .checking }
+        guard let failure else { return .idle }
+        return failure == .duplicate
+            ? .duplicate(message: failure.message)
+            : .invalid(message: failure.message)
     }
 
     @MainActor

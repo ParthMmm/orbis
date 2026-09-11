@@ -102,6 +102,70 @@ final class OrbisClientTests: XCTestCase {
         XCTAssertEqual(json["tags"] as? [String], [])
     }
 
+    func testTitleEditPatchesTheSetAndDecodesWhatCameBack() async throws {
+        let session = StubProtocol.session(
+            status: 200, body: Self.savedSet(title: "Renamed by hand", tags: []))
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: session
+        )
+        let updated = try await client.updateTitle("42", title: "Renamed by hand")
+        XCTAssertEqual(updated.title, "Renamed by hand")
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PATCH")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42/title")
+        let sent = try XCTUnwrap(StubProtocol.lastBody)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
+        XCTAssertEqual(json["title"] as? String, "Renamed by hand")
+    }
+
+    func testTagEditPatchesTheSetAndDecodesWhatCameBack() async throws {
+        let session = StubProtocol.session(
+            status: 200, body: Self.savedSet(title: "Night session", tags: ["techno", "live"]))
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: session
+        )
+        let updated = try await client.updateTags("42", tags: ["techno", "live"])
+        XCTAssertEqual(updated.tags, ["techno", "live"])
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PATCH")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42/tags")
+        let sent = try XCTUnwrap(StubProtocol.lastBody)
+        let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
+        XCTAssertEqual(json["tags"] as? [String], ["techno", "live"])
+    }
+
+    func testMetadataRetryAsksAgainForTheName() async throws {
+        let session = StubProtocol.session(
+            status: 200, body: Self.savedSet(title: "Named at last", tags: []))
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: session
+        )
+        let updated = try await client.retryMetadata("42")
+        XCTAssertEqual(updated.title, "Named at last")
+        XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42/metadata")
+        XCTAssertNil(StubProtocol.lastBody)
+    }
+
+    static func savedSet(title: String, tags: [String]) -> String {
+        """
+        {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
+        "title":"\(title)","source":"youtube","tags":\(encode(tags)),"createdAt":"2026-01-01T00:00:00.000Z",
+        "creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
+        "downloadState":"none","playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
+        "lastListenedAt":null}
+        """
+    }
+
+    private static func encode(_ tags: [String]) -> String {
+        let data = try? JSONEncoder().encode(tags)
+        return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
+    }
+
     func testPlaylistsDecodeWithTheirCounts() async throws {
         let body = """
         {"playlists":[{"id":"1","name":"Long drives","createdAt":"2026-01-01T00:00:00.000Z","setCount":4},

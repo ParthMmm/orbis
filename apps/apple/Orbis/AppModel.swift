@@ -38,7 +38,38 @@ final class AppModel {
     var linkToFile = ""
     var isFiling = false
     var fileConfirmation: String?
-    var fileError: String?
+    /// What the last filing refused, kept as the error so the field can tell an address Orbis
+    /// does not know from one the library already holds.
+    var fileFailure: OrbisError?
+
+    /// The Set filed moments ago, whose title and Tags the service read from the link. This is
+    /// the person's chance to overrule that reading, and it closes without a change.
+    struct Reveal: Equatable {
+        let set: SavedSet
+        var title: String
+        var tags: [String]
+
+        /// The title to send, or nil when there is nothing to send: an empty field means "leave the
+        /// title that came with the Set", which is what a failed enrichment leaves behind, and an
+        /// unchanged one is not worth a request.
+        var renamedTitle: String? {
+            let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines).prefix(200)
+            guard !trimmed.isEmpty, String(trimmed) != set.title else { return nil }
+            return String(trimmed)
+        }
+
+        /// True while the title is still whatever arrived with the Set, including the placeholder
+        /// a failed enrichment leaves, so a later retry may replace it.
+        var titleUntouched: Bool {
+            title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || title == set.title
+        }
+
+        var hasChanges: Bool { renamedTitle != nil || tags != set.tags }
+    }
+
+    var reveal: Reveal?
+    var isSavingReveal = false
+    var revealError: String?
 
     var destination: Destination = .library
 
@@ -157,13 +188,19 @@ final class AppModel {
         let link = linkToFile.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !link.isEmpty else { return }
         isFiling = true
-        fileError = nil
+        fileFailure = nil
         fileConfirmation = nil
         defer { isFiling = false }
         do {
             let saved = try await client.save(url: link)
             linkToFile = ""
-            fileConfirmation = "Filed “\(saved.title)”"
+            // A failed enrichment leaves a placeholder title, so the field starts empty rather
+            // than inviting the placeholder to be kept.
+            reveal = Reveal(
+                set: saved,
+                title: saved.metadataState == "failed" ? "" : saved.title,
+                tags: saved.tags
+            )
             if case let .loaded(sets) = library {
                 library = .loaded([saved] + sets.filter { $0.id != saved.id })
             } else {
@@ -172,10 +209,82 @@ final class AppModel {
         } catch OrbisError.cancelled {
             return
         } catch let error as OrbisError {
-            fileError = error.message
+            fileFailure = error
         } catch {
-            fileError = OrbisError.unreachable.message
+            fileFailure = .unreachable
         }
+    }
+
+    /// Names the Set that was just filed. Only what changed goes to the service, and each change
+    /// lands in the list as it is accepted, so a failure halfway keeps the part that worked.
+    func saveReveal() async {
+        guard let open = reveal else { return }
+        guard open.hasChanges else {
+            closeReveal()
+            return
+        }
+        guard let client else { return }
+        isSavingReveal = true
+        revealError = nil
+        defer { isSavingReveal = false }
+        do {
+            var updated = open.set
+            if let title = open.renamedTitle {
+                updated = try await client.updateTitle(open.set.id, title: title)
+                replace(updated)
+            }
+            if open.tags != open.set.tags {
+                updated = try await client.updateTags(open.set.id, tags: open.tags)
+                replace(updated)
+            }
+            closeReveal(with: updated)
+        } catch OrbisError.cancelled {
+            return
+        } catch let error as OrbisError {
+            revealError = error.message
+        } catch {
+            revealError = OrbisError.unreachable.message
+        }
+    }
+
+    /// Asks the service again to name a Set, which is what a link it could not read leaves
+    /// behind. A title the person typed over the guess stays theirs.
+    func retryMetadata() async {
+        guard let client, let open = reveal else { return }
+        isSavingReveal = true
+        revealError = nil
+        defer { isSavingReveal = false }
+        do {
+            let updated = try await client.retryMetadata(open.set.id)
+            replace(updated)
+            reveal = Reveal(
+                set: updated, title: open.titleUntouched ? updated.title : open.title,
+                tags: open.tags)
+        } catch OrbisError.cancelled {
+            return
+        } catch let error as OrbisError {
+            revealError = error.message
+        } catch {
+            revealError = OrbisError.unreachable.message
+        }
+    }
+
+    /// Closes the reveal, leaving nothing behind when the person filed the Set and walked away.
+    func closeReveal(with set: SavedSet? = nil) {
+        guard let closed = set ?? reveal?.set else {
+            reveal = nil
+            revealError = nil
+            return
+        }
+        reveal = nil
+        revealError = nil
+        fileConfirmation = "Filed “\(closed.title)”"
+    }
+
+    /// Swaps one Set in the loaded library for a newer copy of it.
+    private func replace(_ set: SavedSet) {
+        guard case let .loaded(sets) = library else { return }
+        library = .loaded(sets.map { $0.id == set.id ? set : $0 })
     }
 
     /// The playlists a sidebar offers. A failure is not shown on its own, because the Library is

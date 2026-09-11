@@ -109,13 +109,8 @@ public struct TagInput: View {
               Button {
                 tags = Self.adding(tag, to: tags, limit: limit)
               } label: {
-                Label {
-                  Text(tag)
-                } icon: {
-                  Circle().fill(category(tag).dot).frame(width: 8, height: 8)
-                }
-                .labelStyle(.titleAndIcon)
-                .font(.orbis.mono)
+                Label(tag, systemImage: "plus")
+                  .font(.orbis.mono)
               }
               .buttonStyle(.bordered)
               .buttonBorderShape(.capsule)

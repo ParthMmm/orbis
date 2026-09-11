@@ -99,6 +99,28 @@ struct OrbisClient: Sendable {
     func save(url: String, tags: [String] = []) async throws -> SavedSet {
         let body = try JSONEncoder().encode(SaveSetRequest(tags: tags, url: url))
         let response = try await send(path: "sets", method: "POST", body: body)
+        return try decodedSet(response)
+    }
+
+    func updateTitle(_ id: String, title: String) async throws -> SavedSet {
+        let body = try JSONEncoder().encode(SetTitleRequest(title: title))
+        let response = try await send(path: "sets/\(id)/title", method: "PATCH", body: body)
+        return try decodedSet(response)
+    }
+
+    func updateTags(_ id: String, tags: [String]) async throws -> SavedSet {
+        let body = try JSONEncoder().encode(SetTagsRequest(tags: tags))
+        let response = try await send(path: "sets/\(id)/tags", method: "PATCH", body: body)
+        return try decodedSet(response)
+    }
+
+    /// Asks the service to name a Set it could not name when the link was filed.
+    func retryMetadata(_ id: String) async throws -> SavedSet {
+        let response = try await send(path: "sets/\(id)/metadata", method: "POST", body: nil)
+        return try decodedSet(response)
+    }
+
+    private func decodedSet(_ response: Data) throws -> SavedSet {
         guard let decoded = try? JSONDecoder().decode(SavedSet.self, from: response) else {
             throw OrbisError.malformed
         }
