@@ -19,6 +19,16 @@ final class OrbisFailureTests: XCTestCase {
             "the failure must remember the address it asked")
     }
 
+    /// The person reading this has an address that answers with a web page, and the useful thing
+    /// to say is that the port is probably missing, not that the answer was unreadable.
+    func testAWebPagePointsAtThePort() {
+        let failure = OrbisError.notOrbis.failure(at: URL(string: "https://vanta.tail01d084.ts.net"))
+        XCTAssertEqual(failure.title, "That address is a web page, not Orbis")
+        XCTAssertTrue(failure.message.localizedCaseInsensitiveContains("port"))
+        XCTAssertFalse(failure.isRetryable, "the same address will answer the same way")
+        XCTAssertEqual(failure.address, "https://vanta.tail01d084.ts.net")
+    }
+
     func testAnUnreachableServiceOffersARetry() {
         let failure = OrbisError.unreachable.failure()
         XCTAssertEqual(failure.title, "Cannot reach your library")
@@ -36,7 +46,7 @@ final class OrbisFailureTests: XCTestCase {
     func testEveryFailureSaysSomethingAndCarriesASymbol() {
         let failures: [OrbisError] = [
             .unreachable, .notPaired, .refused, .duplicate, .cancelled,
-            .server(status: 503, message: "Busy."), .malformed, .badAddress,
+            .server(status: 503, message: "Busy."), .malformed, .notOrbis, .badAddress,
         ]
         for failure in failures {
             XCTAssertFalse(failure.failure().title.isEmpty, "\(failure) has no heading")

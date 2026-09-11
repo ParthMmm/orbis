@@ -12,6 +12,9 @@ enum OrbisError: Error, Equatable {
     case cancelled
     case server(status: Int, message: String)
     case malformed
+    /// A web server answered instead of Orbis. Usually the address is missing the port the
+    /// service runs on, which is worth saying rather than calling the answer unreadable.
+    case notOrbis
     case badAddress
 
     var message: String {
@@ -30,6 +33,8 @@ enum OrbisError: Error, Equatable {
             "The service reported \(status). \(message)"
         case .malformed:
             "The service sent a response this app does not understand. Update the app."
+        case .notOrbis:
+            "Something answered at that address, but it was not Orbis. A web page came back instead."
         case .badAddress:
             "Enter the full service address, including https://."
         }
@@ -92,6 +97,13 @@ extension OrbisError {
                 message: message,
                 symbol: "exclamationmark.triangle",
                 isRetryable: status >= 500
+            )
+        case .notOrbis:
+            failure = OrbisFailure(
+                title: "That address is a web page, not Orbis",
+                message: "\(message) Check that the address carries the port your Orbis service runs on, because a bare host name is usually answered by whatever else runs there.",
+                symbol: "globe",
+                isRetryable: false
             )
         case .badAddress:
             failure = OrbisFailure(
@@ -250,11 +262,20 @@ struct OrbisClient: Sendable {
         guard let http = response as? HTTPURLResponse else {
             throw OrbisError.malformed
         }
+        let head = data.prefix(160)
+        // Markup at any status means a web server answered, not Orbis. Reported before the status
+        // is judged, because a 403 from a web page is not a refusal by the library.
+        if head.first == UInt8(ascii: "<") {
+            #if DEBUG
+                let line =
+                    "Orbis read a web page from \(request.url?.absoluteString ?? "?"): \(String(decoding: head, as: UTF8.self))\n"
+                FileHandle.standardError.write(Data(line.utf8))
+            #endif
+            throw OrbisError.notOrbis
+        }
         #if DEBUG
-            // A body that is not JSON means something other than Orbis answered, which looks the
-            // same as a version skew from inside the app. Print the address and what arrived, so
-            // the next time this happens it is a fact in the log rather than a hunt.
-            let head = data.prefix(160)
+            // A body that is not JSON and not a web page is usually a version skew: something
+            // answered in a shape this build does not know. Print it rather than guess.
             if head.first != UInt8(ascii: "{"), head.first != UInt8(ascii: "[") {
                 let line =
                     "Orbis read a non-JSON body from \(request.url?.absoluteString ?? "?"): \(String(decoding: head, as: UTF8.self))\n"

@@ -49,6 +49,27 @@ final class OrbisClientTests: XCTestCase {
         XCTAssertTrue(StubProtocol.lastRequest?.url?.query()?.contains("night") == true)
     }
 
+    /// The bare tailnet name answers with Caddy's page, which is the trap this whole thread is
+    /// about. It must read as a web page, not as an unreadable answer or a refusal.
+    func testAWebPageIsItsOwnFailure() async {
+        for status in [200, 403] {
+            let client = OrbisClient(
+                address: URL(string: "https://vanta.example.ts.net")!,
+                token: "token",
+                session: StubProtocol.session(
+                    status: status, body: "<!doctype html><html lang=\"en\"><head>")
+            )
+            do {
+                _ = try await client.health()
+                XCTFail("expected a web page to be refused at status \(status)")
+            } catch let error as OrbisError {
+                XCTAssertEqual(error, .notOrbis)
+            } catch {
+                XCTFail("unexpected \(error)")
+            }
+        }
+    }
+
     func testFailuresMapToActionableCases() async {
         let cases: [(Int, String, OrbisError)] = [
             (401, #"{"message":"nope"}"#, .notPaired),
