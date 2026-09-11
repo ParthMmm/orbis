@@ -11,7 +11,82 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { LibraryError } from "./errors.js";
 import { normalizeSourceUrl } from "./source-url.js";
 
-type SetRow = Omit<SavedSet, "tags"> & { tags: string };
+type SetRow = Omit<SavedSet, "tags" | "titleEditedByUser"> & {
+  tags: string;
+  titleEditedByUser: number;
+};
+
+const SET_COLUMNS = `id, url, title, source, tags, created_at AS createdAt, creator,
+  artwork_url AS artworkUrl, duration_seconds AS durationSeconds,
+  metadata_state AS metadataState, title_edited_by_user AS titleEditedByUser,
+  download_state AS downloadState, retained_audio_bytes AS retainedAudioBytes,
+  retained_audio_format AS retainedAudioFormat,
+  playback_position_seconds AS playbackPositionSeconds,
+  listen_count AS listenCount, finish_count AS finishCount,
+  last_listened_at AS lastListenedAt`;
+
+const CURRENT_SCHEMA_VERSION = 1;
+
+const CREATE_SCHEMA = `CREATE TABLE IF NOT EXISTS sets (
+ id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
+ source TEXT NOT NULL, tags TEXT NOT NULL, created_at TEXT NOT NULL,
+ creator TEXT, artwork_url TEXT, duration_seconds INTEGER,
+ metadata_state TEXT NOT NULL DEFAULT 'pending',
+ title_edited_by_user INTEGER NOT NULL DEFAULT 0,
+ download_state TEXT NOT NULL DEFAULT 'none',
+ retained_audio_bytes INTEGER, retained_audio_format TEXT,
+ playback_position_seconds INTEGER NOT NULL DEFAULT 0,
+ listen_count INTEGER NOT NULL DEFAULT 0,
+ finish_count INTEGER NOT NULL DEFAULT 0, last_listened_at TEXT
+);
+CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS playlist_sets (
+ playlist_id TEXT NOT NULL REFERENCES playlists(id), set_id TEXT NOT NULL REFERENCES sets(id), position INTEGER NOT NULL,
+ PRIMARY KEY (playlist_id, set_id), UNIQUE (playlist_id, position)
+);`;
+
+const MIGRATIONS = [
+  `ALTER TABLE sets ADD COLUMN creator TEXT;
+   ALTER TABLE sets ADD COLUMN artwork_url TEXT;
+   ALTER TABLE sets ADD COLUMN duration_seconds INTEGER;
+   ALTER TABLE sets ADD COLUMN metadata_state TEXT NOT NULL DEFAULT 'pending';
+   ALTER TABLE sets ADD COLUMN title_edited_by_user INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE sets ADD COLUMN download_state TEXT NOT NULL DEFAULT 'none';
+   ALTER TABLE sets ADD COLUMN retained_audio_bytes INTEGER;
+   ALTER TABLE sets ADD COLUMN retained_audio_format TEXT;
+   ALTER TABLE sets ADD COLUMN playback_position_seconds INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE sets ADD COLUMN listen_count INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE sets ADD COLUMN finish_count INTEGER NOT NULL DEFAULT 0;
+   ALTER TABLE sets ADD COLUMN last_listened_at TEXT;`,
+];
+
+const ensureSchema = (db: Database) => {
+  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
+  const existing = db
+    .query(
+      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sets'"
+    )
+    .get();
+  if (!existing) {
+    db.exec(CREATE_SCHEMA);
+    db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
+    return;
+  }
+  // SAFETY: SQLite returns one row with an integer user_version column on every build,
+  // and bun:sqlite types the result of an unlisted pragma as unknown.
+  const { user_version: version } = db.query("PRAGMA user_version").get() as {
+    user_version: number;
+  };
+  for (let step = version + 1; step <= CURRENT_SCHEMA_VERSION; step += 1) {
+    const statements = MIGRATIONS[step - 1];
+    if (statements) {
+      db.exec(statements);
+    }
+  }
+  if (version < CURRENT_SCHEMA_VERSION) {
+    db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
+  }
+};
 const normalizeTags = (tags: readonly string[]) => [
   ...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean)),
 ];
@@ -20,6 +95,7 @@ const decodeRow = (row: SetRow): SavedSet => ({
   tags: Schema.decodeUnknownSync(Schema.mutable(Schema.Array(Schema.String)))(
     JSON.parse(row.tags)
   ),
+  titleEditedByUser: row.titleEditedByUser === 1,
 });
 
 const execute = <A>(operation: () => A) =>
@@ -73,19 +149,7 @@ export class Library extends Context.Service<
           Effect.sync(() => new Database(databasePath, { create: true })),
           (database) => Effect.sync(() => database.close())
         );
-        yield* Effect.sync(() =>
-          db.exec(`PRAGMA journal_mode = WAL;
-    PRAGMA foreign_keys = ON;
-    CREATE TABLE IF NOT EXISTS sets (
-     id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
-     source TEXT NOT NULL, tags TEXT NOT NULL, created_at TEXT NOT NULL
-    );
-    CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, created_at TEXT NOT NULL);
-    CREATE TABLE IF NOT EXISTS playlist_sets (
-     playlist_id TEXT NOT NULL REFERENCES playlists(id), set_id TEXT NOT NULL REFERENCES sets(id), position INTEGER NOT NULL,
-     PRIMARY KEY (playlist_id, set_id), UNIQUE (playlist_id, position)
-    );`)
-        );
+        yield* Effect.sync(() => ensureSchema(db));
         const requirePlaylist = (id: string) => {
           if (!db.query("SELECT id FROM playlists WHERE id = ?").get(id)) {
             throw new LibraryError({
@@ -102,32 +166,30 @@ export class Library extends Context.Service<
                 statusCode: 400,
               });
             }
-            const set: SavedSet = {
-              id: crypto.randomUUID(),
-              ...normalizeSourceUrl(input.url),
-              createdAt: new Date().toISOString(),
-              tags: normalizeTags(input.tags),
-              title: input.title.trim(),
-            };
+            const id = crypto.randomUUID();
+            const { source, url } = normalizeSourceUrl(input.url);
+            const title = input.title.trim();
+            const tags = normalizeTags(input.tags);
+            const createdAt = new Date().toISOString();
             const result = db
               .prepare(
                 "INSERT INTO sets (id, url, title, source, tags, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(url) DO NOTHING"
               )
-              .run(
-                set.id,
-                set.url,
-                set.title,
-                set.source,
-                JSON.stringify(set.tags),
-                set.createdAt
-              );
+              .run(id, url, title, source, JSON.stringify(tags), createdAt);
             if (!result.changes) {
               throw new LibraryError({
                 message: "This set is already in your library.",
                 statusCode: 409,
               });
             }
-            return set;
+            const row = db
+              .query<SetRow, [string]>(
+                `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
+              )
+              .get(id);
+            // SAFETY: the insert above reported a change, so this row exists, and
+            // SET_COLUMNS selects exactly the columns SetRow declares.
+            return decodeRow(row as SetRow);
           })
         );
         const list = Effect.fn("Library.list")((filters: LibraryFilters) =>
@@ -168,7 +230,7 @@ export class Library extends Context.Service<
               : "created_at DESC, sets.rowid DESC";
             return db
               .query<SetRow, string[]>(
-                `SELECT sets.id, url, title, source, tags, created_at AS createdAt FROM sets${join}${where} ORDER BY ${order}`
+                `SELECT ${SET_COLUMNS} FROM sets${join}${where} ORDER BY ${order}`
               )
               .all(...values)
               .map(decodeRow);
@@ -179,7 +241,7 @@ export class Library extends Context.Service<
             execute(() => {
               const row = db
                 .query<SetRow, [string, string]>(
-                  "UPDATE sets SET tags = ? WHERE id = ? RETURNING id, url, title, source, tags, created_at AS createdAt"
+                  `UPDATE sets SET tags = ? WHERE id = ? RETURNING ${SET_COLUMNS}`
                 )
                 .get(JSON.stringify(normalizeTags(tags)), id);
               if (!row) {
@@ -203,7 +265,7 @@ export class Library extends Context.Service<
               }
               const row = db
                 .query<SetRow, [string, string]>(
-                  "UPDATE sets SET title = ? WHERE id = ? RETURNING id, url, title, source, tags, created_at AS createdAt"
+                  `UPDATE sets SET title = ? WHERE id = ? RETURNING ${SET_COLUMNS}`
                 )
                 .get(trimmedTitle, id);
               if (!row) {
@@ -220,7 +282,7 @@ export class Library extends Context.Service<
             db.transaction(() => {
               const row = db
                 .query<SetRow, [string]>(
-                  "SELECT id, url, title, source, tags, created_at AS createdAt FROM sets WHERE id = ?"
+                  `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
                 )
                 .get(id);
               if (!row) {

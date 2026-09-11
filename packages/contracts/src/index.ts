@@ -4,6 +4,16 @@ export interface HealthResponse {
 
 export type SetSource = "youtube" | "soundcloud";
 
+export type MetadataState = "pending" | "enriched" | "failed";
+
+export type DownloadState =
+  | "none"
+  | "queued"
+  | "downloading"
+  | "ready"
+  | "failed"
+  | "canceled";
+
 export interface SavedSet {
   id: string;
   url: string;
@@ -11,6 +21,18 @@ export interface SavedSet {
   source: SetSource;
   tags: string[];
   createdAt: string;
+  creator: string | null;
+  artworkUrl: string | null;
+  durationSeconds: number | null;
+  metadataState: MetadataState;
+  titleEditedByUser: boolean;
+  downloadState: DownloadState;
+  retainedAudioBytes: number | null;
+  retainedAudioFormat: string | null;
+  playbackPositionSeconds: number;
+  listenCount: number;
+  finishCount: number;
+  lastListenedAt: string | null;
 }
 
 export interface SaveSetInput {
