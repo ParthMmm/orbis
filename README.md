@@ -81,6 +81,8 @@ bun run native:lanes --unit   # unit tests only
 
 A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Copy the xcodegen output path from `apps/apple/DerivedData` when opening the project in Xcode.
 
+Every lane runs `bun run native:format` first, which checks every tracked Swift file with the Xcode toolchain's swift-format against `apps/apple/.swift-format`. swift-format ships with Xcode, so the native style gate needs no install. The check writes nothing; to fix drift, run `xcrun swift-format format --in-place` on the changed files.
+
 ## Security and next steps
 
 **Local-only by default.** The server binds to loopback. A request carrying a browser `Origin` header is refused, a request from a non-loopback host is refused unless it carries a valid device token, and loopback requests need no credential, which is what the desktop client relies on. Device tokens are enrolled with `bun run --filter @orbis/server trust add --label "<name>"` and the host stores only their digest, so a copy of the trust store cannot authenticate. See `docs/adr/0004-native-service-identity.md`.

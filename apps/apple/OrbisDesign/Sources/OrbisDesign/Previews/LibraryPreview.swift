@@ -9,9 +9,18 @@ private struct LibraryPreview: View {
   @State private var selection: String? = "Everything"
 
   private let sets: [(String, String, String, [SetRow.Tag])] = [
-    ("YouTube", "Ben UFO — Dekmantel Festival 2019", "youtube.com/watch?v=dk19benufo", [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)]),
-    ("SoundCloud", "Objekt — Live at Freerotation", "soundcloud.com/objekt/freerotation-2023", [.init("techno", .pink), .init("live", .mint)]),
-    ("YouTube", "DJ Stingray 313 — Dekmantel 2017", "youtube.com/watch?v=stingray-dkmtl17", [.init("techno", .pink), .init("electro", .cyan)]),
+    (
+      "YouTube", "Ben UFO — Dekmantel Festival 2019", "youtube.com/watch?v=dk19benufo",
+      [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)]
+    ),
+    (
+      "SoundCloud", "Objekt — Live at Freerotation", "soundcloud.com/objekt/freerotation-2023",
+      [.init("techno", .pink), .init("live", .mint)]
+    ),
+    (
+      "YouTube", "DJ Stingray 313 — Dekmantel 2017", "youtube.com/watch?v=stingray-dkmtl17",
+      [.init("techno", .pink), .init("electro", .cyan)]
+    ),
   ]
 
   var body: some View {

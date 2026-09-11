@@ -21,6 +21,7 @@
     "check": "turbo run lint format:check typecheck test diagnostics --concurrency=100% --continue=dependencies-successful",
     "fix": "ultracite fix",
     "check:force": "turbo run lint format:check typecheck test diagnostics --concurrency=100% --continue=dependencies-successful --force",
+    "native:format": "xcrun swift-format lint --strict --recursive apps/apple/Orbis apps/apple/OrbisTests apps/apple/OrbisUITests apps/apple/OrbisDesign/Sources apps/apple/OrbisDesign/Tests apps/apple/OrbisDesign/Package.swift",
     "native:lanes": "node scripts/native-lanes.mjs",
     "native:perf": "node scripts/native-perf.mjs"
   },

@@ -58,8 +58,9 @@ targets:
         BUNDLE_LOADER[sdk=macosx*]: "$(TEST_HOST)"
   OrbisUITests:
     type: bundle.ui-testing
-    # iOS only. The macOS UI test runner is killed before bootstrap on the build machine,
-    # so macOS verification uses the Accessibility driver in scripts/native-macos-drive.mjs.
+    # iOS only. The macOS UI test runner is killed before bootstrap on the host that runs
+    # the lanes, so macOS is verified by the unit tests on the macOS destination and by
+    # reading the running app through accessibility.
     supportedDestinations: [iOS]
     sources:
       - OrbisUITests

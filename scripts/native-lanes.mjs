@@ -85,6 +85,9 @@ process.on("SIGINT", () => {
 });
 
 try {
+  // swift-format ships with the Xcode toolchain, so the native style gate needs no install.
+  run(["bun", "run", "native:format"], { cwd: root });
+
   // The design system is a package the app links, so its own rules are verified in the same run
   // as the app's tests rather than by a separate command someone has to remember.
   const design = run(["swift", "test"], {

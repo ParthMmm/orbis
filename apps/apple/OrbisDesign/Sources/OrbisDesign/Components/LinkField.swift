@@ -17,7 +17,7 @@ public enum LinkFieldState: Equatable, Sendable {
   /// through the field itself.
   public var message: String? {
     switch self {
-    case let .invalid(message), let .duplicate(message): message
+    case .invalid(let message), .duplicate(let message): message
     case .idle, .checking, .valid: nil
     }
   }
@@ -92,10 +92,10 @@ public struct LinkField: View {
           .onSubmit(submit)
           .autocorrectionDisabled()
           #if os(iOS)
-          .keyboardType(.URL)
-          .textInputAutocapitalization(.never)
+            .keyboardType(.URL)
+            .textInputAutocapitalization(.never)
           #endif
-        if case let .valid(source) = state {
+        if case .valid(let source) = state {
           SourceStamp(source)
         }
         Button(action, action: submit)

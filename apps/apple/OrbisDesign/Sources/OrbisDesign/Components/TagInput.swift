@@ -74,7 +74,7 @@ public struct TagInput: View {
           .onSubmit(commit)
           .autocorrectionDisabled()
           #if os(iOS)
-          .textInputAutocapitalization(.never)
+            .textInputAutocapitalization(.never)
           #endif
         Button("Add", action: commit)
           .buttonStyle(.plain)

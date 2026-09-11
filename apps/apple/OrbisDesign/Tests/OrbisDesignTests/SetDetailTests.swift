@@ -32,8 +32,10 @@ import Testing
   @Test func `the picker says when a Set is in no Playlist`() {
     #expect(PlaylistPicker.label(for: nil, in: []) == "Playlist, none")
     #expect(
-      PlaylistPicker.label(for: "gone", in: [
-        PlaylistPicker.Choice(id: "1", name: "Long drives", category: .cyan)
-      ]) == "Playlist, none")
+      PlaylistPicker.label(
+        for: "gone",
+        in: [
+          PlaylistPicker.Choice(id: "1", name: "Long drives", category: .cyan)
+        ]) == "Playlist, none")
   }
 }
