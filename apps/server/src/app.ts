@@ -1,5 +1,6 @@
 import path from "node:path";
 
+import type { SavedSet } from "@orbis/contracts";
 import { Effect, Layer, Schema } from "effect";
 import {
   HttpRouter,
@@ -10,6 +11,7 @@ import {
 import { LibraryError } from "./errors.js";
 import { decideAccess, readDevices } from "./identity.js";
 import { Library } from "./library.js";
+import { Metadata } from "./metadata.js";
 
 interface RawFilters {
   playlistId: string;
@@ -30,7 +32,7 @@ const Filters = Schema.Struct({
 });
 const SaveInput = Schema.Struct({
   tags: Tags,
-  title: Title,
+  title: Schema.optionalKey(Title),
   url: Schema.String.check(Schema.isMaxLength(2048)),
 });
 
@@ -53,6 +55,7 @@ export const createApp = (
   options: {
     databasePath?: string;
     devicesPath?: string;
+    metadata?: Layer.Layer<Metadata>;
   } = {}
 ) => {
   const databasePath = options.databasePath ?? ":memory:";
@@ -64,6 +67,18 @@ export const createApp = (
   const routes = HttpRouter.use((router) =>
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
+      const metadata = yield* Metadata;
+      const enrichSavedSet = Effect.fn("enrichSavedSet")((set: SavedSet) =>
+        metadata.enrich({ source: set.source, url: set.url }).pipe(
+          Effect.flatMap((enriched) =>
+            library.recordEnrichment(set.id, enriched)
+          ),
+          // A provider that does not answer leaves the Set saved and retryable.
+          Effect.catchTag("MetadataError", () =>
+            library.recordEnrichmentFailure(set.id)
+          )
+        )
+      );
       yield* router.add(
         "GET",
         "/health",
@@ -75,9 +90,28 @@ export const createApp = (
         respond(
           Effect.gen(function* saveSet() {
             const input = yield* HttpServerRequest.schemaBodyJson(SaveInput);
-            return yield* library.save({ ...input, tags: [...input.tags] });
+            const saved = yield* library.save({
+              tags: [...input.tags],
+              title: input.title ?? "",
+              url: input.url,
+            });
+            // A typed title is final, so the desktop client keeps its offline save path.
+            if (saved.titleEditedByUser) {
+              return saved;
+            }
+            return yield* enrichSavedSet(saved);
           }),
           201
+        )
+      );
+      yield* router.add(
+        "POST",
+        "/sets/:id/metadata",
+        respond(
+          Effect.gen(function* retryMetadata() {
+            const { params } = yield* HttpRouter.RouteContext;
+            return yield* enrichSavedSet(yield* library.find(params.id ?? ""));
+          })
         )
       );
       yield* router.add(
@@ -194,7 +228,10 @@ export const createApp = (
     })
   );
   const app = HttpRouter.toWebHandler(
-    routes.pipe(Layer.provide(Library.layer(databasePath))),
+    routes.pipe(
+      Layer.provide(Library.layer(databasePath)),
+      Layer.provide(options.metadata ?? Metadata.unconfigured())
+    ),
     { disableLogger: true }
   );
   return {

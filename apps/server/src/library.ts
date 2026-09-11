@@ -3,12 +3,14 @@ import { Database } from "bun:sqlite";
 import type {
   SavedSet,
   SaveSetInput,
+  SetSource,
   LibraryFilters,
   Playlist,
 } from "@orbis/contracts";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { LibraryError } from "./errors.js";
+import type { EnrichedMetadata } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
 
 type SetRow = Omit<SavedSet, "tags" | "titleEditedByUser"> & {
@@ -26,6 +28,12 @@ const SET_COLUMNS = `id, url, title, source, tags, created_at AS createdAt, crea
   last_listened_at AS lastListenedAt`;
 
 const CURRENT_SCHEMA_VERSION = 1;
+
+// Shown until a provider answers, so a failed enrichment still leaves an editable title.
+const TEMPORARY_TITLES: Record<SetSource, string> = {
+  soundcloud: "SoundCloud track",
+  youtube: "YouTube video",
+};
 
 const CREATE_SCHEMA = `CREATE TABLE IF NOT EXISTS sets (
  id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
@@ -118,6 +126,14 @@ export class Library extends Context.Service<
     readonly save: (
       input: SaveSetInput
     ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly find: (id: string) => Effect.Effect<SavedSet, LibraryError>;
+    readonly recordEnrichment: (
+      id: string,
+      metadata: EnrichedMetadata
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly recordEnrichmentFailure: (
+      id: string
+    ) => Effect.Effect<SavedSet, LibraryError>;
     readonly list: (
       filters: LibraryFilters
     ) => Effect.Effect<SavedSet[], LibraryError>;
@@ -160,22 +176,24 @@ export class Library extends Context.Service<
         };
         const save = Effect.fn("Library.save")((input: SaveSetInput) =>
           execute(() => {
-            if (!input.title.trim()) {
-              throw new LibraryError({
-                message: "Enter a title for this set.",
-                statusCode: 400,
-              });
-            }
             const id = crypto.randomUUID();
             const { source, url } = normalizeSourceUrl(input.url);
-            const title = input.title.trim();
+            const title = input.title?.trim() ?? "";
             const tags = normalizeTags(input.tags);
             const createdAt = new Date().toISOString();
             const result = db
               .prepare(
-                "INSERT INTO sets (id, url, title, source, tags, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(url) DO NOTHING"
+                "INSERT INTO sets (id, url, title, source, tags, created_at, title_edited_by_user) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(url) DO NOTHING"
               )
-              .run(id, url, title, source, JSON.stringify(tags), createdAt);
+              .run(
+                id,
+                url,
+                title || TEMPORARY_TITLES[source],
+                source,
+                JSON.stringify(tags),
+                createdAt,
+                title ? 1 : 0
+              );
             if (!result.changes) {
               throw new LibraryError({
                 message: "This set is already in your library.",
@@ -205,9 +223,10 @@ export class Library extends Context.Service<
             }
             if (filters.q?.trim()) {
               clauses.push(
-                "(instr(lower(title), lower(?)) > 0 OR instr(lower(url), lower(?)) > 0)"
+                "(instr(lower(title), lower(?)) > 0 OR instr(lower(url), lower(?)) > 0 OR instr(lower(coalesce(creator, '')), lower(?)) > 0)"
               );
-              values.push(filters.q.trim(), filters.q.trim());
+              const query = filters.q.trim();
+              values.push(query, query, query);
             }
             if (filters.source) {
               clauses.push("source = ?");
@@ -265,7 +284,7 @@ export class Library extends Context.Service<
               }
               const row = db
                 .query<SetRow, [string, string]>(
-                  `UPDATE sets SET title = ? WHERE id = ? RETURNING ${SET_COLUMNS}`
+                  `UPDATE sets SET title = ?, title_edited_by_user = 1 WHERE id = ? RETURNING ${SET_COLUMNS}`
                 )
                 .get(trimmedTitle, id);
               if (!row) {
@@ -276,6 +295,69 @@ export class Library extends Context.Service<
               }
               return decodeRow(row);
             })
+        );
+        const find = Effect.fn("Library.find")((id: string) =>
+          execute(() => {
+            const row = db
+              .query<SetRow, [string]>(
+                `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
+              )
+              .get(id);
+            if (!row) {
+              throw new LibraryError({
+                message: "Set not found.",
+                statusCode: 404,
+              });
+            }
+            return decodeRow(row);
+          })
+        );
+        const recordEnrichment = Effect.fn("Library.recordEnrichment")(
+          (id: string, metadata: EnrichedMetadata) =>
+            execute(() => {
+              const row = db
+                .query<
+                  SetRow,
+                  [string | null, string | null, number | null, string, string]
+                >(
+                  `UPDATE sets
+                   SET creator = ?, artwork_url = ?, duration_seconds = ?, metadata_state = 'enriched',
+                     title = CASE WHEN title_edited_by_user = 1 THEN title ELSE ? END
+                   WHERE id = ? RETURNING ${SET_COLUMNS}`
+                )
+                .get(
+                  metadata.creator,
+                  metadata.artworkUrl,
+                  metadata.durationSeconds,
+                  metadata.title,
+                  id
+                );
+              if (!row) {
+                throw new LibraryError({
+                  message: "Set not found.",
+                  statusCode: 404,
+                });
+              }
+              return decodeRow(row);
+            })
+        );
+        const recordEnrichmentFailure = Effect.fn(
+          "Library.recordEnrichmentFailure"
+        )((id: string) =>
+          execute(() => {
+            const row = db
+              .query<SetRow, [string]>(
+                `UPDATE sets SET metadata_state = 'failed' WHERE id = ? RETURNING ${SET_COLUMNS}`
+              )
+              .get(id);
+            if (!row) {
+              throw new LibraryError({
+                message: "Set not found.",
+                statusCode: 404,
+              });
+            }
+            return decodeRow(row);
+          })
         );
         const remove = Effect.fn("Library.remove")((id: string) =>
           execute(() =>
@@ -381,8 +463,11 @@ export class Library extends Context.Service<
         );
         return {
           createPlaylist,
+          find,
           list,
           playlists,
+          recordEnrichment,
+          recordEnrichmentFailure,
           remove,
           save,
           setPlaylistMembers,

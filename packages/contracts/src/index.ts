@@ -37,7 +37,8 @@ export interface SavedSet {
 
 export interface SaveSetInput {
   url: string;
-  title: string;
+  /** Absent or blank asks the server to take the title from the source metadata. */
+  title?: string;
   tags: string[];
 }
 

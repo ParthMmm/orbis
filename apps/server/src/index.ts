@@ -2,11 +2,15 @@ import { mkdir } from "node:fs/promises";
 import path from "node:path";
 
 import { createApp } from "./app.js";
+import { Metadata } from "./metadata.js";
 
 const dataDirectory = path.resolve(process.env.ORBIS_DATA_DIR ?? "data");
 await mkdir(dataDirectory, { recursive: true });
 const app = createApp({
   databasePath: path.join(dataDirectory, "library.sqlite"),
+  metadata: Metadata.layer({
+    youTubeApiKey: process.env.ORBIS_YOUTUBE_API_KEY,
+  }),
 });
 const port = Number(process.env.ORBIS_PORT ?? 4310);
 if (!Number.isInteger(port) || port < 0 || port > 65_535) {

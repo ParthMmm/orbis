@@ -80,7 +80,6 @@ test("saves SoundCloud links and rejects invalid input without changing the libr
           title: "Bad",
           url: "https://soundcloud.com:8080/artist/track",
         },
-        { tags: [], title: " ", url: "https://soundcloud.com/artist/track" },
         {
           tags: ["x".repeat(41)],
           title: "Bad",
