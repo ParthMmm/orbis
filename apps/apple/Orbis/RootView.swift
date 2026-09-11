@@ -158,6 +158,7 @@ struct SidebarShell: View {
 struct DestinationView: View {
   @Bindable var model: AppModel
   let destination: Destination
+  @State private var isConfirmingForget = false
 
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -187,6 +188,16 @@ struct DestinationView: View {
       .toolbar { settingsMenu }
       .navigationDestination(item: $model.openedSetId) { id in
         SetDetailScreen(model: model, setId: id)
+      }
+      .confirmationDialog(
+        "Forget this device?", isPresented: $isConfirmingForget, titleVisibility: .visible
+      ) {
+        Button("Forget", role: .destructive) { model.forget() }
+        Button("Keep it", role: .cancel) {}
+      } message: {
+        Text(
+          "The address and its token leave this device. Pair it again on the host to come back."
+        )
       }
     case .search:
       SearchDestination(model: model)
@@ -339,7 +350,7 @@ struct DestinationView: View {
         Button("Refresh") { Task { await model.loadLibrary() } }
         Button("Connection settings") { model.editConnection() }
           .accessibilityIdentifier("library-connection-settings")
-        Button("Forget this device", role: .destructive) { model.forget() }
+        Button("Forget this device", role: .destructive) { isConfirmingForget = true }
       } label: {
         Label("Library actions", systemImage: "ellipsis.circle")
       }
