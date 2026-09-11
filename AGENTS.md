@@ -31,17 +31,12 @@ Use a single root glossary and ADR directory. Before exploring domain behavior, 
 
 ## Verifying the Mac UI
 
-Never drive the Mac's interface with screen automation. Do not use `agent-device`, `osascript` UI scripting, `cliclick`, or anything else that reads or clicks another application's windows. It takes over the machine, and the operator has asked for it to stop.
+Verify quietly. Read state, and leave the operator's display alone: they work on this machine while you run on it, so a check that raises a window or moves the pointer costs them the screen, and the same answer usually sat in a test result, a log line, or their description of what they see. Spend the screen when the pixels are the answer, and ask first.
 
-Use Codex computer use instead, reached through the executor MCP. Call the `executor_execute` tool with TypeScript, and leave the `acceptance` field alone:
+Three tools, quietest first:
 
-```ts
-const apps = await tools["codex-computer-use.org.default.list_apps"]({});
-const state = await tools["codex-computer-use.org.default.get_app_state"]({
-  app: "app.orbis.client",
-});
-```
+- **agent-device** reads a macOS or iOS app through accessibility. Its snapshot answers most questions.
+- **agent-browser** drives web pages through the executor MCP. Run it headless.
+- **Codex computer use** acts on the visible screen. Four integrations carry it and only `codex-computer-use` holds the full set, including `set_value` and `scroll`; reach it with `tools.search` from the executor's `execute` tool.
 
-Act through the same namespace. `get_app_state` and `list_apps` report, and `click`, `set_value`, `type_text`, `press_key`, `scroll`, `drag`, `paste`, and `perform_secondary_action` act. `click` takes either an `element_index` from the state or an `x` and `y`.
-
-Ask the operator what the screen shows before reaching for any of this, and use it only when a claim genuinely needs the pixels. A test result, a log line, or the operator's own description is cheaper and does not take the machine away from them.
+A session or a server outlives the turn that started it and clutters a machine the operator is using, so close the session and stop every process you started.
