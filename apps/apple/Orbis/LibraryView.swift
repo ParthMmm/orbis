@@ -79,8 +79,8 @@ struct SetList: View {
         }
     }
 
-    private func open(_ url: String) {
-        guard let link = URL(string: url) else { return }
+    private func open(_ set: SavedSet) {
+        guard let link = SetPresentation.sourceURL(set) else { return }
         openURL(link)
     }
 
@@ -126,7 +126,7 @@ struct SetList: View {
                         .contentShape(.rect)
                         .accessibilityIdentifier("set-row-\(set.id)")
                         .contextMenu {
-                            Button("Open Source") { open(set.url) }
+                            Button("Open Source") { open(set) }
                         }
                         if let select {
                             Button { select(set) } label: { row }

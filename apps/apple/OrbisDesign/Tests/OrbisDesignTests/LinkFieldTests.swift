@@ -16,6 +16,16 @@ import Testing
     #expect(!LinkField.canSubmit(link: text, state: .idle))
   }
 
+  @Test func `a link is read for its address`() {
+    #expect(LinkField.address(of: "https://youtu.be/abc")?.host() == "youtu.be")
+    #expect(LinkField.address(of: "  https://youtu.be/abc  ")?.absoluteString == "https://youtu.be/abc")
+  }
+
+  @Test(arguments: ["", "youtu.be/abc", "not a url", "ftp://example.com/set"])
+  func `text that names no address is not read as one`(text: String) {
+    #expect(LinkField.address(of: text) == nil)
+  }
+
   @Test func `a check in flight cannot be filed twice`() {
     #expect(!LinkField.canSubmit(link: "https://youtu.be/tPEMP9oYxTo", state: .checking))
   }

@@ -123,6 +123,12 @@ enum SetPresentation {
         date(from: timestamp).formatted(.dateTime.month(.abbreviated).day())
     }
 
+    /// The address Open hands to the system. A value rather than a call, so the intent can be
+    /// checked without a browser and without leaving the app.
+    static func sourceURL(_ set: SavedSet) -> URL? {
+        LinkField.address(of: set.url)
+    }
+
     /// Where playback left off, said the way a person says it, or nothing when it never started.
     static func playbackPosition(_ set: SavedSet) -> String? {
         guard set.playbackPositionSeconds > 0 else { return nil }

@@ -52,6 +52,36 @@ final class SetPageTests: XCTestCase {
         return model
     }
 
+    /// Open leaves the app, so what it would hand to the system is checked rather than driven.
+    func testOpenHandsTheSourceAddressToTheSystem() {
+        XCTAssertEqual(
+            SetPresentation.sourceURL(set())?.absoluteString,
+            "https://www.youtube.com/watch?v=abcdefghijk"
+        )
+    }
+
+    func testOpenHasNothingToOfferWhenTheAddressIsNotOne() {
+        let broken = SavedSet(
+            id: "1",
+            url: "not a url",
+            title: "Night session",
+            source: .youtube,
+            tags: [],
+            createdAt: "2026-01-01T00:00:00.000Z",
+            creator: nil,
+            artworkUrl: nil,
+            durationSeconds: nil,
+            metadataState: "enriched",
+            downloadState: "none",
+            playlistIds: [],
+            playbackPositionSeconds: 0,
+            listenCount: 0,
+            finishCount: 0,
+            lastListenedAt: nil
+        )
+        XCTAssertNil(SetPresentation.sourceURL(broken))
+    }
+
     func testOpeningASetRemembersWhichOne() {
         let model = model(sets: [set()])
         model.openSet("1")

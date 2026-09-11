@@ -109,7 +109,7 @@ struct SetDetailScreen: View {
     }
 
     private func open(_ set: SavedSet) {
-        guard let url = URL(string: set.url) else { return }
+        guard let url = SetPresentation.sourceURL(set) else { return }
         openURL(url)
     }
 

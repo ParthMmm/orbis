@@ -59,11 +59,20 @@ public struct LinkField: View {
   /// service's judgement, and comes back as `.invalid`.
   public static func canSubmit(link: String, state: LinkFieldState) -> Bool {
     guard state != .checking else { return false }
-    guard let url = URL(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
+    return address(of: link) != nil
+  }
+
+  /// The address a piece of text names, when it names one.
+  ///
+  /// Filing a link and opening one need the same shape rule, and so does a page that decides
+  /// whether Open has anything to offer. It lives here once rather than three times, because a
+  /// text that reads as a link to one of them must read as a link to the others.
+  public static func address(of text: String) -> URL? {
+    guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
       let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
       let host = url.host(), !host.isEmpty
-    else { return false }
-    return true
+    else { return nil }
+    return url
   }
 
   public var body: some View {
