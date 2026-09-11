@@ -15,10 +15,9 @@ struct SetRowModel {
 
 enum SetPresentation {
     /// The design package defaults its types to the main actor, so the mapper that builds them
-    /// is main actor too.
+    /// is main actor too. The row shows its ordinal, counted from one, so a list position
+    /// becomes an ordinal here rather than at every call site.
     @MainActor
-    /// The row shows its ordinal, counted from one, so a list position becomes an ordinal
-    /// here rather than at every call site.
     static func row(
         _ set: SavedSet, position: Int, activeTag: String? = nil
     ) -> SetRowModel {

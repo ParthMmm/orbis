@@ -24,6 +24,10 @@ final class AppModel {
     var searchQuery = ""
     var search: Loadable<[SavedSet]> = .idle
 
+    /// The tag the Library is filtered by. One tag at a time, because the row marks the one
+    /// tag a view is filtered by and a Set carries several.
+    var activeTag: String?
+
     /// What the person has pasted but not filed yet, and what the last filing said.
     var linkToFile = ""
     var isFiling = false
@@ -38,11 +42,48 @@ final class AppModel {
             ClientSettings.serviceAddress = nil
             ClientSettings.deviceToken = nil
         }
+        // A lane that checks the filtered Library starts already filtered, because the design's
+        // filter control is a custom toggle a UI test cannot drive reliably.
+        let arguments = ProcessInfo.processInfo.arguments
+        if let flag = arguments.firstIndex(of: "-orbisStartTagFiltered"),
+            arguments.indices.contains(flag + 1)
+        {
+            activeTag = arguments[flag + 1]
+        }
         connectionAddress = ClientSettings.serviceAddress ?? ""
         client = ClientSettings.configuredClient()
     }
 
     var isConfigured: Bool { client != nil }
+
+    /// Every tag in the loaded library, in a stable order, so the filter row does not reshuffle
+    /// between loads. Derived from the Sets rather than fetched, because the Library already
+    /// holds all of them.
+    var availableTags: [String] {
+        guard case let .loaded(sets) = library else { return [] }
+        return Set(sets.flatMap(\.tags)).sorted()
+    }
+
+    /// The Sets the filter admits. Unfiltered, it is the library itself.
+    var visibleSets: Loadable<[SavedSet]> {
+        guard case let .loaded(sets) = library else { return library }
+        guard let activeTag else { return .loaded(sets) }
+        return .loaded(sets.filter { $0.tags.contains(activeTag) })
+    }
+
+    var visibleCount: Int {
+        guard case let .loaded(sets) = visibleSets else { return 0 }
+        return sets.count
+    }
+
+    var totalCount: Int {
+        guard case let .loaded(sets) = library else { return 0 }
+        return sets.count
+    }
+
+    func setTagFilter(_ tag: String?) {
+        activeTag = tag
+    }
 
     /// Tests the connection before storing anything, so a wrong address or token never
     /// replaces a working configuration.

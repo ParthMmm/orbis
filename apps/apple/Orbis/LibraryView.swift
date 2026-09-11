@@ -1,19 +1,30 @@
 import OrbisDesign
 import SwiftUI
 
+/// The copy a list shows when it has nothing to render. Grouped so a caller passes one value
+/// instead of four loose strings.
+struct EmptyPresentation {
+    let title: String
+    let message: String
+    let symbol: String
+    let identifier: String
+}
+
 /// One list for both destinations, so loading, failure, and the two empty cases are defined
 /// once and wear the same design. The two empty cases stay separate because they mean
 /// different things.
 struct SetList: View {
     let state: Loadable<[SavedSet]>
-    let heading: String
-    let emptyTitle: String
-    let emptyMessage: String
-    let emptySymbol: String
-    let emptyIdentifier: String
+    let heading: Text
+    let empty: EmptyPresentation
+    /// The tag the list is filtered by, so the row marks it as the active one.
+    let activeTag: String?
+    /// Filter controls shown beside the heading, absent on a screen that only reads.
+    let filters: AnyView?
     /// A screen that files Sets puts its paste field here, so it scrolls with the rows and is
     /// absent on a screen that only reads, such as Search.
     let hero: AnyView?
+    let footer: String
     let retry: () async -> Void
 
     var body: some View {
@@ -65,11 +76,11 @@ struct SetList: View {
 
     private var emptyMessageView: some View {
         ContentUnavailableView {
-            Label(emptyTitle, systemImage: emptySymbol)
+            Label(empty.title, systemImage: empty.symbol)
         } description: {
-            Text(emptyMessage)
+            Text(empty.message)
         }
-        .accessibilityIdentifier(emptyIdentifier)
+        .accessibilityIdentifier(empty.identifier)
     }
 
     private func rows(_ sets: [SavedSet]) -> some View {
@@ -78,12 +89,20 @@ struct SetList: View {
                 if let hero {
                     hero.padding(.bottom, 16)
                 }
-                Text(heading)
-                    .font(.orbis.sectionTitle)
-                    .padding(.bottom, 12)
+                HStack(alignment: .firstTextBaseline) {
+                    heading
+                        .font(.orbis.sectionTitle)
+                    Spacer()
+                    if let filters {
+                        filters
+                    }
+                }
+                .padding(.bottom, 12)
                 VStack(spacing: 0) {
                     ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
-                        let model = SetPresentation.row(set, position: index)
+                        let model = SetPresentation.row(
+                            set, position: index, activeTag: activeTag
+                        )
                         SetRow(
                             index: model.index,
                             source: model.source,
@@ -102,7 +121,7 @@ struct SetList: View {
                 }
                 .padding(.vertical, 6)
                 .orbisRaised()
-                Text(sets.count == 1 ? "1 set" : "\(sets.count) sets")
+                Text(footer)
                     .font(.orbis.mono)
                     .foregroundStyle(.secondary)
                     .padding(.top, 10)

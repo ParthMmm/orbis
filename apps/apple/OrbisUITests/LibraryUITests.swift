@@ -3,7 +3,7 @@ import XCTest
 /// Drives the real first-launch path against a server the lane starts. The address and
 /// token come from the environment so the test types them exactly as a person would.
 final class LibraryUITests: XCTestCase {
-    private func launch() throws -> XCUIApplication {
+    private func launch(filteringBy tag: String? = nil) throws -> XCUIApplication {
         let environment = ProcessInfo.processInfo.environment
         guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
               let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
@@ -12,6 +12,9 @@ final class LibraryUITests: XCTestCase {
         }
         let app = XCUIApplication()
         app.launchArguments.append("-orbisResetSettings")
+        if let tag {
+            app.launchArguments.append(contentsOf: ["-orbisStartTagFiltered", tag])
+        }
         app.launchEnvironment["ORBIS_UI_TEST_ADDRESS"] = address
         app.launchEnvironment["ORBIS_UI_TEST_TOKEN"] = token
         app.launch()
@@ -44,19 +47,12 @@ final class LibraryUITests: XCTestCase {
     func testConnectsBrowsesAndSearchesTheLibrary() throws {
         let app = try launch()
 
-        let address = app.textFields["connection-address"]
-        XCTAssertTrue(address.waitForExistence(timeout: 30), "the connection screen must appear\n\(app.debugDescription)")
+        XCTAssertTrue(
+            app.textFields["connection-address"].waitForExistence(timeout: 30),
+            "the connection screen must appear\n\(app.debugDescription)"
+        )
         capture("01-connection")
-
-        address.tap()
-        address.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_ADDRESS"] ?? "")
-
-        let token = app.secureTextFields["connection-token"]
-        XCTAssertTrue(token.waitForExistence(timeout: 10))
-        token.tap()
-        token.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_TOKEN"] ?? "")
-
-        app.buttons["connection-test"].tap()
+        connect(app)
 
         let row = app.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
@@ -80,6 +76,38 @@ final class LibraryUITests: XCTestCase {
             .matching(NSPredicate(format: "label CONTAINS %@", "No matching sets")).firstMatch
         XCTAssertTrue(noResults.waitForExistence(timeout: 30), "an unmatched search must say so\n\(app.debugDescription)")
         capture("04-search-no-results")
+    }
+
+    /// Pairs the app the way a person would, so a journey that begins after connecting does
+    /// not restate the connection screen's details.
+    private func connect(_ app: XCUIApplication) {
+        let address = app.textFields["connection-address"]
+        XCTAssertTrue(address.waitForExistence(timeout: 30), "the connection screen must appear\n\(app.debugDescription)")
+
+        address.tap()
+        address.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_ADDRESS"] ?? "")
+
+        let token = app.secureTextFields["connection-token"]
+        XCTAssertTrue(token.waitForExistence(timeout: 10))
+        token.tap()
+        token.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_TOKEN"] ?? "")
+
+        app.buttons["connection-test"].tap()
+    }
+
+    /// The design names the active filter in its heading, which is the state that distinguishes
+    /// a filtered list from an unfiltered one.
+    func testFiltersTheLibraryByTag() throws {
+        let app = try launch(filteringBy: "techno")
+        connect(app)
+
+        let footer = app.staticTexts
+            .matching(NSPredicate(format: "label CONTAINS %@", "outside this filter")).firstMatch
+        XCTAssertTrue(footer.waitForExistence(timeout: 60), "a filtered Library must report what it hides\n\(app.debugDescription)")
+
+        let filter = app.descendants(matching: .any)["tag-filter-techno"]
+        XCTAssertTrue(filter.exists, "the tag filter must appear above the rows\n\(app.debugDescription)")
+        capture("06-library-filtered")
     }
 
     func testUnreachableAddressNamesTheRecoveryAction() throws {

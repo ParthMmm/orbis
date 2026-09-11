@@ -108,13 +108,18 @@ struct DestinationView: View {
         switch destination {
         case .library:
             SetList(
-                state: model.library,
-                heading: "All sets",
-                emptyTitle: "Start your collection",
-                emptyMessage: "Paste a link above to file your first set.",
-                emptySymbol: "music.note.list",
-                emptyIdentifier: "library-empty",
+                state: model.visibleSets,
+                heading: libraryHeading,
+                empty: EmptyPresentation(
+                    title: "Start your collection",
+                    message: "Paste a link above to file your first set.",
+                    symbol: "music.note.list",
+                    identifier: "library-empty"
+                ),
+                activeTag: model.activeTag,
+                filters: model.availableTags.isEmpty ? nil : tagFilters,
                 hero: AnyView(pasteHero),
+                footer: libraryFooter,
                 retry: { await model.loadLibrary() }
             )
             .navigationTitle("Library")
@@ -127,6 +132,47 @@ struct DestinationView: View {
         case .search:
             SearchDestination(model: model)
         }
+    }
+
+    /// The design's heading names the filter in the filtered tag's colour, so the screen says
+    /// what it is showing without a separate label.
+    private var libraryHeading: Text {
+        guard let activeTag = model.activeTag else {
+            return Text("Everything")
+        }
+        let colour = SetPresentation.category(for: activeTag).text
+        return Text("Everything \(Text("/ \(activeTag)").foregroundStyle(colour))")
+    }
+
+    private var tagFilters: AnyView {
+        AnyView(
+            HStack(spacing: 6) {
+                ForEach(model.availableTags, id: \.self) { tag in
+                    TagPill(
+                        tag,
+                        category: SetPresentation.category(for: tag),
+                        isOn: Binding(
+                            get: { model.activeTag == tag },
+                            set: { isOn in model.setTagFilter(isOn ? tag : nil) }
+                        )
+                    )
+                    .accessibilityIdentifier("tag-filter-\(tag)")
+                }
+            }
+        )
+    }
+
+    /// The design's count says how much the filter is hiding, which is the number a person
+    /// wants when a list looks short.
+    private var libraryFooter: String {
+        let total = model.totalCount
+        guard let activeTag = model.activeTag else {
+            return total == 1 ? "1 set" : "\(total) sets"
+        }
+        let visible = model.visibleCount
+        let outside = total - visible
+        let outsideLabel = outside == 1 ? "1 set" : "\(outside) sets"
+        return "\(visible) of \(total) · \(outsideLabel) outside this filter"
     }
 
     /// The design's Library screen opens with the paste field, and the outcome of the last
@@ -183,11 +229,16 @@ struct SearchDestination: View {
         SetList(
             state: displayedState,
             heading: heading,
-            emptyTitle: "No matching sets",
-            emptyMessage: "Try a different title, tag, or source link.",
-            emptySymbol: "magnifyingglass",
-            emptyIdentifier: "search-no-results",
+            empty: EmptyPresentation(
+                title: "No matching sets",
+                message: "Try a different title, tag, or source link.",
+                symbol: "magnifyingglass",
+                identifier: "search-no-results"
+            ),
+            activeTag: nil,
+            filters: nil,
             hero: nil,
+            footer: searchFooter,
             retry: { await model.runSearch() }
         )
         .navigationTitle("Search")
@@ -200,9 +251,14 @@ struct SearchDestination: View {
         }
     }
 
-    private var heading: String {
+    private var heading: Text {
         let query = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        return query.isEmpty ? "Search" : "Results for \"\(query)\""
+        return Text(query.isEmpty ? "Search" : "Results for \"\(query)\"")
+    }
+
+    private var searchFooter: String {
+        guard case let .loaded(sets) = displayedState else { return "" }
+        return sets.count == 1 ? "1 set" : "\(sets.count) sets"
     }
 
     private var displayedState: Loadable<[SavedSet]> {
