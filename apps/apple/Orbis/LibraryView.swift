@@ -114,7 +114,9 @@ struct SetList: View {
           }
         }
         .padding(.bottom, 12)
-        VStack(spacing: 0) {
+        // The list can hold a whole library, so rows are built as they scroll into view
+        // rather than all at once.
+        LazyVStack(spacing: 0) {
           ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
             let model = SetPresentation.row(
               set, position: index, activeTag: activeTag

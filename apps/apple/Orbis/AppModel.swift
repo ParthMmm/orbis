@@ -21,7 +21,9 @@ final class AppModel {
   var connectionFailure: OrbisFailure?
   var isTestingConnection = false
 
-  var library: Loadable<[SavedSet]> = .idle
+  var library: Loadable<[SavedSet]> = .idle {
+    didSet { refreshDerivedState() }
+  }
   var playlists: Loadable<[Playlist]> = .idle
   /// The playlist the Library is showing. Nil is everything the library holds.
   var selectedPlaylistId: String?
@@ -35,7 +37,41 @@ final class AppModel {
 
   /// The tag the Library is filtered by. One tag at a time, because the row marks the one
   /// tag a view is filtered by and a Set carries several.
-  var activeTag: String?
+  var activeTag: String? {
+    didSet { refreshDerivedState() }
+  }
+
+  /// Every tag in the loaded library, in a stable order, so the filter row does not reshuffle
+  /// between loads. Derived from the Sets rather than fetched, because the Library already
+  /// holds all of them. Held rather than derived on demand, because every list body reads
+  /// it on every render.
+  private(set) var availableTags: [String] = []
+
+  /// The Sets the filter admits. Unfiltered, it is the library itself. Held for the same
+  /// reason as the tags: the body of every list reads it on every pass.
+  private(set) var visibleSets: Loadable<[SavedSet]> = .idle
+
+  /// Recomputes everything derived from the library and the filter. Every change to either
+  /// lands here, so the cached views of the library cannot drift from it.
+  private func refreshDerivedState() {
+    guard case .loaded(let sets) = library else {
+      availableTags = []
+      visibleSets = library
+      return
+    }
+    availableTags = Set(sets.flatMap(\.tags)).sorted()
+    if let activeTag {
+      visibleSets = .loaded(sets.filter { $0.tags.contains(activeTag) })
+    } else {
+      visibleSets = .loaded(sets)
+    }
+  }
+
+  /// True when this device already holds a token, which makes the token field optional: a
+  /// wrong address is corrected without pairing again. Held as state rather than asked of
+  /// the keychain on every render, because a view body must not block on credential
+  /// storage; the model refreshes it whenever the pairing changes.
+  private(set) var hasStoredToken: Bool
 
   /// How many times a cancelled load has been restarted without a success in between.
   private var reloadsAfterCancellation = 0
@@ -109,6 +145,8 @@ final class AppModel {
     }
     connectionAddress = ClientSettings.serviceAddress ?? ""
     client = ClientSettings.configuredClient()
+    hasStoredToken = ClientSettings.deviceToken?.isEmpty == false
+    refreshDerivedState()
   }
 
   /// A model already paired with a service. The launch screen and the settings file are the real
@@ -116,24 +154,11 @@ final class AppModel {
   init(client: OrbisClient) {
     self.client = client
     connectionAddress = client.address.absoluteString
+    hasStoredToken = ClientSettings.deviceToken?.isEmpty == false
+    refreshDerivedState()
   }
 
   var isConfigured: Bool { client != nil }
-
-  /// Every tag in the loaded library, in a stable order, so the filter row does not reshuffle
-  /// between loads. Derived from the Sets rather than fetched, because the Library already
-  /// holds all of them.
-  var availableTags: [String] {
-    guard case .loaded(let sets) = library else { return [] }
-    return Set(sets.flatMap(\.tags)).sorted()
-  }
-
-  /// The Sets the filter admits. Unfiltered, it is the library itself.
-  var visibleSets: Loadable<[SavedSet]> {
-    guard case .loaded(let sets) = library else { return library }
-    guard let activeTag else { return .loaded(sets) }
-    return .loaded(sets.filter { $0.tags.contains(activeTag) })
-  }
 
   var visibleCount: Int {
     guard case .loaded(let sets) = visibleSets else { return 0 }
@@ -188,6 +213,7 @@ final class AppModel {
       ClientSettings.serviceAddress = url.absoluteString
       ClientSettings.deviceToken = token
       client = candidate
+      hasStoredToken = true
       isEditingConnection = false
       await loadLibrary()
       // The sidebar reads playlists separately from the library, so pairing fills both.
@@ -199,12 +225,6 @@ final class AppModel {
       guard generation == connectionGeneration else { return }
       connectionFailure = OrbisError.unreachable.failure(at: URL(string: connectionAddress))
     }
-  }
-
-  /// True when this device already holds a token, which makes the token field optional: a
-  /// wrong address is corrected without pairing again.
-  var hasStoredToken: Bool {
-    ClientSettings.deviceToken?.isEmpty == false
   }
 
   /// Opens the connection screen with the address in place and the token left out. Leaving the
@@ -239,6 +259,7 @@ final class AppModel {
     client = nil
     connectionToken = ""
     connectionAddress = ""
+    hasStoredToken = false
     library = .idle
     search = .idle
     searchResultsFor = nil

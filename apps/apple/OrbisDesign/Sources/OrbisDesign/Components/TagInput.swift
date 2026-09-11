@@ -104,7 +104,7 @@ public struct TagInput: View {
       }
       if !open.isEmpty {
         ScrollView(.horizontal) {
-          HStack(spacing: 6) {
+          LazyHStack(spacing: 6) {
             ForEach(open, id: \.self) { tag in
               Button {
                 tags = Self.adding(tag, to: tags, limit: limit)

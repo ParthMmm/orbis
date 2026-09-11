@@ -84,23 +84,40 @@ enum SetPresentation {
     }
   }
 
-  static func date(from timestamp: String) -> Date {
-    let candidates: [ISO8601DateFormatter.Options] = [
-      [.withInternetDateTime, .withFractionalSeconds],
-      [.withInternetDateTime],
-    ]
-    for options in candidates {
+  /// The two timestamp shapes the service sends. A formatter is expensive to build, and one
+  /// is built for every visible row on every render, so the pair is built once and reused.
+  @MainActor
+  private enum DateParsing {
+    private static let fractional: ISO8601DateFormatter = {
       let formatter = ISO8601DateFormatter()
-      formatter.formatOptions = options
-      if let parsed = formatter.date(from: timestamp) {
-        return parsed
-      }
+      formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+      return formatter
+    }()
+
+    private static let whole: ISO8601DateFormatter = {
+      let formatter = ISO8601DateFormatter()
+      formatter.formatOptions = [.withInternetDateTime]
+      return formatter
+    }()
+
+    static func date(from timestamp: String) -> Date {
+      fractional.date(from: timestamp) ?? whole.date(from: timestamp) ?? .distantPast
     }
-    return .distantPast
+  }
+
+  @MainActor
+  static func date(from timestamp: String) -> Date {
+    DateParsing.date(from: timestamp)
+  }
+
+  @MainActor
+  static func added(_ timestamp: String) -> String {
+    date(from: timestamp).formatted(.dateTime.month(.abbreviated).day())
   }
 
   /// The line under a Set's title: who made it, how long it runs, when it arrived. Only the
   /// parts the service filled in, so a Set no provider could name shows a date and nothing else.
+  @MainActor
   static func subtitle(_ set: SavedSet) -> String? {
     var parts: [String] = []
     if let creator = set.creator, !creator.isEmpty {
@@ -117,10 +134,6 @@ enum SetPresentation {
     let hours = seconds / 3600
     let minutes = (seconds % 3600) / 60
     return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
-  }
-
-  static func added(_ timestamp: String) -> String {
-    date(from: timestamp).formatted(.dateTime.month(.abbreviated).day())
   }
 
   /// The address Open hands to the system. A value rather than a call, so the intent can be
