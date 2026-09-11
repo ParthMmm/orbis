@@ -17,7 +17,7 @@ import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
 const root = path.resolve(import.meta.dirname, "..");
-const native = path.join(root, "apps", "native");
+const native = path.join(root, "apps", "apple");
 const argument = (name, fallback) => {
   const index = process.argv.indexOf(`--${name}`);
   return index === -1 ? fallback : process.argv[index + 1];

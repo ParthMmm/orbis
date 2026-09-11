@@ -11,7 +11,7 @@ The first slice saves links and titles, supports title and tag editing, deletion
 - `packages/contracts`: shared TypeScript API types.
 - `apps/apple/OrbisDesign`: SwiftUI design system (tokens, styles, components) shared by the planned macOS and iOS apps. See [ADR 0001](docs/adr/0001-client-platform-strategy.md).
 - `apps/raycast`: reserved extension workspace, not implemented.
-- `apps/native`: one SwiftUI multiplatform app for iOS and macOS, generated with xcodegen. It imports `OrbisDesign`.
+- `apps/apple/Orbis`: one SwiftUI multiplatform app for iOS and macOS, generated with xcodegen. It imports `OrbisDesign`.
 
 ## Development
 
@@ -68,14 +68,14 @@ Design tokens live in `docs/design/tokens.json`. `node scripts/design-tokens.mjs
 
 ## Native clients
 
-`apps/native` builds one SwiftUI app for iOS and macOS from an xcodegen specification. The generated project and derived data are not tracked.
+`apps/apple/Orbis` builds one SwiftUI app for iOS and macOS from an xcodegen specification. The generated project and derived data are not tracked.
 
 ```sh
 bun run native:lanes          # unit tests and native journeys against a temporary service
 bun run native:lanes --unit   # unit tests only
 ```
 
-A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Copy the xcodegen output path from `apps/native/DerivedData` when opening the project in Xcode.
+A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Copy the xcodegen output path from `apps/apple/DerivedData` when opening the project in Xcode.
 
 ## Security and next steps
 

@@ -1,3 +1,4 @@
+import OrbisDesign
 import SwiftUI
 
 /// One list for both destinations, so the loading, failure, and empty treatments are
@@ -55,11 +56,11 @@ struct SetRowView: View {
                     .font(.headline)
                 Text(item.creator ?? item.source.label)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OrbisColor.muted)
                 if !item.tags.isEmpty {
                     Text(item.tags.map { "#\($0)" }.joined(separator: " "))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(OrbisColor.muted)
                 }
                 if showsProgress {
                     HStack(spacing: 10) {
@@ -71,7 +72,7 @@ struct SetRowView: View {
                         }
                     }
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(OrbisColor.muted)
                 }
             }
         }
@@ -93,14 +94,15 @@ struct SetRowView: View {
             }
         }
         .frame(width: 44, height: 44)
-        .clipShape(RoundedRectangle(cornerRadius: 6))
+        .clipShape(RoundedRectangle(cornerRadius: Radius.chip))
+        .orbisRaised(radius: Radius.chip)
     }
 
     private var fallbackArtwork: some View {
         ZStack {
-            Rectangle().fill(.quaternary)
+            Rectangle().fill(OrbisColor.field)
             Image(systemName: item.source == .youtube ? "play.rectangle" : "waveform")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OrbisColor.muted)
         }
     }
 

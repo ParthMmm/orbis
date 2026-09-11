@@ -24,6 +24,6 @@ deploy/cobalt/*.report.json
 .swiftpm/
 
 # Generated Xcode project and build output for the native app.
-apps/native/DerivedData/
-apps/native/*.xcodeproj/
+apps/apple/DerivedData/
+apps/apple/*.xcodeproj/
 *.xcresult

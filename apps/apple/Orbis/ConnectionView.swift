@@ -1,3 +1,4 @@
+import OrbisDesign
 import SwiftUI
 
 /// First launch. One address and one device token, tested before they are stored, so a
@@ -40,6 +41,7 @@ struct ConnectionView: View {
                         Text("Test connection")
                     }
                 }
+                .buttonStyle(OrbisPrimaryButtonStyle())
                 .disabled(
                     model.connectionAddress.isEmpty
                         || model.connectionToken.isEmpty
@@ -51,7 +53,7 @@ struct ConnectionView: View {
             if let error = model.connectionError {
                 Section {
                     Text(error)
-                        .foregroundStyle(.red)
+                        .foregroundStyle(OrbisColor.destructive)
                         .accessibilityIdentifier("connection-error")
                 }
             }

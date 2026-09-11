@@ -5,6 +5,9 @@ options:
   deploymentTarget:
     iOS: "26.0"
     macOS: "26.0"
+packages:
+  OrbisDesign:
+    path: OrbisDesign
 settings:
   base:
     SWIFT_VERSION: "6.0"
@@ -23,6 +26,8 @@ targets:
     supportedDestinations: [iOS, macOS]
     sources:
       - Orbis
+    dependencies:
+      - package: OrbisDesign
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client
