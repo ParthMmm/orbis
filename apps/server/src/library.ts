@@ -29,7 +29,6 @@ const SET_COLUMNS = `id, url, title, source, tags, created_at AS createdAt, crea
 
 const CURRENT_SCHEMA_VERSION = 1;
 
-// Shown until a provider answers, so a failed enrichment still leaves an editable title.
 const TEMPORARY_TITLES: Record<SetSource, string> = {
   soundcloud: "SoundCloud track",
   youtube: "YouTube video",

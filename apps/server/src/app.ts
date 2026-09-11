@@ -73,7 +73,6 @@ export const createApp = (
           Effect.flatMap((enriched) =>
             library.recordEnrichment(set.id, enriched)
           ),
-          // A provider that does not answer leaves the Set saved and retryable.
           Effect.catchTag("MetadataError", () =>
             library.recordEnrichmentFailure(set.id)
           )

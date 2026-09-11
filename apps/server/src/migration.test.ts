@@ -152,8 +152,6 @@ test("does not replace the title of a set saved before the column existed", asyn
       url: "/sets/legacy-set/metadata",
     });
     expect(retried.statusCode).toBe(200);
-    // A title was required before this column existed, so every pre-existing title came
-    // from a person and a retry must leave it alone.
     expect(retried.json()).toMatchObject({
       creator: "Some Channel",
       title: "Saved before the extended columns",
