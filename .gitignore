@@ -11,5 +11,6 @@ coverage/
 data/
 *.tsbuildinfo
 .cache/
+.pi/
 deploy/cobalt/keys.json
 deploy/cobalt/*.report.json
