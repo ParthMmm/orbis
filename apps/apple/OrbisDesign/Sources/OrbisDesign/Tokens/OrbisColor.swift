@@ -65,6 +65,19 @@ public enum OrbisColor {
     public var soft: Color {
       dot.opacity(0.18)
     }
+
+    /// A Tag's color is its identity, so it must not change between launches or shift as
+    /// other Tags come and go. A stable hash, not the case order, keeps it deterministic and
+    /// independent of the rest of the library. Case is folded in, so a Tag that reaches the
+    /// display without the service's normalization cannot change color on the way.
+    public static func forTag(_ tag: String) -> Self {
+      let cases = allCases
+      var hash = 5381
+      for byte in tag.lowercased().utf8 {
+        hash = ((hash << 5) &+ hash) &+ Int(byte)
+      }
+      return cases[Int(hash.magnitude % UInt(cases.count))]
+    }
   }
 }
 

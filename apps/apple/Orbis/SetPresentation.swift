@@ -45,15 +45,10 @@ enum SetPresentation {
         return text
     }
 
-    /// A Tag's colour is its identity, so it must not change between launches or reorder as
-    /// other tags come and go. A stable hash keeps it deterministic and independent of the set.
+    /// A Tag's colour is its identity. The rule lives in the design system, so a Tag looks the
+    /// same in every app and in every preview.
     static func category(for tag: String) -> OrbisColor.Category {
-        let cases = OrbisColor.Category.allCases
-        var hash = 5381
-        for byte in tag.utf8 {
-            hash = ((hash << 5) &+ hash) &+ Int(byte)
-        }
-        return cases[Int(hash.magnitude % UInt(cases.count))]
+        OrbisColor.Category.forTag(tag)
     }
 
     @MainActor
