@@ -26,11 +26,11 @@ The proposed worker sends `POST /` with `Accept: application/json`, `Content-Typ
 
 ```json
 {
-	"url": "<saved source URL>",
-	"downloadMode": "audio",
-	"audioFormat": "best",
-	"localProcessing": "disabled",
-	"alwaysProxy": true
+  "url": "<saved source URL>",
+  "downloadMode": "audio",
+  "audioFormat": "best",
+  "localProcessing": "disabled",
+  "alwaysProxy": true
 }
 ```
 
