@@ -102,6 +102,34 @@ final class OrbisClientTests: XCTestCase {
         XCTAssertEqual(json["tags"] as? [String], [])
     }
 
+    func testPlaylistsDecodeWithTheirCounts() async throws {
+        let body = """
+        {"playlists":[{"id":"1","name":"Long drives","createdAt":"2026-01-01T00:00:00.000Z","setCount":4},
+        {"id":"2","name":"Closing sets","createdAt":"2026-01-01T00:00:00.000Z","setCount":0}]}
+        """
+        let session = StubProtocol.session(status: 200, body: body)
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: session
+        )
+        let playlists = try await client.playlists()
+        XCTAssertEqual(playlists.map(\.name), ["Long drives", "Closing sets"])
+        XCTAssertEqual(playlists.map(\.setCount), [4, 0])
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/playlists")
+    }
+
+    func testLibraryAsksForOnePlaylistByItsIdentifier() async throws {
+        let session = StubProtocol.session(status: 200, body: #"{"sets":[]}"#)
+        let client = OrbisClient(
+            address: URL(string: "https://vanta.example.ts.net")!,
+            token: "token",
+            session: session
+        )
+        _ = try await client.library(playlistId: "abc")
+        XCTAssertEqual(StubProtocol.lastRequest?.url?.query(), "playlistId=abc")
+    }
+
     func testACancelledRequestIsNotReportedAsUnreachable() async {
         let client = OrbisClient(
             address: URL(string: "https://vanta.example.ts.net")!,

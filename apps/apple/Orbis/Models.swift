@@ -36,6 +36,18 @@ struct LibraryResponse: Decodable {
     let sets: [SavedSet]
 }
 
+/// Mirrors the server contract. The count comes from the server so a sidebar does not ask once
+/// per playlist, and the creation date is left out because nothing shows it.
+struct Playlist: Identifiable, Decodable, Hashable {
+    let id: String
+    let name: String
+    let setCount: Int
+}
+
+struct PlaylistsResponse: Decodable {
+    let playlists: [Playlist]
+}
+
 struct HealthResponse: Decodable {
     let status: String
 }

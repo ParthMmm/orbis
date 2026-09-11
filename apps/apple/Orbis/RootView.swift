@@ -46,6 +46,7 @@ struct RootView: View {
         .task {
             if model.isConfigured, model.library == .idle {
                 await model.loadLibrary()
+                await model.loadPlaylists()
             }
         }
     }
@@ -95,6 +96,12 @@ struct SidebarShell: View {
                     )
                     .accessibilityIdentifier("sidebar-\(destination.rawValue.lowercased())")
                 }
+                Section("Playlists") {
+                    playlistRow(nil, name: "Everything", count: model.totalCount)
+                    ForEach(model.playlistItems) { playlist in
+                        playlistRow(playlist.id, name: playlist.name, count: playlist.setCount)
+                    }
+                }
             }
             .navigationTitle("Orbis")
             .accessibilityIdentifier("sidebar")
@@ -103,6 +110,30 @@ struct SidebarShell: View {
                 DestinationView(model: model, destination: model.destination)
             }
         }
+    }
+
+    /// A playlist in the sidebar. Everything is the whole library, so it carries no colour, and
+    /// choosing a playlist is the same as asking for the Library filtered by it.
+    private func playlistRow(_ id: String?, name: String, count: Int) -> some View {
+        Button {
+            Task {
+                model.destination = .library
+                await model.selectPlaylist(id)
+            }
+        } label: {
+            PlaylistRow(
+                name,
+                count: count,
+                category: id == nil ? nil : SetPresentation.category(for: name)
+            )
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(
+            model.selectedPlaylistId == id ? Color.accentColor.opacity(0.18) : Color.clear
+        )
+        .accessibilityIdentifier(id == nil ? "playlist-all" : "playlist-\(name)")
     }
 }
 

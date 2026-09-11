@@ -65,12 +65,19 @@ struct OrbisClient: Sendable {
         return decoded.status
     }
 
-    func library(query: String = "") async throws -> [SavedSet] {
-        var path = "sets"
+    func library(query: String = "", playlistId: String? = nil) async throws -> [SavedSet] {
+        var items: [URLQueryItem] = []
         let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty {
+            items.append(URLQueryItem(name: "q", value: trimmed))
+        }
+        if let playlistId {
+            items.append(URLQueryItem(name: "playlistId", value: playlistId))
+        }
+        var path = "sets"
+        if !items.isEmpty {
             var components = URLComponents()
-            components.queryItems = [URLQueryItem(name: "q", value: trimmed)]
+            components.queryItems = items
             path += "?\(components.percentEncodedQuery ?? "")"
         }
         let response = try await send(path: path, method: "GET", body: nil)
@@ -78,6 +85,15 @@ struct OrbisClient: Sendable {
             throw OrbisError.malformed
         }
         return decoded.sets
+    }
+
+    func playlists() async throws -> [Playlist] {
+        let response = try await send(path: "playlists", method: "GET", body: nil)
+        guard let decoded = try? JSONDecoder().decode(PlaylistsResponse.self, from: response)
+        else {
+            throw OrbisError.malformed
+        }
+        return decoded.playlists
     }
 
     func save(url: String, tags: [String] = []) async throws -> SavedSet {

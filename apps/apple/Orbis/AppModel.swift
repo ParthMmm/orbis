@@ -21,6 +21,9 @@ final class AppModel {
     var isTestingConnection = false
 
     var library: Loadable<[SavedSet]> = .idle
+    var playlists: Loadable<[Playlist]> = .idle
+    /// The playlist the Library is showing. Nil is everything the library holds.
+    var selectedPlaylistId: String?
     var searchQuery = ""
     var search: Loadable<[SavedSet]> = .idle
 
@@ -84,6 +87,11 @@ final class AppModel {
         return sets.count
     }
 
+    var playlistItems: [Playlist] {
+        guard case let .loaded(items) = playlists else { return [] }
+        return items
+    }
+
     func setTagFilter(_ tag: String?) {
         activeTag = tag
     }
@@ -123,7 +131,7 @@ final class AppModel {
         guard let client else { return }
         library = .loading
         do {
-            library = .loaded(try await client.library())
+            library = .loaded(try await client.library(playlistId: selectedPlaylistId))
             reloadsAfterCancellation = 0
         } catch OrbisError.cancelled {
             // The screen that asked for this went away, which is not a failure. The retry runs
@@ -168,6 +176,26 @@ final class AppModel {
         } catch {
             fileError = OrbisError.unreachable.message
         }
+    }
+
+    /// The playlists a sidebar offers. A failure is not shown on its own, because the Library is
+    /// still readable without it and an empty sidebar reads as no playlists.
+    func loadPlaylists() async {
+        guard let client else { return }
+        playlists = .loading
+        do {
+            playlists = .loaded(try await client.playlists())
+        } catch OrbisError.cancelled {
+            playlists = .idle
+        } catch {
+            playlists = .loaded([])
+        }
+    }
+
+    func selectPlaylist(_ id: String?) async {
+        guard selectedPlaylistId != id else { return }
+        selectedPlaylistId = id
+        await loadLibrary()
     }
 
     func runSearch() async {
