@@ -7,7 +7,8 @@ The shared design system for the Orbis apps on macOS and iOS: tokens, styles, an
 - Type: `Font.orbis.*` — Dynamic Type text styles only, SF Pro and SF Mono.
 - Radius: `Radius.*` — the one custom scale. Spacing uses system defaults.
 - Liquid Glass: standard chrome is glass on recompile. `.orbisGlass()` is for custom floating bars only. Content uses `.orbisRaised()`. The tinted `.orbisPrimary` button is the one glass element inside content.
-- Components: `PasteHero` (which composes `LinkField`), `SourceStamp`, `TagChip`, `TagPill`, `TagInput`, `PlaylistRow`, `SetRow`. Each file carries a `#Preview` at Mac and iPhone widths in light and dark.
+- Components: `PasteHero` (which composes `LinkField`), `SourceStamp`, `TagChip`, `TagPill`, `TagInput`, `PlaylistRow`, `PlaylistPicker`, `SetRow`, `SetDetail`. Each file carries a `#Preview` at Mac and iPhone widths in light and dark.
+- Rows that can be pressed wear `.orbisRowHeight()`, which gives a touch platform the 44 points a finger needs and leaves a Mac to its pointer.
 - Input rules: `LinkField` files a link once it is shaped like one; whether Orbis supports it comes back as state. `TagInput` applies the service's own Tag rules, twenty Tags of forty characters, trimmed, lowercased, and deduplicated, so nothing typed there returns refused.
 
 Requires Xcode 26 or later; platforms iOS 26 and macOS 26.
