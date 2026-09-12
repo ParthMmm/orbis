@@ -5,46 +5,16 @@
   --orbis-field: light-dark(oklch(1 0 0), oklch(0.16 0.008 75));
   --orbis-ink: light-dark(oklch(0.23 0.012 75), oklch(0.947 0.014 85));
   --orbis-muted: light-dark(oklch(0.5 0.03 85), oklch(0.659 0.032 88));
-  --orbis-category-pink-text: light-dark(
-    oklch(0.5 0.2 16),
-    oklch(0.658 0.232 16)
-  );
-  --orbis-category-yellow-text: light-dark(
-    oklch(0.5 0.12 95),
-    oklch(0.885 0.181 95)
-  );
-  --orbis-category-cyan-text: light-dark(
-    oklch(0.5 0.11 228),
-    oklch(0.817 0.119 228)
-  );
-  --orbis-category-green-text: light-dark(
-    oklch(0.5 0.15 147),
-    oklch(0.756 0.208 147)
-  );
-  --orbis-category-purple-text: light-dark(
-    oklch(0.5 0.2 312),
-    oklch(0.656 0.227 312)
-  );
-  --orbis-category-teal-text: light-dark(
-    oklch(0.5 0.1 212),
-    oklch(0.771 0.118 212)
-  );
-  --orbis-category-mint-text: light-dark(
-    oklch(0.5 0.09 192),
-    oklch(0.851 0.115 192)
-  );
-  --orbis-category-blue-text: light-dark(
-    oklch(0.5 0.18 255),
-    oklch(0.624 0.206 255)
-  );
-  --orbis-category-indigo-text: light-dark(
-    oklch(0.5 0.19 278),
-    oklch(0.556 0.203 278)
-  );
-  --orbis-category-brown-text: light-dark(
-    oklch(0.5 0.07 73),
-    oklch(0.665 0.064 73)
-  );
+  --orbis-categoryPinkText: light-dark(oklch(0.5 0.2 16), oklch(0.658 0.232 16));
+  --orbis-categoryYellowText: light-dark(oklch(0.5 0.12 95), oklch(0.885 0.181 95));
+  --orbis-categoryCyanText: light-dark(oklch(0.5 0.11 228), oklch(0.817 0.119 228));
+  --orbis-categoryGreenText: light-dark(oklch(0.5 0.15 147), oklch(0.756 0.208 147));
+  --orbis-categoryPurpleText: light-dark(oklch(0.5 0.2 312), oklch(0.656 0.227 312));
+  --orbis-categoryTealText: light-dark(oklch(0.5 0.1 212), oklch(0.771 0.118 212));
+  --orbis-categoryMintText: light-dark(oklch(0.5 0.09 192), oklch(0.851 0.115 192));
+  --orbis-categoryBlueText: light-dark(oklch(0.5 0.18 255), oklch(0.624 0.206 255));
+  --orbis-categoryIndigoText: light-dark(oklch(0.5 0.19 278), oklch(0.556 0.203 278));
+  --orbis-categoryBrownText: light-dark(oklch(0.5 0.07 73), oklch(0.665 0.064 73));
   --orbis-radius-chip: 6px;
   --orbis-radius-sidebarRow: 8px;
   --orbis-radius-button: 10px;

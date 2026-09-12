@@ -26,6 +26,9 @@
     },
     "//#format:check": {
       "outputs": []
+    },
+    "//#tokens:check": {
+      "outputs": []
     }
   },
   "globalPassThroughEnv": ["ORBIS_DATA_DIR", "ORBIS_PORT"],

@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orbis.local/schemas/design-tokens.json",
+  "title": "Orbis design tokens",
+  "description": "Colour, radius, and type tokens for OrbisDesign. Colour values are OKLCH; scripts/design-tokens.mjs generates the Swift and CSS from this file.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["$schema", "description", "color", "system", "radius", "type"],
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Relative path to this schema, so editors validate the file."
+    },
+    "description": { "type": "string", "minLength": 1 },
+    "color": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "paper",
+        "paperRaised",
+        "field",
+        "ink",
+        "muted",
+        "categoryText"
+      ],
+      "properties": {
+        "paper": { "$ref": "#/$defs/appearances" },
+        "paperRaised": { "$ref": "#/$defs/appearances" },
+        "field": { "$ref": "#/$defs/appearances" },
+        "ink": { "$ref": "#/$defs/appearances" },
+        "muted": { "$ref": "#/$defs/appearances" },
+        "categoryText": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "One text shade per OrbisColor.Category case. A case here that the Swift enum cannot draw is a build failure, so every name is required.",
+          "required": [
+            "pink",
+            "yellow",
+            "cyan",
+            "green",
+            "purple",
+            "teal",
+            "mint",
+            "blue",
+            "indigo",
+            "brown"
+          ],
+          "properties": {
+            "pink": { "$ref": "#/$defs/appearances" },
+            "yellow": { "$ref": "#/$defs/appearances" },
+            "cyan": { "$ref": "#/$defs/appearances" },
+            "green": { "$ref": "#/$defs/appearances" },
+            "purple": { "$ref": "#/$defs/appearances" },
+            "teal": { "$ref": "#/$defs/appearances" },
+            "mint": { "$ref": "#/$defs/appearances" },
+            "blue": { "$ref": "#/$defs/appearances" },
+            "indigo": { "$ref": "#/$defs/appearances" },
+            "brown": { "$ref": "#/$defs/appearances" }
+          }
+        }
+      }
+    },
+    "system": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Colours the system supplies. Recorded here so the intent is readable, not generated.",
+      "required": ["tint", "destructive", "categoryDot"],
+      "properties": {
+        "tint": { "type": "string", "minLength": 1 },
+        "destructive": { "type": "string", "minLength": 1 },
+        "categoryDot": { "type": "string", "minLength": 1 }
+      }
+    },
+    "radius": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "chip",
+        "sidebarRow",
+        "button",
+        "row",
+        "field",
+        "list",
+        "hero"
+      ],
+      "properties": {
+        "chip": { "$ref": "#/$defs/radius" },
+        "sidebarRow": { "$ref": "#/$defs/radius" },
+        "button": { "$ref": "#/$defs/radius" },
+        "row": { "$ref": "#/$defs/radius" },
+        "field": { "$ref": "#/$defs/radius" },
+        "list": { "$ref": "#/$defs/radius" },
+        "hero": { "$ref": "#/$defs/radius" }
+      }
+    },
+    "type": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "largeTitle",
+        "hero",
+        "sectionTitle",
+        "rowTitle",
+        "body",
+        "caption",
+        "mono",
+        "stamp"
+      ],
+      "properties": {
+        "largeTitle": { "type": "string", "minLength": 1 },
+        "hero": { "type": "string", "minLength": 1 },
+        "sectionTitle": { "type": "string", "minLength": 1 },
+        "rowTitle": { "type": "string", "minLength": 1 },
+        "body": { "type": "string", "minLength": 1 },
+        "caption": { "type": "string", "minLength": 1 },
+        "mono": { "type": "string", "minLength": 1 },
+        "stamp": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "$defs": {
+    "oklch": {
+      "type": "string",
+      "description": "An OKLCH colour, written the one way the generator parses it.",
+      "pattern": "^oklch\\(\\d+(\\.\\d+)? \\d+(\\.\\d+)? \\d+(\\.\\d+)?\\)$"
+    },
+    "appearances": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["light", "dark"],
+      "properties": {
+        "light": { "$ref": "#/$defs/oklch" },
+        "dark": { "$ref": "#/$defs/oklch" }
+      }
+    },
+    "radius": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 100
+    }
+  }
+}
