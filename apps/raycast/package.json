@@ -1,6 +1,59 @@
 {
-  "name": "@orbis/raycast",
+  "$schema": "https://www.raycast.com/schemas/extension.json",
+  "name": "orbis",
   "version": "0.0.0",
   "private": true,
-  "description": "Reserved workspace for the Orbis Raycast extension"
+  "description": "Save a YouTube or SoundCloud link to your Orbis library without opening the app.",
+  "categories": [
+    "Productivity"
+  ],
+  "license": "MIT",
+  "author": "parthmangrola",
+  "scripts": {
+    "dev": "ray develop",
+    "build": "ray build -o dist",
+    "test": "bun test",
+    "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo"
+  },
+  "dependencies": {
+    "@orbis/contracts": "workspace:*",
+    "@raycast/api": "2.2.1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.3.0"
+  },
+  "icon": "extension-icon.png",
+  "commands": [
+    {
+      "name": "save-current-tab",
+      "title": "Save Current Tab",
+      "description": "Save the active browser tab to Orbis.",
+      "mode": "no-view"
+    },
+    {
+      "name": "save-clipboard",
+      "title": "Save Clipboard",
+      "description": "Save the first YouTube or SoundCloud link on the clipboard to Orbis.",
+      "mode": "no-view"
+    }
+  ],
+  "preferences": [
+    {
+      "name": "serviceUrl",
+      "title": "Orbis Service URL",
+      "description": "The HTTPS address of your Orbis service, such as https://orbis.example.ts.net.",
+      "type": "textfield",
+      "required": true,
+      "placeholder": "https://orbis.example.ts.net"
+    },
+    {
+      "name": "deviceToken",
+      "title": "Device Token",
+      "description": "The token your Orbis server printed once when you paired this device.",
+      "type": "password",
+      "required": true,
+      "placeholder": "Paste the device token"
+    }
+  ],
+  "title": "Orbis"
 }

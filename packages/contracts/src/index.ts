@@ -65,3 +65,10 @@ export interface Playlist {
   /** How many Sets the playlist holds, so a sidebar can show the number without a request each. */
   setCount: number;
 }
+
+export {
+  normalizeSourceUrl,
+  SOURCE_URL_MESSAGE,
+  UnsupportedSourceUrlError,
+  youTubeVideoId,
+} from "./source-url.js";

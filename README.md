@@ -10,7 +10,7 @@ The first slice saves links and titles, supports title and tag editing, deletion
 - `apps/server`: Bun + Effect v4 RC HTTP API and Bun SQLite storage.
 - `packages/contracts`: shared TypeScript API types.
 - `apps/apple/OrbisDesign`: SwiftUI design system (tokens, styles, components) shared by the planned macOS and iOS apps. See [ADR 0001](docs/adr/0001-client-platform-strategy.md).
-- `apps/raycast`: reserved extension workspace, not implemented.
+- `apps/raycast`: Save Current Tab and Save Clipboard commands. See [setup and browser support](apps/raycast/README.md).
 - `apps/apple/Orbis`: one SwiftUI multiplatform app for iOS and macOS, generated with xcodegen. It imports `OrbisDesign`.
 
 ## Development
@@ -93,4 +93,4 @@ Vanta runs the API as a systemd user service behind a tailnet-only Tailscale Ser
 
 The renderer is sandboxed and uses a narrow preload API. Only the main process performs local HTTP requests and opens allowlisted source URLs.
 
-Downloads, playback, retention, shared groups, Tailscale device sharing, iOS, Raycast, Versos, and MCP remain planned. See [the first-slice scope](docs/specs/first-library-slice.md). Specs and tickets belong in [GitHub Issues](https://github.com/ParthMmm/orbis/issues).
+Downloads, playback, retention, shared groups, Tailscale device sharing, iOS, Versos, and MCP remain planned. Raycast capture is implemented; full live and performance verification remains tracked in [Save Sets through Raycast](https://github.com/ParthMmm/orbis/issues/9). See [the first-slice scope](docs/specs/first-library-slice.md). Specs and tickets belong in [GitHub Issues](https://github.com/ParthMmm/orbis/issues).
