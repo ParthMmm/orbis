@@ -1,22 +1,15 @@
 import OrbisDesign
 import SwiftUI
 
-/// The copy a list shows when it has nothing to render. Grouped so a caller passes one value
-/// instead of four loose strings.
-struct EmptyPresentation {
-  let title: String
-  let message: String
-  let symbol: String
-  let identifier: String
-}
-
-/// One list for both destinations, so loading, failure, and the two empty cases are defined
-/// once and wear the same design. The two empty cases stay separate because they mean
-/// different things.
+/// One list for both destinations, so loading, failure, and the empty cases are defined once
+/// and wear the same design. The states themselves come from OrbisDesign; this view decides
+/// where they sit and what they are called.
 struct SetList: View {
   let state: Loadable<[SavedSet]>
   let heading: Text
-  let empty: EmptyPresentation
+  /// The state a loaded-but-empty list shows, composed by the caller from OrbisDesign and
+  /// carrying its own accessibility identifier.
+  let empty: AnyView
   /// What the app was doing when a failure happened, in the words the screen would use.
   var failureContext = "loading the library"
   /// The tag the list is filtered by, so the row marks it as the active one.
@@ -38,22 +31,11 @@ struct SetList: View {
     Group {
       switch state {
       case .idle, .loading:
-        ProgressView("Loading library")
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+        LoadingState()
           .accessibilityIdentifier("library-loading")
       case .failed(let failure):
-        ContentUnavailableView {
-          Label(failure.title, systemImage: failure.symbol)
-        } description: {
-          Text(failure.message)
-        } actions: {
-          if failure.isRetryable {
-            Button("Try again") { Task { await retry() } }
-              .buttonStyle(OrbisPrimaryButtonStyle())
-              .accessibilityIdentifier("library-retry")
-          }
-          CopyFailureButton(
-            report: FailureReport(failure: failure, context: failureContext))
+        UnavailableState(failure: failure, context: failureContext) {
+          Task { await retry() }
         }
         .accessibilityIdentifier("library-error")
       case .loaded(let sets):
@@ -76,27 +58,18 @@ struct SetList: View {
       ScrollView {
         VStack(alignment: .leading, spacing: 0) {
           hero.padding(.bottom, 16)
-          emptyMessageView.frame(maxWidth: .infinity)
+          empty.frame(maxWidth: .infinity)
         }
         .padding()
       }
     } else {
-      emptyMessageView
+      empty
     }
   }
 
   private func open(_ set: SavedSet) {
     guard let link = SetPresentation.sourceURL(set) else { return }
     openURL(link)
-  }
-
-  private var emptyMessageView: some View {
-    ContentUnavailableView {
-      Label(empty.title, systemImage: empty.symbol)
-    } description: {
-      Text(empty.message)
-    }
-    .accessibilityIdentifier(empty.identifier)
   }
 
   private func rows(_ sets: [SavedSet]) -> some View {

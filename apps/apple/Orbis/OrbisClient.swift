@@ -1,4 +1,5 @@
 import Foundation
+import OrbisDesign
 
 /// A failure the user can act on. Each case carries the sentence the app shows, so the
 /// recovery action is decided in one place rather than in every view.
@@ -43,22 +44,6 @@ enum OrbisError: Error, Equatable {
       "Enter the full service address, including https://."
     }
   }
-}
-
-/// A failure as a screen needs to show it: a heading that says what went wrong, the sentence
-/// underneath, and whether trying again could change the answer.
-///
-/// Every library failure used to wear the same heading, so a person whose service was older than
-/// their app was told their network was down. A Try again button that cannot change the answer is
-/// its own kind of lie, which is why retryability is part of the failure rather than of the view.
-struct OrbisFailure: Equatable {
-  let title: String
-  let message: String
-  let symbol: String
-  let isRetryable: Bool
-  /// Where the app was looking when this happened, which is the first thing worth checking and
-  /// the first thing a person forgets to mention.
-  var address: String?
 }
 
 extension OrbisError {

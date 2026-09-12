@@ -55,6 +55,7 @@ public struct SetRow: View {
   }
 
   @Environment(\.horizontalSizeClass) private var sizeClass
+  @Environment(\.dynamicTypeSize) private var typeSize
 
   public init(
     index: Int, source: String, title: String, url: String, tags: [Tag], added: Date,
@@ -70,8 +71,16 @@ public struct SetRow: View {
     self.state = state
   }
 
+  /// At the largest text sizes the one-line arrangement cannot hold a title, three chips, and
+  /// a date at once, so the row stacks instead of squeezing the title to nothing.
+  public static func stacks(
+    sizeClass: UserInterfaceSizeClass?, dynamicTypeSize: DynamicTypeSize
+  ) -> Bool {
+    sizeClass == .compact || dynamicTypeSize.isAccessibilitySize
+  }
+
   public var body: some View {
-    if sizeClass == .compact {
+    if Self.stacks(sizeClass: sizeClass, dynamicTypeSize: typeSize) {
       compact
     } else {
       regular
@@ -127,7 +136,9 @@ public struct SetRow: View {
   }
 
   private var chips: some View {
-    HStack(spacing: 5) {
+    // A wrapping layout rather than a stack, so a row of Tags reflows onto a second line
+    // instead of running off the edge at the largest text sizes.
+    ChipFlow {
       ForEach(tags) { tag in
         TagChip(tag.name, category: tag.category, active: tag.name == activeTag)
       }
@@ -135,19 +146,33 @@ public struct SetRow: View {
   }
 }
 
-#Preview("Set rows") {
-  List {
-    SetRow(
-      index: 1, source: "YouTube", title: "Ben UFO — Dekmantel Festival 2019",
-      url: "youtube.com/watch?v=dk19benufo",
-      tags: [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)],
-      added: .now, activeTag: "techno"
-    )
-    SetRow(
-      index: 2, source: "SoundCloud", title: "Objekt — Live at Freerotation",
-      url: "soundcloud.com/objekt/freerotation-2023",
-      tags: [.init("techno", .pink), .init("live", .mint)],
-      added: .now, activeTag: "techno"
-    )
+private struct SetRowSample: View {
+  var body: some View {
+    List {
+      SetRow(
+        index: 1, source: "YouTube", title: "Ben UFO — Dekmantel Festival 2019",
+        url: "youtube.com/watch?v=dk19benufo",
+        tags: [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)],
+        added: .now, activeTag: "techno"
+      )
+      SetRow(
+        index: 2, source: "SoundCloud", title: "Objekt — Live at Freerotation",
+        url: "soundcloud.com/objekt/freerotation-2023",
+        tags: [.init("techno", .pink), .init("live", .mint)],
+        added: .now, activeTag: "techno"
+      )
+    }
   }
+}
+
+#Preview("Set rows") {
+  SetRowSample()
+}
+
+#Preview("Set rows, largest text, RTL, Mac") {
+  SetRowSample().orbisAccessibilityLayout().frame(width: 700)
+}
+
+#Preview("Set rows, largest text, RTL, iPhone") {
+  SetRowSample().orbisAccessibilityLayout().frame(width: 358)
 }

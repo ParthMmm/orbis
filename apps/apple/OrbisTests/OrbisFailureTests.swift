@@ -1,3 +1,4 @@
+import OrbisDesign
 import XCTest
 
 @testable import Orbis

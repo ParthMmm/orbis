@@ -55,6 +55,7 @@ public struct TagPill: View {
     .buttonBorderShape(.capsule)
     .tint(isOn ? category.dot : nil)
     .foregroundStyle(isOn ? AnyShapeStyle(category.text) : AnyShapeStyle(.primary))
+    .orbisAnimation(.tagToggled, value: isOn)
   }
 }
 
@@ -74,4 +75,35 @@ public struct TagPill: View {
   }
   .padding()
   .background(Color.orbis.paper)
+}
+
+/// Both chip shapes at the largest text size and in a right-to-left layout, where a row that
+/// will not wrap shows itself.
+private struct ChipsAndPillsAtLargestText: View {
+  @State private var techno = true
+  @State private var house = false
+
+  var body: some View {
+    VStack(alignment: .leading) {
+      ChipFlow {
+        TagChip("techno", category: .pink, active: true)
+        TagChip("festival", category: .purple)
+        TagChip("breaks", category: .green)
+      }
+      ChipFlow {
+        TagPill("techno", category: .pink, isOn: $techno)
+        TagPill("house", category: .yellow, isOn: $house)
+      }
+    }
+    .padding()
+    .orbisAccessibilityLayout()
+  }
+}
+
+#Preview("Chips and pills, largest text, RTL, Mac") {
+  ChipsAndPillsAtLargestText().frame(width: 700)
+}
+
+#Preview("Chips and pills, largest text, RTL, iPhone") {
+  ChipsAndPillsAtLargestText().frame(width: 358)
 }

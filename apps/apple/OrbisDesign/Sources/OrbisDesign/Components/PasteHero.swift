@@ -15,12 +15,15 @@ public struct PasteHero: View {
   /// What the last paste had to say when the clipboard held nothing worth filing, said here rather
   /// than written into the field, because the field is the person's.
   public let pasteNotice: String?
+  /// Set by a caller that wants the field to take focus, such as the empty Library's action.
+  @Binding public var focusRequest: Bool
   public let file: () -> Void
 
   public init(
     link: Binding<String>, state: LinkFieldState = .idle, compact: Bool = false,
     hint: LocalizedStringKey = "Title and tags come next.",
-    paste: ((String) -> Void)? = nil, pasteNotice: String? = nil, file: @escaping () -> Void
+    paste: ((String) -> Void)? = nil, pasteNotice: String? = nil,
+    focusRequest: Binding<Bool> = .constant(false), file: @escaping () -> Void
   ) {
     _link = link
     self.state = state
@@ -28,6 +31,7 @@ public struct PasteHero: View {
     self.hint = hint
     self.paste = paste
     self.pasteNotice = pasteNotice
+    _focusRequest = focusRequest
     self.file = file
   }
 
@@ -35,7 +39,7 @@ public struct PasteHero: View {
     VStack(alignment: .leading) {
       Text("Drop a link, file a set.")
         .font(.orbis.hero(compact: compact))
-      LinkField(link: $link, state: state, submit: file)
+      LinkField(link: $link, state: state, focusRequest: $focusRequest, submit: file)
       if let paste {
         pasteButton(paste)
       }
@@ -95,4 +99,23 @@ public struct PasteHero: View {
   }
   .padding()
   .background(Color.orbis.paper)
+}
+
+/// The hero at the largest text size and in a right-to-left layout, where the field has to give
+/// up its button to keep both readable.
+private struct PasteHeroAtLargestText: View {
+  @State private var link = "https://youtu.be/tPEMP9oYxTo"
+
+  var body: some View {
+    PasteHero(link: $link, state: .valid(source: "YouTube")) {}
+      .orbisAccessibilityLayout()
+  }
+}
+
+#Preview("Paste hero, largest text, RTL, Mac") {
+  PasteHeroAtLargestText().frame(width: 700)
+}
+
+#Preview("Paste hero, largest text, RTL, iPhone") {
+  PasteHeroAtLargestText().frame(width: 358)
 }

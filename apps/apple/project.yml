@@ -49,6 +49,7 @@ targets:
       - OrbisTests
     dependencies:
       - target: Orbis
+      - package: OrbisDesign
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.tests

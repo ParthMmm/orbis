@@ -85,3 +85,31 @@ public struct PlaylistPicker: View {
   .padding()
   .background(Color.orbis.paper)
 }
+
+#Preview("Playlist picker, largest text, RTL, Mac") {
+  @Previewable @State var chosen: String? = "1"
+  return PlaylistPicker(
+    selection: $chosen,
+    choices: [
+      .init(id: "1", name: "Long drives", category: .cyan),
+      .init(id: "2", name: "Closing sets", category: .purple),
+    ]
+  )
+  .padding()
+  .orbisAccessibilityLayout()
+  .frame(width: 700)
+}
+
+#Preview("Playlist picker, largest text, RTL, iPhone") {
+  @Previewable @State var chosen: String? = "1"
+  return PlaylistPicker(
+    selection: $chosen,
+    choices: [
+      .init(id: "1", name: "Long drives", category: .cyan),
+      .init(id: "2", name: "Closing sets", category: .purple),
+    ]
+  )
+  .padding()
+  .orbisAccessibilityLayout()
+  .frame(width: 358)
+}

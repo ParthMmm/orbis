@@ -159,6 +159,8 @@ struct DestinationView: View {
   @Bindable var model: AppModel
   let destination: Destination
   @State private var isConfirmingForget = false
+  /// The empty Library's action asks the paste field to take focus.
+  @State private var focusLink = false
 
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -170,11 +172,9 @@ struct DestinationView: View {
       SetList(
         state: model.visibleSets,
         heading: libraryHeading,
-        empty: EmptyPresentation(
-          title: "Start your collection",
-          message: "Paste a link above to file your first set.",
-          symbol: "music.note.list",
-          identifier: "library-empty"
+        empty: AnyView(
+          EmptyLibraryState(recover: { focusLink = true })
+            .accessibilityIdentifier("library-empty")
         ),
         failureContext: "loading the library",
         activeTag: model.activeTag,
@@ -258,7 +258,8 @@ struct DestinationView: View {
             isFiling: model.isFiling, failure: model.fileFailure),
           compact: isCompact,
           paste: { text in Task { await model.pasteAndFile(text) } },
-          pasteNotice: model.pasteNotice
+          pasteNotice: model.pasteNotice,
+          focusRequest: $focusLink
         ) {
           Task { await model.fileLink() }
         }
@@ -366,11 +367,9 @@ struct SearchDestination: View {
     SetList(
       state: displayedState,
       heading: heading,
-      empty: EmptyPresentation(
-        title: "No matching sets",
-        message: "Try a different title, tag, or source link.",
-        symbol: "magnifyingglass",
-        identifier: "search-no-results"
+      empty: AnyView(
+        NoResultsState(recoverLabel: "Clear search", recover: { model.clearSearch() })
+          .accessibilityIdentifier("search-no-results")
       ),
       failureContext: "searching the library",
       activeTag: nil,

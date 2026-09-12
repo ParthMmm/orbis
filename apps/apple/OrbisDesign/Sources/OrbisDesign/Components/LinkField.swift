@@ -41,17 +41,28 @@ public struct LinkField: View {
   @Binding public var link: String
   public let state: LinkFieldState
   public let action: LocalizedStringKey
+  /// A caller that wants the field focused sets this. The field clears it once focus is taken,
+  /// so asking again is another change rather than a no-op.
+  @Binding public var focusRequest: Bool
   public let submit: () -> Void
 
+  @Environment(\.dynamicTypeSize) private var typeSize
   @FocusState private var focused: Bool
+
+  /// The effects are played from a count that only ever rises, because a flag that fell back
+  /// to false would play the motion a second time as the field returned to idle.
+  @State private var accepted = 0
+  @State private var refused = 0
 
   public init(
     link: Binding<String>, state: LinkFieldState = .idle,
-    action: LocalizedStringKey = "File it", submit: @escaping () -> Void
+    action: LocalizedStringKey = "File it", focusRequest: Binding<Bool> = .constant(false),
+    submit: @escaping () -> Void
   ) {
     _link = link
     self.state = state
     self.action = action
+    _focusRequest = focusRequest
     self.submit = submit
   }
 
@@ -60,6 +71,43 @@ public struct LinkField: View {
   public static func canSubmit(link: String, state: LinkFieldState) -> Bool {
     guard state != .checking else { return false }
     return address(of: link) != nil
+  }
+
+  /// The symbol, the field, and the source the service named, without the button.
+  private var field: some View {
+    HStack {
+      // The symbol stays in place and the spinner sits over it, so the effect has one stable
+      // view to play on and does not start over when the field changes state.
+      ZStack {
+        Image(systemName: state.symbol)
+          .foregroundStyle(.secondary)
+          .opacity(state == .checking ? 0 : 1)
+          .orbisSymbolEffect(.filingSucceeded, trigger: accepted)
+          .orbisSymbolEffect(.filingFailed, trigger: refused)
+        if state == .checking {
+          ProgressView().controlSize(.small)
+        }
+      }
+      .frame(width: 16)
+      TextField("Paste a link", text: $link)
+        .textFieldStyle(.plain)
+        .focused($focused)
+        .onSubmit(submit)
+        .autocorrectionDisabled()
+        #if os(iOS)
+          .keyboardType(.URL)
+          .textInputAutocapitalization(.never)
+        #endif
+      if case .valid(let source) = state {
+        SourceStamp(source)
+      }
+    }
+  }
+
+  private var submitButton: some View {
+    Button(action, action: submit)
+      .buttonStyle(.orbisPrimary)
+      .disabled(!Self.canSubmit(link: link, state: state))
   }
 
   /// The address a piece of text names, when it names one.
@@ -77,35 +125,26 @@ public struct LinkField: View {
 
   public var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      HStack {
-        Group {
-          if state == .checking {
-            ProgressView().controlSize(.small)
-          } else {
-            Image(systemName: state.symbol).foregroundStyle(.secondary)
-          }
+      // At the largest text sizes the button cannot sit beside the field without squeezing the
+      // field to nothing, so it drops below and keeps the full width.
+      if typeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 6) {
+          field
+            .padding(.horizontal)
+            .padding(.vertical, 6)
+            .background(Color.orbis.field, in: .rect(cornerRadius: Radius.field))
+          submitButton.frame(maxWidth: .infinity, alignment: .trailing)
         }
-        .frame(width: 16)
-        TextField("Paste a link", text: $link)
-          .textFieldStyle(.plain)
-          .focused($focused)
-          .onSubmit(submit)
-          .autocorrectionDisabled()
-          #if os(iOS)
-            .keyboardType(.URL)
-            .textInputAutocapitalization(.never)
-          #endif
-        if case .valid(let source) = state {
-          SourceStamp(source)
+      } else {
+        HStack {
+          field
+          submitButton
         }
-        Button(action, action: submit)
-          .buttonStyle(.orbisPrimary)
-          .disabled(!Self.canSubmit(link: link, state: state))
+        .padding(.leading)
+        .padding(.vertical, 6)
+        .padding(.trailing, 6)
+        .background(Color.orbis.field, in: .rect(cornerRadius: Radius.field))
       }
-      .padding(.leading)
-      .padding(.vertical, 6)
-      .padding(.trailing, 6)
-      .background(Color.orbis.field, in: .rect(cornerRadius: Radius.field))
       if let message = state.message {
         Label(message, systemImage: state.symbol)
           .font(.orbis.mono)
@@ -113,8 +152,18 @@ public struct LinkField: View {
       }
     }
     .onChange(of: state) { _, state in
+      switch state {
+      case .valid: accepted += 1
+      case .invalid, .duplicate: refused += 1
+      case .idle, .checking: break
+      }
       guard let message = state.message else { return }
       AccessibilityNotification.Announcement(message).post()
+    }
+    .onChange(of: focusRequest) { _, wantsFocus in
+      guard wantsFocus else { return }
+      focused = true
+      focusRequest = false
     }
   }
 }
@@ -147,4 +196,38 @@ private struct LinkFieldStates: View {
 
 #Preview("Link field, iPhone, dark") {
   LinkFieldStates().frame(width: 358).preferredColorScheme(.dark)
+}
+
+#Preview("Link field, largest text, RTL, Mac") {
+  LinkFieldStates().orbisAccessibilityLayout()
+}
+
+#Preview("Link field, largest text, RTL, iPhone") {
+  LinkFieldStates().frame(width: 358).orbisAccessibilityLayout()
+}
+
+/// The two outcomes, to press, so the filing motion can actually be seen.
+private struct FilingOutcomes: View {
+  @State private var link = "https://youtu.be/tPEMP9oYxTo"
+  @State private var state: LinkFieldState = .idle
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      LinkField(link: $link, state: state, submit: {})
+      HStack {
+        Button("Accept") { state = .valid(source: "YouTube") }
+        Button("Refuse") { state = .invalid(message: "Orbis does not know that address.") }
+        Button("Reset") { state = .idle }
+      }
+      .buttonStyle(.bordered)
+    }
+    .padding()
+    .background(Color.orbis.paper)
+  }
+}
+
+#Preview("Filing outcomes") { FilingOutcomes() }
+
+#Preview("Filing outcomes, Reduce Motion") {
+  FilingOutcomes().orbisReduceMotion(true)
 }

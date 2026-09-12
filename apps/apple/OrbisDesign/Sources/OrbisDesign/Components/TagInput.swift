@@ -203,3 +203,11 @@ private struct TagInputSample: View {
 #Preview("Tag input, iPhone, dark") {
   TagInputSample().frame(width: 358).preferredColorScheme(.dark)
 }
+
+#Preview("Tag input, largest text, RTL, Mac") {
+  TagInputSample().orbisAccessibilityLayout()
+}
+
+#Preview("Tag input, largest text, RTL, iPhone") {
+  TagInputSample().frame(width: 358).orbisAccessibilityLayout()
+}

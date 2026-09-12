@@ -25,6 +25,8 @@ public struct SetDetail: View {
   public let playlists: [PlaylistPicker.Choice]
   public let category: @MainActor (String) -> OrbisColor.Category
 
+  @Environment(\.dynamicTypeSize) private var typeSize
+
   public let open: () -> Void
   public let retryName: () -> Void
   public let rename: () -> Void
@@ -132,18 +134,30 @@ public struct SetDetail: View {
       Text(title)
         .font(.orbis.sectionTitle)
         .accessibilityIdentifier("detail-title")
-      HStack(spacing: 8) {
-        SourceStamp(source)
-        if let subtitle {
-          Text(subtitle)
-            .font(.orbis.mono)
-            .foregroundStyle(.secondary)
+      // The stamp and the subtitle sit on one line until the text grows too large for both.
+      if typeSize.isAccessibilitySize {
+        VStack(alignment: .leading, spacing: 2) {
+          SourceStamp(source)
+          subtitleText
+        }
+      } else {
+        HStack(spacing: 8) {
+          SourceStamp(source)
+          subtitleText
         }
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(Self.headerLabel(title: title, source: source))
+  }
+
+  @ViewBuilder private var subtitleText: some View {
+    if let subtitle {
+      Text(subtitle)
+        .font(.orbis.mono)
+        .foregroundStyle(.secondary)
+    }
   }
 
   private var removal: some View {
@@ -175,20 +189,32 @@ private struct DetailRow<Value: View>: View {
   let identifier: String
   @ViewBuilder let content: () -> Value
 
+  @Environment(\.dynamicTypeSize) private var typeSize
+
   var body: some View {
     Button(action: action) {
-      HStack(spacing: 8) {
-        Text(label)
-        Spacer()
-        if let value {
-          Text(value)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+      // At the largest sizes the label, the value, and the disclosure cannot share a line, so
+      // the value moves under the label rather than being squeezed out.
+      Group {
+        if typeSize.isAccessibilitySize {
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 8) {
+              Text(label)
+              Spacer()
+              disclosure
+            }
+            valueText
+            content()
+          }
+        } else {
+          HStack(spacing: 8) {
+            Text(label)
+            Spacer()
+            valueText.lineLimit(1)
+            content()
+            disclosure
+          }
         }
-        content()
-        Image(systemName: "chevron.right")
-          .font(.orbis.caption)
-          .foregroundStyle(.tertiary)
       }
       .contentShape(.rect)
     }
@@ -196,6 +222,22 @@ private struct DetailRow<Value: View>: View {
     .orbisRowHeight()
     .padding(.vertical, 10)
     .accessibilityIdentifier(identifier)
+  }
+
+  /// The value the row discloses. Its styling lives here so the two arrangements cannot drift.
+  @ViewBuilder private var valueText: some View {
+    if let value {
+      Text(value)
+        .foregroundStyle(.secondary)
+    }
+  }
+
+  /// `chevron.forward`, not `chevron.right`: the disclosure points the way the language reads,
+  /// and the system mirrors it in a right-to-left layout.
+  private var disclosure: some View {
+    Image(systemName: "chevron.forward")
+      .font(.orbis.caption)
+      .foregroundStyle(.tertiary)
   }
 }
 
@@ -246,4 +288,12 @@ private struct SetDetailSample: View {
     playlistId: $playlist,
     open: {}, retryName: {}, rename: {}, editTags: {}, remove: {}
   )
+}
+
+#Preview("Set detail, largest text, RTL, Mac") {
+  SetDetailSample().orbisAccessibilityLayout()
+}
+
+#Preview("Set detail, largest text, RTL, iPhone") {
+  SetDetailSample().frame(width: 390).orbisAccessibilityLayout()
 }

@@ -26,3 +26,23 @@ public struct SourceStamp: View {
   }
   .padding()
 }
+
+#Preview("Stamp, largest text, RTL, Mac") {
+  HStack {
+    SourceStamp("YouTube")
+    SourceStamp("SoundCloud")
+  }
+  .padding()
+  .orbisAccessibilityLayout()
+  .frame(width: 700)
+}
+
+#Preview("Stamp, largest text, RTL, iPhone") {
+  HStack {
+    SourceStamp("YouTube")
+    SourceStamp("SoundCloud")
+  }
+  .padding()
+  .orbisAccessibilityLayout()
+  .frame(width: 358)
+}
