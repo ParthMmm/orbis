@@ -2,7 +2,9 @@
 
 The Orbis service keeps binding to loopback. Native Apple clients reach it through a Tailscale Serve bridge on the tailnet address, so the Host header is no longer loopback and the first slice's local-only rule would reject them.
 
-The server decides in one place, in the `handler` wrapper in `apps/server/src/app.ts`. A request carrying any `Origin` header is refused with 403, because a browser must never reach the library. A request carrying an `Authorization: Bearer` header is refused with 401 unless the token's SHA-256 matches a record in `devices.json`. A request with no such header is accepted when its Host is loopback, which is exactly the rule the Electron client relies on, so the desktop app needs no change. Everything else is refused with 403.
+The server decides in one place, in the `handler` wrapper in `apps/server/src/app.ts`. A request carrying any `Origin` header is refused with 403, because a browser must never reach the library. A request carrying an `Authorization: Bearer` header is refused with 401 unless the token's SHA-256 matches a record in `devices.json`. A request with no such header is accepted only on a local listener whose Host is loopback, which is exactly the rule the Electron client relies on, so the desktop app needs no change. Everything else is refused with 403.
+
+The listener supplies the access mode, never a request header. `apps/server/src/listeners.ts` starts two loopback listeners over one app: the local listener on `ORBIS_PORT` (4310) with mode `local`, and the device listener on `ORBIS_DEVICE_PORT` (4311) with mode `device`. Only `local` mode reaches the loopback Host rule. Tailscale Serve must target 4311, so a tailnet peer that presents `Host: localhost:4310` arrives on the device listener and receives 403 without a valid token. A caller-supplied Host header can no longer select the token-free policy.
 
 The host stores only `sha256(token)` per device, never the token. A copy of `devices.json` therefore cannot authenticate against the library, and revoking one device is deleting one record, effective on the next request with no restart. Tokens are enrolled with `bun run trust add --label "<name>"`, which prints the token once and writes the store atomically at mode 0600.
 
@@ -16,3 +18,9 @@ Rejected alternatives:
 - **A one-time pairing code with an enrolment endpoint.** Reintroduces a shared secret plus a second store with expiry, to save one copy and paste per device.
 
 The trade this accepts is that a captured device token is replayable until it is revoked. Tailscale carries the traffic and TLS protects it in transit, and the tokens are per device, so the blast radius of a leak is one device and one revocation command.
+
+## Separate ingress policies
+
+This decision splits local and proxied ingress because a request header selected the token-free policy. The audit that found this read the code; it did not reproduce the bypass against a running Tailscale Serve rule, and it did not retain a pinned revision of the upstream Serve handler. The local listeners and the deployment target are the only verified parts of this change.
+
+Shipping this code without repointing Serve from 4310 to 4311 does not close the suspected bypass. The owner must make that deployment change and confirm it from another tailnet node. See [`deploy/orbis-server/README.md`](../../deploy/orbis-server/README.md).

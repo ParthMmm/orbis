@@ -1,4 +1,5 @@
 import type { createApp } from "./app.js";
+import type { AccessMode } from "./identity.js";
 
 export const request = async (
   app: ReturnType<typeof createApp>,
@@ -8,6 +9,7 @@ export const request = async (
     payload?: unknown;
     headers?: Record<string, string>;
     host?: string;
+    accessMode?: AccessMode;
   }
 ) => {
   const headers: Record<string, string> = {};
@@ -21,7 +23,8 @@ export const request = async (
     ? `http://${options.host}`
     : "http://127.0.0.1:4310";
   const response = await app.handler(
-    new Request(`${base}${options.url}`, init)
+    new Request(`${base}${options.url}`, init),
+    options.accessMode
   );
   const body = await response.json();
   return { json: () => body, statusCode: response.status };
