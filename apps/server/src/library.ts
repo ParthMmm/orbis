@@ -10,6 +10,10 @@ import type {
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { LibraryError } from "./errors.js";
+import {
+  MAX_PLAYLISTS_PER_SET,
+  MAX_SETS_PER_PLAYLIST,
+} from "./library-limits.js";
 import type { EnrichedMetadata } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
 
@@ -30,7 +34,12 @@ const SET_COLUMNS = `id, url, title, source, tags, created_at AS createdAt, crea
   (SELECT COALESCE(json_group_array(playlist_id ORDER BY playlist_id), '[]')
    FROM playlist_sets WHERE playlist_sets.set_id = sets.id) AS playlistIds`;
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
+
+// Reading a library lists every Set's playlist ids with a correlated lookup on set_id, so the
+// membership table needs an index that begins with that column. The trailing playlist_id keeps
+// the lookup covering; the primary key starts with playlist_id and cannot serve this query.
+const CREATE_MEMBERSHIP_INDEX = `CREATE INDEX IF NOT EXISTS playlist_sets_by_set ON playlist_sets(set_id, playlist_id);`;
 
 const TEMPORARY_TITLES: Record<SetSource, string> = {
   soundcloud: "SoundCloud track",
@@ -53,7 +62,8 @@ CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY, name TEXT NOT NULL UN
 CREATE TABLE IF NOT EXISTS playlist_sets (
  playlist_id TEXT NOT NULL REFERENCES playlists(id), set_id TEXT NOT NULL REFERENCES sets(id), position INTEGER NOT NULL,
  PRIMARY KEY (playlist_id, set_id), UNIQUE (playlist_id, position)
-);`;
+);
+${CREATE_MEMBERSHIP_INDEX}`;
 
 const MIGRATIONS = [
   `ALTER TABLE sets ADD COLUMN creator TEXT;
@@ -71,12 +81,27 @@ const MIGRATIONS = [
    ALTER TABLE sets ADD COLUMN listen_count INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE sets ADD COLUMN finish_count INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE sets ADD COLUMN last_listened_at TEXT;`,
+  // Databases already at version 1 hold data, so the index is added by a separate migration
+  // rather than by editing the statements above.
+  CREATE_MEMBERSHIP_INDEX,
 ];
 
 const setNotFound = () =>
   new LibraryError({
     message: "Set not found.",
     statusCode: 404,
+  });
+
+const playlistCapacityError = () =>
+  new LibraryError({
+    message: `A playlist can hold at most ${MAX_SETS_PER_PLAYLIST} sets.`,
+    statusCode: 400,
+  });
+
+const setCapacityError = () =>
+  new LibraryError({
+    message: `A set can belong to at most ${MAX_PLAYLISTS_PER_SET} playlists.`,
+    statusCode: 400,
   });
 
 const ensureSchema = (db: Database) => {
@@ -192,6 +217,36 @@ export class Library extends Context.Service<
             });
           }
         };
+        const memberSetIds = (playlistId: string) =>
+          new Set(
+            db
+              .query<{ set_id: string }, [string]>(
+                "SELECT set_id FROM playlist_sets WHERE playlist_id = ?"
+              )
+              .all(playlistId)
+              .map((row) => row.set_id)
+          );
+        const memberPlaylistIds = (setId: string) =>
+          new Set(
+            db
+              .query<{ playlist_id: string }, [string]>(
+                "SELECT playlist_id FROM playlist_sets WHERE set_id = ?"
+              )
+              .all(setId)
+              .map((row) => row.playlist_id)
+          );
+        const playlistMemberCount = (playlistId: string) =>
+          db
+            .query<{ count: number }, [string]>(
+              "SELECT COUNT(*) AS count FROM playlist_sets WHERE playlist_id = ?"
+            )
+            .get(playlistId)?.count ?? 0;
+        const setMembershipCount = (setId: string) =>
+          db
+            .query<{ count: number }, [string]>(
+              "SELECT COUNT(*) AS count FROM playlist_sets WHERE set_id = ?"
+            )
+            .get(setId)?.count ?? 0;
         const save = Effect.fn("Library.save")((input: SaveSetInput) =>
           execute(() => {
             const id = crypto.randomUUID();
@@ -447,6 +502,20 @@ export class Library extends Context.Service<
                     throw setNotFound();
                   }
                 }
+                if (setIds.length > MAX_SETS_PER_PLAYLIST) {
+                  throw playlistCapacityError();
+                }
+                // A Set that already belongs here keeps its place, so only the Sets that are
+                // joining this Playlist gain a membership and count against their own limit.
+                const currentSetIds = memberSetIds(id);
+                for (const setId of setIds) {
+                  if (
+                    !currentSetIds.has(setId) &&
+                    setMembershipCount(setId) + 1 > MAX_PLAYLISTS_PER_SET
+                  ) {
+                    throw setCapacityError();
+                  }
+                }
                 db.query("DELETE FROM playlist_sets WHERE playlist_id = ?").run(
                   id
                 );
@@ -480,6 +549,20 @@ export class Library extends Context.Service<
               }
               for (const playlistId of playlistIds) {
                 requirePlaylist(playlistId);
+              }
+              if (playlistIds.length > MAX_PLAYLISTS_PER_SET) {
+                throw setCapacityError();
+              }
+              // Membership this Set already holds is retained rather than appended, so only the
+              // Playlists it newly joins count against the Sets each of them can hold.
+              const currentPlaylistIds = memberPlaylistIds(setId);
+              for (const playlistId of playlistIds) {
+                if (
+                  !currentPlaylistIds.has(playlistId) &&
+                  playlistMemberCount(playlistId) + 1 > MAX_SETS_PER_PLAYLIST
+                ) {
+                  throw playlistCapacityError();
+                }
               }
               // The caller states the membership it wants, so the playlists it left are the
               // ones it did not name. Doing that here rather than with a read-modify-write

@@ -1,10 +1,576 @@
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { createApp } from "./app.js";
+import {
+  MAX_PLAYLISTS_PER_SET,
+  MAX_SETS_PER_PLAYLIST,
+} from "./library-limits.js";
 import { request } from "./test-http.js";
+
+const SEEDED_CREATED_AT = "2026-04-01T00:00:00.000Z";
+
+type MembershipSeed = readonly [playlistIndex: number, setIndex: number];
+
+const indexRange = (count: number) =>
+  Array.from({ length: count }, (_, index) => index);
+
+const seededVideoUrl = (index: number) =>
+  `https://www.youtube.com/watch?v=${index.toString(36).padStart(11, "0")}`;
+
+// Bulk fixtures exceed what a test can post one request at a time, so the app creates its own
+// schema first and the rows are then written directly to that database file.
+const seedDatabase = async (
+  databasePath: string,
+  seed: (database: Database) => void
+) => {
+  const app = createApp({ databasePath });
+  try {
+    const library = await request(app, { method: "GET", url: "/sets" });
+    expect(library.statusCode).toBe(200);
+  } finally {
+    await app.dispose();
+  }
+  const database = new Database(databasePath);
+  try {
+    database.transaction(() => seed(database))();
+  } finally {
+    database.close();
+  }
+};
+
+const seedLibrary = async (
+  databasePath: string,
+  counts: { readonly playlists: number; readonly sets: number },
+  memberships: readonly MembershipSeed[] = []
+) => {
+  const setIds = indexRange(counts.sets).map((index) => `seeded-set-${index}`);
+  const playlistIds = indexRange(counts.playlists).map(
+    (index) => `seeded-playlist-${index}`
+  );
+  await seedDatabase(databasePath, (database) => {
+    const insertSet = database.query(
+      "INSERT INTO sets (id, url, title, source, tags, created_at, title_edited_by_user) VALUES (?, ?, ?, ?, ?, ?, 1)"
+    );
+    for (const [index, id] of setIds.entries()) {
+      insertSet.run(
+        id,
+        seededVideoUrl(index),
+        `Seeded set ${index}`,
+        "youtube",
+        JSON.stringify([]),
+        SEEDED_CREATED_AT
+      );
+    }
+    const insertPlaylist = database.query(
+      "INSERT INTO playlists (id, name, created_at) VALUES (?, ?, ?)"
+    );
+    for (const [index, id] of playlistIds.entries()) {
+      insertPlaylist.run(id, `Seeded playlist ${index}`, SEEDED_CREATED_AT);
+    }
+    const positions = new Map<string, number>();
+    const insertMembership = database.query(
+      "INSERT INTO playlist_sets (playlist_id, set_id, position) VALUES (?, ?, ?)"
+    );
+    for (const [playlistIndex, setIndex] of memberships) {
+      const playlistId = playlistIds[playlistIndex] ?? "";
+      const position = positions.get(playlistId) ?? 0;
+      insertMembership.run(playlistId, setIds[setIndex] ?? "", position);
+      positions.set(playlistId, position + 1);
+    }
+  });
+  return { playlistIds, setIds };
+};
+
+const fill = (playlistIndex: number, setCount: number): MembershipSeed[] =>
+  indexRange(setCount).map((setIndex) => [playlistIndex, setIndex] as const);
+
+const membershipIds = async (
+  app: ReturnType<typeof createApp>,
+  setId: string
+): Promise<string[]> => {
+  const library = await request(app, { method: "GET", url: "/sets" });
+  const set = library
+    .json()
+    .sets.find((each: { id: string }) => each.id === setId);
+  return set.playlistIds;
+};
+
+test("keeps the two membership capacities separate", () => {
+  expect(MAX_SETS_PER_PLAYLIST).toBe(500);
+  expect(MAX_PLAYLISTS_PER_SET).toBe(100);
+});
+
+test("accepts a full Playlist list and rejects one id more", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: 1, sets: MAX_SETS_PER_PLAYLIST + 1 },
+      fill(0, MAX_SETS_PER_PLAYLIST)
+    );
+    const app = createApp({ databasePath });
+    try {
+      const full = await request(app, {
+        method: "PUT",
+        payload: { setIds: setIds.slice(0, MAX_SETS_PER_PLAYLIST) },
+        url: `/playlists/${playlistIds[0]}/sets`,
+      });
+      expect(full.statusCode).toBe(200);
+      expect(full.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
+
+      const tooMany = await request(app, {
+        method: "PUT",
+        payload: { setIds },
+        url: `/playlists/${playlistIds[0]}/sets`,
+      });
+      expect(tooMany.statusCode).toBe(400);
+
+      const kept = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${playlistIds[0] ?? ""}`,
+      });
+      expect(kept.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
+      expect(kept.json().sets.at(-1).id).toBe(
+        setIds[MAX_SETS_PER_PLAYLIST - 1]
+      );
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("accepts a Set in its hundredth Playlist and rejects one id more", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: MAX_PLAYLISTS_PER_SET + 1, sets: 1 },
+      indexRange(MAX_PLAYLISTS_PER_SET - 1).map(
+        (playlistIndex) => [playlistIndex, 0] as const
+      )
+    );
+    const setId = setIds[0] ?? "";
+    const app = createApp({ databasePath });
+    try {
+      const hundredth = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: playlistIds.slice(0, MAX_PLAYLISTS_PER_SET) },
+        url: `/sets/${setId}/playlists`,
+      });
+      expect(hundredth.statusCode).toBe(200);
+      expect(hundredth.json().playlistIds).toHaveLength(MAX_PLAYLISTS_PER_SET);
+
+      const tooMany = await request(app, {
+        method: "PUT",
+        payload: { playlistIds },
+        url: `/sets/${setId}/playlists`,
+      });
+      expect(tooMany.statusCode).toBe(400);
+      expect(await membershipIds(app, setId)).toHaveLength(
+        MAX_PLAYLISTS_PER_SET
+      );
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("keeps a Playlist full when a Set joins it through the Set-centric route", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: 1, sets: MAX_SETS_PER_PLAYLIST + 1 },
+      fill(0, MAX_SETS_PER_PLAYLIST)
+    );
+    const playlistId = playlistIds[0] ?? "";
+    const extraSetId = setIds[MAX_SETS_PER_PLAYLIST] ?? "";
+    const app = createApp({ databasePath });
+    try {
+      const appended = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: [playlistId] },
+        url: `/sets/${extraSetId}/playlists`,
+      });
+      expect(appended.statusCode).toBe(400);
+      expect(appended.json().message).toBe(
+        "A playlist can hold at most 500 sets."
+      );
+      expect(await membershipIds(app, extraSetId)).toEqual([]);
+      const kept = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${playlistId}`,
+      });
+      expect(kept.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
+      expect(kept.json().sets.at(-1).id).toBe(
+        setIds[MAX_SETS_PER_PLAYLIST - 1]
+      );
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("keeps a Set within its Playlist limit through the Playlist-centric route", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: MAX_PLAYLISTS_PER_SET + 1, sets: 1 },
+      indexRange(MAX_PLAYLISTS_PER_SET).map(
+        (playlistIndex) => [playlistIndex, 0] as const
+      )
+    );
+    const setId = setIds[0] ?? "";
+    const extraPlaylistId = playlistIds[MAX_PLAYLISTS_PER_SET] ?? "";
+    const app = createApp({ databasePath });
+    try {
+      const joined = await request(app, {
+        method: "PUT",
+        payload: { setIds: [setId] },
+        url: `/playlists/${extraPlaylistId}/sets`,
+      });
+      expect(joined.statusCode).toBe(400);
+      expect(joined.json().message).toBe(
+        "A set can belong to at most 100 playlists."
+      );
+      expect(await membershipIds(app, setId)).toHaveLength(
+        MAX_PLAYLISTS_PER_SET
+      );
+      const joinedPlaylist = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${extraPlaylistId}`,
+      });
+      expect(joinedPlaylist.json().sets).toEqual([]);
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("rejects a move into a full Playlist and keeps the source membership", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const movingSetIndex = MAX_SETS_PER_PLAYLIST + 1;
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: 3, sets: movingSetIndex + 1 },
+      [[0, movingSetIndex] as const, ...fill(1, MAX_SETS_PER_PLAYLIST)]
+    );
+    const movingSetId = setIds[movingSetIndex] ?? "";
+    const [sourceId = "", fullId = "", roomId = ""] = playlistIds;
+    const app = createApp({ databasePath });
+    try {
+      // The Set states its whole membership, so naming a Playlist with room and a full one
+      // would leave the source Playlist if the rejected half were applied first.
+      const rejected = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: [roomId, fullId] },
+        url: `/sets/${movingSetId}/playlists`,
+      });
+      expect(rejected.statusCode).toBe(400);
+      expect(await membershipIds(app, movingSetId)).toEqual([sourceId]);
+      const room = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${roomId}`,
+      });
+      expect(room.json().sets).toEqual([]);
+      const full = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${fullId}`,
+      });
+      expect(full.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("reorders a full Playlist and keeps its members at the limit", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: 1, sets: MAX_SETS_PER_PLAYLIST },
+      fill(0, MAX_SETS_PER_PLAYLIST)
+    );
+    const playlistId = playlistIds[0] ?? "";
+    // Move the first Set to the end: every member keeps a place, but none keeps its position.
+    const [firstSetId = "", ...restSetIds] = setIds;
+    const reorderedIds = [...restSetIds, firstSetId];
+    const app = createApp({ databasePath });
+    try {
+      const reordered = await request(app, {
+        method: "PUT",
+        payload: { setIds: reorderedIds },
+        url: `/playlists/${playlistId}/sets`,
+      });
+      expect(reordered.statusCode).toBe(200);
+      expect(
+        reordered.json().sets.map((set: { id: string }) => set.id)
+      ).toEqual(reorderedIds);
+
+      const retried = await request(app, {
+        method: "PUT",
+        payload: { setIds: reorderedIds },
+        url: `/playlists/${playlistId}/sets`,
+      });
+      expect(retried.statusCode).toBe(200);
+      const ordered = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${playlistId}`,
+      });
+      expect(ordered.json().sets.map((set: { id: string }) => set.id)).toEqual(
+        reorderedIds
+      );
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("keeps a Set in its hundredth Playlist across a swap", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: MAX_PLAYLISTS_PER_SET + 1, sets: 1 },
+      indexRange(MAX_PLAYLISTS_PER_SET).map(
+        (playlistIndex) => [playlistIndex, 0] as const
+      )
+    );
+    const setId = setIds[0] ?? "";
+    const app = createApp({ databasePath });
+    try {
+      const unchanged = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: playlistIds.slice(0, MAX_PLAYLISTS_PER_SET) },
+        url: `/sets/${setId}/playlists`,
+      });
+      expect(unchanged.statusCode).toBe(200);
+      expect(unchanged.json().playlistIds).toHaveLength(MAX_PLAYLISTS_PER_SET);
+
+      // Naming 100 Playlists while leaving one and joining one keeps the Set at its limit.
+      const swapped = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: playlistIds.slice(1) },
+        url: `/sets/${setId}/playlists`,
+      });
+      expect(swapped.statusCode).toBe(200);
+      expect(swapped.json().playlistIds).toHaveLength(MAX_PLAYLISTS_PER_SET);
+      // The response sorts Playlist ids, so compare the membership itself.
+      expect(new Set(swapped.json().playlistIds)).toEqual(
+        new Set(playlistIds.slice(1))
+      );
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("removes membership at the limit without deleting Sets", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: MAX_PLAYLISTS_PER_SET, sets: MAX_SETS_PER_PLAYLIST },
+      [
+        ...fill(0, MAX_SETS_PER_PLAYLIST),
+        ...indexRange(MAX_PLAYLISTS_PER_SET - 1).map(
+          (playlistIndex) => [playlistIndex + 1, 0] as const
+        ),
+      ]
+    );
+    const setId = setIds[0] ?? "";
+    const playlistId = playlistIds[0] ?? "";
+    const app = createApp({ databasePath });
+    try {
+      const filled = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${playlistId}`,
+      });
+      expect(filled.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
+      expect(await membershipIds(app, setId)).toHaveLength(
+        MAX_PLAYLISTS_PER_SET
+      );
+
+      const cleared = await request(app, {
+        method: "PUT",
+        payload: { setIds: [] },
+        url: `/playlists/${playlistId}/sets`,
+      });
+      expect(cleared.statusCode).toBe(200);
+      expect(cleared.json()).toEqual({ sets: [] });
+
+      const left = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: [] },
+        url: `/sets/${setId}/playlists`,
+      });
+      expect(left.statusCode).toBe(200);
+      expect(left.json().playlistIds).toEqual([]);
+
+      // Membership removal leaves the Sets themselves in the Library.
+      const library = await request(app, { method: "GET", url: "/sets" });
+      expect(library.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
+      const playlists = await request(app, {
+        method: "GET",
+        url: "/playlists",
+      });
+      expect(playlists.json().playlists).toHaveLength(MAX_PLAYLISTS_PER_SET);
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("keeps an oversized Playlist readable and lets it shrink", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const oversized = MAX_SETS_PER_PLAYLIST + 1;
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: 1, sets: oversized + 1 },
+      fill(0, oversized)
+    );
+    const playlistId = playlistIds[0] ?? "";
+    const extraSetId = setIds[oversized] ?? "";
+    const app = createApp({ databasePath });
+    try {
+      const readable = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${playlistId}`,
+      });
+      expect(readable.statusCode).toBe(200);
+      expect(readable.json().sets).toHaveLength(oversized);
+
+      // Growth stays refused while the data is oversized.
+      const grown = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: [playlistId] },
+        url: `/sets/${extraSetId}/playlists`,
+      });
+      expect(grown.statusCode).toBe(400);
+      expect(await membershipIds(app, extraSetId)).toEqual([]);
+
+      // A list above the cap cannot be stated, so resubmitting it is not a recovery path.
+      const restated = await request(app, {
+        method: "PUT",
+        payload: { setIds: setIds.slice(0, oversized) },
+        url: `/playlists/${playlistId}/sets`,
+      });
+      expect(restated.statusCode).toBe(400);
+
+      const reduced = await request(app, {
+        method: "PUT",
+        payload: { setIds: setIds.slice(0, MAX_SETS_PER_PLAYLIST) },
+        url: `/playlists/${playlistId}/sets`,
+      });
+      expect(reduced.statusCode).toBe(200);
+      expect(reduced.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
+
+      const refused = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: [playlistId] },
+        url: `/sets/${extraSetId}/playlists`,
+      });
+      expect(refused.statusCode).toBe(400);
+
+      // Nothing was trimmed on its own, and no Set was deleted.
+      const library = await request(app, { method: "GET", url: "/sets" });
+      expect(library.json().sets).toHaveLength(oversized + 1);
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
+
+test("keeps an oversized Set membership readable and lets it shrink", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  try {
+    const oversized = MAX_PLAYLISTS_PER_SET + 1;
+    const { playlistIds, setIds } = await seedLibrary(
+      databasePath,
+      { playlists: oversized + 1, sets: 1 },
+      indexRange(oversized).map((playlistIndex) => [playlistIndex, 0] as const)
+    );
+    const setId = setIds[0] ?? "";
+    const unusedPlaylistId = playlistIds[oversized] ?? "";
+    const app = createApp({ databasePath });
+    try {
+      const library = await request(app, { method: "GET", url: "/sets" });
+      expect(library.json().sets[0].playlistIds).toHaveLength(oversized);
+
+      const grown = await request(app, {
+        method: "PUT",
+        payload: { setIds: [setId] },
+        url: `/playlists/${unusedPlaylistId}/sets`,
+      });
+      expect(grown.statusCode).toBe(400);
+      expect(await membershipIds(app, setId)).toHaveLength(oversized);
+
+      const reduced = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: playlistIds.slice(0, MAX_PLAYLISTS_PER_SET) },
+        url: `/sets/${setId}/playlists`,
+      });
+      expect(reduced.statusCode).toBe(200);
+      expect(reduced.json().playlistIds).toHaveLength(MAX_PLAYLISTS_PER_SET);
+
+      const removed = await request(app, {
+        method: "PUT",
+        payload: { playlistIds: [] },
+        url: `/sets/${setId}/playlists`,
+      });
+      expect(removed.statusCode).toBe(200);
+      expect(removed.json().playlistIds).toEqual([]);
+
+      const after = await request(app, { method: "GET", url: "/sets" });
+      expect(after.json().sets).toHaveLength(1);
+      const emptied = await request(app, {
+        method: "GET",
+        url: `/sets?playlistId=${playlistIds[0] ?? ""}`,
+      });
+      expect(emptied.json().sets).toEqual([]);
+    } finally {
+      await app.dispose();
+    }
+  } finally {
+    await rm(directory, { force: true, recursive: true });
+  }
+}, 30_000);
 
 test("saves a set with tags and reads it after the server restarts", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));

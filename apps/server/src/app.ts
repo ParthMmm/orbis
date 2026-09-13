@@ -11,6 +11,10 @@ import {
 import { LibraryError } from "./errors.js";
 import type { AccessMode } from "./identity.js";
 import { decideAccess, readDeviceRegistry } from "./identity.js";
+import {
+  MAX_PLAYLISTS_PER_SET,
+  MAX_SETS_PER_PLAYLIST,
+} from "./library-limits.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
 import {
@@ -183,7 +187,7 @@ export const createApp = (
               Schema.Struct({
                 setIds: Schema.Array(
                   Schema.String.check(Schema.isMaxLength(100))
-                ).check(Schema.isMaxLength(500)),
+                ).check(Schema.isMaxLength(MAX_SETS_PER_PLAYLIST)),
               })
             );
             return {
@@ -205,7 +209,7 @@ export const createApp = (
               Schema.Struct({
                 playlistIds: Schema.Array(
                   Schema.String.check(Schema.isMaxLength(100))
-                ).check(Schema.isMaxLength(100)),
+                ).check(Schema.isMaxLength(MAX_PLAYLISTS_PER_SET)),
               })
             );
             return yield* library.setPlaylistMemberships(
