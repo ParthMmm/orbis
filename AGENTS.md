@@ -31,7 +31,7 @@ Use a single root glossary and ADR directory. Before exploring domain behavior, 
 
 ## Verifying the Mac UI
 
-Verify 
+Three tools, quietest first:
 
 - **agent-device** reads a macOS or iOS app through accessibility. Its snapshot answers most questions.
 - **agent-browser** drives web pages through the executor MCP. Run it headless.

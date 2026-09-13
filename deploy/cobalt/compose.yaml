@@ -19,7 +19,7 @@ services:
       API_URL: "${COBALT_API_URL:?COBALT_API_URL must be set}"
       API_KEY_URL: "file:///keys.json"
       API_AUTH_REQUIRED: "1"
-      # VISIONOS is the only client cobalt can reach whose stream URLs YouTube
+      # VISIONOS is the only client Cobalt can reach whose stream URLs YouTube
       # serves in full. Every other one returns 403 past roughly the first MiB.
       CUSTOM_INNERTUBE_CLIENT: "VISIONOS"
       DISABLED_SERVICES: "bilibili,bsky,dailymotion,facebook,instagram,loom,newgrounds,ok,pinterest,reddit,rutube,snapchat,streamable,tiktok,tumblr,twitch,twitter,vimeo,vk"

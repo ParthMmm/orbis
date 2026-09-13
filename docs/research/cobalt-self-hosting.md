@@ -40,7 +40,7 @@ The proposed worker sends `POST /` with `Accept: application/json`, `Content-Typ
 
 `audioFormat: "best"` is a proposed default; test the returned format against our playback clients before settling it. The API also supports MP3, Opus, Ogg, and WAV. [2]
 
-That test is done for YouTube and the default does not survive it. `best` returns Opus in a Matroska container for YouTube, which AVFoundation does not play, while MP3, Opus, and Ogg all convert and decode. SoundCloud is unaffected and still returns MP3 for `best`. The choice is open in [Select an Apple-compatible Cobalt output](https://github.com/ParthMmm/orbis/issues/10). [11]
+That test is done for YouTube, and the default fails it. `best` returns Opus in a Matroska container for YouTube, which AVFoundation does not play, while MP3, Opus, and Ogg all convert and decode. SoundCloud is unaffected and still returns MP3 for `best`. The choice is open in [Select an Apple-compatible Cobalt output](https://github.com/ParthMmm/orbis/issues/10). [11]
 
 Cobalt returns JSON first, not the finished file. The worker handles its response status and consumes the returned file URL. The API distinguishes `tunnel`, `redirect`, `local-processing`, `picker`, and `error`; do not assume every successful HTTP response contains audio. With `alwaysProxy`, we request a Cobalt tunnel rather than a direct upstream URL. [2]
 

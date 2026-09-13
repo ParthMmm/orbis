@@ -4,7 +4,7 @@ This is an isolated feasibility trial for audio downloads. It does not add downl
 
 The implementation baseline checked before remote work was `23d0c82` on `main`.
 
-Read [the trial evidence](cobalt-trial-evidence.md) before repeating the deployment. It records what the first run measured, including a YouTube failure that the derived image below fixes. Keep Cobalt as a separate service, and keep its own code unmodified: the one departure from upstream is a vendored client library, and [the decision record](../adr/0003-cobalt-youtube-client.md) explains why. The Cobalt API is licensed under AGPL-3.0; review the license before modifying or redistributing it.
+Read [the trial evidence](cobalt-trial-evidence.md) before repeating the deployment. It records what the first run measured, including a YouTube failure that the derived image below fixes. Keep Cobalt as a separate service and leave its own code unmodified; the one departure from upstream is a vendored client library, which [the decision record](../adr/0003-cobalt-youtube-client.md) explains. The Cobalt API is licensed under AGPL-3.0; review the license before modifying or redistributing it.
 
 ## Fixed deployment
 
@@ -12,7 +12,7 @@ The Compose file is [`deploy/cobalt/compose.yaml`](../../deploy/cobalt/compose.y
 
 - Official Cobalt version 11 as the base, pinned to the Linux amd64 image manifest `sha256:df14a3b3fe4390d4e1c2d4761ed58981d34aa5fc82d0df2091bab890e7dfaa8b`.
 - The base image's index digest `sha256:63186dd68afd57ce3bb1f62cc4c139f5fa95b9c3e87a3cf5c6e4c7a570523f62`, for cross-checking the tag resolution.
-- `youtubei.js` 18.0.0 in place of the 17.0.1 that Cobalt 11.7.1 vendors, pinned by the `YOUTUBEI_VERSION` build argument. Version 18.0.0 is the first release with the `VISIONOS` client, whose YouTube stream URLs are the only ones this deployment can download in full.
+- `youtubei.js` 18.0.0 in place of the 17.0.1 that Cobalt 11.7.1 vendors, pinned by the `YOUTUBEI_VERSION` build argument. That is the first release with the `VISIONOS` client, whose YouTube stream URLs are the only ones this deployment can download in full.
 - `CUSTOM_INNERTUBE_CLIENT=VISIONOS`, which selects that client.
 - A distinct `orbis-cobalt-trial` container with a read-only filesystem, an init process, and `unless-stopped` restart policy.
 - Port `9000` published only on Vanta's Tailscale IPv4 address.

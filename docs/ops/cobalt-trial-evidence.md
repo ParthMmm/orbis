@@ -164,7 +164,7 @@ Only roughly the first MiB is reachable, so no chunk sequence can reassemble a f
 
 `youtubei.js` 18.0.0 is the first release with the `VISIONOS` client, whose URLs Cobalt's reader handles without modification:
 
-|  | `IOS` on 17.0.1 | `VISIONOS` on 18.0.0 |
+| Measurement | `IOS` on 17.0.1 | `VISIONOS` on 18.0.0 |
 | --- | --- | --- |
 | The `HEAD` Cobalt uses to size the file | 403 | 200 with the correct `content-length` |
 | An 8 MiB range | 403 | 206 with all 8,388,609 bytes |
