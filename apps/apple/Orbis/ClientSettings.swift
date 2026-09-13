@@ -169,12 +169,62 @@ enum ClientSettings {
   }
 }
 
+/// The Security framework operations one keychain namespace needs. The live adapter calls the
+/// same functions the store used to call directly; a test adapter records the calls it was
+/// handed and answers with statuses it chose, so a failure path can be proven without a real
+/// keychain and without an unsafe annotation.
+@MainActor
+protocol KeychainOperations {
+  func update(query: [String: Any], attributes: [String: Any]) -> OSStatus
+  func add(attributes: [String: Any]) -> OSStatus
+  func read(query: [String: Any]) -> Data?
+  func delete(query: [String: Any]) -> OSStatus
+}
+
+/// The device's real keychain. Every method here is the framework call the store made before
+/// the seam existed, so production behavior is unchanged.
+@MainActor
+struct LiveKeychainOperations: KeychainOperations {
+  func update(query: [String: Any], attributes: [String: Any]) -> OSStatus {
+    SecItemUpdate(query as CFDictionary, attributes as CFDictionary)
+  }
+
+  func add(attributes: [String: Any]) -> OSStatus {
+    SecItemAdd(attributes as CFDictionary, nil)
+  }
+
+  func read(query: [String: Any]) -> Data? {
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+      let data = item as? Data
+    else { return nil }
+    return data
+  }
+
+  func delete(query: [String: Any]) -> OSStatus {
+    SecItemDelete(query as CFDictionary)
+  }
+}
+
 /// One keychain namespace, named by its service and account. Production supplies the app's own
 /// identity; a test supplies a unique `app.orbis.tests.<UUID>` service, so nothing it writes
-/// can reach a real pairing.
+/// can reach a real pairing. The Security calls arrive through an injected adapter, which is
+/// how a test proves a write failure without touching a real keychain.
+@MainActor
 struct KeychainStore {
   let service: String
   let account: String
+  private let operations: any KeychainOperations
+
+  init(
+    service: String,
+    account: String,
+    operations: any KeychainOperations = LiveKeychainOperations()
+  ) {
+    self.service = service
+    self.account = account
+    self.operations = operations
+  }
 
   private var base: [String: Any] {
     [
@@ -193,15 +243,15 @@ struct KeychainStore {
     // Adding only when there is nothing to update keeps a failed first save from reading
     // as a stored pairing. An item that cannot be updated in place is replaced whole,
     // because the new token is complete either way.
-    switch SecItemUpdate(base as CFDictionary, attributes as CFDictionary) {
+    switch operations.update(query: base, attributes: attributes) {
     case errSecSuccess:
       return true
     // Nothing stored yet, so adding is the whole job.
     case errSecItemNotFound:
-      return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+      return operations.add(attributes: attributes) == errSecSuccess
     default:
-      SecItemDelete(base as CFDictionary)
-      return SecItemAdd(attributes as CFDictionary, nil) == errSecSuccess
+      operations.delete(query: base)
+      return operations.add(attributes: attributes) == errSecSuccess
     }
   }
 
@@ -209,14 +259,11 @@ struct KeychainStore {
     var query = base
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
-    var item: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
-      let data = item as? Data
-    else { return nil }
+    guard let data = operations.read(query: query) else { return nil }
     return String(decoding: data, as: UTF8.self)
   }
 
   func delete() {
-    SecItemDelete(base as CFDictionary)
+    operations.delete(query: base)
   }
 }

@@ -217,4 +217,146 @@ final class ClientSettingsTests: XCTestCase {
     XCTAssertNil(settings.serviceAddress)
     XCTAssertNil(settings.deviceToken)
   }
+
+  /// Every write must reach Security through the injected adapter, so a test can hold the
+  /// statuses a real keychain would not produce on demand. The query and the attributes stay
+  /// separately visible, because the write policy depends on that split.
+  func testASuccessfulWriteReachesSecurityThroughTheAdapter() {
+    let existing = FakeKeychainOperations(storedToken: "synthetic-old-token")
+    let store = KeychainStore(
+      service: "app.orbis.tests.\(UUID().uuidString)",
+      account: "device-token",
+      operations: existing
+    )
+
+    XCTAssertTrue(store.write("synthetic-new-token"))
+    XCTAssertEqual(existing.callOrder, ["update"], "an item already held is replaced in place")
+    XCTAssertEqual(existing.storedToken, "synthetic-new-token")
+    XCTAssertEqual(store.read(), "synthetic-new-token")
+
+    let absent = FakeKeychainOperations()
+    absent.updateStatus = errSecItemNotFound
+    let fresh = KeychainStore(
+      service: "app.orbis.tests.\(UUID().uuidString)",
+      account: "device-token",
+      operations: absent
+    )
+
+    XCTAssertTrue(fresh.write("synthetic-first-token"))
+    XCTAssertEqual(absent.callOrder, ["update", "add"], "an absent item is added once")
+    XCTAssertEqual(absent.storedToken, "synthetic-first-token")
+    XCTAssertEqual(fresh.read(), "synthetic-first-token")
+  }
+
+  /// The query names the item and the attributes carry the value. `SecItemUpdate` refuses an
+  /// item class or a search property among the attributes it applies, so the store must hand
+  /// the adapter two different dictionaries rather than one copied dictionary.
+  func testTheUpdateQueryNamesTheItemAndTheAttributesCarryTheValue() {
+    let operations = FakeKeychainOperations(storedToken: "synthetic-old-token")
+    let store = KeychainStore(
+      service: "app.orbis.tests.\(UUID().uuidString)",
+      account: "device-token",
+      operations: operations
+    )
+
+    XCTAssertTrue(store.write("synthetic-new-token"))
+
+    guard let update = operations.updateCalls.first else {
+      return XCTFail("a write must reach the adapter as an update")
+    }
+    XCTAssertEqual(operations.updateCalls.count, 1)
+    XCTAssertEqual(
+      update.queryKeys,
+      [kSecClass as String, kSecAttrService as String, kSecAttrAccount as String],
+      "the query must name the item the write replaces")
+    XCTAssertTrue(
+      update.attributeKeys.contains(kSecValueData as String),
+      "the attributes must carry the value the write applies")
+    XCTAssertTrue(
+      update.attributeKeys.contains(kSecAttrAccessible as String),
+      "the attributes must carry the device-only accessibility policy")
+  }
+}
+
+/// A Security adapter that never reaches the system keychain. It holds one fixture value,
+/// records every call and the dictionary keys it was handed, and answers with the statuses a
+/// test chose. Nothing here can touch a real pairing, so the failure paths are provable
+/// without locking, corrupting, or deleting a developer's stored credential.
+@MainActor
+final class FakeKeychainOperations: KeychainOperations {
+  /// One recorded call. The keys are kept rather than the dictionaries, because the
+  /// dictionaries are not comparable and the keys are what the assertions turn on.
+  enum Call: Equatable {
+    case update(queryKeys: Set<String>, attributeKeys: Set<String>)
+    case add(attributeKeys: Set<String>)
+    case read
+    case delete
+  }
+
+  var updateStatus: OSStatus = errSecSuccess
+  var addStatus: OSStatus = errSecSuccess
+  private(set) var calls: [Call] = []
+  private var stored: Data?
+
+  init(storedToken: String? = nil) {
+    stored = storedToken.map { Data($0.utf8) }
+  }
+
+  /// What the fake holds, which is what a real keychain would hand back on the next read.
+  var storedToken: String? {
+    stored.map { String(decoding: $0, as: UTF8.self) }
+  }
+
+  /// The calls in order, so a test can prove nothing extra happened.
+  var callOrder: [String] {
+    calls.map {
+      switch $0 {
+      case .update: "update"
+      case .add: "add"
+      case .read: "read"
+      case .delete: "delete"
+      }
+    }
+  }
+
+  var updateCalls: [(queryKeys: Set<String>, attributeKeys: Set<String>)] {
+    calls.compactMap {
+      guard case .update(let queryKeys, let attributeKeys) = $0 else { return nil }
+      return (queryKeys, attributeKeys)
+    }
+  }
+
+  var addCalls: [Set<String>] {
+    calls.compactMap {
+      guard case .add(let attributeKeys) = $0 else { return nil }
+      return attributeKeys
+    }
+  }
+
+  func update(query: [String: Any], attributes: [String: Any]) -> OSStatus {
+    calls.append(.update(queryKeys: Set(query.keys), attributeKeys: Set(attributes.keys)))
+    if updateStatus == errSecSuccess, let data = attributes[kSecValueData as String] as? Data {
+      stored = data
+    }
+    return updateStatus
+  }
+
+  func add(attributes: [String: Any]) -> OSStatus {
+    calls.append(.add(attributeKeys: Set(attributes.keys)))
+    if addStatus == errSecSuccess, let data = attributes[kSecValueData as String] as? Data {
+      stored = data
+    }
+    return addStatus
+  }
+
+  func read(query: [String: Any]) -> Data? {
+    calls.append(.read)
+    return stored
+  }
+
+  func delete(query: [String: Any]) -> OSStatus {
+    calls.append(.delete)
+    stored = nil
+    return errSecSuccess
+  }
 }
