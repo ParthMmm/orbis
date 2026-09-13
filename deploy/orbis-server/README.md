@@ -29,19 +29,53 @@ Native clients authenticate per device. See [`docs/adr/0004-native-service-ident
 
 ## Install or update
 
+Run this on Vanta only, after the owner approves the host and the update window.
+
 ```sh
 cd ~/orbis-service
 git fetch origin && git checkout <branch> && git pull --ff-only
-bun install --frozen-lockfile
-bun run --filter @orbis/contracts build
+
+# Runtime preflight. Name the exact executable the unit uses, so the shell PATH
+# cannot select another Bun. This recipe never installs a runtime.
+BUN="$HOME/.local/share/mise/installs/bun/1.4.1/bin/bun"
+if [ ! -x "$BUN" ]; then
+  echo "bun 1.4.1 is not at $BUN. Install it with mise, then rerun." >&2
+  exit 1
+fi
+if [ "$("$BUN" --version)" != "1.4.1" ]; then
+  echo "$BUN reported $("$BUN" --version), expected 1.4.1. Fix the runtime, then rerun." >&2
+  exit 1
+fi
+
+"$BUN" install --frozen-lockfile
+"$BUN" run --filter @orbis/contracts build
+
 mkdir -p ~/.config/systemd/user
 cp deploy/orbis-server/orbis-server.service ~/.config/systemd/user/
 systemctl --user daemon-reload
-systemctl --user enable --now orbis-server
+BEFORE="$(systemctl --user show orbis-server -p InvocationID --value)"
+echo "invocation before: ${BEFORE:-none}"
+
+systemctl --user enable orbis-server
+systemctl --user restart orbis-server
+systemctl --user is-active --quiet orbis-server && echo "orbis-server is active"
+echo "invocation after:  $(systemctl --user show orbis-server -p InvocationID --value)"
 systemctl --user status orbis-server --no-pager
 ```
 
-The service uses `apps/server/src/index.ts` directly, so no server build step is needed. The shared contracts package must be built because the server imports its compiled types.
+`enable` registers the unit at boot but does not touch a service that is already running. `restart` starts a stopped unit as well as a running one, so this single recipe covers both the first install and a later update. A recipe that used `enable --now` on an update would leave the old process running, and clients would keep talking to the old code.
+
+`daemon-reload` re-reads unit definitions from disk. It never reloads application code; code changes take effect only when the process restarts. For the same reason, compare `InvocationID` before and after, not a PID: systemd allocates a new invocation ID to every start, while a PID can be reused by an unrelated process. On a first install the before value is empty. On an update the after value must differ, or the new code is not live.
+
+The preflight covers the runtime only. The frozen install and the contracts build still run before any restart, so a missing package or a broken build stops the update while the old process keeps serving. The service uses `apps/server/src/index.ts` directly, so no server build step is needed. The shared contracts package must be built because the server imports its compiled types.
+
+### If the update fails
+
+Stop before the restart when the runtime preflight, the frozen install, or the contracts build fails; the running service is untouched. If the new process starts and then fails, go back to the last known-good checkout and runtime and restart the unit under owner control. Do not delete `~/orbis-service-data` or the trust records, and do not print environment files or secrets. A failed update does not touch the Serve rule or the jellyfin Funnel on `8443`.
+
+### Record the update
+
+Record the old and new `InvocationID`, the active status, the Bun version, and the expected HTTP status codes. In a plan-only or repository-only execution, record `live rollout not performed` instead of claiming the new process is live.
 
 ## Enrol a device
 
