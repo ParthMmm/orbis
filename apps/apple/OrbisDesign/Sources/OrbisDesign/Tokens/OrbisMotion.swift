@@ -160,32 +160,58 @@ extension View {
   }
 }
 
-/// The two forms side by side, so a reviewer sees what Reduce Motion takes away.
+/// One motion, in one form, with a control that plays it. Nothing plays on appear: the trigger
+/// changes only when the button is pressed, and a motion that is a curve settles the same
+/// change the button made.
 private struct MotionSample: View {
-  let title: String
-  let reduceMotion: Bool
+  let sample: MotionPreview.Sample
+  let form: MotionPreview.Form
 
+  @State private var plays = 0
   @State private var isOn = false
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Text(title).font(.orbis.caption)
-      TagPill("techno", category: .pink, isOn: $isOn)
-        .orbisAnimation(.tagToggled, value: isOn)
-      Button("Toggle") { isOn.toggle() }
+    VStack(alignment: .leading, spacing: 10) {
+      Text(sample.motion.rawValue).font(.orbis.caption)
+      Text(sample.motion.purpose).font(.orbis.mono).foregroundStyle(.secondary)
+      HStack(spacing: 12) {
+        Image(systemName: sample.symbol)
+          .frame(width: 22)
+          .foregroundStyle(isOn ? Color.orbis.tint : Color.secondary)
+          .orbisSymbolEffect(sample.motion, trigger: plays)
+          .orbisAnimation(sample.motion, value: isOn)
+        Button(sample.control) {
+          plays += 1
+          isOn.toggle()
+        }
         .buttonStyle(.bordered)
+      }
     }
     .padding()
     .frame(maxWidth: .infinity, alignment: .leading)
-    .background(Color.orbis.paperRaised)
-    .orbisReduceMotion(reduceMotion)
+    .background(Color.orbis.paperRaised, in: .rect(cornerRadius: Radius.row))
+    .orbisReduceMotion(form.reduceMotion)
   }
 }
 
-#Preview("Tag toggled, standard and Reduce Motion") {
-  HStack(alignment: .top) {
-    MotionSample(title: "Standard", reduceMotion: false)
-    MotionSample(title: "Reduce Motion", reduceMotion: true)
+/// Every motion in one form, so the two forms sit side by side.
+private struct MotionFormColumn: View {
+  let form: MotionPreview.Form
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 16) {
+      Text(form.title).font(.orbis.sectionTitle)
+      ForEach(MotionPreview.samples, id: \.motion) { sample in
+        MotionSample(sample: sample, form: form)
+      }
+    }
+  }
+}
+
+#Preview("Motions, standard and Reduce Motion") {
+  HStack(alignment: .top, spacing: 24) {
+    MotionFormColumn(form: .standard)
+    MotionFormColumn(form: .reduceMotion)
   }
   .padding()
   .background(Color.orbis.paper)
