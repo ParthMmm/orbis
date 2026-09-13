@@ -276,6 +276,120 @@ final class ClientSettingsTests: XCTestCase {
       update.attributeKeys.contains(kSecAttrAccessible as String),
       "the attributes must carry the device-only accessibility policy")
   }
+
+  /// `SecItemUpdate` takes the item class and the search properties in its query, not among
+  /// the attributes it applies. Copying the identity into the attributes is what made the old
+  /// failure branch look like a whole-item replacement, so the split is asserted directly.
+  func testTheUpdateAttributesCarryNoIdentityQueryKeys() {
+    let operations = FakeKeychainOperations(storedToken: "synthetic-old-token")
+    let store = KeychainStore(
+      service: "app.orbis.tests.\(UUID().uuidString)",
+      account: "device-token",
+      operations: operations
+    )
+
+    XCTAssertTrue(store.write("synthetic-new-token"))
+
+    guard let update = operations.updateCalls.first else {
+      return XCTFail("a write must reach the adapter as an update")
+    }
+    let identity = [kSecClass as String, kSecAttrService as String, kSecAttrAccount as String]
+    XCTAssertTrue(
+      update.attributeKeys.isDisjoint(with: identity),
+      "the attributes must not repeat the query's identity keys: \(update.attributeKeys)")
+  }
+
+  /// A status that is neither success nor "nothing stored yet" means the write did not
+  /// happen. Deleting the item that could not be updated would throw away the pairing this
+  /// device already holds, and the add that followed could fail too.
+  func testAFailedUpdateKeepsTheStoredPairingAndStopsThere() {
+    let statuses: [(status: OSStatus, why: String)] = [
+      (errSecInteractionNotAllowed, "the device refused to unlock the item"),
+      (errSecAuthFailed, "authentication for the item failed"),
+      (errSecParam, "the request was malformed"),
+    ]
+
+    for testCase in statuses {
+      let operations = FakeKeychainOperations(storedToken: "synthetic-old-token")
+      operations.updateStatus = testCase.status
+      let store = KeychainStore(
+        service: "app.orbis.tests.\(UUID().uuidString)",
+        account: "device-token",
+        operations: operations
+      )
+
+      XCTAssertFalse(
+        store.write("synthetic-new-token"),
+        "a failed update must report failure when \(testCase.why)")
+      XCTAssertEqual(
+        operations.callOrder, ["update"],
+        "a failed update must not delete or add when \(testCase.why)")
+      XCTAssertEqual(
+        operations.storedToken, "synthetic-old-token",
+        "the stored pairing must survive when \(testCase.why)")
+    }
+  }
+
+  /// Nothing was stored, so the write's whole job is one add. If that add fails there is still
+  /// nothing to delete, and the caller must hear the truth rather than a stored pairing.
+  func testAnAbsentItemThatCannotBeAddedReportsFailureWithoutDeleting() {
+    let operations = FakeKeychainOperations()
+    operations.updateStatus = errSecItemNotFound
+    operations.addStatus = errSecParam
+    let store = KeychainStore(
+      service: "app.orbis.tests.\(UUID().uuidString)",
+      account: "device-token",
+      operations: operations
+    )
+
+    XCTAssertFalse(store.write("synthetic-first-token"))
+    XCTAssertEqual(operations.callOrder, ["update", "add"], "one add, and no recovery loop")
+    XCTAssertNil(operations.storedToken, "a failed first save must not read as stored")
+  }
+
+  /// Another writer can create the item between the update that found nothing and the add.
+  /// That add fails, and the competing item is the one that must survive.
+  func testADuplicateItemOnAddIsReportedWithoutDeletingTheExistingOne() {
+    let operations = FakeKeychainOperations(storedToken: "synthetic-competing-token")
+    operations.updateStatus = errSecItemNotFound
+    operations.addStatus = errSecDuplicateItem
+    let store = KeychainStore(
+      service: "app.orbis.tests.\(UUID().uuidString)",
+      account: "device-token",
+      operations: operations
+    )
+
+    XCTAssertFalse(store.write("synthetic-first-token"))
+    XCTAssertEqual(operations.callOrder, ["update", "add"], "a duplicate must not become a loop")
+    XCTAssertEqual(
+      operations.storedToken, "synthetic-competing-token",
+      "the item another writer created must not be deleted")
+  }
+
+  /// An add creates the whole item, so it carries the identity the update query carried plus
+  /// the value attributes. Only the query stays identity-only.
+  func testTheAddDictionaryCarriesIdentityAndTheValueAttributes() {
+    let operations = FakeKeychainOperations()
+    operations.updateStatus = errSecItemNotFound
+    let store = KeychainStore(
+      service: "app.orbis.tests.\(UUID().uuidString)",
+      account: "device-token",
+      operations: operations
+    )
+
+    XCTAssertTrue(store.write("synthetic-first-token"))
+
+    guard let added = operations.addCalls.first else {
+      return XCTFail("an absent item must reach the adapter as an add")
+    }
+    XCTAssertEqual(operations.addCalls.count, 1)
+    XCTAssertTrue(
+      added.isSuperset(of: [
+        kSecClass as String, kSecAttrService as String, kSecAttrAccount as String,
+        kSecValueData as String, kSecAttrAccessible as String,
+      ]),
+      "the add must carry identity and value together: \(added)")
+  }
 }
 
 /// A Security adapter that never reaches the system keychain. It holds one fixture value,

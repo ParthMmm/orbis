@@ -226,7 +226,10 @@ struct KeychainStore {
     self.operations = operations
   }
 
-  private var base: [String: Any] {
+  /// The class, service, and account that name one keychain item. These keys belong in a
+  /// query: `SecItemUpdate` refuses an item class or a search property among the attributes it
+  /// applies.
+  private var identity: [String: Any] {
     [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
@@ -234,29 +237,39 @@ struct KeychainStore {
     ]
   }
 
+  /// What a write changes about an item: the value and the policy that keeps the credential on
+  /// this device alone, out of backups and out of iCloud Keychain.
+  private var valueAttributes: [String: Any] {
+    [kSecAttrAccessible as String: kSecAttrAccessibleWhenUnlockedThisDeviceOnly]
+  }
+
   func write(_ token: String) -> Bool {
-    var attributes = base
+    var attributes = valueAttributes
     attributes[kSecValueData as String] = Data(token.utf8)
-    attributes[kSecAttrAccessible as String] =
-      kSecAttrAccessibleWhenUnlockedThisDeviceOnly
     // Update first, so a token that is already held stays held even when a write fails.
     // Adding only when there is nothing to update keeps a failed first save from reading
-    // as a stored pairing. An item that cannot be updated in place is replaced whole,
-    // because the new token is complete either way.
-    switch operations.update(query: base, attributes: attributes) {
+    // as a stored pairing.
+    switch operations.update(query: identity, attributes: attributes) {
     case errSecSuccess:
       return true
-    // Nothing stored yet, so adding is the whole job.
+    // Nothing stored yet, so adding is the whole job. An add creates the item, so it carries
+    // the identity the query carried as well as the value.
     case errSecItemNotFound:
-      return operations.add(attributes: attributes) == errSecSuccess
+      var addAttributes = identity
+      addAttributes.merge(attributes) { _, value in value }
+      return operations.add(attributes: addAttributes) == errSecSuccess
     default:
-      operations.delete(query: base)
-      return operations.add(attributes: attributes) == errSecSuccess
+      // Any other status means the stored item is still there and still holds the old token.
+      // Deleting what could not be updated would throw away a working pairing, and the add
+      // that followed could fail too, so the write reports failure and changes nothing. A
+      // duplicate on the add above is the same answer for the same reason: another writer's
+      // item is not this write's to remove.
+      return false
     }
   }
 
   func read() -> String? {
-    var query = base
+    var query = identity
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
     guard let data = operations.read(query: query) else { return nil }
@@ -264,6 +277,6 @@ struct KeychainStore {
   }
 
   func delete() {
-    operations.delete(query: base)
+    operations.delete(query: identity)
   }
 }
