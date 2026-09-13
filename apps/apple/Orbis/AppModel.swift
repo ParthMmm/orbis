@@ -413,17 +413,23 @@ final class AppModel {
   /// Asks the service again to name a Set, which is what a link it could not read leaves
   /// behind. A title the person typed over the guess stays theirs.
   func retryMetadata() async {
+    // A retry already out owns the answer, and a second one would stack two responses over
+    // one draft.
+    guard !isSavingReveal else { return }
     guard let client, let open = reveal else { return }
     isSavingReveal = true
     revealFailure = nil
     defer { isSavingReveal = false }
     do {
       let updated = try await client.retryMetadata(open.set.id)
-      guard reveal?.set.id == open.set.id, !Task.isCancelled else { return }
+      // The person can keep typing while the retry is out, so the response merges into the
+      // draft held now rather than the snapshot the request started from. A reveal that was
+      // closed, or replaced by another Set, still discards the late answer.
+      guard let current = reveal, current.set.id == open.set.id, !Task.isCancelled else { return }
       replace(updated)
       reveal = Reveal(
-        set: updated, title: open.titleUntouched ? updated.title : open.title,
-        tags: open.tags)
+        set: updated, title: current.titleUntouched ? updated.title : current.title,
+        tags: current.tags)
     } catch OrbisError.cancelled {
       return
     } catch let error as OrbisError {

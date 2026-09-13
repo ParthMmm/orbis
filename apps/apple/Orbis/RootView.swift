@@ -328,6 +328,7 @@ struct DestinationView: View {
           Button("Try again") { Task { await model.retryMetadata() } }
             .buttonStyle(.plain)
             .foregroundStyle(Color.orbis.tint)
+            .disabled(model.isSavingReveal)
             .accessibilityIdentifier("reveal-retry")
         }
       }
