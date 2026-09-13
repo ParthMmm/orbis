@@ -58,6 +58,63 @@ final class ConnectionEditorTests: XCTestCase {
     XCTAssertEqual(model.library, .idle)
   }
 
+  /// A device that refuses to hold the new token must keep the pairing it already has. The
+  /// address is only committed after the token is stored, so a refused save changes nothing
+  /// and says so where the address was typed.
+  func testARefusedSaveKeepsTheWorkingPairingAndSaysSo() async {
+    let settings = RefusingClientSettings(
+      address: "https://library.example",
+      token: "synthetic-old-token"
+    )
+    let model = AppModel(
+      client: OrbisClient(
+        address: URL(string: "https://library.example")!,
+        token: "synthetic-old-token",
+        session: StubProtocol.session { request in
+          request.url?.path() == "/health" ? (200, #"{"status":"ok"}"#) : (500, "{}")
+        }
+      ),
+      settings: settings
+    )
+    model.library = .loaded([])
+    model.connectionAddress = "https://replacement.example"
+    model.connectionToken = "synthetic-new-token"
+
+    await model.connect()
+
+    XCTAssertEqual(settings.storeAttempts, 1, "the token is offered to the store once")
+    XCTAssertEqual(
+      settings.serviceAddress, "https://library.example",
+      "a refused save must not adopt the new address")
+    XCTAssertEqual(
+      settings.deviceToken, "synthetic-old-token",
+      "a refused save must not forget the pairing the device already holds")
+    XCTAssertEqual(
+      model.client?.address.absoluteString, "https://library.example",
+      "the model must keep the client it was already using")
+    XCTAssertTrue(model.hasStoredToken, "the device still holds the token it had")
+    guard case .loaded = model.library else {
+      return XCTFail("a refused save must not throw away the working Library session")
+    }
+
+    guard let failure = model.connectionFailure else {
+      return XCTFail("a refused save must say so where the address was typed")
+    }
+    let expected = OrbisError.storageRefused.failure()
+    XCTAssertEqual(failure.title, expected.title)
+    XCTAssertEqual(failure.symbol, expected.symbol)
+    XCTAssertTrue(failure.isRetryable, "a refused save is worth another try")
+
+    for text in [failure.title, failure.message, failure.address ?? ""] {
+      XCTAssertFalse(
+        text.contains("synthetic-new-token"),
+        "the typed token must not reach user-facing text: \(text)")
+      XCTAssertFalse(
+        text.contains("synthetic-old-token"),
+        "the stored token must not reach user-facing text: \(text)")
+    }
+  }
+
   /// Pairing fills the whole shell: the Library rows and the sidebar's Playlists. Loading only
   /// the library left the sidebar empty until the app relaunched.
   func testPairingLoadsTheLibraryAndThePlaylists() async {
@@ -128,5 +185,27 @@ final class ConnectionEditorTests: XCTestCase {
       return XCTFail("the retry must load the playlists")
     }
     XCTAssertEqual(playlists.map(\.name), ["Long drives"])
+  }
+}
+
+/// A store that refuses every write, like a device whose keychain will not take the token. It
+/// keeps the pairing it already had, so a test can prove a refused save changed nothing.
+@MainActor
+final class RefusingClientSettings: ClientSettingsStore {
+  var serviceAddress: String?
+  private let token: String?
+  private(set) var storeAttempts = 0
+
+  init(address: String?, token: String?) {
+    serviceAddress = address
+    self.token = token
+  }
+
+  var deviceToken: String? { token }
+
+  @discardableResult
+  func store(deviceToken newToken: String?) -> Bool {
+    storeAttempts += 1
+    return false
   }
 }
