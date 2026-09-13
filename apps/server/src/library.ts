@@ -30,7 +30,12 @@ const SET_COLUMNS = `id, url, title, source, tags, created_at AS createdAt, crea
   (SELECT COALESCE(json_group_array(playlist_id ORDER BY playlist_id), '[]')
    FROM playlist_sets WHERE playlist_sets.set_id = sets.id) AS playlistIds`;
 
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
+
+// Reading a library lists every Set's playlist ids with a correlated lookup on set_id, so the
+// membership table needs an index that begins with that column. The trailing playlist_id keeps
+// the lookup covering; the primary key starts with playlist_id and cannot serve this query.
+const CREATE_MEMBERSHIP_INDEX = `CREATE INDEX IF NOT EXISTS playlist_sets_by_set ON playlist_sets(set_id, playlist_id);`;
 
 const TEMPORARY_TITLES: Record<SetSource, string> = {
   soundcloud: "SoundCloud track",
@@ -53,7 +58,8 @@ CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY, name TEXT NOT NULL UN
 CREATE TABLE IF NOT EXISTS playlist_sets (
  playlist_id TEXT NOT NULL REFERENCES playlists(id), set_id TEXT NOT NULL REFERENCES sets(id), position INTEGER NOT NULL,
  PRIMARY KEY (playlist_id, set_id), UNIQUE (playlist_id, position)
-);`;
+);
+${CREATE_MEMBERSHIP_INDEX}`;
 
 const MIGRATIONS = [
   `ALTER TABLE sets ADD COLUMN creator TEXT;
@@ -71,6 +77,9 @@ const MIGRATIONS = [
    ALTER TABLE sets ADD COLUMN listen_count INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE sets ADD COLUMN finish_count INTEGER NOT NULL DEFAULT 0;
    ALTER TABLE sets ADD COLUMN last_listened_at TEXT;`,
+  // Databases already at version 1 hold data, so the index is added by a separate migration
+  // rather than by editing the statements above.
+  CREATE_MEMBERSHIP_INDEX,
 ];
 
 const setNotFound = () =>
