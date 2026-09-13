@@ -10,6 +10,10 @@ import type {
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { LibraryError } from "./errors.js";
+import {
+  MAX_PLAYLISTS_PER_SET,
+  MAX_SETS_PER_PLAYLIST,
+} from "./library-limits.js";
 import type { EnrichedMetadata } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
 
@@ -86,6 +90,18 @@ const setNotFound = () =>
   new LibraryError({
     message: "Set not found.",
     statusCode: 404,
+  });
+
+const playlistCapacityError = () =>
+  new LibraryError({
+    message: `A playlist can hold at most ${MAX_SETS_PER_PLAYLIST} sets.`,
+    statusCode: 400,
+  });
+
+const setCapacityError = () =>
+  new LibraryError({
+    message: `A set can belong to at most ${MAX_PLAYLISTS_PER_SET} playlists.`,
+    statusCode: 400,
   });
 
 const ensureSchema = (db: Database) => {
@@ -201,6 +217,36 @@ export class Library extends Context.Service<
             });
           }
         };
+        const memberSetIds = (playlistId: string) =>
+          new Set(
+            db
+              .query<{ set_id: string }, [string]>(
+                "SELECT set_id FROM playlist_sets WHERE playlist_id = ?"
+              )
+              .all(playlistId)
+              .map((row) => row.set_id)
+          );
+        const memberPlaylistIds = (setId: string) =>
+          new Set(
+            db
+              .query<{ playlist_id: string }, [string]>(
+                "SELECT playlist_id FROM playlist_sets WHERE set_id = ?"
+              )
+              .all(setId)
+              .map((row) => row.playlist_id)
+          );
+        const playlistMemberCount = (playlistId: string) =>
+          db
+            .query<{ count: number }, [string]>(
+              "SELECT COUNT(*) AS count FROM playlist_sets WHERE playlist_id = ?"
+            )
+            .get(playlistId)?.count ?? 0;
+        const setMembershipCount = (setId: string) =>
+          db
+            .query<{ count: number }, [string]>(
+              "SELECT COUNT(*) AS count FROM playlist_sets WHERE set_id = ?"
+            )
+            .get(setId)?.count ?? 0;
         const save = Effect.fn("Library.save")((input: SaveSetInput) =>
           execute(() => {
             const id = crypto.randomUUID();
@@ -456,6 +502,20 @@ export class Library extends Context.Service<
                     throw setNotFound();
                   }
                 }
+                if (setIds.length > MAX_SETS_PER_PLAYLIST) {
+                  throw playlistCapacityError();
+                }
+                // A Set that already belongs here keeps its place, so only the Sets that are
+                // joining this Playlist gain a membership and count against their own limit.
+                const currentSetIds = memberSetIds(id);
+                for (const setId of setIds) {
+                  if (
+                    !currentSetIds.has(setId) &&
+                    setMembershipCount(setId) + 1 > MAX_PLAYLISTS_PER_SET
+                  ) {
+                    throw setCapacityError();
+                  }
+                }
                 db.query("DELETE FROM playlist_sets WHERE playlist_id = ?").run(
                   id
                 );
@@ -489,6 +549,20 @@ export class Library extends Context.Service<
               }
               for (const playlistId of playlistIds) {
                 requirePlaylist(playlistId);
+              }
+              if (playlistIds.length > MAX_PLAYLISTS_PER_SET) {
+                throw setCapacityError();
+              }
+              // Membership this Set already holds is retained rather than appended, so only the
+              // Playlists it newly joins count against the Sets each of them can hold.
+              const currentPlaylistIds = memberPlaylistIds(setId);
+              for (const playlistId of playlistIds) {
+                if (
+                  !currentPlaylistIds.has(playlistId) &&
+                  playlistMemberCount(playlistId) + 1 > MAX_SETS_PER_PLAYLIST
+                ) {
+                  throw playlistCapacityError();
+                }
               }
               // The caller states the membership it wants, so the playlists it left are the
               // ones it did not name. Doing that here rather than with a read-modify-write
