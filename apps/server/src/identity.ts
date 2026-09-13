@@ -16,6 +16,8 @@ const Device = Schema.Struct({
 
 export type DeviceRecord = typeof Device.Type;
 
+export type AccessMode = "local" | "device";
+
 const TrustFile = Schema.Struct({
   devices: Schema.Array(Device),
   version: Schema.Number,
@@ -105,6 +107,7 @@ export const decideAccess = (input: {
   readonly devices: readonly DeviceRecord[];
   readonly hasOrigin: boolean;
   readonly host: string;
+  readonly mode: AccessMode;
 }): AccessDecision => {
   if (input.hasOrigin) {
     return rejected(LOCAL_ONLY, 403);
@@ -120,7 +123,7 @@ export const decideAccess = (input: {
       ? { deviceId: device.id, kind: "device" }
       : rejected(NOT_PAIRED, 401);
   }
-  if (LOOPBACK_HOST.test(input.host)) {
+  if (input.mode === "local" && LOOPBACK_HOST.test(input.host)) {
     return { kind: "local" };
   }
   return rejected(LOCAL_ONLY, 403);

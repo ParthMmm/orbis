@@ -36,6 +36,114 @@ const withTrustStore = async (
   };
 };
 
+test("device ingress rejects spoofed loopback authorities and invalid credentials", async () => {
+  const token = crypto.randomUUID();
+  const { app, directory, devicesPath } = await withTrustStore([
+    { id: "fixture", label: "Fixture", token },
+  ]);
+  const deviceGet = {
+    accessMode: "device",
+    method: "GET",
+    url: "/sets",
+  } as const;
+  // The last variant spoofs the Host header while the URL authority stays loopback.
+  const spoofed = [
+    { authority: "127.0.0.1:4310", host: "localhost" },
+    { authority: "127.0.0.1:4310", host: "localhost:4310" },
+    { authority: "127.0.0.1:4310", host: "127.0.0.1" },
+    { authority: "127.0.0.1:4310", host: "127.0.0.1:4310" },
+    { authority: "127.0.0.1:4310", host: TAILNET_HOST },
+    { authority: TAILNET_HOST, host: "localhost" },
+    { authority: TAILNET_HOST, host: "127.0.0.1:4310" },
+  ];
+  const loopbackHosts = [
+    "localhost",
+    "127.0.0.1",
+    "localhost:4310",
+    "127.0.0.1:4310",
+  ];
+  try {
+    const unauthenticated = await Promise.all(
+      spoofed.map(({ authority, host }) =>
+        request(app, { ...deviceGet, headers: { host }, host: authority })
+      )
+    );
+    expect(unauthenticated.map((response) => response.statusCode)).toEqual(
+      spoofed.map(() => 403)
+    );
+
+    const invalidTokens = await Promise.all(
+      spoofed.map(({ authority, host }) =>
+        request(app, {
+          ...deviceGet,
+          headers: { authorization: "Bearer invalid", host },
+          host: authority,
+        })
+      )
+    );
+    expect(invalidTokens.map((response) => response.statusCode)).toEqual(
+      spoofed.map(() => 401)
+    );
+
+    // An invalid credential is still 401 on local ingress, never a silent fallback.
+    const invalidLocal = await Promise.all(
+      loopbackHosts.map((host) =>
+        request(app, {
+          headers: { authorization: "Bearer invalid", host },
+          method: "GET",
+          url: "/sets",
+        })
+      )
+    );
+    expect(invalidLocal.map((response) => response.statusCode)).toEqual(
+      loopbackHosts.map(() => 401)
+    );
+
+    const paired = await request(app, {
+      ...deviceGet,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(paired.statusCode).toBe(200);
+
+    const origins = ["", "null", "https://example.com"];
+    const browserOrigins = await Promise.all(
+      origins.map((origin) =>
+        request(app, {
+          ...deviceGet,
+          headers: { authorization: `Bearer ${token}`, origin },
+        })
+      )
+    );
+    expect(browserOrigins.map((response) => response.statusCode)).toEqual(
+      origins.map(() => 403)
+    );
+
+    await writeFile(devicesPath, JSON.stringify({ devices: [], version: 1 }));
+    const revoked = await request(app, {
+      ...deviceGet,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(revoked.statusCode).toBe(401);
+
+    await writeFile(devicesPath, "{invalid");
+    const corrupt = await request(app, {
+      ...deviceGet,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(corrupt.statusCode).toBe(401);
+
+    await rm(devicesPath);
+    const missing = await request(app, {
+      ...deviceGet,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(missing.statusCode).toBe(401);
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test("accepts a paired device over the tailnet address and reads the library", async () => {
   const { app, directory } = await withTrustStore([
     { id: "iphone", label: "iPhone 17 Pro", token: "token-for-iphone" },

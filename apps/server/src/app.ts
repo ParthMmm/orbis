@@ -9,6 +9,7 @@ import {
 } from "effect/unstable/http";
 
 import { LibraryError } from "./errors.js";
+import type { AccessMode } from "./identity.js";
 import { decideAccess, readDeviceRegistry } from "./identity.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
@@ -295,7 +296,10 @@ export const createApp = (
   );
   return {
     dispose: app.dispose,
-    handler: (request: Request): Promise<Response> => {
+    handler: (
+      request: Request,
+      mode: AccessMode = "local"
+    ): Promise<Response> => {
       const host = request.headers.get("host") ?? new URL(request.url).host;
       const authorization = request.headers.get("authorization");
       // Only a claimed token needs the trust store, so local requests never read it.
@@ -307,6 +311,7 @@ export const createApp = (
         devices: registry.devices,
         hasOrigin: request.headers.has("origin"),
         host,
+        mode,
       });
       if (decision.kind === "rejected") {
         const logger = startRequestLog({

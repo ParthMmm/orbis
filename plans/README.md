@@ -8,7 +8,7 @@ Read each plan fully before execution. Every plan includes current code, scope, 
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 | --- | --- | --- | --- | --- | --- |
-| [001](001-proxy-authentication-boundary.md) | Separate local and proxied authentication policies | P1 | M | — | TODO |
+| [001](001-proxy-authentication-boundary.md) | Separate local and proxied authentication policies | P1 | M | — | DONE — repository fix complete and all gates pass; the live Serve cutover to port 4311 is owner-run and remains unverified |
 | [002](002-service-deployment-update.md) | Restart on update and align Bun | P1 | S | —; serialize with 001 | TODO |
 | [003](003-native-test-settings-isolation.md) | Isolate native pairing storage in tests | P1 | M | — | DONE — seam and isolation landed; iOS unit lane green (83 native + 45 design tests, including the 8 isolation cases). Owner accepted the iOS lane as the isolation baseline 2026-09-13; the macOS hosted run stays a known pre-existing signing gap (entitlements require a development certificate under `CODE_SIGN_IDENTITY=-`, reproduced at HEAD) |
 | [004](004-preserve-keychain-on-write-failure.md) | Preserve the pairing on a failed write | P1 | S | 003 | DONE — a failed credential update now returns false with no add or delete: only item-not-found adds, and a duplicate add never deletes the competing item. Security calls sit behind a main-actor `KeychainOperations` seam with a recording fake. iOS unit lane green (91 native tests, including the 8 keychain status/dictionary cases and the connection-level refusal gate, which a mutation check confirmed can fail). macOS hosted run stays the known pre-existing signing gap |
