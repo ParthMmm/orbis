@@ -290,10 +290,10 @@ private struct SetDetailSample: View {
   )
 }
 
-#Preview("Set detail, largest text, RTL, Mac") {
-  SetDetailSample().orbisAccessibilityLayout()
+#Preview("Set detail, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { SetDetailSample() }
 }
 
-#Preview("Set detail, largest text, RTL, iPhone") {
-  SetDetailSample().frame(width: 390).orbisAccessibilityLayout()
+#Preview("Set detail, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { SetDetailSample() }
 }

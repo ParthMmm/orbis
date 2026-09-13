@@ -167,9 +167,8 @@ func copyToPasteboard(_ text: String) {
   .preferredColorScheme(.dark)
 }
 
-/// The failure words and the copy control at the largest text size and in a right-to-left
-/// layout.
-private struct FailureAtLargestText: View {
+/// The failure words and the copy control at the sizes the matrix covers.
+private struct FailureSample: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       UnavailableState(
@@ -200,10 +199,14 @@ private struct FailureAtLargestText: View {
   }
 }
 
-#Preview("Failure, largest text, RTL, Mac") {
-  FailureAtLargestText().orbisAccessibilityLayout().frame(width: 700, height: 600)
+#Preview("Failure, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) {
+    FailureSample().frame(height: 600)
+  }
 }
 
-#Preview("Failure, largest text, RTL, iPhone") {
-  FailureAtLargestText().orbisAccessibilityLayout().frame(width: 358, height: 600)
+#Preview("Failure, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) {
+    FailureSample().frame(height: 600)
+  }
 }

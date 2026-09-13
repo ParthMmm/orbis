@@ -145,7 +145,7 @@ struct ChipFlow: Layout {
     var height: CGFloat = 0
     var lineHeight: CGFloat = 0
     for subview in subviews {
-      let size = subview.sizeThatFits(.unspecified)
+      let size = size(of: subview, upTo: width)
       if lineWidth > 0, lineWidth + size.width > width {
         height += lineHeight + spacing
         lineWidth = 0
@@ -164,7 +164,7 @@ struct ChipFlow: Layout {
     var y = bounds.minY
     var lineHeight: CGFloat = 0
     for subview in subviews {
-      let size = subview.sizeThatFits(.unspecified)
+      let size = size(of: subview, upTo: bounds.width)
       if x > bounds.minX, x + size.width > bounds.maxX {
         x = bounds.minX
         y += lineHeight + spacing
@@ -174,6 +174,16 @@ struct ChipFlow: Layout {
       x += size.width + spacing
       lineHeight = max(lineHeight, size.height)
     }
+  }
+
+  /// What a chip takes: the width it asks for, unless the row cannot give it that much. A Tag can
+  /// be forty characters, which is wider than a phone at the largest text sizes, so a chip wider
+  /// than its row is offered the row's width instead and wraps inside the edge rather than running
+  /// past it. `minX` and `maxX` are the layout's own edges, so the system mirrors them.
+  private func size(of subview: LayoutSubview, upTo width: CGFloat) -> CGSize {
+    let wanted = subview.sizeThatFits(.unspecified)
+    guard width.isFinite, wanted.width > width else { return wanted }
+    return subview.sizeThatFits(ProposedViewSize(width: width, height: nil))
   }
 }
 
@@ -204,10 +214,10 @@ private struct TagInputSample: View {
   TagInputSample().frame(width: 358).preferredColorScheme(.dark)
 }
 
-#Preview("Tag input, largest text, RTL, Mac") {
-  TagInputSample().orbisAccessibilityLayout()
+#Preview("Tag input, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { TagInputSample() }
 }
 
-#Preview("Tag input, largest text, RTL, iPhone") {
-  TagInputSample().frame(width: 358).orbisAccessibilityLayout()
+#Preview("Tag input, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { TagInputSample() }
 }

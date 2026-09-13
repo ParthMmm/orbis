@@ -27,22 +27,21 @@ public struct SourceStamp: View {
   .padding()
 }
 
-#Preview("Stamp, largest text, RTL, Mac") {
-  HStack {
-    SourceStamp("YouTube")
-    SourceStamp("SoundCloud")
-  }
-  .padding()
-  .orbisAccessibilityLayout()
-  .frame(width: 700)
+#Preview("Stamp, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { StampPair() }
 }
 
-#Preview("Stamp, largest text, RTL, iPhone") {
-  HStack {
-    SourceStamp("YouTube")
-    SourceStamp("SoundCloud")
+#Preview("Stamp, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { StampPair() }
+}
+
+/// Two stamps side by side, the arrangement the accessibility previews draw at each size.
+private struct StampPair: View {
+  var body: some View {
+    HStack {
+      SourceStamp("YouTube")
+      SourceStamp("SoundCloud")
+    }
+    .padding()
   }
-  .padding()
-  .orbisAccessibilityLayout()
-  .frame(width: 358)
 }
