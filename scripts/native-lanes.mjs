@@ -7,8 +7,10 @@
 //   node scripts/native-lanes.mjs --unit        # unit tests only
 //   node scripts/native-lanes.mjs --journeys    # UI journeys only
 //   node scripts/native-lanes.mjs               # both
+//   node scripts/native-lanes.mjs --unit --macos # unit tests on the macOS host
 //
 // Options: --name <simulator name>  --out <screenshot directory>
+// --macos runs the unit tests on the macOS destination instead of the simulator.
 
 import { spawn, spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
@@ -25,13 +27,17 @@ const argument = (name, fallback) => {
 
 const unitOnly = process.argv.includes("--unit");
 const journeysOnly = process.argv.includes("--journeys");
+// A hosted macOS run proves the tests never touch real pairing storage on the machine that
+// runs them, which the simulator run cannot show. Journeys stay simulator-only: the UI test
+// bundle is iOS-only, so --macos always means the unit tests.
+const macos = process.argv.includes("--macos");
 const simulator = argument("name", "Orbis Lanes");
 const shots = path.resolve(
   argument("out", path.join(tmpdir(), "orbis-lane-shots"))
 );
 
 const only = [];
-if (unitOnly) {
+if (macos || unitOnly) {
   only.push("-only-testing:OrbisTests");
 } else if (journeysOnly) {
   only.push("-only-testing:OrbisUITests");
@@ -156,10 +162,12 @@ try {
       "-scheme",
       "Orbis",
       "-destination",
-      `platform=iOS Simulator,name=${simulator}`,
+      macos ? "platform=macOS" : `platform=iOS Simulator,name=${simulator}`,
       // Ad-hoc signing gives the simulator build the entitlement its keychain needs, while
-      // leaving the committed project device-ready.
-      "CODE_SIGN_IDENTITY=-",
+      // leaving the committed project device-ready. The macOS host cannot ad-hoc sign that
+      // entitlement, so the macOS run uses automatic signing with the local development
+      // identity from project.yml instead.
+      ...(macos ? [] : ["CODE_SIGN_IDENTITY=-"]),
       "-derivedDataPath",
       derived,
       "-resultBundlePath",
