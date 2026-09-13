@@ -47,7 +47,7 @@ final class SetPageTests: XCTestCase {
       token: "token",
       session: session
     )
-    let model = AppModel(client: client)
+    let model = AppModel(client: client, settings: MemoryClientSettings())
     model.library = .loaded(sets)
     return model
   }

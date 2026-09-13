@@ -28,21 +28,6 @@ final class OrbisClientTests: XCTestCase {
     }
   }
 
-  /// A stored pairing survives a replacement, leaves when cleared, and a stored value is
-  /// the truth rather than a hope.
-  func testTheStoredTokenSurvivesAReplacementAndLeavesWhenCleared() {
-    XCTAssertTrue(ClientSettings.store(deviceToken: "first pairing"))
-    defer { ClientSettings.store(deviceToken: nil) }
-
-    XCTAssertEqual(ClientSettings.deviceToken, "first pairing")
-    XCTAssertTrue(ClientSettings.store(deviceToken: "second pairing"))
-    XCTAssertEqual(
-      ClientSettings.deviceToken, "second pairing",
-      "the replacement must not have lost the stored pairing")
-    XCTAssertTrue(ClientSettings.store(deviceToken: nil))
-    XCTAssertNil(ClientSettings.deviceToken)
-  }
-
   func testHealthDecodesTheStatus() async throws {
     let session = StubProtocol.session(status: 200, body: #"{"status":"ok"}"#)
     let client = OrbisClient(

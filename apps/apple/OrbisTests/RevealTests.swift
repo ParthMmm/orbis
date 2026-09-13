@@ -28,7 +28,7 @@ final class RevealTests: XCTestCase {
   }
 
   private func model(reveal: AppModel.Reveal?) -> AppModel {
-    let model = AppModel()
+    let model = AppModel(settings: MemoryClientSettings())
     model.reveal = reveal
     return model
   }
@@ -118,7 +118,7 @@ final class RevealTests: XCTestCase {
             request.url?.path() == "/sets" && request.httpMethod == "POST"
               ? (201, body) : (500, "{}")
           }
-        ))
+        ), settings: MemoryClientSettings())
       model.library = .loaded([self.set(id: "2", title: "First")])
       model.selectedPlaylistId = "viewed"
       model.linkToFile = "https://youtu.be/abcdefghijk"

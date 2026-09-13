@@ -10,7 +10,7 @@ Read each plan fully before execution. Every plan includes current code, scope, 
 | --- | --- | --- | --- | --- | --- |
 | [001](001-proxy-authentication-boundary.md) | Separate local and proxied authentication policies | P1 | M | — | TODO |
 | [002](002-service-deployment-update.md) | Restart on update and align Bun | P1 | S | —; serialize with 001 | TODO |
-| [003](003-native-test-settings-isolation.md) | Isolate native pairing storage in tests | P1 | M | — | TODO |
+| [003](003-native-test-settings-isolation.md) | Isolate native pairing storage in tests | P1 | M | — | BLOCKED — seam and isolation landed; iOS unit lane green (83 native + 45 design tests, including the 8 isolation cases) after `packages/contracts` is built; the macOS hosted command fails at project configuration with "has entitlements that require signing with a development certificate" under `CODE_SIGN_IDENTITY=-`, reproduced at HEAD without these edits, so it is a pre-existing signing blocker and not to be worked around with `CODE_SIGNING_ALLOWED=NO` |
 | [004](004-preserve-keychain-on-write-failure.md) | Preserve the pairing on a failed write | P1 | S | 003 | TODO |
 | [005](005-preserve-metadata-retry-drafts.md) | Keep draft edits during metadata retry | P1 | S | 003 | TODO |
 | [006](006-index-set-playlist-memberships.md) | Index membership lookup by Set | P2 | S | — | TODO |

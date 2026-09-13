@@ -7,7 +7,7 @@ import XCTest
 @MainActor
 final class ConnectionEditorTests: XCTestCase {
   func testEditingTheConnectionKeepsTheLibraryAndAsksForTheTokenAgain() {
-    let model = AppModel()
+    let model = AppModel(settings: MemoryClientSettings())
     model.library = .loaded([])
     model.connectionAddress = "https://library.example"
     model.connectionToken = "a token already used"
@@ -26,7 +26,7 @@ final class ConnectionEditorTests: XCTestCase {
   /// A wrong address is the common reason to open this screen, and correcting it must not
   /// require pairing again on a device that already holds a token.
   func testAnEmptyTokenKeepsTheOneTheDeviceHasAndATypedOneReplacesIt() {
-    let model = AppModel()
+    let model = AppModel(settings: MemoryClientSettings())
     model.connectionAddress = "https://library.example"
     model.connectionToken = "typed on this screen"
     model.editConnection()
@@ -37,7 +37,7 @@ final class ConnectionEditorTests: XCTestCase {
   }
 
   func testLeavingTheEditorKeepsWhatWasWorking() {
-    let model = AppModel()
+    let model = AppModel(settings: MemoryClientSettings())
     model.library = .loaded([])
     model.editConnection()
     model.closeConnectionEditor()
@@ -49,7 +49,7 @@ final class ConnectionEditorTests: XCTestCase {
   }
 
   func testForgettingClosesTheEditorAndTheLibrary() {
-    let model = AppModel()
+    let model = AppModel(settings: MemoryClientSettings())
     model.library = .loaded([])
     model.editConnection()
     model.forget()
@@ -76,7 +76,7 @@ final class ConnectionEditorTests: XCTestCase {
           default: (500, "{}")
           }
         }
-      ))
+      ), settings: MemoryClientSettings())
     model.connectionAddress = "https://vanta.example.ts.net"
     model.connectionToken = "token"
     defer { model.forget() }
@@ -110,7 +110,7 @@ final class ConnectionEditorTests: XCTestCase {
           default: (500, "{}")
           }
         }
-      ))
+      ), settings: MemoryClientSettings())
     model.connectionAddress = "https://vanta.example.ts.net"
     model.connectionToken = "token"
     defer { model.forget() }

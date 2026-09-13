@@ -28,7 +28,7 @@ final class LibraryFilterTests: XCTestCase {
   }
 
   private func library(_ sets: [SavedSet]) -> AppModel {
-    let model = AppModel()
+    let model = AppModel(settings: MemoryClientSettings())
     model.library = .loaded(sets)
     return model
   }

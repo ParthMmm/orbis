@@ -61,7 +61,7 @@ final class SupersessionTests: XCTestCase {
           holding: { request in
             request.url?.query()?.contains("playlistId=old") == true ? 0.3 : 0
           }
-        )))
+        )), settings: MemoryClientSettings())
     model.selectedPlaylistId = "old"
 
     let superseded = Task { await model.loadLibrary() }
@@ -93,7 +93,7 @@ final class SupersessionTests: XCTestCase {
         address: URL(string: "https://vanta.example.ts.net")!,
         token: "token",
         session: StubProtocol.session(status: 200, body: libraryBody(title: "Night session"))
-      ))
+      ), settings: MemoryClientSettings())
 
     model.searchQuery = "night"
     await model.runSearch()
@@ -111,7 +111,7 @@ final class SupersessionTests: XCTestCase {
         address: URL(string: "https://vanta.example.ts.net")!,
         token: "token",
         session: StubProtocol.session(status: 200, body: libraryBody(title: "Night session"))
-      ))
+      ), settings: MemoryClientSettings())
     model.searchQuery = "night"
     await model.runSearch()
 
@@ -130,7 +130,7 @@ final class SupersessionTests: XCTestCase {
         address: URL(string: "https://vanta.example.ts.net")!,
         token: "token",
         session: StubProtocol.session(status: 200, body: libraryBody(title: "Night session"))
-      ))
+      ), settings: MemoryClientSettings())
     model.library = .loaded([filed])
     model.playlists = .loaded([Playlist(id: "p1", name: "Long drives", setCount: 4)])
     model.selectedPlaylistId = "p1"
@@ -171,7 +171,7 @@ final class SupersessionTests: XCTestCase {
           }
           return (500, "{}")
         }
-      ))
+      ), settings: MemoryClientSettings())
     model.editConnection()
     model.connectionAddress = "https://other.example.ts.net"
     model.connectionToken = "typed on this screen"

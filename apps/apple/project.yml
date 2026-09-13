@@ -86,6 +86,10 @@ schemes:
         - OrbisTests
         - OrbisUITests
       environmentVariables:
+        # A hosted test run must never read the device's own pairing, so the whole run is put
+        # on in-memory settings. The app's own default model picks this up before any test
+        # method runs; the Debug factory also fails closed on a recognized test host.
+        ORBIS_TEST_SETTINGS: memory
         # Substituted at generation time, so the lane's temporary service is what the
         # journey tests type into the connection screen.
         ORBIS_UI_TEST_ADDRESS: ${ORBIS_UI_TEST_ADDRESS}

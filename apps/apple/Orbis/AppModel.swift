@@ -129,12 +129,14 @@ final class AppModel {
   /// working token to fix a typo.
   var isEditingConnection = false
 
-  init() {
+  /// Where this model keeps the pairing. Held per model, so a test hands a model a store of its
+  /// own instead of writing the device's real one.
+  private let settings: any ClientSettingsStore
+
+  init(settings: any ClientSettingsStore = ClientSettings.forCurrentProcess()) {
+    self.settings = settings
     // A journey lane starts from a clean install so it exercises the connection screen.
-    if ProcessInfo.processInfo.arguments.contains("-orbisResetSettings") {
-      ClientSettings.serviceAddress = nil
-      ClientSettings.store(deviceToken: nil)
-    }
+    Self.resetSettings(ifRequestedBy: ProcessInfo.processInfo.arguments, in: settings)
     // A lane that checks the filtered Library starts already filtered, because the design's
     // filter control is a custom toggle a UI test cannot drive reliably.
     let arguments = ProcessInfo.processInfo.arguments
@@ -143,19 +145,29 @@ final class AppModel {
     {
       activeTag = arguments[flag + 1]
     }
-    connectionAddress = ClientSettings.serviceAddress ?? ""
-    client = ClientSettings.configuredClient()
-    hasStoredToken = ClientSettings.deviceToken?.isEmpty == false
+    connectionAddress = settings.serviceAddress ?? ""
+    client = settings.configuredClient()
+    hasStoredToken = settings.deviceToken?.isEmpty == false
     refreshDerivedState()
   }
 
   /// A model already paired with a service. The launch screen and the settings file are the real
   /// path; this one exists so tests and previews can drive a change without either.
-  init(client: OrbisClient) {
+  init(client: OrbisClient, settings: any ClientSettingsStore) {
+    self.settings = settings
     self.client = client
     connectionAddress = client.address.absoluteString
-    hasStoredToken = ClientSettings.deviceToken?.isEmpty == false
+    hasStoredToken = settings.deviceToken?.isEmpty == false
     refreshDerivedState()
+  }
+
+  /// Clears the store the model was given when the launch arguments ask for a fresh install.
+  /// Settings-only, so the reset can be proven against a supplied store rather than by
+  /// starting an app that is already paired with a device.
+  static func resetSettings(ifRequestedBy arguments: [String], in settings: any ClientSettingsStore) {
+    guard arguments.contains("-orbisResetSettings") else { return }
+    settings.serviceAddress = nil
+    settings.store(deviceToken: nil)
   }
 
   var isConfigured: Bool { client != nil }
@@ -195,7 +207,7 @@ final class AppModel {
     // An empty field means keep the token this device already holds, which is what correcting
     // an address needs. A typed token replaces it.
     let typed = connectionToken.trimmingCharacters(in: .whitespacesAndNewlines)
-    let token = typed.isEmpty ? (ClientSettings.deviceToken ?? "") : typed
+    let token = typed.isEmpty ? (settings.deviceToken ?? "") : typed
     guard !token.isEmpty else {
       connectionFailure = OrbisError.notPaired.failure(at: URL(string: connectionAddress))
       return
@@ -212,11 +224,11 @@ final class AppModel {
       guard generation == connectionGeneration, !Task.isCancelled else { return }
       // The token is stored before anything commits, so a device that would not hold it
       // changes nothing and says so where the address was typed.
-      guard ClientSettings.store(deviceToken: token) else {
+      guard settings.store(deviceToken: token) else {
         connectionFailure = OrbisError.storageRefused.failure(at: url)
         return
       }
-      ClientSettings.serviceAddress = url.absoluteString
+      settings.serviceAddress = url.absoluteString
       client = candidate
       hasStoredToken = true
       isEditingConnection = false
@@ -239,7 +251,7 @@ final class AppModel {
     // The screen reopening is itself a change of mind: a connection test that was already
     // out belongs to the screen that closed, not to this one.
     connectionGeneration += 1
-    connectionAddress = ClientSettings.serviceAddress ?? connectionAddress
+    connectionAddress = settings.serviceAddress ?? connectionAddress
     connectionToken = ""
     connectionFailure = nil
     isEditingConnection = true
@@ -259,8 +271,8 @@ final class AppModel {
     connectionGeneration += 1
     libraryGeneration += 1
     searchGeneration += 1
-    ClientSettings.serviceAddress = nil
-    ClientSettings.store(deviceToken: nil)
+    settings.serviceAddress = nil
+    settings.store(deviceToken: nil)
     client = nil
     connectionToken = ""
     connectionAddress = ""

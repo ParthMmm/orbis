@@ -1,11 +1,100 @@
 import Foundation
 import Security
 
-/// The service address is not a secret, so it lives in defaults. The device token is a
-/// credential, so it lives in the keychain and never syncs to another device.
-enum ClientSettings {
+/// Where the pairing lives: the service address and the device token.
+///
+/// The app reads and writes settings through this interface, so a test can hand a model a
+/// store of its own and prove what the app does without reaching a real pairing. The address
+/// is not a secret and may live in defaults; the token is a credential and belongs in the
+/// keychain.
+@MainActor
+protocol ClientSettingsStore: AnyObject {
+  var serviceAddress: String? { get set }
+
+  /// The stored device token, or nil when this device holds no pairing.
+  var deviceToken: String? { get }
+
+  /// Stores the pairing, answering whether this device really holds it. A write that fails
+  /// must not read as a saved token: the caller learns the truth here instead of on the
+  /// next launch.
+  @discardableResult
+  func store(deviceToken newToken: String?) -> Bool
+}
+
+extension ClientSettingsStore {
+  var isConfigured: Bool {
+    serviceAddress?.isEmpty == false && deviceToken?.isEmpty == false
+  }
+
+  func configuredClient(session: URLSession = .shared) -> OrbisClient? {
+    guard let address = serviceAddress, let token = deviceToken,
+      let url = URL(string: address), OrbisClient.accepts(url), !token.isEmpty
+    else { return nil }
+    return OrbisClient(address: url, token: token, session: session)
+  }
+}
+
+/// The device's own storage: the address in defaults and the token in the keychain, with a
+/// development file as a fallback for a build on the developer's Mac.
+@MainActor
+final class LiveClientSettings: ClientSettingsStore {
   private static let addressKey = "orbis.serviceAddress"
 
+  private let defaults: UserDefaults
+  private let keychain: KeychainStore
+  private let developmentConfiguration: () -> (address: String, token: String)?
+
+  /// Dependencies are explicit so a test can supply a defaults suite of its own, a keychain
+  /// namespace of its own, and a provider that answers nil. The provider is held rather than
+  /// called, so constructing a store never opens the development file.
+  init(
+    defaults: UserDefaults,
+    keychain: KeychainStore,
+    developmentConfiguration: @escaping () -> (address: String, token: String)?
+  ) {
+    self.defaults = defaults
+    self.keychain = keychain
+    self.developmentConfiguration = developmentConfiguration
+  }
+
+  var serviceAddress: String? {
+    get { defaults.string(forKey: Self.addressKey) ?? developmentConfiguration()?.address }
+    set { defaults.set(newValue, forKey: Self.addressKey) }
+  }
+
+  var deviceToken: String? {
+    keychain.read() ?? developmentConfiguration()?.token
+  }
+
+  @discardableResult
+  func store(deviceToken newToken: String?) -> Bool {
+    guard let newToken else {
+      keychain.delete()
+      return true
+    }
+    return keychain.write(newToken)
+  }
+}
+
+/// A store that keeps the pairing in memory and nowhere else. Two instances never share
+/// state, so what a test writes cannot reach another test or a real pairing.
+@MainActor
+final class MemoryClientSettings: ClientSettingsStore {
+  var serviceAddress: String?
+  private var token: String?
+
+  var deviceToken: String? { token }
+
+  @discardableResult
+  func store(deviceToken newToken: String?) -> Bool {
+    token = newToken
+    return true
+  }
+}
+
+/// The store the running app should use. The Debug path keeps tests off the device's real
+/// pairing; a release build always uses the device's own storage.
+enum ClientSettings {
   /// A development convenience. A build on this machine reads the service address and a device
   /// token from `~/.orbis/config.json`, so neither is retyped after a settings reset or a
   /// fresh install. The file sits outside the repository, so no credential is committed, and
@@ -28,44 +117,66 @@ enum ClientSettings {
     #endif
   }
 
-  static var serviceAddress: String? {
-    get { UserDefaults.standard.string(forKey: addressKey) ?? developmentConfiguration?.address }
-    set { UserDefaults.standard.set(newValue, forKey: addressKey) }
+  static let testSettingsKey = "ORBIS_TEST_SETTINGS"
+  static let memoryMode = "memory"
+
+  @MainActor
+  static func forCurrentProcess() -> any ClientSettingsStore {
+    #if DEBUG
+      let environment = ProcessInfo.processInfo.environment
+      // A test bundle is loaded into this process, so both the runtime lookup and the launch
+      // variables name a running test. They stand behind the hosted scheme's explicit memory
+      // mode rather than replacing it, and they fail closed: a recognized test that is
+      // missing the override still selects memory.
+      let isTestHost =
+        NSClassFromString("XCTestCase") != nil
+        || environment["XCTestConfigurationFilePath"] != nil
+        || environment["XCTestSessionIdentifier"] != nil
+      return makeForProcess(
+        environment: environment,
+        isTestHost: isTestHost,
+        liveStore: makeLiveStore
+      )
+    #else
+      return makeLiveStore()
+    #endif
   }
 
-  static var deviceToken: String? {
-    Keychain.read() ?? developmentConfiguration?.token
-  }
-
-  /// Stores the pairing, answering whether this device really holds it. A write that fails
-  /// must not read as a saved token: the caller learns the truth here instead of on the
-  /// next launch.
-  @discardableResult
-  static func store(deviceToken newToken: String?) -> Bool {
-    guard let newToken else {
-      Keychain.delete()
-      return true
+  /// Selects the store for a Debug process. Memory mode and a recognized test host both
+  /// select memory without calling the live constructor, so no test can reach a real
+  /// pairing even when the override is missing or mistyped.
+  @MainActor
+  static func makeForProcess(
+    environment: [String: String],
+    isTestHost: Bool,
+    liveStore: @MainActor () -> any ClientSettingsStore
+  ) -> any ClientSettingsStore {
+    if environment[testSettingsKey] == memoryMode || isTestHost {
+      return MemoryClientSettings()
     }
-    return Keychain.write(newToken)
+    return liveStore()
   }
 
-  static var isConfigured: Bool {
-    serviceAddress?.isEmpty == false && deviceToken?.isEmpty == false
-  }
-
-  static func configuredClient(session: URLSession = .shared) -> OrbisClient? {
-    guard let address = serviceAddress, let token = deviceToken,
-      let url = URL(string: address), OrbisClient.accepts(url), !token.isEmpty
-    else { return nil }
-    return OrbisClient(address: url, token: token, session: session)
+  /// The device's own storage: the existing defaults, the production keychain identity, and
+  /// the home-file fallback, which stays lazy until a read asks for it.
+  @MainActor
+  private static func makeLiveStore() -> any ClientSettingsStore {
+    LiveClientSettings(
+      defaults: .standard,
+      keychain: KeychainStore(service: "app.orbis.client", account: "device-token"),
+      developmentConfiguration: { developmentConfiguration }
+    )
   }
 }
 
-private enum Keychain {
-  private static let service = "app.orbis.client"
-  private static let account = "device-token"
+/// One keychain namespace, named by its service and account. Production supplies the app's own
+/// identity; a test supplies a unique `app.orbis.tests.<UUID>` service, so nothing it writes
+/// can reach a real pairing.
+struct KeychainStore {
+  let service: String
+  let account: String
 
-  private static var base: [String: Any] {
+  private var base: [String: Any] {
     [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
@@ -73,7 +184,7 @@ private enum Keychain {
     ]
   }
 
-  static func write(_ token: String) -> Bool {
+  func write(_ token: String) -> Bool {
     var attributes = base
     attributes[kSecValueData as String] = Data(token.utf8)
     attributes[kSecAttrAccessible as String] =
@@ -94,7 +205,7 @@ private enum Keychain {
     }
   }
 
-  static func read() -> String? {
+  func read() -> String? {
     var query = base
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
@@ -105,7 +216,7 @@ private enum Keychain {
     return String(decoding: data, as: UTF8.self)
   }
 
-  static func delete() {
+  func delete() {
     SecItemDelete(base as CFDictionary)
   }
 }

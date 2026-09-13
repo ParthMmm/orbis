@@ -15,6 +15,7 @@ final class LibraryUITests: XCTestCase {
     if let tag {
       app.launchArguments.append(contentsOf: ["-orbisStartTagFiltered", tag])
     }
+    app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
     app.launchEnvironment["ORBIS_UI_TEST_ADDRESS"] = address
     app.launchEnvironment["ORBIS_UI_TEST_TOKEN"] = token
     app.launch()

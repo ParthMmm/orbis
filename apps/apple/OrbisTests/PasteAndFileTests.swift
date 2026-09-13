@@ -12,7 +12,7 @@ final class PasteAndFileTests: XCTestCase {
       session: StubProtocol.session(
         status: 201, body: OrbisClientTests.savedSet(title: "Night session", tags: []))
     )
-    let model = AppModel(client: client)
+    let model = AppModel(client: client, settings: MemoryClientSettings())
     // A loaded library keeps a successful filing from reloading, so the last request stays the save.
     model.library = .loaded([])
     return model
