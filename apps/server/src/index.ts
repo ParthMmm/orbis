@@ -11,9 +11,7 @@ const youTubeApiKey = process.env.ORBIS_YOUTUBE_API_KEY;
 const app = createApp({
   databasePath,
   logging: { environment: process.env.NODE_ENV ?? "development" },
-  metadata: Metadata.layer({
-    youTubeApiKey,
-  }),
+  metadata: Metadata.layer({ youTubeApiKey }),
 });
 const port = Number(process.env.ORBIS_PORT ?? 4310);
 if (!Number.isInteger(port) || port < 0 || port > 65_535) {

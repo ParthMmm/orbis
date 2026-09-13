@@ -50,30 +50,31 @@ const SaveInput = Schema.Struct({
  * explain on its own, so it is logged with the status the client receives. A rejected
  * request body is not logged: its 400 already appears on the request event.
  */
-const logLibraryFailure = <E>(error: E) =>
-  error instanceof LibraryError
-    ? (error.statusCode >= 500 ? Effect.logError : Effect.logWarning)(
-        "library request failed"
-      ).pipe(
-        Effect.annotateLogs({
-          errorTag: error._tag,
-          status: error.statusCode,
-        })
-      )
-    : Effect.void;
+const logLibraryFailure = <E>(error: E) => {
+  if (!(error instanceof LibraryError)) {
+    return Effect.void;
+  }
+  const logFailure =
+    error.statusCode >= 500 ? Effect.logError : Effect.logWarning;
+  return logFailure("library request failed").pipe(
+    Effect.annotateLogs({ errorTag: error._tag, status: error.statusCode })
+  );
+};
 
 const respond = <A, E, R>(effect: Effect.Effect<A, E, R>, status = 200) =>
   Effect.match(effect.pipe(Effect.tapError(logLibraryFailure)), {
-    onFailure: (error) =>
-      HttpServerResponse.jsonUnsafe(
-        {
-          message:
-            error instanceof LibraryError
-              ? error.message
-              : "Check your request fields and send valid JSON.",
-        },
-        { status: error instanceof LibraryError ? error.statusCode : 400 }
-      ),
+    onFailure: (error) => {
+      if (error instanceof LibraryError) {
+        return HttpServerResponse.jsonUnsafe(
+          { message: error.message },
+          { status: error.statusCode }
+        );
+      }
+      return HttpServerResponse.jsonUnsafe(
+        { message: "Check your request fields and send valid JSON." },
+        { status: 400 }
+      );
+    },
     onSuccess: (body) => HttpServerResponse.jsonUnsafe(body, { status }),
   });
 
@@ -298,9 +299,9 @@ export const createApp = (
       const host = request.headers.get("host") ?? new URL(request.url).host;
       const authorization = request.headers.get("authorization");
       // Only a claimed token needs the trust store, so local requests never read it.
-      const registry = authorization
-        ? readDeviceRegistry(devicesPath)
-        : { devices: [] };
+      const registry = readDeviceRegistry(
+        authorization ? devicesPath : undefined
+      );
       const decision = decideAccess({
         authorization,
         devices: registry.devices,
