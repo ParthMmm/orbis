@@ -65,6 +65,11 @@ final class AudioPlayer {
     AVURLAsset(url: url, options: assetOptions(token: token))
   }
 
+  /// The Set's own audio file under the service address.
+  static func fileURL(setID: String, baseURL: URL) -> URL {
+    baseURL.appending(path: "sets/\(setID)/audio")
+  }
+
   /// The Now Playing dictionary for a moment in time. Elapsed time and rate are set
   /// at play, pause, seek, and track change only: the system extrapolates between
   /// them, and a timer would only add jitter.
@@ -101,7 +106,11 @@ final class AudioPlayer {
     elapsed = 0
     duration = nil
     state = .loading
-    let item = AVPlayerItem(asset: Self.asset(url: baseURL, token: token))
+    // The asset is the Set's own audio file, not the service root: loading the
+    // root answers 404 and the player fails without ever asking for audio.
+    let item = AVPlayerItem(
+      asset: Self.asset(url: Self.fileURL(setID: set.id, baseURL: baseURL), token: token)
+    )
     let player = AVPlayer(playerItem: item)
     self.player = player
     // KVO can call back on any thread, so each handler captures plain values and

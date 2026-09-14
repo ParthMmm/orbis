@@ -164,15 +164,18 @@ final class AudioDownloadTests: XCTestCase {
     XCTAssertEqual(fields?["Authorization"], "Bearer secret-token")
   }
 
-  func testPlayerAssetPointsAtAudioRoute() {
-    let asset = AudioPlayer.asset(
-      url: URL(string: "https://vanta.example.ts.net/sets/1/audio")!,
-      token: "secret-token"
-    )
-    XCTAssertEqual(
-      (asset.url).absoluteString,
-      "https://vanta.example.ts.net/sets/1/audio"
-    )
+  func testPlayerBuildsFileURLFromSetID() {
+    // The player once loaded the service root, which answers 404, instead of the
+    // Set's file: this pins the exact URL play() hands the asset, with and
+    // without a trailing slash on the service address.
+    for base in [
+      "https://vanta.example.ts.net:8444", "https://vanta.example.ts.net:8444/",
+    ] {
+      XCTAssertEqual(
+        AudioPlayer.fileURL(setID: "1", baseURL: URL(string: base)!).absoluteString,
+        "https://vanta.example.ts.net:8444/sets/1/audio"
+      )
+    }
   }
 
   func testNowPlayingInfoHasTitleDurationAndRate() {
