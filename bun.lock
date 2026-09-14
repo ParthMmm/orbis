@@ -59,6 +59,7 @@
       "name": "@orbis/server",
       "version": "0.0.0",
       "dependencies": {
+        "@effect/ai-openrouter": "4.0.0-rc.113",
         "@effect/sql-sqlite-bun": "4.0.0-rc.113",
         "@orbis/contracts": "workspace:*",
         "drizzle-orm": "1.0.0-rc.5-5935859",
@@ -148,6 +149,8 @@
     "@dotenvx/primitives": ["@dotenvx/primitives@0.8.0", "", {}, "sha512-VYJy0uhFm9zTJ1TxBaW/pA8bjbOM/OttaNMwZ1RHG4JKyRG7DhSdiqD1ipQoAyoD22olUtxbP78W9xY3Wd11bg=="],
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.12.1", "", {}, "sha512-yHwomvolVafvUXhy5TdiJVkuNCxXn+bKOs2aWiWEQh/5YaV97Oa/abJz3dmx7lxgIUsUlS1Jl4mEfvJPo3YsVw=="],
+
+    "@effect/ai-openrouter": ["@effect/ai-openrouter@4.0.0-rc.113", "", { "peerDependencies": { "effect": "^4.0.0-rc.113" } }, "sha512-3p9ND+yfJoSc8fYLBdPvKQlbWuKv+kznKyrxb+j31jo18AGBATyohOrsY5m7vZzoTDo8pqvKjghQ1U8xbrURPA=="],
 
     "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.0-rc.113", "", { "peerDependencies": { "effect": "^4.0.0-rc.113" } }, "sha512-gh3k27MMq/MDqPqpQYoNw1BgXgPIxZtQQsF9W321Ml20lbIzEBdOA6LgEEbA1sX7wy8/710bDBgXvDcm27ioAA=="],
 

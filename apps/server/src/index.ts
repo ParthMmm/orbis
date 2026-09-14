@@ -4,11 +4,14 @@ import path from "node:path";
 import { createApp } from "./app.js";
 import { listenerPorts, startListeners } from "./listeners.js";
 import { Metadata } from "./metadata.js";
+import { TitleReviser } from "./title-reviser.js";
 
 const dataDirectory = path.resolve(process.env.ORBIS_DATA_DIR ?? "data");
 await mkdir(dataDirectory, { recursive: true });
 const databasePath = path.join(dataDirectory, "library.sqlite");
 const youTubeApiKey = process.env.ORBIS_YOUTUBE_API_KEY;
+const titleApiKey = process.env.ORBIS_TITLE_API_KEY;
+const titleModel = process.env.ORBIS_TITLE_MODEL;
 const ports = listenerPorts({
   ORBIS_DEVICE_PORT: process.env.ORBIS_DEVICE_PORT,
   ORBIS_PORT: process.env.ORBIS_PORT,
@@ -23,6 +26,7 @@ const app = createApp({
   databasePath,
   logging: { environment: process.env.NODE_ENV ?? "development" },
   metadata: Metadata.layer({ youTubeApiKey }),
+  titleReviser: TitleReviser.layer({ apiKey: titleApiKey, model: titleModel }),
 });
 const listeners = await startListeners(app, ports);
 console.log(`Orbis local API listening on ${listeners.local.url}`);
@@ -38,6 +42,15 @@ if (!process.env.ORBIS_COBALT_URL || !process.env.ORBIS_COBALT_API_KEY) {
 if (!youTubeApiKey) {
   console.warn(
     "ORBIS_YOUTUBE_API_KEY is not set, so YouTube metadata enrichment is unavailable."
+  );
+}
+if (titleApiKey && !titleModel) {
+  console.warn(
+    "ORBIS_TITLE_MODEL is not set, so automatic title revision is unavailable."
+  );
+} else if (!titleApiKey && titleModel) {
+  console.warn(
+    "ORBIS_TITLE_API_KEY is not set, so automatic title revision is unavailable."
   );
 }
 let stopping = false;

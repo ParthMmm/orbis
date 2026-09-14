@@ -30,6 +30,9 @@ import {
 } from "./logging.js";
 import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
+import type { EnrichedMetadata } from "./metadata.js";
+import type { TitleReviserError } from "./title-reviser-error.js";
+import { TitleReviser } from "./title-reviser.js";
 
 interface RawFilters {
   playlistId: string;
@@ -167,6 +170,7 @@ export const createApp = (
     devicesPath?: string;
     logging?: LoggingOptions;
     metadata?: Layer.Layer<Metadata>;
+    titleReviser?: Layer.Layer<TitleReviser>;
   } = {}
 ) => {
   configureLogging(options.logging);
@@ -185,6 +189,29 @@ export const createApp = (
       const library = yield* Library;
       const audio = yield* Audio;
       const metadata = yield* Metadata;
+      const titleReviser = yield* TitleReviser;
+      const reviseTitle = Effect.fn("reviseSavedSetTitle")((
+        set: SavedSet,
+        enriched: EnrichedMetadata
+      ) => {
+        const keepProviderTitle = (error: TitleReviserError) =>
+          Effect.logWarning("set title revision failed").pipe(
+            Effect.annotateLogs({ reason: error.reason, set: set.id }),
+            Effect.as(enriched)
+          );
+        return titleReviser
+          .revise({
+            creator: enriched.creator,
+            source: set.source,
+            title: enriched.title,
+          })
+          .pipe(
+            Effect.map((title) => ({ ...enriched, title })),
+            // A revision failure keeps the provider title: a bad rename must
+            // never fail enrichment, which already has a retry path.
+            Effect.catchTag("TitleReviserError", keepProviderTitle)
+          );
+      });
       // Enrichment failure is swallowed so the save still succeeds, so it is the
       // one outcome a client cannot see. The log records which set and which reason.
       const enrichSavedSet = Effect.fn("enrichSavedSet")((set: SavedSet) => {
@@ -194,6 +221,7 @@ export const createApp = (
             Effect.andThen(library.recordEnrichmentFailure(set.id))
           );
         return metadata.enrich({ source: set.source, url: set.url }).pipe(
+          Effect.flatMap((enriched) => reviseTitle(set, enriched)),
           Effect.flatMap((enriched) =>
             library.recordEnrichment(set.id, enriched)
           ),
@@ -430,7 +458,8 @@ export const createApp = (
     routes.pipe(
       Layer.provide(Audio.layer(options.audio ?? {})),
       Layer.provide(Library.layer.pipe(Layer.provide(database))),
-      Layer.provide(options.metadata ?? Metadata.unconfigured())
+      Layer.provide(options.metadata ?? Metadata.unconfigured()),
+      Layer.provide(options.titleReviser ?? TitleReviser.unconfigured())
     ),
     {
       disableLogger: true,
