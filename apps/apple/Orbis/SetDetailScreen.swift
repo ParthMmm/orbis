@@ -15,6 +15,7 @@ struct SetDetailScreen: View {
   @State private var isEditingTags = false
   @State private var draftTags: [String] = []
   @State private var isConfirmingRemoval = false
+  @State private var scrubPosition: TimeInterval?
 
   var body: some View {
     Group {
@@ -37,6 +38,7 @@ struct SetDetailScreen: View {
         )
         .navigationTitle(set.title)
         .accessibilityIdentifier("set-detail")
+        audioSection(set)
       } else {
         ContentUnavailableView {
           Label("This set is gone", systemImage: "questionmark.folder")
@@ -104,6 +106,104 @@ struct SetDetailScreen: View {
 
   private var retainedAudio: Bool {
     model.savedSet(setId)?.downloadState == "ready"
+  }
+
+  /// Download, progress, and playback for this Set. Each state shows exactly one
+  /// control, so a Set that is downloading cannot also offer to play.
+  @ViewBuilder
+  private func audioSection(_ set: SavedSet) -> some View {
+    switch set.downloadState {
+    case "ready":
+      if model.audioPlayer.currentSetId == set.id {
+        playerControls(set)
+      } else {
+        Button("Play") { model.playAudio(set.id) }
+          .accessibilityIdentifier("detail-play")
+      }
+    case "queued", "downloading":
+      VStack(alignment: .leading, spacing: 8) {
+        HStack(spacing: 8) {
+          ProgressView()
+          Text(progressLabel(set))
+            .font(.orbis.mono)
+            .foregroundStyle(.secondary)
+        }
+        Button("Cancel", role: .cancel) {
+          Task { await model.cancelAudioDownload(set.id) }
+        }
+      }
+      .task(id: set.downloadState) { await pollAudio(set.id) }
+    default:
+      Button("Download") { Task { await model.downloadAudio(set.id) } }
+        .accessibilityIdentifier("detail-download")
+    }
+  }
+
+  private func progressLabel(_ set: SavedSet) -> String {
+    if let progress = model.audioStates[set.id], let total = progress.bytesTotal,
+      total > 0
+    {
+      let percent = min(progress.bytesReceived * 100 / total, 100)
+      return "Downloading \(percent)%"
+    }
+    return SetPresentation.downloadLabel(set.downloadState) ?? "Downloading"
+  }
+
+  private func pollAudio(_ id: String) async {
+    while ["queued", "downloading"].contains(model.savedSet(id)?.downloadState ?? "none") {
+      await model.refreshAudioState(id)
+      try? await Task.sleep(for: .seconds(1))
+    }
+  }
+
+  @ViewBuilder
+  private func playerControls(_ set: SavedSet) -> some View {
+    let player = model.audioPlayer
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 12) {
+        Button(player.state == .playing ? "Pause" : "Play") {
+          if player.state == .playing {
+            player.pause()
+          } else {
+            player.resume()
+          }
+        }
+        .accessibilityIdentifier("detail-play-toggle")
+        if let duration = player.duration ?? set.durationSeconds.map(TimeInterval.init) {
+          Slider(
+            value: Binding(
+              get: { scrubPosition ?? player.elapsed },
+              set: { scrubPosition = $0 }
+            ),
+            in: 0...max(duration, 1),
+            onEditingChanged: { editing in
+              if !editing, let position = scrubPosition {
+                player.seek(to: position)
+                scrubPosition = nil
+              }
+            }
+          )
+          .accessibilityIdentifier("detail-seek")
+          Text(
+            "\(SetPresentation.timestamp(scrubPosition ?? player.elapsed)) / \(SetPresentation.timestamp(duration))"
+          )
+          .font(.orbis.mono)
+          .foregroundStyle(.secondary)
+        } else {
+          ProgressView()
+        }
+      }
+      if case .failed(let message) = player.state {
+        Text(message)
+          .font(.orbis.mono)
+          .foregroundStyle(.secondary)
+      }
+      if case .loading = player.state {
+        Text("Loading audio")
+          .font(.orbis.mono)
+          .foregroundStyle(.secondary)
+      }
+    }
   }
 
   private var playlistChoices: [PlaylistPicker.Choice] {
