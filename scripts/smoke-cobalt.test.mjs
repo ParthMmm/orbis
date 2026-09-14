@@ -62,6 +62,7 @@ const startFakeCobalt = async () => {
         body += chunk;
       }
       const payload = JSON.parse(body);
+      requests.at(-1).payload = payload;
       response.setHeader("content-type", "application/json");
 
       if (payload.url.startsWith("https://example.invalid/")) {
@@ -246,6 +247,117 @@ test("smoke command reports bounded downloads as failures and removes partial fi
     await cobalt.close();
     await rm(workspace, { force: true, recursive: true });
   }
+});
+
+test("smoke command requests the selected audio format and bitrate and keeps accepted output", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "orbis-cobalt-test-"));
+  const tempRoot = path.join(workspace, "temporary");
+  const kept = path.join(workspace, "kept");
+  const report = path.join(workspace, "report.json");
+  await mkdir(tempRoot);
+  const ffprobe = await writeFakeFfprobe(workspace);
+  const cobalt = await startFakeCobalt();
+
+  try {
+    const result = await runSmoke(
+      smokeArgs(cobalt.endpoint, report, ffprobe, [
+        "--audio-format",
+        "ogg",
+        "--audio-bitrate",
+        "320",
+        "--keep-output",
+        kept,
+      ]),
+      { COBALT_TEST_API_KEY: apiKey, TMPDIR: tempRoot }
+    );
+    assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+
+    const evidence = JSON.parse(await readFile(report, "utf-8"));
+    assert.equal(evidence.deployment.requestedAudioFormat, "ogg");
+    assert.equal(evidence.deployment.requestedAudioBitrate, "320");
+    assert.equal(evidence.samples[0].requestedAudioFormat, "ogg");
+    assert.equal(evidence.samples[0].requestedAudioBitrate, "320");
+    assert.equal(evidence.samples[0].observedFilenameExtension, "mp3");
+    assert.ok(
+      evidence.samples[0].keptOutput.endsWith("01-youtube-ogg-320.mp3")
+    );
+
+    const bodies = cobalt.requests
+      .filter((request) => request.payload)
+      .map((request) => request.payload);
+    assert.ok(bodies.length > 0);
+    for (const payload of bodies) {
+      assert.equal(payload.audioFormat, "ogg");
+      assert.equal(payload.audioBitrate, "320");
+      assert.equal(payload.downloadMode, "audio");
+      assert.equal(payload.localProcessing, "disabled");
+      assert.equal(payload.alwaysProxy, true);
+    }
+
+    const keptFiles = await readdir(kept);
+    assert.deepEqual(keptFiles.toSorted(), [
+      "01-youtube-ogg-320.mp3",
+      "02-soundcloud-ogg-320.mp3",
+      "03-youtube-ogg-320.mp3",
+    ]);
+    assert.deepEqual(await readdir(tempRoot), []);
+  } finally {
+    await cobalt.close();
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test("smoke command defaults to the best audio format and omits the bitrate", async () => {
+  const workspace = await mkdtemp(path.join(tmpdir(), "orbis-cobalt-test-"));
+  const tempRoot = path.join(workspace, "temporary");
+  const report = path.join(workspace, "report.json");
+  await mkdir(tempRoot);
+  const ffprobe = await writeFakeFfprobe(workspace);
+  const cobalt = await startFakeCobalt();
+
+  try {
+    const result = await runSmoke(smokeArgs(cobalt.endpoint, report, ffprobe), {
+      COBALT_TEST_API_KEY: apiKey,
+      TMPDIR: tempRoot,
+    });
+    assert.equal(result.code, 0, `${result.stdout}\n${result.stderr}`);
+    const evidence = JSON.parse(await readFile(report, "utf-8"));
+    assert.equal(evidence.deployment.requestedAudioFormat, "best");
+    assert.equal(evidence.deployment.requestedAudioBitrate, "cobalt_default");
+    for (const request of cobalt.requests.filter((entry) => entry.payload)) {
+      assert.equal(request.payload.audioFormat, "best");
+      assert.equal(
+        Object.hasOwn(request.payload, "audioBitrate"),
+        false,
+        "the default request must not pin a bitrate Cobalt did not ask for"
+      );
+    }
+  } finally {
+    await cobalt.close();
+    await rm(workspace, { force: true, recursive: true });
+  }
+});
+
+test("smoke command rejects an unknown audio format", async () => {
+  const result = await runSmoke(
+    [
+      "--endpoint",
+      "http://127.0.0.1:1/",
+      "--api-key-env",
+      "COBALT_TEST_API_KEY",
+      "--invalid-url",
+      "https://example.invalid/not-supported",
+      "--sample",
+      "youtube|https://youtu.be/test-video|1",
+      "--report",
+      "-",
+      "--audio-format",
+      "flac",
+    ],
+    { COBALT_TEST_API_KEY: apiKey }
+  );
+  assert.equal(result.code, 2);
+  assert.match(result.stderr, /--audio-format must be one of/u);
 });
 
 test("smoke command rejects media that cannot be decoded completely", async () => {
