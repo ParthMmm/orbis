@@ -559,9 +559,11 @@ export class Library extends Context.Service<
               if (!current) {
                 throw setNotFound();
               }
+              // The app reports a 409 as a duplicate library entry, so a finished
+              // download that cannot be canceled answers 400 with its own sentence.
               throw new LibraryError({
                 message: "This set is already downloaded.",
-                statusCode: 409,
+                statusCode: 400,
               });
             })
         );

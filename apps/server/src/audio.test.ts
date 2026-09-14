@@ -391,7 +391,7 @@ test("deleting a ready download is a conflict", async () => {
       method: "DELETE",
       url: `/sets/${id}/audio/download`,
     });
-    expect(kept.statusCode).toBe(409);
+    expect(kept.statusCode).toBe(400);
   } finally {
     await cleanup();
     await rm(fixture, { force: true });
