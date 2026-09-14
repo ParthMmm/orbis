@@ -1,14 +1,15 @@
-import { Database } from "bun:sqlite";
-
 import type {
+  LibraryFilters,
+  Playlist,
   SavedSet,
   SaveSetInput,
   SetSource,
-  LibraryFilters,
-  Playlist,
 } from "@orbis/contracts";
+import { and, asc, desc, eq, notInArray, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
+import { Database } from "./db/database.js";
+import { playlistSets, playlists, sets } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import {
   MAX_PLAYLISTS_PER_SET,
@@ -17,79 +18,33 @@ import {
 import type { EnrichedMetadata } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
 
-type SetRow = Omit<SavedSet, "tags" | "titleEditedByUser" | "playlistIds"> & {
-  tags: string;
-  titleEditedByUser: number;
-  playlistIds: string;
-};
+type SetRow = typeof sets.$inferSelect;
 
-const SET_COLUMNS = `id, url, title, source, tags, created_at AS createdAt, creator,
-  artwork_url AS artworkUrl, duration_seconds AS durationSeconds,
-  metadata_state AS metadataState, title_edited_by_user AS titleEditedByUser,
-  download_state AS downloadState, retained_audio_bytes AS retainedAudioBytes,
-  retained_audio_format AS retainedAudioFormat,
-  playback_position_seconds AS playbackPositionSeconds,
-  listen_count AS listenCount, finish_count AS finishCount,
-  last_listened_at AS lastListenedAt,
-  (SELECT COALESCE(json_group_array(playlist_id ORDER BY playlist_id), '[]')
-   FROM playlist_sets WHERE playlist_sets.set_id = sets.id) AS playlistIds`;
-
-const CURRENT_SCHEMA_VERSION = 2;
-
-// Reading a library lists every Set's playlist ids with a correlated lookup on set_id, so the
-// membership table needs an index that begins with that column. The trailing playlist_id keeps
-// the lookup covering; the primary key starts with playlist_id and cannot serve this query.
-const CREATE_MEMBERSHIP_INDEX = `CREATE INDEX IF NOT EXISTS playlist_sets_by_set ON playlist_sets(set_id, playlist_id);`;
+const JsonStringArray = Schema.fromJsonString(
+  Schema.mutable(Schema.Array(Schema.String))
+);
 
 const TEMPORARY_TITLES: Record<SetSource, string> = {
   soundcloud: "SoundCloud track",
   youtube: "YouTube video",
 };
 
-const CREATE_SCHEMA = `CREATE TABLE IF NOT EXISTS sets (
- id TEXT PRIMARY KEY, url TEXT NOT NULL UNIQUE, title TEXT NOT NULL,
- source TEXT NOT NULL, tags TEXT NOT NULL, created_at TEXT NOT NULL,
- creator TEXT, artwork_url TEXT, duration_seconds INTEGER,
- metadata_state TEXT NOT NULL DEFAULT 'pending',
- title_edited_by_user INTEGER NOT NULL DEFAULT 1,
- download_state TEXT NOT NULL DEFAULT 'none',
- retained_audio_bytes INTEGER, retained_audio_format TEXT,
- playback_position_seconds INTEGER NOT NULL DEFAULT 0,
- listen_count INTEGER NOT NULL DEFAULT 0,
- finish_count INTEGER NOT NULL DEFAULT 0, last_listened_at TEXT
-);
-CREATE TABLE IF NOT EXISTS playlists (id TEXT PRIMARY KEY, name TEXT NOT NULL UNIQUE COLLATE NOCASE, created_at TEXT NOT NULL);
-CREATE TABLE IF NOT EXISTS playlist_sets (
- playlist_id TEXT NOT NULL REFERENCES playlists(id), set_id TEXT NOT NULL REFERENCES sets(id), position INTEGER NOT NULL,
- PRIMARY KEY (playlist_id, set_id), UNIQUE (playlist_id, position)
-);
-${CREATE_MEMBERSHIP_INDEX}`;
-
-const MIGRATIONS = [
-  `ALTER TABLE sets ADD COLUMN creator TEXT;
-   ALTER TABLE sets ADD COLUMN artwork_url TEXT;
-   ALTER TABLE sets ADD COLUMN duration_seconds INTEGER;
-   ALTER TABLE sets ADD COLUMN metadata_state TEXT NOT NULL DEFAULT 'pending';
-   -- A title was required before this column existed, so every row that predates it holds a
-   -- title a person typed. The default backfills them as edited, which keeps a metadata retry
-   -- from replacing a title someone chose. New rows always state the value themselves.
-   ALTER TABLE sets ADD COLUMN title_edited_by_user INTEGER NOT NULL DEFAULT 1;
-   ALTER TABLE sets ADD COLUMN download_state TEXT NOT NULL DEFAULT 'none';
-   ALTER TABLE sets ADD COLUMN retained_audio_bytes INTEGER;
-   ALTER TABLE sets ADD COLUMN retained_audio_format TEXT;
-   ALTER TABLE sets ADD COLUMN playback_position_seconds INTEGER NOT NULL DEFAULT 0;
-   ALTER TABLE sets ADD COLUMN listen_count INTEGER NOT NULL DEFAULT 0;
-   ALTER TABLE sets ADD COLUMN finish_count INTEGER NOT NULL DEFAULT 0;
-   ALTER TABLE sets ADD COLUMN last_listened_at TEXT;`,
-  // Databases already at version 1 hold data, so the index is added by a separate migration
-  // rather than by editing the statements above.
-  CREATE_MEMBERSHIP_INDEX,
-];
-
 const setNotFound = () =>
   new LibraryError({
     message: "Set not found.",
     statusCode: 404,
+  });
+
+const playlistNotFound = () =>
+  new LibraryError({
+    message: "Playlist not found.",
+    statusCode: 404,
+  });
+
+const databaseError = () =>
+  new LibraryError({
+    message: "Could not complete the library request.",
+    statusCode: 500,
   });
 
 const playlistCapacityError = () =>
@@ -104,60 +59,24 @@ const setCapacityError = () =>
     statusCode: 400,
   });
 
-const ensureSchema = (db: Database) => {
-  db.exec("PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;");
-  const existing = db
-    .query(
-      "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'sets'"
-    )
-    .get();
-  if (!existing) {
-    db.exec(CREATE_SCHEMA);
-    db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
-    return;
-  }
-  // SAFETY: SQLite returns one row with an integer user_version column on every build,
-  // and bun:sqlite types the result of an unlisted pragma as unknown.
-  const { user_version: version } = db.query("PRAGMA user_version").get() as {
-    user_version: number;
-  };
-  for (let step = version + 1; step <= CURRENT_SCHEMA_VERSION; step += 1) {
-    const statements = MIGRATIONS[step - 1];
-    if (statements) {
-      db.exec(statements);
-    }
-  }
-  if (version < CURRENT_SCHEMA_VERSION) {
-    db.exec(`PRAGMA user_version = ${CURRENT_SCHEMA_VERSION}`);
-  }
-};
+const toLibraryError = <E>(error: E) =>
+  error instanceof LibraryError ? error : databaseError();
+
+const execute = <A, E>(operation: Effect.Effect<A, E>) =>
+  operation.pipe(Effect.mapError(toLibraryError));
+
+const decodeJsonArray = (value: string) =>
+  Schema.decodeUnknownEffect(JsonStringArray)(value);
+
+const normalizeUrl = (value: string) =>
+  Effect.try({
+    catch: toLibraryError,
+    try: () => normalizeSourceUrl(value),
+  });
+
 const normalizeTags = (tags: readonly string[]) => [
   ...new Set(tags.map((tag) => tag.trim().toLowerCase()).filter(Boolean)),
 ];
-const decodeRow = (row: SetRow): SavedSet => ({
-  ...row,
-  playlistIds: Schema.decodeUnknownSync(
-    Schema.mutable(Schema.Array(Schema.String))
-  )(JSON.parse(row.playlistIds)),
-  tags: Schema.decodeUnknownSync(Schema.mutable(Schema.Array(Schema.String)))(
-    JSON.parse(row.tags)
-  ),
-  titleEditedByUser: row.titleEditedByUser === 1,
-});
-
-const execute = <A>(operation: () => A) =>
-  Effect.try({
-    catch: (error) => {
-      if (error instanceof LibraryError) {
-        return error;
-      }
-      return new LibraryError({
-        message: "Could not complete the library request.",
-        statusCode: 500,
-      });
-    },
-    try: operation,
-  });
 
 export class Library extends Context.Service<
   Library,
@@ -200,422 +119,518 @@ export class Library extends Context.Service<
     ) => Effect.Effect<SavedSet, LibraryError>;
   }
 >()("@orbis/Library") {
-  static layer(databasePath: string) {
-    return Layer.effect(
-      Library,
-      Effect.gen(function* acquireLibrary() {
-        const db = yield* Effect.acquireRelease(
-          Effect.sync(() => new Database(databasePath, { create: true })),
-          (database) => Effect.sync(() => database.close())
-        );
-        yield* Effect.sync(() => ensureSchema(db));
-        const requirePlaylist = (id: string) => {
-          if (!db.query("SELECT id FROM playlists WHERE id = ?").get(id)) {
-            throw new LibraryError({
-              message: "Playlist not found.",
-              statusCode: 404,
-            });
+  static readonly layer = Layer.effect(
+    Library,
+    Effect.gen(function* layer() {
+      const db = yield* Database;
+
+      const playlistIdsFor = (setId: string) =>
+        db
+          .select({ playlistId: playlistSets.playlistId })
+          .from(playlistSets)
+          .where(eq(playlistSets.setId, setId))
+          .orderBy(asc(playlistSets.playlistId))
+          .pipe(Effect.map((rows) => rows.map((row) => row.playlistId)));
+
+      const hydrateSet = Effect.fn("Library.hydrateSet")(
+        (
+          row: SetRow,
+          playlistIds: Effect.Effect<string[], unknown> = playlistIdsFor(row.id)
+        ) =>
+          Effect.gen(function* hydrateSetEffect() {
+            const tags = yield* decodeJsonArray(row.tags);
+            return {
+              ...row,
+              playlistIds: yield* playlistIds,
+              tags,
+            };
+          })
+      );
+
+      const findRow = (id: string) =>
+        db.select().from(sets).where(eq(sets.id, id)).limit(1);
+
+      const findSavedSet = (id: string) =>
+        Effect.gen(function* findSavedSetEffect() {
+          const [row] = yield* findRow(id);
+          if (!row) {
+            return yield* Effect.fail(setNotFound());
           }
-        };
-        const memberSetIds = (playlistId: string) =>
-          new Set(
-            db
-              .query<{ set_id: string }, [string]>(
-                "SELECT set_id FROM playlist_sets WHERE playlist_id = ?"
-              )
-              .all(playlistId)
-              .map((row) => row.set_id)
-          );
-        const memberPlaylistIds = (setId: string) =>
-          new Set(
-            db
-              .query<{ playlist_id: string }, [string]>(
-                "SELECT playlist_id FROM playlist_sets WHERE set_id = ?"
-              )
-              .all(setId)
-              .map((row) => row.playlist_id)
-          );
-        const playlistMemberCount = (playlistId: string) =>
-          db
-            .query<{ count: number }, [string]>(
-              "SELECT COUNT(*) AS count FROM playlist_sets WHERE playlist_id = ?"
-            )
-            .get(playlistId)?.count ?? 0;
-        const setMembershipCount = (setId: string) =>
-          db
-            .query<{ count: number }, [string]>(
-              "SELECT COUNT(*) AS count FROM playlist_sets WHERE set_id = ?"
-            )
-            .get(setId)?.count ?? 0;
-        const save = Effect.fn("Library.save")((input: SaveSetInput) =>
-          execute(() => {
+          return yield* hydrateSet(row);
+        });
+
+      const save = Effect.fn("Library.save")((input: SaveSetInput) =>
+        execute(
+          Effect.gen(function* saveSetEffect() {
             const id = crypto.randomUUID();
-            const { source, url } = normalizeSourceUrl(input.url);
+            const { source, url } = yield* normalizeUrl(input.url);
             const title = input.title?.trim() ?? "";
             const tags = normalizeTags(input.tags);
-            const createdAt = new Date().toISOString();
-            const result = db
-              .prepare(
-                "INSERT INTO sets (id, url, title, source, tags, created_at, title_edited_by_user) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(url) DO NOTHING"
-              )
-              .run(
+            const [row] = yield* db
+              .insert(sets)
+              .values({
+                createdAt: new Date().toISOString(),
                 id,
-                url,
-                title || TEMPORARY_TITLES[source],
                 source,
-                JSON.stringify(tags),
-                createdAt,
-                title ? 1 : 0
+                tags: JSON.stringify(tags),
+                title: title || TEMPORARY_TITLES[source],
+                titleEditedByUser: Boolean(title),
+                url,
+              })
+              .onConflictDoNothing()
+              .returning();
+            if (!row) {
+              return yield* Effect.fail(
+                new LibraryError({
+                  message: "This set is already in your library.",
+                  statusCode: 409,
+                })
               );
-            if (!result.changes) {
-              throw new LibraryError({
-                message: "This set is already in your library.",
-                statusCode: 409,
-              });
             }
-            const row = db
-              .query<SetRow, [string]>(
-                `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
-              )
-              .get(id);
-            // SAFETY: the insert above reported a change, so this row exists, and
-            // SET_COLUMNS selects exactly the columns SetRow declares.
-            return decodeRow(row as SetRow);
+            return yield* hydrateSet(row);
           })
-        );
-        const list = Effect.fn("Library.list")((filters: LibraryFilters) =>
-          execute(() => {
-            if (filters.playlistId) {
-              requirePlaylist(filters.playlistId);
-            }
-            const clauses: string[] = [];
-            const values: string[] = [];
-            if (filters.playlistId) {
-              clauses.push("playlist_sets.playlist_id = ?");
-              values.push(filters.playlistId);
-            }
+        )
+      );
+
+      const list = Effect.fn("Library.list")((filters: LibraryFilters) =>
+        execute(
+          Effect.gen(function* listSetsEffect() {
+            const conditions = [];
             if (filters.q?.trim()) {
-              clauses.push(
-                "(instr(lower(title), lower(?)) > 0 OR instr(lower(url), lower(?)) > 0 OR instr(lower(coalesce(creator, '')), lower(?)) > 0)"
-              );
               const query = filters.q.trim();
-              values.push(query, query, query);
+              conditions.push(
+                sql`(
+                  instr(lower(${sets.title}), lower(${query})) > 0
+                  OR instr(lower(${sets.url}), lower(${query})) > 0
+                  OR instr(lower(coalesce(${sets.creator}, '')), lower(${query})) > 0
+                )`
+              );
             }
             if (filters.source) {
-              clauses.push("source = ?");
-              values.push(filters.source);
+              conditions.push(eq(sets.source, filters.source));
             }
             for (const tag of filters.tags ?? []) {
-              clauses.push(
-                "EXISTS (SELECT 1 FROM json_each(sets.tags) WHERE value = ?)"
+              conditions.push(
+                sql`EXISTS (
+                  SELECT 1 FROM json_each(${sets.tags})
+                  WHERE value = ${tag.trim().toLowerCase()}
+                )`
               );
-              values.push(tag.trim().toLowerCase());
             }
-            const where = clauses.length
-              ? ` WHERE ${clauses.join(" AND ")}`
-              : "";
-            const join = filters.playlistId
-              ? " JOIN playlist_sets ON playlist_sets.set_id = sets.id"
-              : "";
-            const order = filters.playlistId
-              ? "playlist_sets.position"
-              : "created_at DESC, sets.rowid DESC";
-            return db
-              .query<SetRow, string[]>(
-                `SELECT ${SET_COLUMNS} FROM sets${join}${where} ORDER BY ${order}`
+
+            const { playlistId } = filters;
+            const playlistIds = sql<string>`(
+              SELECT COALESCE(
+                json_group_array(${playlistSets.playlistId} ORDER BY ${playlistSets.playlistId}),
+                '[]'
               )
-              .all(...values)
-              .map(decodeRow);
-          })
-        );
-        const updateTags = Effect.fn("Library.updateTags")(
-          (id: string, tags: readonly string[]) =>
-            execute(() => {
-              const row = db
-                .query<SetRow, [string, string]>(
-                  `UPDATE sets SET tags = ? WHERE id = ? RETURNING ${SET_COLUMNS}`
-                )
-                .get(JSON.stringify(normalizeTags(tags)), id);
-              if (!row) {
-                throw setNotFound();
+              FROM ${playlistSets}
+              WHERE ${playlistSets.setId} = ${sets.id}
+            )`;
+            if (playlistId) {
+              const playlist = yield* db
+                .select({ id: playlists.id })
+                .from(playlists)
+                .where(eq(playlists.id, playlistId))
+                .limit(1);
+              if (!playlist[0]) {
+                return yield* Effect.fail(playlistNotFound());
               }
-              return decodeRow(row);
+              const rows = yield* db
+                .select({ playlistIds, set: sets })
+                .from(sets)
+                .innerJoin(playlistSets, eq(playlistSets.setId, sets.id))
+                .where(
+                  and(...conditions, eq(playlistSets.playlistId, playlistId))
+                )
+                .orderBy(asc(playlistSets.position));
+              return yield* Effect.forEach((row: (typeof rows)[number]) =>
+                hydrateSet(row.set, decodeJsonArray(row.playlistIds))
+              )(rows);
+            }
+
+            const rows = yield* db
+              .select({ playlistIds, set: sets })
+              .from(sets)
+              .where(and(...conditions))
+              .orderBy(desc(sets.createdAt), desc(sql`rowid`));
+            return yield* Effect.forEach((row: (typeof rows)[number]) =>
+              hydrateSet(row.set, decodeJsonArray(row.playlistIds))
+            )(rows);
+          })
+        )
+      );
+
+      const updateTags = Effect.fn("Library.updateTags")(
+        (id: string, tags: readonly string[]) =>
+          execute(
+            Effect.gen(function* updateTagsEffect() {
+              const rows = yield* db
+                .update(sets)
+                .set({ tags: JSON.stringify(normalizeTags(tags)) })
+                .where(eq(sets.id, id))
+                .returning();
+              const [row] = rows;
+              if (!row) {
+                return yield* Effect.fail(setNotFound());
+              }
+              return yield* hydrateSet(row);
             })
-        );
-        const updateTitle = Effect.fn("Library.updateTitle")(
-          (id: string, title: string) =>
-            execute(() => {
+          )
+      );
+
+      const updateTitle = Effect.fn("Library.updateTitle")(
+        (id: string, title: string) =>
+          execute(
+            Effect.gen(function* updateTitleEffect() {
               const trimmedTitle = title.trim();
               if (!trimmedTitle) {
-                throw new LibraryError({
-                  message: "Enter a title for this set.",
-                  statusCode: 400,
-                });
-              }
-              const row = db
-                .query<SetRow, [string, string]>(
-                  `UPDATE sets SET title = ?, title_edited_by_user = 1 WHERE id = ? RETURNING ${SET_COLUMNS}`
-                )
-                .get(trimmedTitle, id);
-              if (!row) {
-                throw setNotFound();
-              }
-              return decodeRow(row);
-            })
-        );
-        const find = Effect.fn("Library.find")((id: string) =>
-          execute(() => {
-            const row = db
-              .query<SetRow, [string]>(
-                `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
-              )
-              .get(id);
-            if (!row) {
-              throw setNotFound();
-            }
-            return decodeRow(row);
-          })
-        );
-        const recordEnrichment = Effect.fn("Library.recordEnrichment")(
-          (id: string, metadata: EnrichedMetadata) =>
-            execute(() => {
-              const row = db
-                .query<
-                  SetRow,
-                  [string | null, string | null, number | null, string, string]
-                >(
-                  `UPDATE sets
-                   SET creator = ?, artwork_url = ?, duration_seconds = ?, metadata_state = 'enriched',
-                     title = CASE WHEN title_edited_by_user = 1 THEN title ELSE ? END
-                   WHERE id = ? RETURNING ${SET_COLUMNS}`
-                )
-                .get(
-                  metadata.creator,
-                  metadata.artworkUrl,
-                  metadata.durationSeconds,
-                  metadata.title,
-                  id
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: "Enter a title for this set.",
+                    statusCode: 400,
+                  })
                 );
-              if (!row) {
-                throw setNotFound();
               }
-              return decodeRow(row);
+              const rows = yield* db
+                .update(sets)
+                .set({ title: trimmedTitle, titleEditedByUser: true })
+                .where(eq(sets.id, id))
+                .returning();
+              const [row] = rows;
+              if (!row) {
+                return yield* Effect.fail(setNotFound());
+              }
+              return yield* hydrateSet(row);
             })
-        );
-        const recordEnrichmentFailure = Effect.fn(
-          "Library.recordEnrichmentFailure"
-        )((id: string) =>
-          execute(() => {
-            const row = db
-              .query<SetRow, [string]>(
-                `UPDATE sets SET metadata_state = 'failed' WHERE id = ? RETURNING ${SET_COLUMNS}`
-              )
-              .get(id);
-            if (!row) {
-              throw setNotFound();
-            }
-            return decodeRow(row);
-          })
-        );
-        const remove = Effect.fn("Library.remove")((id: string) =>
-          execute(() =>
-            db.transaction(() => {
-              const row = db
-                .query<SetRow, [string]>(
-                  `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
-                )
-                .get(id);
+          )
+      );
+
+      const find = Effect.fn("Library.find")((id: string) =>
+        execute(findSavedSet(id))
+      );
+
+      const recordEnrichment = Effect.fn("Library.recordEnrichment")(
+        (id: string, metadata: EnrichedMetadata) =>
+          execute(
+            Effect.gen(function* recordEnrichmentEffect() {
+              const rows = yield* db
+                .update(sets)
+                .set({
+                  artworkUrl: metadata.artworkUrl,
+                  creator: metadata.creator,
+                  durationSeconds: metadata.durationSeconds,
+                  metadataState: "enriched",
+                  title: sql<string>`CASE
+                  WHEN ${sets.titleEditedByUser} = 1 THEN ${sets.title}
+                  ELSE ${metadata.title}
+                END`,
+                })
+                .where(eq(sets.id, id))
+                .returning();
+              const [row] = rows;
               if (!row) {
-                throw setNotFound();
+                return yield* Effect.fail(setNotFound());
               }
-              db.query("DELETE FROM playlist_sets WHERE set_id = ?").run(id);
-              db.query("DELETE FROM sets WHERE id = ?").run(id);
-              return decodeRow(row);
-            })()
+              return yield* hydrateSet(row);
+            })
           )
-        );
-        const tags = Effect.fn("Library.tags")(() =>
-          execute(() =>
-            db
-              .query<{ tag: string }, []>(
-                "SELECT DISTINCT value AS tag FROM sets, json_each(sets.tags) ORDER BY tag"
-              )
-              .all()
-              .map((row) => row.tag)
-          )
-        );
-        const playlists = Effect.fn("Library.playlists")(() =>
-          execute(() =>
-            db
-              .query<Playlist, []>(
-                `SELECT id, name, created_at AS createdAt,
-                 (SELECT COUNT(*) FROM playlist_sets WHERE playlist_id = playlists.id) AS setCount
-                 FROM playlists ORDER BY name COLLATE NOCASE`
-              )
-              .all()
-          )
-        );
-        const createPlaylist = Effect.fn("Library.createPlaylist")(
-          (name: string) =>
-            execute(() => {
-              if (!name.trim()) {
-                throw new LibraryError({
-                  message: "Enter a playlist name.",
-                  statusCode: 400,
-                });
+      );
+
+      const recordEnrichmentFailure = Effect.fn(
+        "Library.recordEnrichmentFailure"
+      )((id: string) =>
+        execute(
+          Effect.gen(function* recordEnrichmentFailureEffect() {
+            const rows = yield* db
+              .update(sets)
+              .set({ metadataState: "failed" })
+              .where(eq(sets.id, id))
+              .returning();
+            const [row] = rows;
+            if (!row) {
+              return yield* Effect.fail(setNotFound());
+            }
+            return yield* hydrateSet(row);
+          })
+        )
+      );
+
+      const remove = Effect.fn("Library.remove")((id: string) =>
+        execute(
+          Effect.gen(function* removeEffect() {
+            const saved = yield* findSavedSet(id);
+            yield* db.transaction((tx) =>
+              Effect.gen(function* removeTransaction() {
+                yield* tx
+                  .delete(playlistSets)
+                  .where(eq(playlistSets.setId, id));
+                yield* tx.delete(sets).where(eq(sets.id, id));
+              })
+            );
+            return saved;
+          })
+        )
+      );
+
+      const tags = Effect.fn("Library.tags")(() =>
+        execute(
+          db
+            .all<{ readonly tag: string }>(
+              sql`SELECT DISTINCT value AS tag
+                FROM ${sets}, json_each(${sets.tags})
+                ORDER BY tag`
+            )
+            .pipe(Effect.map((rows) => rows.map((row) => row.tag)))
+        )
+      );
+
+      const playlistsList = Effect.fn("Library.playlists")(() =>
+        execute(
+          db
+            .select({
+              createdAt: playlists.createdAt,
+              id: playlists.id,
+              name: playlists.name,
+              setCount: sql<number>`(
+                SELECT COUNT(*)
+                FROM ${playlistSets}
+                WHERE ${playlistSets.playlistId} = ${playlists.id}
+              )`,
+            })
+            .from(playlists)
+            .orderBy(asc(sql`${playlists.name} COLLATE NOCASE`))
+        )
+      );
+
+      const createPlaylist = Effect.fn("Library.createPlaylist")(
+        (name: string) =>
+          execute(
+            Effect.gen(function* createPlaylistEffect() {
+              const trimmedName = name.trim();
+              if (!trimmedName) {
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: "Enter a playlist name.",
+                    statusCode: 400,
+                  })
+                );
               }
-              const playlist: Playlist = {
+              const playlist = {
                 createdAt: new Date().toISOString(),
                 id: crypto.randomUUID(),
-                name: name.trim(),
+                name: trimmedName,
                 setCount: 0,
-              };
-              const result = db
-                .query(
-                  "INSERT INTO playlists VALUES (?, ?, ?) ON CONFLICT(name) DO NOTHING"
-                )
-                .run(playlist.id, playlist.name, playlist.createdAt);
-              if (!result.changes) {
-                throw new LibraryError({
-                  message: "A playlist with this name already exists.",
-                  statusCode: 409,
-                });
+              } satisfies Playlist;
+              const inserted = yield* db
+                .insert(playlists)
+                .values({
+                  createdAt: playlist.createdAt,
+                  id: playlist.id,
+                  name: playlist.name,
+                })
+                .onConflictDoNothing()
+                .returning();
+              if (!inserted[0]) {
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: "A playlist with this name already exists.",
+                    statusCode: 409,
+                  })
+                );
               }
               return playlist;
             })
-        );
-        const setPlaylistMembers = Effect.fn("Library.setPlaylistMembers")(
-          function* setPlaylistMembers(id: string, setIds: readonly string[]) {
-            yield* execute(() =>
-              db.transaction(() => {
-                requirePlaylist(id);
-                if (new Set(setIds).size !== setIds.length) {
-                  throw new LibraryError({
-                    message: "A set can only appear once in a playlist.",
-                    statusCode: 400,
-                  });
+          )
+      );
+
+      const setPlaylistMembers = Effect.fn("Library.setPlaylistMembers")(
+        (id: string, setIds: readonly string[]) =>
+          execute(
+            Effect.gen(function* setPlaylistMembersEffect() {
+              yield* db.transaction((tx) =>
+                Effect.gen(function* setPlaylistMembersTransaction() {
+                  const playlist = yield* tx
+                    .select({ id: playlists.id })
+                    .from(playlists)
+                    .where(eq(playlists.id, id))
+                    .limit(1);
+                  if (!playlist[0]) {
+                    return yield* Effect.fail(playlistNotFound());
+                  }
+                  if (new Set(setIds).size !== setIds.length) {
+                    return yield* Effect.fail(
+                      new LibraryError({
+                        message: "A set can only appear once in a playlist.",
+                        statusCode: 400,
+                      })
+                    );
+                  }
+                  if (setIds.length > MAX_SETS_PER_PLAYLIST) {
+                    return yield* Effect.fail(playlistCapacityError());
+                  }
+                  for (const setId of setIds) {
+                    const set = yield* tx
+                      .select({ id: sets.id })
+                      .from(sets)
+                      .where(eq(sets.id, setId))
+                      .limit(1);
+                    if (!set[0]) {
+                      return yield* Effect.fail(setNotFound());
+                    }
+                  }
+
+                  const currentRows = yield* tx
+                    .select({ setId: playlistSets.setId })
+                    .from(playlistSets)
+                    .where(eq(playlistSets.playlistId, id));
+                  const currentSetIds = new Set(
+                    currentRows.map((row) => row.setId)
+                  );
+                  for (const setId of setIds) {
+                    if (currentSetIds.has(setId)) {
+                      continue;
+                    }
+                    const countRows = yield* tx
+                      .select({ count: sql<number>`COUNT(*)` })
+                      .from(playlistSets)
+                      .where(eq(playlistSets.setId, setId));
+                    if (
+                      (countRows[0]?.count ?? 0) + 1 >
+                      MAX_PLAYLISTS_PER_SET
+                    ) {
+                      return yield* Effect.fail(setCapacityError());
+                    }
+                  }
+
+                  yield* tx
+                    .delete(playlistSets)
+                    .where(eq(playlistSets.playlistId, id));
+                  if (setIds.length > 0) {
+                    yield* tx.insert(playlistSets).values(
+                      setIds.map((setId, position) => ({
+                        playlistId: id,
+                        position,
+                        setId,
+                      }))
+                    );
+                  }
+                })
+              );
+              return yield* list({ playlistId: id });
+            })
+          )
+      );
+
+      const setPlaylistMemberships = Effect.fn(
+        "Library.setPlaylistMemberships"
+      )((setId: string, playlistIds: readonly string[]) =>
+        execute(
+          Effect.gen(function* setPlaylistMembershipsEffect() {
+            yield* db.transaction((tx) =>
+              Effect.gen(function* setPlaylistMembershipsTransaction() {
+                const set = yield* tx
+                  .select({ id: sets.id })
+                  .from(sets)
+                  .where(eq(sets.id, setId))
+                  .limit(1);
+                if (!set[0]) {
+                  return yield* Effect.fail(setNotFound());
                 }
-                for (const setId of setIds) {
-                  if (
-                    !db.query("SELECT id FROM sets WHERE id = ?").get(setId)
-                  ) {
-                    throw setNotFound();
+                if (new Set(playlistIds).size !== playlistIds.length) {
+                  return yield* Effect.fail(
+                    new LibraryError({
+                      message: "A set can only appear once in a playlist.",
+                      statusCode: 400,
+                    })
+                  );
+                }
+                if (playlistIds.length > MAX_PLAYLISTS_PER_SET) {
+                  return yield* Effect.fail(setCapacityError());
+                }
+                for (const playlistId of playlistIds) {
+                  const playlist = yield* tx
+                    .select({ id: playlists.id })
+                    .from(playlists)
+                    .where(eq(playlists.id, playlistId))
+                    .limit(1);
+                  if (!playlist[0]) {
+                    return yield* Effect.fail(playlistNotFound());
                   }
                 }
-                if (setIds.length > MAX_SETS_PER_PLAYLIST) {
-                  throw playlistCapacityError();
-                }
-                // A Set that already belongs here keeps its place, so only the Sets that are
-                // joining this Playlist gain a membership and count against their own limit.
-                const currentSetIds = memberSetIds(id);
-                for (const setId of setIds) {
-                  if (
-                    !currentSetIds.has(setId) &&
-                    setMembershipCount(setId) + 1 > MAX_PLAYLISTS_PER_SET
-                  ) {
-                    throw setCapacityError();
+
+                const currentRows = yield* tx
+                  .select({ playlistId: playlistSets.playlistId })
+                  .from(playlistSets)
+                  .where(eq(playlistSets.setId, setId));
+                const currentPlaylistIds = new Set(
+                  currentRows.map((row) => row.playlistId)
+                );
+                for (const playlistId of playlistIds) {
+                  if (currentPlaylistIds.has(playlistId)) {
+                    continue;
+                  }
+                  const countRows = yield* tx
+                    .select({ count: sql<number>`COUNT(*)` })
+                    .from(playlistSets)
+                    .where(eq(playlistSets.playlistId, playlistId));
+                  if ((countRows[0]?.count ?? 0) + 1 > MAX_SETS_PER_PLAYLIST) {
+                    return yield* Effect.fail(playlistCapacityError());
                   }
                 }
-                db.query("DELETE FROM playlist_sets WHERE playlist_id = ?").run(
-                  id
-                );
-                const insert = db.query(
-                  "INSERT INTO playlist_sets VALUES (?, ?, ?)"
-                );
-                for (const [position, setId] of setIds.entries()) {
-                  insert.run(id, setId, position);
+
+                yield* tx
+                  .delete(playlistSets)
+                  .where(
+                    playlistIds.length > 0
+                      ? and(
+                          eq(playlistSets.setId, setId),
+                          notInArray(playlistSets.playlistId, [...playlistIds])
+                        )
+                      : eq(playlistSets.setId, setId)
+                  );
+
+                for (const playlistId of playlistIds) {
+                  if (currentPlaylistIds.has(playlistId)) {
+                    continue;
+                  }
+                  const positionRows = yield* tx
+                    .select({
+                      position: sql<number>`COALESCE(MAX(${playlistSets.position}) + 1, 0)`,
+                    })
+                    .from(playlistSets)
+                    .where(eq(playlistSets.playlistId, playlistId));
+                  yield* tx
+                    .insert(playlistSets)
+                    .values({
+                      playlistId,
+                      position: positionRows[0]?.position ?? 0,
+                      setId,
+                    })
+                    .onConflictDoNothing();
                 }
-              })()
+              })
             );
-            return yield* list({ playlistId: id });
-          }
-        );
-        const setPlaylistMemberships = Effect.fn(
-          "Library.setPlaylistMemberships"
-        )(function* setPlaylistMemberships(
-          setId: string,
-          playlistIds: readonly string[]
-        ) {
-          return yield* execute(() =>
-            db.transaction(() => {
-              if (!db.query("SELECT id FROM sets WHERE id = ?").get(setId)) {
-                throw setNotFound();
-              }
-              if (new Set(playlistIds).size !== playlistIds.length) {
-                throw new LibraryError({
-                  message: "A set can only appear once in a playlist.",
-                  statusCode: 400,
-                });
-              }
-              for (const playlistId of playlistIds) {
-                requirePlaylist(playlistId);
-              }
-              if (playlistIds.length > MAX_PLAYLISTS_PER_SET) {
-                throw setCapacityError();
-              }
-              // Membership this Set already holds is retained rather than appended, so only the
-              // Playlists it newly joins count against the Sets each of them can hold.
-              const currentPlaylistIds = memberPlaylistIds(setId);
-              for (const playlistId of playlistIds) {
-                if (
-                  !currentPlaylistIds.has(playlistId) &&
-                  playlistMemberCount(playlistId) + 1 > MAX_SETS_PER_PLAYLIST
-                ) {
-                  throw playlistCapacityError();
-                }
-              }
-              // The caller states the membership it wants, so the playlists it left are the
-              // ones it did not name. Doing that here rather than with a read-modify-write
-              // from each client keeps two clients from overwriting each other.
-              const kept = playlistIds.map(() => "?").join(", ");
-              db.query(
-                playlistIds.length > 0
-                  ? `DELETE FROM playlist_sets WHERE set_id = ? AND playlist_id NOT IN (${kept})`
-                  : "DELETE FROM playlist_sets WHERE set_id = ?"
-              ).run(setId, ...playlistIds);
-              const insert = db.query(
-                "INSERT OR IGNORE INTO playlist_sets VALUES (?, ?, ?)"
-              );
-              const nextPosition = db.query<{ position: number }, [string]>(
-                "SELECT COALESCE(MAX(position) + 1, 0) AS position FROM playlist_sets WHERE playlist_id = ?"
-              );
-              for (const playlistId of playlistIds) {
-                const next = nextPosition.get(playlistId);
-                // SAFETY: MAX over an empty group still returns one row, and COALESCE
-                // gives it a position, so the cast cannot be undefined.
-                insert.run(
-                  playlistId,
-                  setId,
-                  (next as { position: number }).position
-                );
-              }
-              const row = db
-                .query<SetRow, [string]>(
-                  `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
-                )
-                .get(setId);
-              // SAFETY: the row was found at the top of this transaction and nothing in it
-              // deletes the Set, so it is still there.
-              return decodeRow(row as SetRow);
-            })()
-          );
-        });
-        return {
-          createPlaylist,
-          find,
-          list,
-          playlists,
-          recordEnrichment,
-          recordEnrichmentFailure,
-          remove,
-          save,
-          setPlaylistMembers,
-          setPlaylistMemberships,
-          tags,
-          updateTags,
-          updateTitle,
-        };
-      })
-    );
-  }
+            return yield* findSavedSet(setId);
+          })
+        )
+      );
+
+      return {
+        createPlaylist,
+        find,
+        list,
+        playlists: playlistsList,
+        recordEnrichment,
+        recordEnrichmentFailure,
+        remove,
+        save,
+        setPlaylistMembers,
+        setPlaylistMemberships,
+        tags,
+        updateTags,
+        updateTitle,
+      };
+    })
+  );
 }

@@ -8,6 +8,7 @@ import {
   HttpServerResponse,
 } from "effect/unstable/http";
 
+import { layer as databaseLayer } from "./db/database.js";
 import { LibraryError } from "./errors.js";
 import type { AccessMode } from "./identity.js";
 import { decideAccess, readDeviceRegistry } from "./identity.js";
@@ -98,6 +99,10 @@ export const createApp = (
     (databasePath === ":memory:"
       ? undefined
       : path.join(path.dirname(databasePath), "devices.json"));
+  const database = databaseLayer({
+    databasePath,
+    migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
+  });
   const routes = HttpRouter.use((router) =>
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
@@ -290,7 +295,7 @@ export const createApp = (
   );
   const app = HttpRouter.toWebHandler(
     routes.pipe(
-      Layer.provide(Library.layer(databasePath)),
+      Layer.provide(Library.layer.pipe(Layer.provide(database))),
       Layer.provide(options.metadata ?? Metadata.unconfigured())
     ),
     {
