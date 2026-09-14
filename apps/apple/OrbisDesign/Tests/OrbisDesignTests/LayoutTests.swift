@@ -1,43 +1,136 @@
+import CoreGraphics
+import Foundation
 import SwiftUI
 import Testing
 
 @testable import OrbisDesign
 
-/// The largest text size and a right-to-left layout are where a component that clips or refuses
+/// The largest text sizes and a right-to-left layout are where a component that clips or refuses
 /// to wrap gives itself away. These render the real views at those settings and measure them,
 /// because a decision function can be right while the layout is still wrong.
 @Suite struct LayoutTests {
-  @Test func `a row stacks at accessibility sizes and on a phone`() {
+  /// Every size the previews carry, at both widths they are drawn at, in each direction.
+  private let sizes = AccessibilityPreview.textSizes
+  private let widths = [AccessibilityPreview.macWidth, AccessibilityPreview.phoneWidth]
+  private let directions: [LayoutDirection] = [.leftToRight, .rightToLeft]
+
+  @Test func `a row stacks at the largest sizes and on a phone`() {
     #expect(!SetRow.stacks(sizeClass: .regular, dynamicTypeSize: .large))
+    #expect(!SetRow.stacks(sizeClass: .regular, dynamicTypeSize: .xLarge))
+    #expect(!SetRow.stacks(sizeClass: .regular, dynamicTypeSize: .xxLarge))
     #expect(SetRow.stacks(sizeClass: .compact, dynamicTypeSize: .large))
-    #expect(SetRow.stacks(sizeClass: .regular, dynamicTypeSize: .accessibility3))
-    #expect(SetRow.stacks(sizeClass: .regular, dynamicTypeSize: .accessibility5))
+    for size in sizes {
+      #expect(
+        SetRow.stacks(sizeClass: .regular, dynamicTypeSize: size),
+        "a row at \(size) still tries to hold one line")
+    }
   }
 
   /// `ImageRenderer` measures the layout without applying Dynamic Type to the glyphs, so these
   /// render the real views and measure structure: whether content wraps, and whether it stays
-  /// inside the width it was given. Content that overflows is the failure mode this catches.
-  @Test func `a row fits the width it is given at the largest text, in either direction`() {
-    for direction in [LayoutDirection.leftToRight, .rightToLeft] {
-      let size = measured(row, width: 358, textSize: .accessibility5, direction: direction)
-      #expect(size.width <= 358, "the row overflowed towards \(direction)")
-      #expect(size.height > 0)
+  /// inside the width it was given. A view that refuses to compress reports more width than it
+  /// was offered, and a view that wraps reports more height, which is what makes these worth
+  /// running without the glyphs growing with them.
+  @Test func `a row keeps the width it was given at the largest sizes, in either direction`() {
+    for size in sizes {
+      for direction in directions {
+        for width in widths {
+          let row = measured(row, width: width, textSize: size, direction: direction)
+          #expect(row.width <= width, "the row overflowed \(width) at \(size) towards \(direction)")
+          #expect(row.height > 0)
+        }
+      }
     }
   }
 
-  @Test func `chips reflow onto more lines when the width runs out`() {
-    let wide = measured(chips, width: 700, textSize: .large)
-    let narrow = measured(chips, width: 180, textSize: .large)
-    #expect(narrow.width <= 180)
-    #expect(narrow.height > wide.height, "the chips stayed on one line")
+  @Test func `a row that cannot hold one line makes room instead of squeezing its title`() {
+    let oneLine = measured(row, width: AccessibilityPreview.macWidth, textSize: .large)
+    for size in sizes {
+      let row = measured(row, width: AccessibilityPreview.macWidth, textSize: size)
+      #expect(
+        row.height > oneLine.height,
+        "the row at \(size) is still the one-line arrangement, so its chips sit beside the title")
+    }
   }
 
-  @Test func `the paste hero fits a phone at the largest text in either direction`() {
-    for direction in [LayoutDirection.leftToRight, .rightToLeft] {
-      let hero = measured(pasteHero, width: 358, textSize: .accessibility5, direction: direction)
-      #expect(hero.width <= 358, "the hero overflowed towards \(direction)")
-      #expect(hero.height > 0)
+  @Test func `chips reflow onto more lines when the width runs out, in either direction`() {
+    for size in sizes {
+      for direction in directions {
+        let wide = measured(
+          chips, width: AccessibilityPreview.macWidth, textSize: size,
+          direction: direction)
+        let narrow = measured(chips, width: 180, textSize: size, direction: direction)
+        #expect(narrow.width <= 180)
+        #expect(narrow.height > wide.height, "the chips stayed on one line at \(size)")
+      }
     }
+  }
+
+  /// A Tag can be forty characters, the most the service keeps, which is wider than a phone at
+  /// the largest text sizes. A chip that wide has to wrap inside the width it was given; running
+  /// past the edge is the clipping this whole exercise is about.
+  @Test func `a chip too wide for its row wraps inside it`() {
+    let long = String(repeating: "hardgroove", count: 4)
+    let oneRow = measured(
+      longChip(long), width: AccessibilityPreview.macWidth,
+      textSize: .accessibility5)
+    for direction in directions {
+      let wrapped = measured(
+        longChip(long), width: 120, textSize: .accessibility5,
+        direction: direction)
+      #expect(wrapped.width <= 120, "the chip overflowed towards \(direction)")
+      #expect(wrapped.height > oneRow.height, "the chip ran off the edge instead of wrapping")
+    }
+  }
+
+  @Test func `the paste hero fits a phone at the largest sizes, in either direction`() {
+    for size in sizes {
+      for direction in directions {
+        let hero = measured(
+          pasteHero, width: AccessibilityPreview.phoneWidth, textSize: size,
+          direction: direction)
+        #expect(
+          hero.width <= AccessibilityPreview.phoneWidth,
+          "the hero overflowed at \(size) towards \(direction)")
+        #expect(hero.height > 0)
+      }
+    }
+  }
+
+  /// The first chip of a flow draws at the far edge the direction reads from; in a right-to-left
+  /// layout that is the right one. A physical offset would hold it on the left in both.
+  @Test func `the chip flow starts at the leading edge in either direction`() {
+    let canvas = CGSize(width: 200, height: 40)
+    let edges = [CGPoint(x: 6, y: 10), CGPoint(x: 194, y: 10)]
+    let leftToRight = edges.map {
+      sample(mirroredChips, at: $0, in: canvas, direction: .leftToRight)
+    }
+    let rightToLeft = edges.map {
+      sample(mirroredChips, at: $0, in: canvas, direction: .rightToLeft)
+    }
+
+    #expect(isRed(leftToRight[0]), "the first chip does not start on the left")
+    #expect(!isRed(leftToRight[1]), "the chips did not stay on the leading side")
+    #expect(isRed(rightToLeft[1]), "the first chip does not start on the right")
+    #expect(!isRed(rightToLeft[0]), "the chips did not stay on the leading side")
+  }
+
+  /// A leading or trailing edge belongs to the system to flip, never to a number in the source,
+  /// which is the one way a row can mirror wrongly and still measure the same. This reads the
+  /// package's own sources, so a physical offset cannot come back unnoticed.
+  @Test func `no component places anything with a physical offset`() {
+    let physical = [".padding(.left", ".padding(.right", "offset(x:", "offset(CGSize(width:"]
+    let sources = packageSources()
+    #expect(!sources.isEmpty, "the package sources were not found to read")
+    var offenders: [String] = []
+    for (file, source) in sources {
+      for (number, line) in source.split(separator: "\n").enumerated() {
+        for pattern in physical where line.contains(pattern) {
+          offenders.append("\(file):\(number + 1) uses \(pattern)")
+        }
+      }
+    }
+    #expect(offenders.isEmpty, "\(offenders)")
   }
 
   private var row: some View {
@@ -57,6 +150,20 @@ import Testing
     }
   }
 
+  private func longChip(_ name: String) -> some View {
+    ChipFlow {
+      TagChip(name, category: .pink)
+    }
+  }
+
+  /// Two chips whose colours tell which side of the flow each one landed on.
+  private var mirroredChips: some View {
+    ChipFlow {
+      Color.red.frame(width: 40, height: 20)
+      Color.blue.frame(width: 40, height: 20)
+    }
+  }
+
   private var pasteHero: some View {
     PasteHero(link: .constant("https://youtu.be/tPEMP9oYxTo")) {}
   }
@@ -67,12 +174,64 @@ import Testing
     direction: LayoutDirection = .rightToLeft
   ) -> CGSize {
     let renderer = ImageRenderer(
-      content: view.orbisAccessibilityLayout(textSize: textSize, direction: direction)
-        .frame(width: width)
-    )
+      content: view.orbisAccessibilityLayout(textSize: textSize, direction: direction))
     renderer.proposedSize = ProposedViewSize(width: width, height: nil)
     var size = CGSize.zero
     renderer.render { reported, _ in size = reported }
     return size
+  }
+
+  private func isRed(_ sample: (red: Int, green: Int, blue: Int)) -> Bool {
+    sample.red > sample.blue
+  }
+
+  /// The colour of one pixel of a rendered view, at one pixel per point.
+  private func sample(
+    _ view: some View, at point: CGPoint, in size: CGSize, direction: LayoutDirection
+  ) -> (red: Int, green: Int, blue: Int) {
+    let renderer = ImageRenderer(
+      content: view.orbisAccessibilityLayout(
+        textSize: AccessibilityPreview.standardTextSize,
+        direction: direction
+      )
+      .frame(width: size.width, height: size.height)
+    )
+    renderer.proposedSize = ProposedViewSize(size)
+    renderer.scale = 1
+    var sampled = (red: 0, green: 0, blue: 0)
+    renderer.render { _, draw in
+      guard
+        let context = CGContext(
+          data: nil, width: Int(size.width), height: Int(size.height), bitsPerComponent: 8,
+          bytesPerRow: Int(size.width) * 4, space: CGColorSpaceCreateDeviceRGB(),
+          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+      else { return }
+      draw(context)
+      guard let data = context.data else { return }
+      let pixels = data.bindMemory(to: UInt8.self, capacity: Int(size.width * size.height) * 4)
+      let index = (Int(point.y) * Int(size.width) + Int(point.x)) * 4
+      sampled = (
+        red: Int(pixels[index]), green: Int(pixels[index + 1]), blue: Int(pixels[index + 2])
+      )
+    }
+    return sampled
+  }
+
+  /// Each source file in the package, by name, so a test can read what the components do rather
+  /// than only what they measure.
+  private func packageSources() -> [(String, String)] {
+    let root =
+      URL(fileURLWithPath: #filePath)
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .deletingLastPathComponent()
+      .appending(path: "Sources/OrbisDesign")
+    let files =
+      FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil)?
+      .compactMap { $0 as? URL }
+      .filter { $0.pathExtension == "swift" } ?? []
+    return files.compactMap { url in
+      (try? String(contentsOf: url, encoding: .utf8)).map { (url.lastPathComponent, $0) }
+    }
   }
 }

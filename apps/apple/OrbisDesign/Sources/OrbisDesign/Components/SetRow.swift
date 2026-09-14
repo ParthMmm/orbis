@@ -71,12 +71,14 @@ public struct SetRow: View {
     self.state = state
   }
 
-  /// At the largest text sizes the one-line arrangement cannot hold a title, three chips, and
-  /// a date at once, so the row stacks instead of squeezing the title to nothing.
+  /// At the largest standard text size and above, the one-line arrangement cannot hold a title,
+  /// three chips, and a date at once, so the row stacks instead of squeezing the title to nothing.
+  /// `.xxxLarge` is the last size of the standard range and the first where the title loses the
+  /// room it needs, which is why it is named rather than left to the accessibility range.
   public static func stacks(
     sizeClass: UserInterfaceSizeClass?, dynamicTypeSize: DynamicTypeSize
   ) -> Bool {
-    sizeClass == .compact || dynamicTypeSize.isAccessibilitySize
+    sizeClass == .compact || dynamicTypeSize >= .xxxLarge
   }
 
   public var body: some View {
@@ -169,10 +171,10 @@ private struct SetRowSample: View {
   SetRowSample()
 }
 
-#Preview("Set rows, largest text, RTL, Mac") {
-  SetRowSample().orbisAccessibilityLayout().frame(width: 700)
+#Preview("Set rows, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { SetRowSample() }
 }
 
-#Preview("Set rows, largest text, RTL, iPhone") {
-  SetRowSample().orbisAccessibilityLayout().frame(width: 358)
+#Preview("Set rows, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { SetRowSample() }
 }

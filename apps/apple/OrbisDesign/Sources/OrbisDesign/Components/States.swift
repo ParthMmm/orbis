@@ -258,9 +258,9 @@ public struct LoadingState: View {
     .preferredColorScheme(.dark)
 }
 
-/// Every state at the largest text size and in a right-to-left layout, which is where a state
-/// that cannot wrap shows itself.
-private struct StatesAtLargestText: View {
+/// Every state at the sizes the matrix covers, which is where a state that cannot wrap shows
+/// itself.
+private struct StatesSample: View {
   var body: some View {
     ScrollView {
       VStack(spacing: 24) {
@@ -289,10 +289,14 @@ private struct StatesAtLargestText: View {
   }
 }
 
-#Preview("States, largest text, RTL, Mac") {
-  StatesAtLargestText().orbisAccessibilityLayout().frame(width: 700, height: 900)
+#Preview("States, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) {
+    StatesSample().frame(height: 900)
+  }
 }
 
-#Preview("States, largest text, RTL, iPhone") {
-  StatesAtLargestText().orbisAccessibilityLayout().frame(width: 358, height: 900)
+#Preview("States, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) {
+    StatesSample().frame(height: 900)
+  }
 }

@@ -198,12 +198,12 @@ private struct LinkFieldStates: View {
   LinkFieldStates().frame(width: 358).preferredColorScheme(.dark)
 }
 
-#Preview("Link field, largest text, RTL, Mac") {
-  LinkFieldStates().orbisAccessibilityLayout()
+#Preview("Link field, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { LinkFieldStates() }
 }
 
-#Preview("Link field, largest text, RTL, iPhone") {
-  LinkFieldStates().frame(width: 358).orbisAccessibilityLayout()
+#Preview("Link field, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { LinkFieldStates() }
 }
 
 /// The two outcomes, to press, so the filing motion can actually be seen.

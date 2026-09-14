@@ -47,26 +47,23 @@ public struct PlaylistRow: View {
   }
 }
 
-#Preview("Playlists, largest text, RTL, Mac") {
-  List {
-    PlaylistRow("Everything", count: 8)
-    Section("Playlists") {
-      PlaylistRow("Closing sets", count: 3, category: .indigo)
-      PlaylistRow("Sunday cleaning", count: 4, category: .mint)
-    }
-  }
-  .orbisAccessibilityLayout()
-  .frame(width: 700)
+#Preview("Playlists, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { PlaylistColumn() }
 }
 
-#Preview("Playlists, largest text, RTL, iPhone") {
-  List {
-    PlaylistRow("Everything", count: 8)
-    Section("Playlists") {
-      PlaylistRow("Closing sets", count: 3, category: .indigo)
-      PlaylistRow("Sunday cleaning", count: 4, category: .mint)
+#Preview("Playlists, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { PlaylistColumn() }
+}
+
+/// The sidebar list the accessibility previews draw at each size.
+private struct PlaylistColumn: View {
+  var body: some View {
+    List {
+      PlaylistRow("Everything", count: 8)
+      Section("Playlists") {
+        PlaylistRow("Closing sets", count: 3, category: .indigo)
+        PlaylistRow("Sunday cleaning", count: 4, category: .mint)
+      }
     }
   }
-  .orbisAccessibilityLayout()
-  .frame(width: 358)
 }

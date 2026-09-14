@@ -101,21 +101,20 @@ public struct PasteHero: View {
   .background(Color.orbis.paper)
 }
 
-/// The hero at the largest text size and in a right-to-left layout, where the field has to give
-/// up its button to keep both readable.
-private struct PasteHeroAtLargestText: View {
+/// The hero at the sizes the matrix covers, where the field has to give up its button to keep
+/// both readable.
+private struct PasteHeroSample: View {
   @State private var link = "https://youtu.be/tPEMP9oYxTo"
 
   var body: some View {
     PasteHero(link: $link, state: .valid(source: "YouTube")) {}
-      .orbisAccessibilityLayout()
   }
 }
 
-#Preview("Paste hero, largest text, RTL, Mac") {
-  PasteHeroAtLargestText().frame(width: 700)
+#Preview("Paste hero, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { PasteHeroSample() }
 }
 
-#Preview("Paste hero, largest text, RTL, iPhone") {
-  PasteHeroAtLargestText().frame(width: 358)
+#Preview("Paste hero, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { PasteHeroSample() }
 }

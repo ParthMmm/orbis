@@ -86,30 +86,26 @@ public struct PlaylistPicker: View {
   .background(Color.orbis.paper)
 }
 
-#Preview("Playlist picker, largest text, RTL, Mac") {
-  @Previewable @State var chosen: String? = "1"
-  return PlaylistPicker(
-    selection: $chosen,
-    choices: [
-      .init(id: "1", name: "Long drives", category: .cyan),
-      .init(id: "2", name: "Closing sets", category: .purple),
-    ]
-  )
-  .padding()
-  .orbisAccessibilityLayout()
-  .frame(width: 700)
+/// The picker in a row, at the sizes the matrix covers.
+private struct PlaylistPickerSample: View {
+  @State private var chosen: String? = "1"
+
+  var body: some View {
+    PlaylistPicker(
+      selection: $chosen,
+      choices: [
+        .init(id: "1", name: "Long drives", category: .cyan),
+        .init(id: "2", name: "Closing sets", category: .purple),
+      ]
+    )
+    .padding()
+  }
 }
 
-#Preview("Playlist picker, largest text, RTL, iPhone") {
-  @Previewable @State var chosen: String? = "1"
-  return PlaylistPicker(
-    selection: $chosen,
-    choices: [
-      .init(id: "1", name: "Long drives", category: .cyan),
-      .init(id: "2", name: "Closing sets", category: .purple),
-    ]
-  )
-  .padding()
-  .orbisAccessibilityLayout()
-  .frame(width: 358)
+#Preview("Playlist picker, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { PlaylistPickerSample() }
+}
+
+#Preview("Playlist picker, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { PlaylistPickerSample() }
 }

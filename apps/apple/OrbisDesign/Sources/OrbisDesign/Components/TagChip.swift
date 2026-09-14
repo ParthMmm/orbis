@@ -77,9 +77,8 @@ public struct TagPill: View {
   .background(Color.orbis.paper)
 }
 
-/// Both chip shapes at the largest text size and in a right-to-left layout, where a row that
-/// will not wrap shows itself.
-private struct ChipsAndPillsAtLargestText: View {
+/// Both chip shapes at the sizes the matrix covers, where a row that will not wrap shows itself.
+private struct ChipsAndPillsSample: View {
   @State private var techno = true
   @State private var house = false
 
@@ -96,14 +95,13 @@ private struct ChipsAndPillsAtLargestText: View {
       }
     }
     .padding()
-    .orbisAccessibilityLayout()
   }
 }
 
-#Preview("Chips and pills, largest text, RTL, Mac") {
-  ChipsAndPillsAtLargestText().frame(width: 700)
+#Preview("Chips and pills, xxxLarge and accessibility5, RTL, Mac") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.macWidth) { ChipsAndPillsSample() }
 }
 
-#Preview("Chips and pills, largest text, RTL, iPhone") {
-  ChipsAndPillsAtLargestText().frame(width: 358)
+#Preview("Chips and pills, xxxLarge and accessibility5, RTL, iPhone") {
+  AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { ChipsAndPillsSample() }
 }
