@@ -1,13 +1,16 @@
 import path from "node:path";
 
 import type { SavedSet } from "@orbis/contracts";
-import { Effect, Layer, Schema } from "effect";
+import { Effect, Layer, Option, Schema } from "effect";
 import {
+  Headers,
   HttpRouter,
   HttpServerRequest,
   HttpServerResponse,
 } from "effect/unstable/http";
 
+import { Audio } from "./audio.js";
+import type { AudioFile, AudioOptions } from "./audio.js";
 import { LibraryError } from "./errors.js";
 import type { AccessMode } from "./identity.js";
 import { decideAccess, readDeviceRegistry } from "./identity.js";
@@ -66,25 +69,88 @@ const logLibraryFailure = <E>(error: E) => {
   );
 };
 
+const failureResponse = <E>(error: E) => {
+  if (error instanceof LibraryError) {
+    return HttpServerResponse.jsonUnsafe(
+      { message: error.message },
+      { status: error.statusCode }
+    );
+  }
+  return HttpServerResponse.jsonUnsafe(
+    { message: "Check your request fields and send valid JSON." },
+    { status: 400 }
+  );
+};
+
 const respond = <A, E, R>(effect: Effect.Effect<A, E, R>, status = 200) =>
   Effect.match(effect.pipe(Effect.tapError(logLibraryFailure)), {
-    onFailure: (error) => {
-      if (error instanceof LibraryError) {
-        return HttpServerResponse.jsonUnsafe(
-          { message: error.message },
-          { status: error.statusCode }
-        );
-      }
-      return HttpServerResponse.jsonUnsafe(
-        { message: "Check your request fields and send valid JSON." },
-        { status: 400 }
-      );
-    },
+    onFailure: failureResponse,
     onSuccess: (body) => HttpServerResponse.jsonUnsafe(body, { status }),
   });
 
+type AudioRange =
+  | { readonly offset: number; readonly length: number }
+  | { readonly unsatisfiable: true };
+
+// AVPlayer seeks with byte ranges on every read, so the range grammar is parsed here
+// and an unsatisfiable range is a 416, not a silent full response.
+const audioRange = (
+  header: string | null | undefined,
+  size: number
+): AudioRange | null => {
+  if (!header) {
+    return null;
+  }
+  const match = /^bytes=(?<first>[\d]*)-(?<last>[\d]*)$/u.exec(header.trim());
+  if (!match) {
+    return null;
+  }
+  const [, first, last] = match;
+  if (first === "" && last === "") {
+    return null;
+  }
+  let start = first === "" ? size - Number(last) : Number(first);
+  const end = last === "" ? size - 1 : Number(last);
+  if (!Number.isInteger(start) || !Number.isInteger(end) || end < 0) {
+    return null;
+  }
+  start = Math.max(start, 0);
+  if (start >= size) {
+    return { unsatisfiable: true };
+  }
+  return { length: Math.min(end, size - 1) - start + 1, offset: start };
+};
+
+const audioFileResponse = (file: AudioFile, range: AudioRange | null) => {
+  const headers = {
+    "accept-ranges": "bytes",
+    "content-type": file.contentType,
+  };
+  if (!range) {
+    return HttpServerResponse.raw(Bun.file(file.path), { headers });
+  }
+  if ("unsatisfiable" in range) {
+    return HttpServerResponse.empty({
+      headers: { "content-range": `bytes */${file.bytes}` },
+      status: 416,
+    });
+  }
+  return HttpServerResponse.raw(
+    Bun.file(file.path).slice(range.offset, range.offset + range.length),
+    {
+      contentLength: range.length,
+      headers: {
+        ...headers,
+        "content-range": `bytes ${range.offset}-${range.offset + range.length - 1}/${file.bytes}`,
+      },
+      status: 206,
+    }
+  );
+};
+
 export const createApp = (
   options: {
+    audio?: AudioOptions;
     databasePath?: string;
     devicesPath?: string;
     logging?: LoggingOptions;
@@ -101,6 +167,7 @@ export const createApp = (
   const routes = HttpRouter.use((router) =>
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
+      const audio = yield* Audio;
       const metadata = yield* Metadata;
       // Enrichment failure is swallowed so the save still succeeds, so it is the
       // one outcome a client cannot see. The log records which set and which reason.
@@ -117,6 +184,61 @@ export const createApp = (
           Effect.catchTag("MetadataError", onMetadataFailure)
         );
       });
+      yield* router.add(
+        "POST",
+        "/sets/:id/audio/download",
+        Effect.match(
+          Effect.gen(function* requestAudioDownload() {
+            const { params } = yield* HttpRouter.RouteContext;
+            const { accepted, set } = yield* audio.requestDownload(
+              params.id ?? ""
+            );
+            return { set, status: accepted ? 202 : 200 };
+          }).pipe(Effect.tapError(logLibraryFailure)),
+          {
+            onFailure: failureResponse,
+            onSuccess: ({ set, status }) =>
+              HttpServerResponse.jsonUnsafe(set, { status }),
+          }
+        )
+      );
+      yield* router.add(
+        "GET",
+        "/sets/:id/audio/state",
+        respond(
+          Effect.gen(function* readAudioState() {
+            const { params } = yield* HttpRouter.RouteContext;
+            return yield* audio.audioState(params.id ?? "");
+          })
+        )
+      );
+      yield* router.add(
+        "GET",
+        "/sets/:id/audio",
+        Effect.match(
+          Effect.gen(function* serveAudio() {
+            const { params } = yield* HttpRouter.RouteContext;
+            const file = yield* audio.audioFile(params.id ?? "");
+            const request = yield* HttpServerRequest.HttpServerRequest;
+            const range = audioRange(
+              Option.getOrUndefined(Headers.get(request.headers, "range")),
+              file.bytes
+            );
+            return audioFileResponse(file, range);
+          }).pipe(Effect.tapError(logLibraryFailure)),
+          { onFailure: failureResponse, onSuccess: (response) => response }
+        )
+      );
+      yield* router.add(
+        "DELETE",
+        "/sets/:id/audio/download",
+        respond(
+          Effect.gen(function* cancelAudioDownload() {
+            const { params } = yield* HttpRouter.RouteContext;
+            return yield* audio.cancelDownload(params.id ?? "");
+          })
+        )
+      );
       yield* router.add(
         "GET",
         "/health",
@@ -290,6 +412,7 @@ export const createApp = (
   );
   const app = HttpRouter.toWebHandler(
     routes.pipe(
+      Layer.provide(Audio.layer(options.audio ?? {})),
       Layer.provide(Library.layer(databasePath)),
       Layer.provide(options.metadata ?? Metadata.unconfigured())
     ),
