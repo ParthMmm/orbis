@@ -1,5 +1,13 @@
 import { spawn } from "node:child_process";
-import { chmod, mkdir, mkdtemp, open, rm, writeFile } from "node:fs/promises";
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  open,
+  rm,
+  writeFile,
+} from "node:fs/promises";
 import { hostname, tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -19,6 +27,9 @@ export const DEFAULT_PROBE_TIMEOUT_MS = 60 * 1000;
 export const DEFAULT_DURATION_TOLERANCE_SECONDS = 60;
 export const DEFAULT_INTERRUPT_AFTER_BYTES = 1024 ** 2;
 export const EXPECTED_SERVICES = ["soundcloud", "youtube"];
+export const AUDIO_FORMATS = ["best", "mp3", "ogg", "opus", "wav"];
+export const AUDIO_BITRATES = ["320", "256", "128", "96", "64", "8"];
+export const DEFAULT_AUDIO_FORMAT = "best";
 
 const INVALID_API_KEY = "00000000-0000-4000-8000-000000000001";
 const AUTH_ERROR_CODES = new Set([
@@ -52,6 +63,9 @@ function usage() {
 Options:
   --api-key-env <name>             Read the API key from an environment variable.
   --api-key-stdin                  Read the API key from stdin without echoing it.
+  --audio-format <name>            Cobalt audioFormat: ${AUDIO_FORMATS.join(" / ")} (default: ${DEFAULT_AUDIO_FORMAT}).
+  --audio-bitrate <kbps>           Cobalt audioBitrate: ${AUDIO_BITRATES.join(" / ")} (default: Cobalt's own default).
+  --keep-output <dir>              Copy each accepted file to <dir> before deletion, for Apple-sided review.
   --sample <source|url|seconds>    Repeat for approved sample fixtures.
   --invalid-url <url>              Public unsupported URL used for the error check.
   --report <path>                  Sanitized JSON evidence path, or - for stdout.
@@ -122,6 +136,8 @@ export function parseArgs(argv) {
   const options = {
     apiKeyEnv: undefined,
     apiKeyStdin: false,
+    audioBitrate: undefined,
+    audioFormat: DEFAULT_AUDIO_FORMAT,
     downloadTimeoutMs: DEFAULT_DOWNLOAD_TIMEOUT_MS,
     durationToleranceSeconds: DEFAULT_DURATION_TOLERANCE_SECONDS,
     endpoint: undefined,
@@ -129,6 +145,7 @@ export function parseArgs(argv) {
     ffprobeBin: "ffprobe",
     interruptAfterBytes: DEFAULT_INTERRUPT_AFTER_BYTES,
     invalidUrl: undefined,
+    keepOutput: undefined,
     maxBytes: DEFAULT_MAX_BYTES,
     operatorHost: hostname(),
     probeTimeoutMs: DEFAULT_PROBE_TIMEOUT_MS,
@@ -161,6 +178,35 @@ export function parseArgs(argv) {
       }
       case "--sample": {
         options.samples.push(parseSample(requireValue(argv, index, argument)));
+        index += 1;
+        break;
+      }
+      case "--audio-format": {
+        const value = requireValue(argv, index, argument);
+        if (!AUDIO_FORMATS.includes(value)) {
+          throw new SmokeError(
+            `${argument} must be one of: ${AUDIO_FORMATS.join(", ")}`,
+            { status: "usage" }
+          );
+        }
+        options.audioFormat = value;
+        index += 1;
+        break;
+      }
+      case "--audio-bitrate": {
+        const value = requireValue(argv, index, argument);
+        if (!AUDIO_BITRATES.includes(value)) {
+          throw new SmokeError(
+            `${argument} must be one of: ${AUDIO_BITRATES.join(", ")}`,
+            { status: "usage" }
+          );
+        }
+        options.audioBitrate = value;
+        index += 1;
+        break;
+      }
+      case "--keep-output": {
+        options.keepOutput = requireValue(argv, index, argument);
         index += 1;
         break;
       }
@@ -305,6 +351,14 @@ function sourceForUrl(rawUrl) {
   }
 }
 
+function safeExtension(filename) {
+  if (typeof filename !== "string") {
+    return "unknown";
+  }
+  const extension = path.extname(filename).replace(/^\./u, "").toLowerCase();
+  return /^[a-z0-9]{1,8}$/u.test(extension) ? extension : "unknown";
+}
+
 function publicPathname(parsed) {
   return parsed.pathname
     .split("/")
@@ -401,6 +455,9 @@ function validateOptions(options) {
   }
   if (options.tempRoot) {
     options.tempRoot = path.resolve(options.tempRoot);
+  }
+  if (options.keepOutput) {
+    options.keepOutput = path.resolve(options.keepOutput);
   }
   return options;
 }
@@ -588,6 +645,8 @@ function validateTunnelUrl(rawUrl, endpointOrigin) {
 
 async function processRequest({
   apiKey,
+  audioBitrate,
+  audioFormat,
   endpoint,
   parentSignal,
   sourceUrl,
@@ -600,16 +659,20 @@ async function processRequest({
   if (apiKey) {
     headers.Authorization = `Api-Key ${apiKey}`;
   }
+  const body = {
+    alwaysProxy: true,
+    audioFormat,
+    downloadMode: "audio",
+    localProcessing: "disabled",
+    url: sourceUrl,
+  };
+  if (audioBitrate) {
+    body.audioBitrate = audioBitrate;
+  }
   const response = await requestJson(
     endpointUrl(endpoint, "/"),
     {
-      body: JSON.stringify({
-        alwaysProxy: true,
-        audioFormat: "best",
-        downloadMode: "audio",
-        localProcessing: "disabled",
-        url: sourceUrl,
-      }),
+      body: JSON.stringify(body),
       headers,
       method: "POST",
     },
@@ -666,6 +729,7 @@ async function processRequest({
 
   try {
     return {
+      filenameExtension: safeExtension(response.payload.filename),
       filenamePresent: typeof response.payload.filename === "string",
       httpStatus: response.httpStatus,
       kind: "tunnel",
@@ -761,6 +825,8 @@ async function checkAuthorization(
   try {
     const response = await processRequest({
       apiKey,
+      audioBitrate: options.audioBitrate,
+      audioFormat: options.audioFormat,
       endpoint: options.endpoint,
       parentSignal,
       sourceUrl: sample.url,
@@ -791,6 +857,8 @@ async function checkInvalidSource(sample, apiKey, options, parentSignal) {
   try {
     const response = await processRequest({
       apiKey,
+      audioBitrate: options.audioBitrate,
+      audioFormat: options.audioFormat,
       endpoint: options.endpoint,
       parentSignal,
       sourceUrl: options.invalidUrl,
@@ -810,21 +878,11 @@ async function checkInvalidSource(sample, apiKey, options, parentSignal) {
   }
 }
 
-function audioExtension(contentType) {
-  const type = contentType?.split(";", 1)[0].toLowerCase();
-  if (type === "audio/mpeg") {
-    return "mp3";
-  }
-  if (type === "audio/ogg") {
-    return "ogg";
-  }
-  if (type === "audio/wav" || type === "audio/x-wav") {
-    return "wav";
-  }
-  if (type === "audio/opus") {
-    return "opus";
-  }
-  return "audio";
+async function keepAcceptedFile(filePath, directory, name) {
+  await mkdir(directory, { recursive: true });
+  const target = path.join(directory, name);
+  await copyFile(filePath, target);
+  return target;
 }
 
 function downloadTunnel(
@@ -1052,6 +1110,8 @@ async function runSample(
   try {
     const processing = await processRequest({
       apiKey,
+      audioBitrate: options.audioBitrate,
+      audioFormat: options.audioFormat,
       endpoint: options.endpoint,
       parentSignal,
       sourceUrl: sample.url,
@@ -1069,7 +1129,10 @@ async function runSample(
         status: "failed",
       };
     }
-    filePath = path.join(tempDirectory, `${filePrefix}.${audioExtension()}`);
+    filePath = path.join(
+      tempDirectory,
+      `${filePrefix}.${processing.filenameExtension}`
+    );
     const download = await downloadTunnel(
       processing.tunnelUrl,
       filePath,
@@ -1078,6 +1141,15 @@ async function runSample(
     );
     const probe = await probeAudio(filePath, options, parentSignal);
     await decodeAudio(filePath, options, parentSignal);
+    const keptOutput = options.keepOutput
+      ? await keepAcceptedFile(
+          filePath,
+          options.keepOutput,
+          `${filePrefix}-${options.audioFormat}${
+            options.audioBitrate ? `-${options.audioBitrate}` : ""
+          }.${processing.filenameExtension}`
+        )
+      : undefined;
     const difference = Math.abs(
       probe.durationSeconds - sample.expectedDurationSeconds
     );
@@ -1101,8 +1173,12 @@ async function runSample(
       durationDifferenceSeconds: difference,
       expectedDurationSeconds: sample.expectedDurationSeconds,
       identity: sample.identity,
+      keptOutput,
       observedContentType: download.contentType,
       observedDurationSeconds: probe.durationSeconds,
+      observedFilenameExtension: processing.filenameExtension,
+      requestedAudioBitrate: options.audioBitrate ?? "cobalt_default",
+      requestedAudioFormat: options.audioFormat,
       source: sample.source,
       status: "passed",
     };
@@ -1132,6 +1208,8 @@ async function runInterruption(
   try {
     const processing = await processRequest({
       apiKey,
+      audioBitrate: options.audioBitrate,
+      audioFormat: options.audioFormat,
       endpoint: options.endpoint,
       parentSignal,
       sourceUrl: sample.url,
@@ -1216,6 +1294,8 @@ export async function runSmoke(
       image: COBALT_IMAGE,
       imageIndexDigest: COBALT_IMAGE_INDEX_DIGEST,
       imageVersion: COBALT_VERSION,
+      requestedAudioBitrate: options.audioBitrate ?? "cobalt_default",
+      requestedAudioFormat: options.audioFormat,
     },
     generatedAt: new Date().toISOString(),
     interruption: resultBlocked("not_run"),
