@@ -126,11 +126,21 @@
     },
     "appearances": {
       "type": "object",
+      "description": "The light and dark value every color has, plus the pair the system asks for when Increase Contrast is on. Both are required: a color the setting cannot raise is a build failure, not a silent fallback.",
       "additionalProperties": false,
-      "required": ["light", "dark"],
+      "required": ["light", "dark", "increasedContrast"],
       "properties": {
         "light": { "$ref": "#/$defs/oklch" },
-        "dark": { "$ref": "#/$defs/oklch" }
+        "dark": { "$ref": "#/$defs/oklch" },
+        "increasedContrast": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["light", "dark"],
+          "properties": {
+            "light": { "$ref": "#/$defs/oklch" },
+            "dark": { "$ref": "#/$defs/oklch" }
+          }
+        }
       }
     },
     "radius": {

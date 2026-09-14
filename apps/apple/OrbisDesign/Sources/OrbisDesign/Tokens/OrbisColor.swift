@@ -45,19 +45,25 @@ public enum OrbisColor {
       }
     }
 
-    /// For text. Same hue as `dot`; in light appearance it is darkened to clear 4.5:1 on `paper`.
-    public var text: Color {
+    /// For text. Same hue as `dot`; every appearance clears Lc 75 on `paper` and `paperRaised`.
+    public var text: Color { generatedText.color }
+
+    /// The value the system switches to when Increase Contrast is on. The app reads it through
+    /// `text`; this exposes it for a preview canvas, which cannot turn the setting on.
+    public var increasedContrastText: Color { generatedText.color(setting: .increased) }
+
+    private var generatedText: DynamicColor {
       switch self {
-      case .pink: GeneratedColor.categoryPinkText.color
-      case .yellow: GeneratedColor.categoryYellowText.color
-      case .cyan: GeneratedColor.categoryCyanText.color
-      case .green: GeneratedColor.categoryGreenText.color
-      case .purple: GeneratedColor.categoryPurpleText.color
-      case .teal: GeneratedColor.categoryTealText.color
-      case .mint: GeneratedColor.categoryMintText.color
-      case .blue: GeneratedColor.categoryBlueText.color
-      case .indigo: GeneratedColor.categoryIndigoText.color
-      case .brown: GeneratedColor.categoryBrownText.color
+      case .pink: GeneratedColor.categoryPinkText
+      case .yellow: GeneratedColor.categoryYellowText
+      case .cyan: GeneratedColor.categoryCyanText
+      case .green: GeneratedColor.categoryGreenText
+      case .purple: GeneratedColor.categoryPurpleText
+      case .teal: GeneratedColor.categoryTealText
+      case .mint: GeneratedColor.categoryMintText
+      case .blue: GeneratedColor.categoryBlueText
+      case .indigo: GeneratedColor.categoryIndigoText
+      case .brown: GeneratedColor.categoryBrownText
       }
     }
 
