@@ -98,7 +98,12 @@ export class Audio extends Context.Service<
       Effect.gen(function* buildAudio() {
         const library = yield* Library;
         yield* Effect.promise(() => mkdir(audioDir, { recursive: true }));
-        yield* library.resetStuckDownloads().pipe(Effect.orDie);
+        const requeued = yield* library
+          .resetStuckDownloads()
+          .pipe(Effect.orDie);
+        yield* Effect.logInfo("audio worker started").pipe(
+          Effect.annotateLogs({ configured, requeued })
+        );
         const progress = new Map<
           string,
           { received: number; total: number | null }
@@ -114,12 +119,16 @@ export class Audio extends Context.Service<
             }
             const current = yield* library.find(id);
             if (current.downloadState !== "none") {
+              yield* Effect.logInfo("audio download already have").pipe(
+                Effect.annotateLogs({ set: id, state: current.downloadState })
+              );
               return { accepted: false, set: current };
             }
-            return {
-              accepted: true,
-              set: yield* library.queueDownload(id),
-            };
+            const queued = yield* library.queueDownload(id);
+            yield* Effect.logInfo("audio download queued").pipe(
+              Effect.annotateLogs({ set: id })
+            );
+            return { accepted: true, set: queued };
           }
         );
         const audioState = Effect.fn("Audio.audioState")(function* audioState(
@@ -185,7 +194,11 @@ export class Audio extends Context.Service<
             aborts.delete(id);
             progress.delete(id);
             yield* removeFiles(id);
-            return yield* library.cancelDownload(id);
+            const canceled = yield* library.cancelDownload(id);
+            yield* Effect.logInfo("audio download canceled").pipe(
+              Effect.annotateLogs({ set: id, state: canceled.downloadState })
+            );
+            return canceled;
           }
         );
         const runCommand = Effect.fn("Audio.runCommand")(function* runCommand(
@@ -366,22 +379,40 @@ export class Audio extends Context.Service<
                     )
                   );
                   yield* Effect.promise(() => rm(tmpPath, { force: true }));
-                  return yield* library.finishDownload(set.id, {
+                  const remuxed = yield* library.finishDownload(set.id, {
                     bytes: Bun.file(finalPath).size,
                     durationSeconds,
                     format: "ogg",
                   });
+                  yield* Effect.logInfo("audio download finished").pipe(
+                    Effect.annotateLogs({
+                      bytes: remuxed.retainedAudioBytes ?? 0,
+                      durationSeconds: remuxed.durationSeconds ?? 0,
+                      format: "ogg",
+                      set: set.id,
+                    })
+                  );
+                  return remuxed;
                 }
                 if (container === "mp3" || container === "ogg") {
                   const format = container;
                   yield* Effect.promise(() =>
                     rename(tmpPath, fileFor(set.id, format))
                   );
-                  return yield* library.finishDownload(set.id, {
+                  const stored = yield* library.finishDownload(set.id, {
                     bytes: Bun.file(fileFor(set.id, format)).size,
                     durationSeconds,
                     format,
                   });
+                  yield* Effect.logInfo("audio download finished").pipe(
+                    Effect.annotateLogs({
+                      bytes: stored.retainedAudioBytes ?? 0,
+                      durationSeconds: stored.durationSeconds ?? 0,
+                      format,
+                      set: set.id,
+                    })
+                  );
+                  return stored;
                 }
                 return yield* Effect.fail(
                   downloadFailed("Cobalt delivered an unsupported container.")
@@ -413,6 +444,9 @@ export class Audio extends Context.Service<
             if (!claimed) {
               return false;
             }
+            yield* Effect.logInfo("audio download claimed").pipe(
+              Effect.annotateLogs({ set: claimed.id, source: claimed.source })
+            );
             yield* Effect.matchEffect(downloadOne(claimed), {
               onFailure: (error) =>
                 library.failDownload(claimed.id).pipe(
