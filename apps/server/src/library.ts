@@ -5,7 +5,7 @@ import type {
   SaveSetInput,
   SetSource,
 } from "@orbis/contracts";
-import { and, asc, desc, eq, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, ne, notInArray, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { Database } from "./db/database.js";
@@ -117,6 +117,21 @@ export class Library extends Context.Service<
       id: string,
       playlistIds: readonly string[]
     ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly queueDownload: (
+      id: string
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly claimDownload: () => Effect.Effect<SavedSet | null, LibraryError>;
+    readonly finishDownload: (
+      id: string,
+      audio: { bytes: number; format: string; durationSeconds: number }
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly failDownload: (
+      id: string
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly cancelDownload: (
+      id: string
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly resetStuckDownloads: () => Effect.Effect<number, LibraryError>;
   }
 >()("@orbis/Library") {
   static readonly layer = Layer.effect(
@@ -373,6 +388,138 @@ export class Library extends Context.Service<
         )
       );
 
+      // A download request never disturbs finished or running work: only a set with
+      // no download yet enters the queue. Every stored set comes from a source Cobalt
+      // handles, so the worker's verdict — not a source check here — decides the rest.
+      const queueDownload = Effect.fn("Library.queueDownload")((id: string) =>
+        execute(
+          Effect.gen(function* queueDownloadEffect() {
+            const [queued] = yield* db
+              .update(sets)
+              .set({ downloadState: "queued" })
+              .where(and(eq(sets.id, id), eq(sets.downloadState, "none")))
+              .returning();
+            if (queued) {
+              return yield* hydrateSet(queued);
+            }
+            return yield* findSavedSet(id);
+          })
+        )
+      );
+      // One statement claims the oldest queued set, so two workers could never take the
+      // same row. There is only one worker, and the single statement keeps it that way
+      // even if that ever changes.
+      const claimDownload = Effect.fn("Library.claimDownload")(() =>
+        execute(
+          Effect.gen(function* claimDownloadEffect() {
+            const oldest = db
+              .select({ id: sets.id })
+              .from(sets)
+              .where(eq(sets.downloadState, "queued"))
+              .orderBy(asc(sets.createdAt), asc(sets.id))
+              .limit(1);
+            const [claimed] = yield* db
+              .update(sets)
+              .set({ downloadState: "downloading" })
+              .where(eq(sets.id, oldest))
+              .returning();
+            if (!claimed) {
+              return null;
+            }
+            return yield* hydrateSet(claimed);
+          })
+        )
+      );
+      const finishDownload = Effect.fn("Library.finishDownload")(
+        (
+          id: string,
+          audio: { bytes: number; format: string; durationSeconds: number }
+        ) =>
+          execute(
+            Effect.gen(function* finishDownloadEffect() {
+              // Whole seconds: SQLite keeps the fraction under INTEGER affinity, and
+              // the app decodes an integer, so a fraction would unreadable the library.
+              const [row] = yield* db
+                .update(sets)
+                .set({
+                  downloadState: "ready",
+                  durationSeconds: Math.round(audio.durationSeconds),
+                  retainedAudioBytes: audio.bytes,
+                  retainedAudioFormat: audio.format,
+                })
+                .where(eq(sets.id, id))
+                .returning();
+              if (!row) {
+                return yield* Effect.fail(setNotFound());
+              }
+              return yield* hydrateSet(row);
+            })
+          )
+      );
+      // Only a download still running can fail. A cancel that won the race already
+      // moved the row to none, and a failure must not drag it back to failed.
+      const failDownload = Effect.fn("Library.failDownload")((id: string) =>
+        execute(
+          Effect.gen(function* failDownloadEffect() {
+            const [failed] = yield* db
+              .update(sets)
+              .set({ downloadState: "failed" })
+              .where(
+                and(eq(sets.id, id), eq(sets.downloadState, "downloading"))
+              )
+              .returning();
+            if (failed) {
+              return yield* hydrateSet(failed);
+            }
+            return yield* findSavedSet(id);
+          })
+        )
+      );
+      // Finished downloads are kept: canceling a ready set is a conflict, not a delete.
+      // The app reports a 409 as a duplicate library entry, so a finished download
+      // that cannot be canceled answers 400 with its own sentence.
+      const cancelDownload = Effect.fn("Library.cancelDownload")((id: string) =>
+        execute(
+          Effect.gen(function* cancelDownloadEffect() {
+            const [canceled] = yield* db
+              .update(sets)
+              .set({
+                downloadState: "none",
+                retainedAudioBytes: null,
+                retainedAudioFormat: null,
+              })
+              .where(and(eq(sets.id, id), ne(sets.downloadState, "ready")))
+              .returning();
+            if (canceled) {
+              return yield* hydrateSet(canceled);
+            }
+            yield* findSavedSet(id);
+            return yield* Effect.fail(
+              new LibraryError({
+                message: "This set is already downloaded.",
+                statusCode: 400,
+              })
+            );
+          })
+        )
+      );
+      // A restart must not leave a download stuck mid-flight: whatever was running
+      // when the process died goes back to queued and the worker picks it up again.
+      const resetStuckDownloads = Effect.fn("Library.resetStuckDownloads")(() =>
+        execute(
+          Effect.gen(function* resetStuckDownloadsEffect() {
+            yield* db
+              .update(sets)
+              .set({ downloadState: "queued" })
+              .where(eq(sets.downloadState, "downloading"));
+            const queued = yield* db
+              .select({ id: sets.id })
+              .from(sets)
+              .where(eq(sets.downloadState, "queued"));
+            return queued.length;
+          })
+        )
+      );
       const tags = Effect.fn("Library.tags")(() =>
         execute(
           db
@@ -617,13 +764,19 @@ export class Library extends Context.Service<
       );
 
       return {
+        cancelDownload,
+        claimDownload,
         createPlaylist,
+        failDownload,
         find,
+        finishDownload,
         list,
         playlists: playlistsList,
+        queueDownload,
         recordEnrichment,
         recordEnrichmentFailure,
         remove,
+        resetStuckDownloads,
         save,
         setPlaylistMembers,
         setPlaylistMemberships,

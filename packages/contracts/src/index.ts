@@ -14,6 +14,13 @@ export type DownloadState =
   | "failed"
   | "canceled";
 
+export interface AudioState {
+  state: DownloadState;
+  bytesReceived: number;
+  bytesTotal: number | null;
+  format: string | null;
+}
+
 export interface SavedSet {
   id: string;
   url: string;
