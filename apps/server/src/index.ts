@@ -14,6 +14,12 @@ const ports = listenerPorts({
   ORBIS_PORT: process.env.ORBIS_PORT,
 });
 const app = createApp({
+  audio: {
+    audioDir: path.join(dataDirectory, "audio"),
+    cobaltApiKey: process.env.ORBIS_COBALT_API_KEY,
+    cobaltUrl: process.env.ORBIS_COBALT_URL,
+    startWorker: true,
+  },
   databasePath,
   logging: { environment: process.env.NODE_ENV ?? "development" },
   metadata: Metadata.layer({ youTubeApiKey }),
@@ -27,6 +33,11 @@ console.log(`Library database: ${databasePath}`);
 if (!youTubeApiKey) {
   console.warn(
     "ORBIS_YOUTUBE_API_KEY is not set, so YouTube metadata enrichment is unavailable."
+  );
+}
+if (!process.env.ORBIS_COBALT_URL || !process.env.ORBIS_COBALT_API_KEY) {
+  console.warn(
+    "ORBIS_COBALT_URL or ORBIS_COBALT_API_KEY is not set, so audio downloads are unavailable."
   );
 }
 let stopping = false;

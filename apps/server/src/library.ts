@@ -198,6 +198,21 @@ export class Library extends Context.Service<
       id: string,
       playlistIds: readonly string[]
     ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly queueDownload: (
+      id: string
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly claimDownload: () => Effect.Effect<SavedSet | null, LibraryError>;
+    readonly finishDownload: (
+      id: string,
+      audio: { bytes: number; format: string; durationSeconds: number }
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly failDownload: (
+      id: string
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly cancelDownload: (
+      id: string
+    ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly resetStuckDownloads: () => Effect.Effect<number, LibraryError>;
   }
 >()("@orbis/Library") {
   static layer(databasePath: string) {
@@ -434,6 +449,139 @@ export class Library extends Context.Service<
             })()
           )
         );
+        // A download request never disturbs finished or running work: only a set with
+        // no download yet enters the queue. Every stored set comes from a source Cobalt
+        // handles, so the worker's verdict — not a source check here — decides the rest.
+        const queueDownload = Effect.fn("Library.queueDownload")((id: string) =>
+          execute(() => {
+            const row = db
+              .query<SetRow, [string]>(
+                `UPDATE sets SET download_state = 'queued'
+                 WHERE id = ? AND download_state = 'none'
+                 RETURNING ${SET_COLUMNS}`
+              )
+              .get(id);
+            if (row) {
+              return decodeRow(row);
+            }
+            const current = db
+              .query<SetRow, [string]>(
+                `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
+              )
+              .get(id);
+            if (!current) {
+              throw setNotFound();
+            }
+            return decodeRow(current);
+          })
+        );
+        // One statement claims the oldest queued set, so two workers could never take the
+        // same row. There is only one worker, and the single statement keeps it that way
+        // even if that ever changes.
+        const claimDownload = Effect.fn("Library.claimDownload")(() =>
+          execute(() => {
+            const row = db
+              .query<SetRow, []>(
+                `UPDATE sets SET download_state = 'downloading'
+                 WHERE id = (SELECT id FROM sets WHERE download_state = 'queued'
+                              ORDER BY created_at, rowid LIMIT 1)
+                 RETURNING ${SET_COLUMNS}`
+              )
+              .get();
+            return row ? decodeRow(row) : null;
+          })
+        );
+        const finishDownload = Effect.fn("Library.finishDownload")(
+          (
+            id: string,
+            audio: { bytes: number; format: string; durationSeconds: number }
+          ) =>
+            execute(() => {
+              const row = db
+                .query<SetRow, [number, string, number, string]>(
+                  `UPDATE sets
+                   SET download_state = 'ready', retained_audio_bytes = ?,
+                     retained_audio_format = ?, duration_seconds = ?
+                   WHERE id = ? RETURNING ${SET_COLUMNS}`
+                )
+                .get(audio.bytes, audio.format, audio.durationSeconds, id);
+              if (!row) {
+                throw setNotFound();
+              }
+              return decodeRow(row);
+            })
+        );
+        // Only a download still running can fail. A cancel that won the race already
+        // moved the row to none, and a failure must not drag it back to failed.
+        const failDownload = Effect.fn("Library.failDownload")((id: string) =>
+          execute(() => {
+            const row = db
+              .query<SetRow, [string]>(
+                `UPDATE sets SET download_state = 'failed'
+                 WHERE id = ? AND download_state = 'downloading'
+                 RETURNING ${SET_COLUMNS}`
+              )
+              .get(id);
+            if (row) {
+              return decodeRow(row);
+            }
+            const current = db
+              .query<SetRow, [string]>(
+                `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
+              )
+              .get(id);
+            if (!current) {
+              throw setNotFound();
+            }
+            return decodeRow(current);
+          })
+        );
+        // Finished downloads are kept: canceling a ready set is a conflict, not a delete.
+        const cancelDownload = Effect.fn("Library.cancelDownload")(
+          (id: string) =>
+            execute(() => {
+              const row = db
+                .query<SetRow, [string]>(
+                  `UPDATE sets SET download_state = 'none',
+                   retained_audio_bytes = NULL, retained_audio_format = NULL
+                 WHERE id = ? AND download_state != 'ready'
+                 RETURNING ${SET_COLUMNS}`
+                )
+                .get(id);
+              if (row) {
+                return decodeRow(row);
+              }
+              const current = db
+                .query<SetRow, [string]>(
+                  `SELECT ${SET_COLUMNS} FROM sets WHERE id = ?`
+                )
+                .get(id);
+              if (!current) {
+                throw setNotFound();
+              }
+              throw new LibraryError({
+                message: "This set is already downloaded.",
+                statusCode: 409,
+              });
+            })
+        );
+        // A restart must not leave a download stuck mid-flight: whatever was running
+        // when the process died goes back to queued and the worker picks it up again.
+        const resetStuckDownloads = Effect.fn("Library.resetStuckDownloads")(
+          () =>
+            execute(() => {
+              db.query(
+                "UPDATE sets SET download_state = 'queued' WHERE download_state = 'downloading'"
+              ).run();
+              return (
+                db
+                  .query<{ count: number }, []>(
+                    "SELECT COUNT(*) AS count FROM sets WHERE download_state = 'queued'"
+                  )
+                  .get()?.count ?? 0
+              );
+            })
+        );
         const tags = Effect.fn("Library.tags")(() =>
           execute(() =>
             db
@@ -601,13 +749,19 @@ export class Library extends Context.Service<
           );
         });
         return {
+          cancelDownload,
+          claimDownload,
           createPlaylist,
+          failDownload,
           find,
+          finishDownload,
           list,
           playlists,
+          queueDownload,
           recordEnrichment,
           recordEnrichmentFailure,
           remove,
+          resetStuckDownloads,
           save,
           setPlaylistMembers,
           setPlaylistMemberships,
