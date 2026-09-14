@@ -3,7 +3,7 @@
 The shared design system for the Orbis apps on macOS and iOS: tokens, styles, and components in one SwiftUI package.
 
 - Source of truth: `docs/design/tokens.json`, checked against `docs/design/tokens.schema.json`. Run `bun run tokens:generate` after editing it to regenerate `Tokens/GeneratedColors.swift` and `docs/design/tokens.css`. `bun run tokens:check` fails when a generated file is stale, and `bun run check` runs it. `docs/design/tokens.css` is in `.prettierignore`, because a generated file has to match its source byte for byte.
-- Colors: `Color.orbis.paper`, `.paperRaised`, `.field`, `.tint`, `.destructive`, and `OrbisColor.Category` (`.dot` for swatches, `.text` for labels). Tint means interactive; category means grouping; red means removal.
+- Colors: `Color.orbis.paper`, `.paperRaised`, `.field`, `.tint`, `.destructive`, and `OrbisColor.Category` (`.dot` for swatches, `.text` for labels). Tint means interactive; category means grouping; red means removal. Every token carries a light, a dark, and an increasedContrast value, and `DynamicColor` picks the increased one when the platform reports Increase Contrast; the generator fails the build when a text shade drops under APCA Lc 75 on `paper` or `paperRaised`, or when a colour leaves Display P3.
 - Type: `Font.orbis.*` — Dynamic Type text styles only, SF Pro and SF Mono.
 - Radius: `Radius.*` — the one custom scale. Spacing uses system defaults.
 - Liquid Glass: standard chrome is glass on recompile. `.orbisGlass()` is for custom floating bars only. Content uses `.orbisRaised()`. The tinted `.orbisPrimary` button is the one glass element inside content.
