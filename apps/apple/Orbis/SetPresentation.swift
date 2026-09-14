@@ -136,6 +136,19 @@ enum SetPresentation {
     return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
   }
 
+  /// A seek position said the way a player says it: m:ss, or h:mm:ss past the hour.
+  /// Truncates rather than rounds, so the thumb never claims a second it has not reached.
+  static func timestamp(_ seconds: TimeInterval) -> String {
+    let total = max(Int(seconds), 0)
+    let hours = total / 3600
+    let minutes = (total % 3600) / 60
+    let rest = total % 60
+    if hours > 0 {
+      return String(format: "%d:%02d:%02d", hours, minutes, rest)
+    }
+    return String(format: "%d:%02d", minutes, rest)
+  }
+
   /// The address Open hands to the system. A value rather than a call, so the intent can be
   /// checked without a browser and without leaving the app.
   static func sourceURL(_ set: SavedSet) -> URL? {

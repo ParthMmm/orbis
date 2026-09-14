@@ -231,6 +231,35 @@ struct OrbisClient: Sendable {
     return try decodedSet(response)
   }
 
+  /// Asks the service to fetch this Set's audio through Cobalt and keep it. The answer
+  /// is the Set with its new download state; progress arrives through audioState.
+  func requestAudioDownload(_ id: String) async throws -> SavedSet {
+    let response = try await send(path: "sets/\(id)/audio/download", method: "POST", body: nil)
+    return try decodedSet(response)
+  }
+
+  /// How far the service has got with this Set's audio, if it has started.
+  func audioState(_ id: String) async throws -> AudioState {
+    let response = try await send(path: "sets/\(id)/audio/state", method: "GET", body: nil)
+    guard let decoded = try? JSONDecoder().decode(AudioState.self, from: response) else {
+      throw OrbisError.malformed
+    }
+    return decoded
+  }
+
+  /// Stops a running download and drops its partial file. A finished download stays
+  /// finished: the service refuses that with its own sentence.
+  func cancelAudioDownload(_ id: String) async throws -> SavedSet {
+    let response = try await send(path: "sets/\(id)/audio/download", method: "DELETE", body: nil)
+    return try decodedSet(response)
+  }
+
+  /// The streaming address for a Set whose audio is ready. The token travels as a
+  /// header on the asset, never in this URL.
+  func audioFileURL(_ id: String) -> URL {
+    address.appending(path: "sets/\(id)/audio")
+  }
+
   private func decodedSet(_ response: Data) throws -> SavedSet {
     guard let decoded = try? JSONDecoder().decode(SavedSet.self, from: response) else {
       throw OrbisError.malformed

@@ -107,6 +107,15 @@ struct LibraryResponse: Decodable {
   let sets: [SavedSet]
 }
 
+/// How far a download has got. Bytes are the worker's own count, because a converted
+/// tunnel carries no content length; the format is what the worker stored, if anything.
+struct AudioState: Decodable, Equatable {
+  let state: String
+  let bytesReceived: Int
+  let bytesTotal: Int?
+  let format: String?
+}
+
 /// Mirrors the server contract. The count comes from the server so a sidebar does not ask once
 /// per playlist, and the creation date is left out because nothing shows it.
 struct Playlist: Identifiable, Decodable, Hashable {

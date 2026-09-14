@@ -122,6 +122,10 @@ final class AppModel {
   var isSavingReveal = false
   var revealFailure: OrbisFailure?
 
+  /// The latest download progress the service reported, by Set. Terminal states reload
+  /// the library instead, so this only ever holds a download that is still running.
+  var audioStates: [String: AudioState] = [:]
+
   var destination: Destination = .library
 
   /// True while the connection screen is open over a configured library. An address that stops
@@ -437,6 +441,59 @@ final class AppModel {
     } catch {
       revealFailure = OrbisError.unreachable.failure(at: client.address)
     }
+  }
+
+  /// Asks the service to fetch this Set's audio and keep it. The answer carries the
+  /// new download state straight into the list, the way a rename lands.
+  func downloadAudio(_ id: String) async {
+    guard let client else { return }
+    do {
+      replace(try await client.requestAudioDownload(id))
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Stops a running download and drops its partial file.
+  func cancelAudioDownload(_ id: String) async {
+    guard let client else { return }
+    do {
+      replace(try await client.cancelAudioDownload(id))
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Reads the service's download progress into the running map. A terminal state
+  /// reloads the library so the Set's own state is what the service holds; a poll
+  /// that fails says nothing, because the next poll or the next visit retries it.
+  func refreshAudioState(_ id: String) async {
+    guard let client else { return }
+    guard let state = try? await client.audioState(id) else { return }
+    audioStates[id] = state
+    if state.state == "ready" || state.state == "failed" {
+      audioStates[id] = nil
+      await loadLibrary()
+    }
+  }
+
+  /// The player this screen drives. One player for the model, because only one Set
+  /// plays at a time and the lock screen follows whatever it holds.
+  private(set) var audioPlayer = AudioPlayer()
+
+  /// Plays a downloaded Set through the player. A sync entry point: the view taps,
+  /// the model pairs the Set with the service it came from.
+  func playAudio(_ id: String) {
+    guard let client, let set = savedSet(id) else { return }
+    audioPlayer.play(set: set, baseURL: client.address, token: client.token)
   }
 
   /// Closes the reveal, leaving nothing behind when the person filed the Set and walked away.

@@ -42,6 +42,8 @@ targets:
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        # Playback continues with the screen locked. macOS ignores this key.
+        INFOPLIST_KEY_UIBackgroundModes: [audio]
   OrbisTests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]
