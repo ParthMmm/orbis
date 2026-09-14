@@ -16,9 +16,15 @@ returns the Set to `none`. Finished downloads are kept; there is no eviction.
 ## Server
 
 Files live under `ORBIS_DATA_DIR/audio/<setId>.<ext>`, outside the checkout
-next to `library.sqlite`. The exact extension and Cobalt `audioFormat` come
-from the #10 decision record; the worker takes them as configuration, not
-hardcoded values.
+next to `library.sqlite`. The output follows the #10 decision record (`docs/research/cobalt-audio-format.md`):
+request `best` with no `audioBitrate`, then decide the container from `ffprobe`,
+never the filename. Matroska/WebM (YouTube Opus) is remuxed bit-exact with
+`ffmpeg -i <file> -map 0:a:0 -c:a copy <setId>.ogg` and stored as `.ogg`;
+anything already Apple-playable (SoundCloud MP3) is stored as received. The
+worker records the ffprobe-measured duration and treats player-reported Ogg
+duration as approximate. Every Cobalt error shape lands the Set in `failed`;
+the worker never dies on a bad Cobalt response. Bodies stream to disk behind a
+2 GiB bound because converted tunnels carry no content length.
 
 - `POST /sets/:id/audio/download` → `202` with the state. `404` for an
   unknown Set, `400` for a source Cobalt cannot handle, `503` when the Cobalt
