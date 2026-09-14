@@ -59,6 +59,14 @@ fields.
   token in `AVURLAssetHTTPHeaderFieldsKey`. Play/pause, seek slider,
   buffering and error states, title in Now Playing, and remote-command
   play/pause. No offline copy, no position sync in this slice.
+- Playback eligibility is all-or-nothing: `.playback` session category with no
+  `.mixWithOthers`, `audio` in `UIBackgroundModes`, session activated before
+  play, and at least one remote-command target registered and enabled —
+  missing any one silently kills Lock Screen and Control Center. Publish
+  elapsed time and `playbackRate` (never `playbackState`, never on a timer)
+  at play, pause, seek, and track change only. Handle interruptions
+  (pause on began, reactivate on ended with resume) and headphone route
+  removal (pause). Artwork waits for a later slice; title-only metadata.
 - Tests use the existing stub-session patterns plus a fake audio source;
   no test hits Cobalt or Vanta.
 
