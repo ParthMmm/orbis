@@ -300,6 +300,14 @@ struct DestinationView: View {
         failureContext: "loading the library",
         activeTag: model.activeTag,
         filters: model.availableTags.isEmpty ? nil : tagFilters,
+        // Only a filter can hide every Set. Without one, an empty list is an empty collection
+        // and keeps the empty collection's copy.
+        noMatches: model.activeTag == nil
+          ? nil
+          : AnyView(
+            NoResultsState(recoverLabel: "Clear filters", recover: { model.setTagFilter(nil) })
+              .accessibilityIdentifier("library-no-matches")
+          ),
         hero: AnyView(pasteHero),
         footer: libraryFooter,
         retry: { await model.loadLibrary() },
@@ -322,6 +330,11 @@ struct DestinationView: View {
       }
     case .search:
       SearchDestination(model: model)
+        // The one open Set is shared with the Library, so a Set found here opens the same
+        // page, and the mini player's action keeps routing to the Library.
+        .navigationDestination(item: $model.openedSetId) { id in
+          SetDetailScreen(model: model, setId: id)
+        }
     }
   }
 
@@ -489,6 +502,10 @@ struct DestinationView: View {
 
 struct SearchDestination: View {
   @Bindable var model: AppModel
+  /// The field is resigned before the query is cleared. SwiftUI does not push a programmatic
+  /// change to a search field that is still first responder, so a clear that only set the
+  /// binding left the old query on screen while the screen said nothing had been asked.
+  @FocusState private var isFieldFocused: Bool
 
   var body: some View {
     Group {
@@ -505,14 +522,24 @@ struct SearchDestination: View {
     }
     .navigationTitle("Search")
     .searchable(text: $model.searchQuery, prompt: "Title, tag, or source link")
+    .searchFocused($isFieldFocused)
     // On the screen, not the results: the results view is not there until a search has run,
     // and a submit handler on a view that is not there hears nothing.
     .onSubmit(of: .search) { Task { await model.runSearch() } }
     .onChange(of: model.searchQuery) { _, query in
+      // Typing then deleting every character leaves the field where the person put it, so this
+      // path only drops the results. Resigning the field belongs to the clear action.
       if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
         model.clearSearch()
       }
     }
+  }
+
+  /// Empties the field and the results, from the button. The field is resigned first: while it
+  /// holds focus it ignores the binding, so the order is what makes the query leave the screen.
+  private func clear() {
+    isFieldFocused = false
+    model.clearSearch()
   }
 
   /// "Search your 8 sets."
@@ -531,15 +558,21 @@ struct SearchDestination: View {
       state: model.search,
       heading: heading,
       empty: AnyView(
-        NoResultsState(recoverLabel: "Clear search", recover: { model.clearSearch() })
+        NoResultsState(recoverLabel: "Clear search", recover: clear)
           .accessibilityIdentifier("search-no-results")
       ),
       failureContext: "searching the library",
       activeTag: nil,
       filters: nil,
+      // A search that found nothing already shows the no-results state, so there is no
+      // second one to reach.
+      noMatches: nil,
       hero: nil,
       footer: searchFooter,
-      retry: { await model.runSearch() }
+      retry: { await model.runSearch() },
+      listIdentifier: "search-list",
+      // A result is something to open, which is the whole reason to search.
+      select: { set in model.openSet(set.id) }
     )
   }
 

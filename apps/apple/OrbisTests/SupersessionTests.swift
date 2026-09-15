@@ -118,6 +118,7 @@ final class SupersessionTests: XCTestCase {
     model.clearSearch()
 
     XCTAssertEqual(model.search, .idle)
+    XCTAssertEqual(model.searchQuery, "", "clearing the search empties the field too")
     XCTAssertNil(model.searchResultsFor)
   }
 

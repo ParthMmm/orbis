@@ -73,7 +73,7 @@ const startApp = async (options: {
 
 const loadReviser = (layer: Layer.Layer<TitleReviser>) =>
   Effect.runPromise(
-    Effect.gen(function* loadReviser() {
+    Effect.gen(function* readReviser() {
       return yield* TitleReviser;
     }).pipe(Effect.provide(layer))
   );

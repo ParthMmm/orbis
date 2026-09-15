@@ -161,8 +161,8 @@ final class AppModel {
     self.settings = settings
     // A journey lane starts from a clean install so it exercises the connection screen.
     Self.resetSettings(ifRequestedBy: ProcessInfo.processInfo.arguments, in: settings)
-    // A lane that checks the filtered Library starts already filtered, because the design's
-    // filter control is a custom toggle a UI test cannot drive reliably.
+    // A lane that checks a filtered Library opens already filtered, which is how the no-matches
+    // state is reached without a tag that has no Sets.
     let arguments = ProcessInfo.processInfo.arguments
     if let flag = arguments.firstIndex(of: "-orbisStartTagFiltered"),
       arguments.indices.contains(flag + 1)
@@ -752,10 +752,13 @@ final class AppModel {
     }
   }
 
-  /// Empties the search. The results and the name they answer to go together, so a cleared
-  /// field cannot leave a heading naming results that are no longer on screen.
+  /// Empties the search: the field, the results, and the name they answer to go together. A
+  /// cleared field cannot leave a heading naming results that are no longer on screen, and the
+  /// screen returns to the state it shows before anything was typed rather than waiting on a
+  /// request that was never sent.
   func clearSearch() {
     searchGeneration += 1
+    searchQuery = ""
     search = .idle
     searchResultsFor = nil
   }

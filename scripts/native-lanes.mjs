@@ -37,7 +37,12 @@ const shots = path.resolve(
 );
 
 const only = [];
-if (macos || unitOnly) {
+// --only narrows a lane to one test, which is how a single journey is re-run after a failure
+// without paying for the other seven.
+const onlyTest = argument("only");
+if (onlyTest) {
+  only.push(`-only-testing:${onlyTest}`);
+} else if (macos || unitOnly) {
   only.push("-only-testing:OrbisTests");
 } else if (journeysOnly) {
   only.push("-only-testing:OrbisUITests");

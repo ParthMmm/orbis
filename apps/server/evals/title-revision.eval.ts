@@ -1,6 +1,5 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 
 import { Effect } from "effect";
 import { evalite } from "evalite";
@@ -9,15 +8,17 @@ import { TitleReviser } from "../src/title-reviser";
 
 // The eval runs the production reviser against the server's credential file, so
 // what the UI shows is what the live save request gets.
-const envPath = path.join(
-  path.dirname(fileURLToPath(import.meta.url)),
-  "../.env.local"
-);
+const envPath = path.join(import.meta.dirname, "../.env.local");
 try {
-  for (const line of readFileSync(envPath, "utf8").split("\n")) {
-    const match = /^([A-Z0-9_]+)=(.*)$/.exec(line.trim());
-    if (match && process.env[match[1]] === undefined) {
-      process.env[match[1]] = match[2];
+  for (const line of readFileSync(envPath, "utf-8").split("\n")) {
+    const separator = line.indexOf("=");
+    if (separator <= 0) {
+      continue;
+    }
+    const key = line.slice(0, separator).trim();
+    const value = line.slice(separator + 1).trim();
+    if (/^[A-Z0-9_]+$/u.test(key) && process.env[key] === undefined) {
+      process.env[key] = value;
     }
   }
 } catch {
@@ -35,27 +36,27 @@ interface RevisionCase {
 const CASES: readonly RevisionCase[] = [
   {
     creator: "KETTAMA",
+    expected: "KETTAMA - Creamfields 2026",
     source: "youtube",
     title: "KETTAMA @ Creamfields 2026 | Full Set 4K",
-    expected: "KETTAMA - Creamfields 2026",
   },
   {
     creator: "Fred again..",
+    expected: "Fred again.. - Place (Boiler Room London)",
     source: "soundcloud",
     title: "Fred again.. | Place (Boiler Room London)",
-    expected: "Fred again.. - Place (Boiler Room London)",
   },
   {
     creator: null,
+    expected: "Groove Armada - Superstylin'",
     source: "soundcloud",
     title: "groove armada - superstylin' [FREE DOWNLOAD] OUT NOW",
-    expected: "Groove Armada - Superstylin'",
   },
   {
     creator: "Honey Dijon",
+    expected: "Honey Dijon - Boiler Room Brooklyn",
     source: "youtube",
     title: "Honey Dijon Boiler Room Xxsound Systemx Brooklyn DJ Set",
-    expected: "Honey Dijon - Boiler Room Brooklyn",
   },
 ];
 
@@ -65,24 +66,21 @@ const runRevision = (input: {
   title: string;
 }) =>
   Effect.runPromise(
-    Effect.gen(function* () {
+    Effect.gen(function* revise() {
       const reviser = yield* TitleReviser;
       return yield* reviser.revise(input);
     }).pipe(Effect.provide(TitleReviser.layerConfig()))
   );
 
-const NOISE = /\| SoundCloud|\| YouTube|OUT NOW|Free Download|4K Video|\[.*\]/i;
+const NOISE =
+  /\| SoundCloud|\| YouTube|OUT NOW|Free Download|4K Video|\[.*\]/iu;
 
 evalite("Title revision", {
   data: () =>
     CASES.map(({ expected, ...input }) => ({
-      input,
       expected,
+      input,
     })),
-  task: async (input) => {
-    const output = await runRevision(input);
-    return output;
-  },
   scorers: [
     ({ output, expected }) => {
       const text = String(output).trim();
@@ -93,17 +91,21 @@ evalite("Title revision", {
       } else {
         notes.push(`length ${text.length}`);
       }
-      if (!NOISE.test(text)) {
-        score += 0.25;
-      } else {
+      if (NOISE.test(text)) {
         notes.push("platform noise kept");
+      } else {
+        score += 0.25;
       }
       if (text.toLowerCase() === String(expected).trim().toLowerCase()) {
         score += 0.5;
       } else {
         notes.push(`expected "${expected}"`);
       }
-      return { score, metadata: notes.length > 0 ? { notes } : undefined };
+      return { metadata: notes.length > 0 ? { notes } : undefined, score };
     },
   ],
+  task: async (input) => {
+    const output = await runRevision(input);
+    return output;
+  },
 });

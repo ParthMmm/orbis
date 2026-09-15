@@ -98,13 +98,30 @@ Repair the pairing afterwards, then confirm the real Sets are back before ending
 
 ## Where the journey suite stops
 
-`bun run native-lanes` verifies text, identifiers, and navigation, and it does that well. It does not currently assert geometry, and it does not tap the controls the Library filters with. The tag filter is reached only through `-orbisStartTagFiltered`, so the pill itself is never exercised — and the 2026-09-14 pass found that pill accepting no tap at all, plus a transport that ignores the page's margins and a 20.33pt play target. None of it is visible to a suite that asserts labels it already believes.
+`bun run native-lanes` verifies text, identifiers, and navigation, and it does that well. It does not currently assert geometry. The gap the 2026-09-14 pass found in the filter and the empty states is now closed by journeys:
 
-Three additions would close the gap without a new tool:
+- `testFiltersTheLibraryByTag` taps the filter pill in both directions and asserts the heading changes, so the pill is exercised instead of reached through `-orbisStartTagFiltered`.
+- `testAFilterThatAdmitsNothingIsNotAnEmptyLibrary` still launches pre-filtered, with a tag no Set carries, and asserts the hides-everything state keeps the heading, the filter row, and its own copy.
+- `testClearsANoMatchSearch` and `testOpensASetFromASearchResult` cover the two ways a search ends.
 
-- Tap the filter pill on the Library and assert the heading changes, rather than launching pre-filtered.
-- Assert one inset invariant: with a Set playing, the transport's controls are `hittable`, keep the page's horizontal margin, and clear the tab bar's top edge. `get attrs` supplies all three.
-- Assert the empty-Library and the hides-everything states are distinguishable, since one currently wears the other's copy.
+What no journey asserts yet is geometry: with a Set playing, that the transport's controls are `hittable`, keep the page's horizontal margin, and clear the tab bar's top edge. `get attrs` supplies all three, and only a manual pass reads them today.
+
+## A tap XCUITest cannot compute
+
+XCUITest sometimes cannot turn an element into a tap. It reports `Computed hit point {-1, -1} after scrolling to visible`, which reads like a layout defect and is not one: the same element reports `hittable` in the accessibility tree, and a tap at the centre of its own frame works. The Library's scroll view is where it happens — the paste field and a state's action button are the two observed cases.
+
+Check the claim before filing it. `get attrs` on the element gives the frame, the accessibility tree gives `hittable`, and a tap at that frame's centre is the third measurement. All three tools are in `orbis-verify` and `agent-device`.
+
+**The Library's hides-everything state takes no tap at all from XCUITest.** On 2026-09-15, with one Set in the lane and `-orbisStartTagFiltered <tag>`, none of the content of that state accepted a tap: not its `Clear filters` action, and not the filter pill in the header above it. The same taps, at the same points, on the same build, clear the filter when the app is driven by hand — screenshotted before and after, with the taps delivered at the button's own frame. Rows and the pill accept taps from XCUITest in every other state of the same screen.
+
+So the journey asserts that the state appears with its own copy, its heading, its filter row, and its action; the press that clears the filter is a hand check, and the model change behind it is covered by `LibraryFilterTests`. Changing the presentation did not move this: the state was tried inside a scroll view and outside one, with an element-relative tap and with a window-relative one, and with the container's accessibility identifier removed.
+
+Two habits that avoid the other class of error:
+
+- **Install the build before driving it.** `orbis-verify doctor` reports an installed build that differs from the build on disk, and driving a stale install reproduces yesterday's behaviour against today's code. A run on 2026-09-15 read the pre-change empty state for half an hour because `orbis-verify build` had run without `orbis-verify launch`.
+- **Check which simulator is booted.** Several simulators share the name `iPhone 17 Pro`, across runtimes. A device that is shut down and replaced by another of the same name inside one session changes what is installed where.
+
+## A stale read is not a measurement
 
 ## A stale read is not a measurement
 

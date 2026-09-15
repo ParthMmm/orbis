@@ -16,11 +16,18 @@ struct SetList: View {
   let activeTag: String?
   /// Filter controls shown beside the heading, absent on a screen that only reads.
   let filters: AnyView?
+  /// The state a filter shows when it admits nothing. A screen that can narrow its list
+  /// supplies it, so a collection that is empty and a collection the person has filtered
+  /// down to nothing never wear each other's copy.
+  let noMatches: AnyView?
   /// A screen that files Sets puts its paste field here, so it scrolls with the rows and is
   /// absent on a screen that only reads, such as Search.
   let hero: AnyView?
   let footer: String
   let retry: () async -> Void
+  /// What a journey or a manual pass reads this list by, so the two destinations do not
+  /// answer to the same name.
+  var listIdentifier = "library-list"
   /// A screen that opens a Set puts its action here, so a row knows it can be pressed and a
   /// screen that only reads does not pretend otherwise.
   var select: ((SavedSet) -> Void)?
@@ -50,26 +57,53 @@ struct SetList: View {
     .background(Color.orbis.paper)
   }
 
-  /// An empty Library keeps the paste field, so filing the first Set never means hunting for
-  /// a control that disappeared when the list emptied.
-  @ViewBuilder
+  /// An empty Library and a filter that admits nothing are different states, and they were once
+  /// indistinguishable on screen. Both keep the paste field, so filing the first Set never means
+  /// hunting for a control that disappeared when the list emptied. A screen that can filter
+  /// supplies its own no-matches view, and gets the heading and the filter row back, so a filter
+  /// is cleared where it was set rather than by relaunching.
+  ///
+  /// Neither state scrolls, which is how Search already showed the same component: the field
+  /// above it and the state itself both fit a phone, and a state that sizes itself to the space
+  /// it is offered has no reason to be handed unbounded height.
   private var emptyPresentation: some View {
-    if let hero {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 0) {
-          hero.padding(.bottom, 16)
-          empty.frame(maxWidth: .infinity)
-        }
-        .padding()
+    VStack(alignment: .leading, spacing: 0) {
+      if let hero {
+        hero.padding(.bottom, 16)
       }
-    } else {
-      empty
+      if let noMatches {
+        listHeader
+        noMatches.frame(maxWidth: .infinity, maxHeight: .infinity)
+      } else {
+        empty.frame(maxWidth: .infinity, maxHeight: .infinity)
+      }
     }
+    .padding()
   }
 
   private func open(_ set: SavedSet) {
     guard let link = SetPresentation.sourceURL(set) else { return }
     openURL(link)
+  }
+
+  /// The heading, the rule under it, and the line that carries the count and the filters. The
+  /// rows and the no-matches state share it, because both are answers about the same list.
+  private var listHeader: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      heading
+        .font(.orbis.sectionTitle)
+        .padding(.bottom, 12)
+      ListingRule()
+      HStack(alignment: .firstTextBaseline) {
+        ListingLabel(footer)
+        Spacer()
+        if let filters {
+          filters
+        }
+      }
+      .padding(.vertical, 12)
+      .overlay(alignment: .bottom) { Divider() }
+    }
   }
 
   private func rows(_ sets: [SavedSet]) -> some View {
@@ -78,19 +112,7 @@ struct SetList: View {
         if let hero {
           hero.padding(.bottom, 16)
         }
-        heading
-          .font(.orbis.sectionTitle)
-          .padding(.bottom, 12)
-        ListingRule()
-        HStack(alignment: .firstTextBaseline) {
-          ListingLabel(footer)
-          Spacer()
-          if let filters {
-            filters
-          }
-        }
-        .padding(.vertical, 12)
-        .overlay(alignment: .bottom) { Divider() }
+        listHeader
         // The list can hold a whole library, so rows are built as they scroll into view
         // rather than all at once. Sets group under the day they were filed, so the date is
         // structure rather than a value on every row.
@@ -135,7 +157,7 @@ struct SetList: View {
       .padding()
     }
     .scrollEdgeEffectStyle(.soft, for: .top)
-    .accessibilityIdentifier("library-list")
+    .accessibilityIdentifier(listIdentifier)
   }
 
   /// The Sets in the order given, grouped under the day each was filed.
