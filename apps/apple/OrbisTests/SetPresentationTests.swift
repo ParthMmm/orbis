@@ -11,11 +11,12 @@ final class SetPresentationTests: XCTestCase {
     tags: String = #"["techno","breaks"]"#,
     createdAt: String = "2026-09-11T02:33:14.729Z",
     playbackPositionSeconds: Int = 0,
+    durationSeconds: Int? = nil,
     downloadState: String = "none"
   ) throws -> SavedSet {
     let json = """
       {"id":"one","url":"\(url)","title":"\(title)","source":"youtube","tags":\(tags),
-      "createdAt":"\(createdAt)","creator":null,"artworkUrl":null,"durationSeconds":null,
+      "createdAt":"\(createdAt)","creator":null,"artworkUrl":null,"durationSeconds":\(durationSeconds.map(String.init) ?? "null"),
       "metadataState":"pending","titleEditedByUser":false,"downloadState":"\(downloadState)",
       "playlistIds":[],"retainedAudioBytes":null,"retainedAudioFormat":null,
       "playbackPositionSeconds":\(playbackPositionSeconds),"listenCount":0,"finishCount":0,
@@ -25,14 +26,20 @@ final class SetPresentationTests: XCTestCase {
   }
 
   func testRowCarriesIdentitySourceTagsAndDate() throws {
-    let model = SetPresentation.row(try makeSet(), position: 2)
+    let model = SetPresentation.row(try makeSet())
 
-    XCTAssertEqual(model.index, 3)
     XCTAssertEqual(model.source, "YouTube")
     XCTAssertEqual(model.title, "Night session")
-    XCTAssertEqual(model.url, "youtube.com/watch?v=abcdefghijk")
     XCTAssertEqual(model.tags.map(\.name), ["techno", "breaks"])
     XCTAssertEqual(model.added.timeIntervalSince1970, 1_789_093_994.729, accuracy: 0.01)
+  }
+
+  func testProgressNeedsALengthToMeasureAgainst() throws {
+    XCTAssertNil(SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 600)))
+    XCTAssertEqual(
+      SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 600, durationSeconds: 2400)), 0.25)
+    XCTAssertEqual(
+      SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 9000, durationSeconds: 2400)), 1)
   }
 
   func testDisplayURLCarriesNoSchemeOrWWW() {
@@ -42,8 +49,8 @@ final class SetPresentationTests: XCTestCase {
   }
 
   func testTagColourIsStableAndIndependentOfOtherTags() throws {
-    let alone = SetPresentation.row(try makeSet(tags: #"["techno"]"#), position: 0)
-    let mixed = SetPresentation.row(try makeSet(tags: #"["breaks","techno"]"#), position: 0)
+    let alone = SetPresentation.row(try makeSet(tags: #"["techno"]"#))
+    let mixed = SetPresentation.row(try makeSet(tags: #"["breaks","techno"]"#))
 
     let technoAlone = alone.tags.first { $0.name == "techno" }?.category
     let technoMixed = mixed.tags.first { $0.name == "techno" }?.category
@@ -57,17 +64,17 @@ final class SetPresentationTests: XCTestCase {
   }
 
   func testStateAppearsOnlyWhenThereIsSomethingToSay() throws {
-    XCTAssertNil(SetPresentation.row(try makeSet(), position: 0).state)
-    XCTAssertNil(SetPresentation.row(try makeSet(downloadState: "none"), position: 0).state)
+    XCTAssertNil(SetPresentation.row(try makeSet()).state)
+    XCTAssertNil(SetPresentation.row(try makeSet(downloadState: "none")).state)
 
     let both = try XCTUnwrap(
-      SetPresentation.row(try makeSet(playbackPositionSeconds: 3661, downloadState: "queued"), position: 0).state
+      SetPresentation.row(try makeSet(playbackPositionSeconds: 3661, downloadState: "queued")).state
     )
     XCTAssertEqual(both.resumeAt, 3661)
     XCTAssertEqual(both.label, "Resume at 1:01:01 · Download queued")
 
     let downloadOnly = try XCTUnwrap(
-      SetPresentation.row(try makeSet(downloadState: "ready"), position: 0).state
+      SetPresentation.row(try makeSet(downloadState: "ready")).state
     )
     XCTAssertNil(downloadOnly.resumeAt)
     XCTAssertEqual(downloadOnly.label, "Audio ready")

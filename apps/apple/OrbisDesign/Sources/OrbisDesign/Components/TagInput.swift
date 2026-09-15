@@ -93,7 +93,15 @@ public struct TagInput: View {
               Button {
                 tags.removeAll { $0 == tag }
               } label: {
-                Image(systemName: "xmark.circle.fill").font(.orbis.mono)
+                Image(systemName: "xmark.circle.fill")
+                  .font(.orbis.mono)
+                  // The glyph is about 13 pt square. 44 pt is the target the touch platforms need
+                  // and 20 pt the Mac one; the HStack keeps the chip centred in the taller target.
+                  #if os(macOS)
+                    .frame(minWidth: 20, minHeight: 20)
+                  #else
+                    .frame(minWidth: 44, minHeight: 44)
+                  #endif
               }
               .buttonStyle(.plain)
               .foregroundStyle(.secondary)

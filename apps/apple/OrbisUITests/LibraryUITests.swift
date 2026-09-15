@@ -31,11 +31,25 @@ final class LibraryUITests: XCTestCase {
 
   /// Search is a tab on a compact width class and a sidebar item on a regular one, so the
   /// journey proves the platform's navigation rather than assuming one shape.
-  private func openSearch(in app: XCUIApplication) {
+  /// Returns the point the field sits at on iPhone, so a later query can focus it again once
+  /// the button it replaced is gone.
+  @discardableResult
+  private func openSearch(in app: XCUIApplication) -> XCUICoordinate? {
     let tab = app.tabBars.buttons["Search"]
     if tab.waitForExistence(timeout: 8) {
-      tab.tap()
-      return
+      // On iPhone the search tab morphs into the field in the same spot. The first tap
+      // selects it; the second, on the same point, focuses the field and raises the keyboard.
+      // XCUITest cannot address the field once the morph settles, so the spot is remembered.
+      // The point is taken from the frame now, because the button is gone after the first tap
+      // and a coordinate made from it would resolve against nothing.
+      let frame = tab.frame
+      let spot = app.coordinate(withNormalizedOffset: .zero)
+        .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
+      spot.tap()
+      sleep(2)
+      spot.tap()
+      sleep(1)
+      return spot
     }
     let sidebarSearch = app.buttons["sidebar-search"]
     XCTAssertTrue(
@@ -43,6 +57,7 @@ final class LibraryUITests: XCTestCase {
       "Search must be reachable from a tab bar or the sidebar\n\(app.debugDescription)"
     )
     sidebarSearch.tap()
+    return nil
   }
 
   func testConnectsBrowsesAndSearchesTheLibrary() throws {
@@ -61,19 +76,31 @@ final class LibraryUITests: XCTestCase {
       row.waitForExistence(timeout: 60), "a saved Set must appear after connecting\n\(app.debugDescription)")
     capture("02-library-loaded")
 
-    openSearch(in: app)
-    let field = app.searchFields.firstMatch
-    XCTAssertTrue(field.waitForExistence(timeout: 30), "the Search destination must offer a field")
-    field.tap()
-    field.typeText("night")
-    field.typeText("\n")
+    let searchSpot = openSearch(in: app)
+    XCTAssertTrue(
+      app.keyboards.firstMatch.waitForExistence(timeout: 15),
+      "the Search destination must offer a field\n\(app.debugDescription)")
+    app.typeText("night")
+    app.typeText("\n")
     XCTAssertTrue(row.waitForExistence(timeout: 30), "search must find the Set")
     capture("03-search-results")
 
-    field.tap()
-    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 5))
-    field.typeText("zzzznothing")
-    field.typeText("\n")
+    // Return puts the keyboard away and the field, now holding a query, narrows towards the
+    // middle of the bar, so it is focused again at the bar's centre rather than the old spot.
+    if !app.keyboards.firstMatch.exists {
+      if let searchSpot {
+        let window = app.windows.firstMatch.frame
+        app.coordinate(withNormalizedOffset: .zero)
+          .withOffset(CGVector(dx: window.midX, dy: searchSpot.screenPoint.y))
+          .tap()
+      } else {
+        app.searchFields.firstMatch.tap()
+      }
+      sleep(1)
+    }
+    app.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 5))
+    app.typeText("zzzznothing")
+    app.typeText("\n")
     let noResults = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS %@", "No matching sets")).firstMatch
     XCTAssertTrue(noResults.waitForExistence(timeout: 30), "an unmatched search must say so\n\(app.debugDescription)")

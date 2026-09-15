@@ -1,15 +1,21 @@
 import SwiftUI
 
 /// A Playlist in a sidebar or list: color swatch, name, count. Like a Reminders list.
+/// A selected row carries a mark as well as its container's tint, so selection does not rest on
+/// colour alone.
 public struct PlaylistRow: View {
   public let name: String
   public let count: Int
   public let category: OrbisColor.Category?
+  public let isSelected: Bool
 
-  public init(_ name: String, count: Int, category: OrbisColor.Category? = nil) {
+  public init(
+    _ name: String, count: Int, category: OrbisColor.Category? = nil, isSelected: Bool = false
+  ) {
     self.name = name
     self.count = count
     self.category = category
+    self.isSelected = isSelected
   }
 
   public var body: some View {
@@ -17,6 +23,11 @@ public struct PlaylistRow: View {
       HStack {
         Text(name)
         Spacer()
+        if isSelected {
+          Image(systemName: "checkmark")
+            .font(.orbis.caption)
+            .foregroundStyle(.secondary)
+        }
         Text(count, format: .number)
           .font(.orbis.mono)
           .monospacedDigit()

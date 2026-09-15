@@ -52,24 +52,65 @@ struct RootView: View {
   }
 }
 
-/// iPhone. Library and Search are tabs.
-struct CompactShell: View {
-  @Bindable var model: AppModel
+#if os(iOS)
+  /// iPhone. Library is a tab; Search takes the search role, so the system draws it as the
+  /// separate button beside the tab bar and opens the field in its place. Now playing rides the
+  /// tab bar as its bottom accessory, the way a music app carries it, and the bar recedes as the
+  /// list scrolls.
+  struct CompactShell: View {
+    @Bindable var model: AppModel
 
-  var body: some View {
-    TabView(selection: $model.destination) {
-      ForEach(Destination.allCases) { destination in
-        NavigationStack {
-          DestinationView(model: model, destination: destination)
+    var body: some View {
+      TabView(selection: $model.destination) {
+        Tab(
+          Destination.library.rawValue, systemImage: Destination.library.symbol,
+          value: Destination.library
+        ) {
+          NavigationStack {
+            DestinationView(model: model, destination: .library)
+          }
         }
-        .tabItem {
-          Label(destination.rawValue, systemImage: destination.symbol)
+        Tab(value: Destination.search, role: .search) {
+          NavigationStack {
+            DestinationView(model: model, destination: .search)
+          }
         }
-        .tag(destination)
+      }
+      .tabBarMinimizeBehavior(.onScrollDown)
+      // `isEnabled` is why the target is iOS 26.1: 26.0 reserves an empty pill for an empty
+      // accessory, and the only way round it there is to rebuild the tab view.
+      .tabViewBottomAccessory(isEnabled: model.audioPlayer.currentSetId != nil) {
+        NowPlayingBar(model: model)
       }
     }
   }
-}
+
+  /// The mini player, fed from the audio player. The accessory placement supplies the glass.
+  struct NowPlayingBar: View {
+    @Bindable var model: AppModel
+
+    var body: some View {
+      let player = model.audioPlayer
+      MiniPlayer(
+        title: player.currentTitle,
+        time: SetPresentation.miniPlayerTime(elapsed: player.elapsed, duration: player.duration),
+        artwork: player.currentSetId.flatMap { model.savedSet($0)?.artworkUrl }
+          .flatMap(URL.init(string:)),
+        isPlaying: player.state == .playing,
+        surface: .accessory,
+        toggle: {
+          if player.state == .playing { player.pause() } else { player.resume() }
+        },
+        open: {
+          if let id = player.currentSetId {
+            model.destination = .library
+            model.openSet(id)
+          }
+        }
+      )
+    }
+  }
+#endif
 
 /// iPad and macOS. The same destinations become sidebar items. A plain list with explicit
 /// selection buttons is used because SwiftUI's selection-based `List` initializers are
@@ -84,11 +125,21 @@ struct SidebarShell: View {
           Button {
             model.destination = destination
           } label: {
-            Label(destination.rawValue, systemImage: destination.symbol)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .contentShape(Rectangle())
+            HStack(spacing: 8) {
+              Label(destination.rawValue, systemImage: destination.symbol)
+              Spacer(minLength: 0)
+              // The tint alone says nothing to a person who cannot see it, so the row is marked.
+              if model.destination == destination {
+                Image(systemName: "checkmark")
+                  .font(.orbis.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
+          .accessibilityAddTraits(model.destination == destination ? [.isSelected] : [])
           .listRowBackground(
             model.destination == destination
               ? Color.accentColor.opacity(0.18)
@@ -142,12 +193,14 @@ struct SidebarShell: View {
       PlaylistRow(
         name,
         count: count,
-        category: id == nil ? nil : SetPresentation.category(for: name)
+        category: id == nil ? nil : SetPresentation.category(for: name),
+        isSelected: model.selectedPlaylistId == id
       )
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .accessibilityAddTraits(model.selectedPlaylistId == id ? [.isSelected] : [])
     .listRowBackground(
       model.selectedPlaylistId == id ? Color.accentColor.opacity(0.18) : Color.clear
     )
@@ -214,18 +267,20 @@ struct DestinationView: View {
     return Text("Everything \(Text("/ \(activeTag)").foregroundStyle(colour))")
   }
 
+  /// Each Tag is a word; the active one is underlined. Pressing it again clears the filter.
   private var tagFilters: AnyView {
     AnyView(
-      HStack(spacing: 6) {
+      HStack(spacing: 14) {
         ForEach(model.availableTags, id: \.self) { tag in
-          TagPill(
-            tag,
-            category: SetPresentation.category(for: tag),
-            isOn: Binding(
-              get: { model.activeTag == tag },
-              set: { isOn in model.setTagFilter(isOn ? tag : nil) }
-            )
-          )
+          let active = model.activeTag == tag
+          Button {
+            model.setTagFilter(active ? nil : tag)
+          } label: {
+            TagWord(tag, category: SetPresentation.category(for: tag), active: active)
+              .orbisRowHeight()
+          }
+          .buttonStyle(.plain)
+          .accessibilityAddTraits(active ? .isSelected : [])
           .accessibilityIdentifier("tag-filter-\(tag)")
         }
       }
@@ -306,6 +361,9 @@ struct DestinationView: View {
         Button("Done") { Task { await model.saveReveal() } }
           .buttonStyle(OrbisPrimaryButtonStyle())
           .disabled(model.isSavingReveal)
+          // Return reaches the default action, which is the common case here; the Tag field keeps
+          // Return while it has focus.
+          .keyboardShortcut(.defaultAction)
           .accessibilityIdentifier("reveal-done")
         Button("Not now") { model.closeReveal() }
           .buttonStyle(.plain)
@@ -365,8 +423,44 @@ struct SearchDestination: View {
   @Bindable var model: AppModel
 
   var body: some View {
+    Group {
+      if isUntouched {
+        // Nothing has been asked yet, so nothing has failed. One line says what the field
+        // searches; the field itself is the action.
+        ListingLabel(Self.prompt(total: model.totalCount))
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .background(Color.orbis.paper)
+          .accessibilityIdentifier("search-untouched")
+      } else {
+        results
+      }
+    }
+    .navigationTitle("Search")
+    .searchable(text: $model.searchQuery, prompt: "Title, tag, or source link")
+    // On the screen, not the results: the results view is not there until a search has run,
+    // and a submit handler on a view that is not there hears nothing.
+    .onSubmit(of: .search) { Task { await model.runSearch() } }
+    .onChange(of: model.searchQuery) { _, query in
+      if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+        model.clearSearch()
+      }
+    }
+  }
+
+  /// "Search your 8 sets."
+  static func prompt(total: Int) -> String {
+    total == 1 ? "Search your 1 set." : "Search your \(total) sets."
+  }
+
+  /// Nothing has been submitted yet. Typing alone changes nothing on screen; Return does.
+  private var isUntouched: Bool {
+    if case .idle = model.search { return true }
+    return false
+  }
+
+  private var results: some View {
     SetList(
-      state: displayedState,
+      state: model.search,
       heading: heading,
       empty: AnyView(
         NoResultsState(recoverLabel: "Clear search", recover: { model.clearSearch() })
@@ -379,14 +473,6 @@ struct SearchDestination: View {
       footer: searchFooter,
       retry: { await model.runSearch() }
     )
-    .navigationTitle("Search")
-    .searchable(text: $model.searchQuery, prompt: "Title, tag, or source link")
-    .onSubmit(of: .search) { Task { await model.runSearch() } }
-    .onChange(of: model.searchQuery) { _, query in
-      if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        model.clearSearch()
-      }
-    }
   }
 
   /// The heading names the query the results answer, not whatever sits in the field: typing
@@ -397,16 +483,7 @@ struct SearchDestination: View {
   }
 
   private var searchFooter: String {
-    guard case .loaded(let sets) = displayedState else { return "" }
+    guard case .loaded(let sets) = model.search else { return "" }
     return sets.count == 1 ? "1 set" : "\(sets.count) sets"
-  }
-
-  private var displayedState: Loadable<[SavedSet]> {
-    if case .idle = model.search,
-      model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-    {
-      return .loaded([])
-    }
-    return model.search
   }
 }

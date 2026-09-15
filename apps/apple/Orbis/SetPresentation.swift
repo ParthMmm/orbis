@@ -4,32 +4,41 @@ import OrbisDesign
 /// Everything the design system's row needs, derived from one Set. A value rather than a view
 /// so the mapping is testable without rendering anything.
 struct SetRowModel {
-  let index: Int
-  let source: String
   let title: String
-  let url: String
+  let source: String
+  let artwork: URL?
+  let creator: String?
+  let length: String?
   let tags: [SetRow.Tag]
   let added: Date
   let state: SetRow.State?
+  /// How far listening got, from 0 to 1, or nothing when the length is unknown.
+  let progress: Double?
 }
 
 enum SetPresentation {
   /// The design package defaults its types to the main actor, so the mapper that builds them
-  /// is main actor too. The row shows its ordinal, counted from one, so a list position
-  /// becomes an ordinal here rather than at every call site.
+  /// is main actor too.
   @MainActor
-  static func row(
-    _ set: SavedSet, position: Int, activeTag: String? = nil
-  ) -> SetRowModel {
+  static func row(_ set: SavedSet, activeTag: String? = nil) -> SetRowModel {
     SetRowModel(
-      index: position + 1,
-      source: set.source.label,
       title: set.title,
-      url: displayURL(set.url),
+      source: set.source.label,
+      artwork: set.artworkUrl.flatMap(URL.init(string:)),
+      creator: set.creator,
+      length: set.durationSeconds.map(length),
       tags: set.tags.map { SetRow.Tag($0, category(for: $0)) },
       added: date(from: set.createdAt),
-      state: state(of: set)
+      state: state(of: set),
+      progress: progress(of: set)
     )
+  }
+
+  /// The fraction of the Set that has been heard, for the bar along its artwork. Nothing when
+  /// the length is unknown, because a bar with no end would claim a place it cannot know.
+  static func progress(of set: SavedSet) -> Double? {
+    guard let seconds = set.durationSeconds, seconds > 0 else { return nil }
+    return min(Double(set.playbackPositionSeconds) / Double(seconds), 1)
   }
 
   /// The design shows the link without a scheme or `www.`, because it is there to be
@@ -110,6 +119,12 @@ enum SetPresentation {
     DateParsing.date(from: timestamp)
   }
 
+  /// The day a Set was filed, as a listing heads its group: "Thu 11 Sep".
+  @MainActor
+  static func day(_ timestamp: String) -> String {
+    date(from: timestamp).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+  }
+
   @MainActor
   static func added(_ timestamp: String) -> String {
     date(from: timestamp).formatted(.dateTime.month(.abbreviated).day())
@@ -147,6 +162,12 @@ enum SetPresentation {
       return String(format: "%d:%02d:%02d", hours, minutes, rest)
     }
     return String(format: "%d:%02d", minutes, rest)
+  }
+
+  /// "26:14 · 1:15:25", or the elapsed time alone until the length is known.
+  static func miniPlayerTime(elapsed: TimeInterval, duration: TimeInterval?) -> String {
+    guard let duration, duration.isFinite, duration > 0 else { return timestamp(elapsed) }
+    return "\(timestamp(elapsed)) · \(timestamp(duration))"
   }
 
   /// The address Open hands to the system. A value rather than a call, so the intent can be

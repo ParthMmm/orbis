@@ -22,7 +22,17 @@ These skills supplement existing guidance. They do not replace it.
 - `write-swift` keeps local Swift conventions and already covers concurrency breadth and modern syntax. `swift-concurrency` adds depth for actor isolation, cancellation, and `Sendable` only when a task needs it.
 - Axiom stays the platform fallback and is unchanged, including the `.pi` package entry and its selective Claude links.
 - `OrbisDesign` owns tokens, components, glass usage, and failure vocabulary. SwiftUI guidance must not override those local decisions.
-- `bun run native:lanes` remains the verification owner. It already provisions a temporary service, pairs a device, runs unit and journey tests, and exports screenshots. No separate verifier skill was added on purpose.
+- `bun run native:lanes` remains the verification owner. It already provisions a temporary service, pairs a device, runs unit and journey tests, and exports screenshots.
+
+## Verification skill
+
+`.agents/skills/verify-orbis/` drives and proves the Apple client by hand, with `.claude/skills/verify-orbis` symlinked to it. The canonical copy is machine-local and ignored by git like the rest of `.agents/`, so this note is the durable record. Added 2026-09-14.
+
+It is the complementary pass to `bun run native:lanes`, not a replacement, and its own body says so. What it adds is what a suite asserting labels it already believes cannot see: geometry, controls the journeys never tap, and states reached by hand. Its first run found the tag filter pill turning the filter off but not on, a `Clear search` that stalls on a loading state, and search results that cannot be opened.
+
+- Entry point: `.agents/skills/verify-orbis/bin/orbis-verify`, with `doctor`, `build`, `launch`, `stop`, `scratch start|stop`, and `evidence`.
+- Feature map: `.agents/skills/verify-orbis/features/` — one file per user-facing feature, indexed by its `README.md`.
+- The traps that produce wrong conclusions live in the committed `docs/agents/ui-verification.md`.
 
 ## Execution boundary
 

@@ -257,12 +257,12 @@ final class OrbisClientTests: XCTestCase {
     XCTAssertNil(StubProtocol.lastBody)
   }
 
-  static func savedSet(title: String, tags: [String]) -> String {
+  static func savedSet(title: String, tags: [String], downloadState: String = "none") -> String {
     """
     {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
     "title":"\(title)","source":"youtube","tags":\(encode(tags)),"createdAt":"2026-01-01T00:00:00.000Z",
     "creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
-    "downloadState":"none","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
+    "downloadState":"\(downloadState)","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
     "lastListenedAt":null}
     """
   }
@@ -337,11 +337,36 @@ final class OrbisClientTests: XCTestCase {
 /// server. Static rather than injected because `URLProtocol` is instantiated by the loading
 /// system, so tests run one at a time.
 final class StubProtocol: URLProtocol {
+  /// Guards the request observations. `startLoading` runs on the loading system's own thread
+  /// and the tests read from the main actor, so both sides take the lock rather than one of
+  /// them relying on when the other happens to run.
+  private static let observationLock = NSLock()
+  nonisolated(unsafe) private static var observedRequest: URLRequest?
+  nonisolated(unsafe) private static var observedBody: Data?
+
+  static var lastRequest: URLRequest? {
+    get { observationLock.withLock { observedRequest } }
+    set { observationLock.withLock { observedRequest = newValue } }
+  }
+
+  static var lastBody: Data? {
+    get { observationLock.withLock { observedBody } }
+    set { observationLock.withLock { observedBody = newValue } }
+  }
+
+  /// Records a request and its body together, so a test that waits for the request is never
+  /// woken between the two and reads a request whose body has not arrived yet.
+  private static func observe(_ request: URLRequest) {
+    let body = Self.readBody(request)
+    observationLock.withLock {
+      observedRequest = request
+      observedBody = body
+    }
+  }
+
   nonisolated(unsafe) static var status = 200
   nonisolated(unsafe) static var body = ""
   nonisolated(unsafe) static var failure: URLError?
-  nonisolated(unsafe) static var lastRequest: URLRequest?
-  nonisolated(unsafe) static var lastBody: Data?
 
   /// Answers each request from its own path, so one model run can walk health, library, and
   /// playlists in a single test. Sendable so it always runs on the loading system's thread;
@@ -398,8 +423,7 @@ final class StubProtocol: URLProtocol {
   override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
 
   override func startLoading() {
-    StubProtocol.lastRequest = request
-    StubProtocol.lastBody = Self.readBody(request)
+    StubProtocol.observe(request)
     if let failure = StubProtocol.failure {
       client?.urlProtocol(self, didFailWithError: failure)
       return

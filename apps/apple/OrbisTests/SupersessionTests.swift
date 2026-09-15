@@ -156,6 +156,62 @@ final class SupersessionTests: XCTestCase {
     XCTAssertFalse(model.isEditingConnection)
   }
 
+  /// Forgetting ends the sidebar's read as well as the Library's. A Playlists answer that was
+  /// already out must not put the old service's Playlists back into a device that no longer
+  /// holds it.
+  func testAPlaylistsResponseThatArrivesAfterForgettingCannotPublish() async throws {
+    let releasePlaylists = DispatchSemaphore(value: 0)
+    let playlistsBody = #"{"playlists":[{"id":"p1","name":"Long drives","setCount":4}]}"#
+    let setsBody = libraryBody(title: "Night session")
+    let model = AppModel(
+      client: OrbisClient(
+        address: URL(string: "https://vanta.example.ts.net")!,
+        token: "token",
+        session: StubProtocol.session { request in
+          guard request.url?.path() == "/playlists" else { return (200, setsBody) }
+          _ = releasePlaylists.wait(timeout: .now() + 10)
+          return (200, playlistsBody)
+        }
+      ), settings: MemoryClientSettings())
+
+    let read = Task { await model.loadPlaylists() }
+    try await waitForARequest()
+
+    model.forget()
+    releasePlaylists.signal()
+    await read.value
+
+    XCTAssertEqual(
+      model.playlists, .idle,
+      "the Playlists of a service this device forgot must not come back")
+  }
+
+  /// A download that lands while the Library is being read must still show. The read in flight
+  /// was made before the service accepted the download, so the Library is read again rather than
+  /// the answer being dropped because there was no loaded list to swap into.
+  func testADownloadThatLandsWhileTheLibraryIsLoadingIsNotDropped() async {
+    let downloading = OrbisClientTests.savedSet(
+      title: "Night session", tags: [], downloadState: "downloading")
+    let library = "{\"sets\":[\(downloading)]}"
+    let model = AppModel(
+      client: OrbisClient(
+        address: URL(string: "https://vanta.example.ts.net")!,
+        token: "token",
+        session: StubProtocol.session { request in
+          request.httpMethod == "POST" ? (200, downloading) : (200, library)
+        }
+      ), settings: MemoryClientSettings())
+    // The Library is mid-read: there is no loaded list for the accepted write to land in.
+    model.library = .loading
+
+    await model.downloadAudio("1")
+
+    guard case .loaded(let sets) = model.library else {
+      return XCTFail("the Library must be read again so the download shows")
+    }
+    XCTAssertEqual(sets.map(\.downloadState), ["downloading"])
+  }
+
   /// Leaving the connection screen dismisses the test that is still out, so a late answer
   /// cannot replace the pairing this device already trusts.
   func testAClosedConnectionEditorCannotCommitALateConnectionTest() async throws {

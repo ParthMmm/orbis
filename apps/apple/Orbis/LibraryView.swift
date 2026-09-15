@@ -78,61 +78,82 @@ struct SetList: View {
         if let hero {
           hero.padding(.bottom, 16)
         }
+        heading
+          .font(.orbis.sectionTitle)
+          .padding(.bottom, 12)
+        ListingRule()
         HStack(alignment: .firstTextBaseline) {
-          heading
-            .font(.orbis.sectionTitle)
+          ListingLabel(footer)
           Spacer()
           if let filters {
             filters
           }
         }
-        .padding(.bottom, 12)
+        .padding(.vertical, 12)
+        .overlay(alignment: .bottom) { Divider() }
         // The list can hold a whole library, so rows are built as they scroll into view
-        // rather than all at once.
-        LazyVStack(spacing: 0) {
-          ForEach(Array(sets.enumerated()), id: \.element.id) { index, set in
-            let model = SetPresentation.row(
-              set, position: index, activeTag: activeTag
-            )
-            let row = SetRow(
-              index: model.index,
-              source: model.source,
-              title: model.title,
-              url: model.url,
-              tags: model.tags,
-              added: model.added,
-              state: model.state
-            )
-            .padding(.horizontal)
-            .contentShape(.rect)
-            .accessibilityIdentifier("set-row-\(set.id)")
-            .contextMenu {
-              Button("Open Source") { open(set) }
-            }
-            if let select {
-              Button {
-                select(set)
-              } label: {
+        // rather than all at once. Sets group under the day they were filed, so the date is
+        // structure rather than a value on every row.
+        LazyVStack(alignment: .leading, spacing: 0) {
+          ForEach(Self.days(of: sets), id: \.day) { group in
+            ListingHeader(group.day)
+            ForEach(Array(group.sets.enumerated()), id: \.element.id) { index, set in
+              let model = SetPresentation.row(set, activeTag: activeTag)
+              let row = SetRow(
+                title: model.title,
+                source: model.source,
+                artwork: model.artwork,
+                creator: model.creator,
+                length: model.length,
+                tags: model.tags,
+                activeTag: activeTag,
+                state: model.state,
+                progress: model.progress
+              )
+              .contentShape(.rect)
+              .accessibilityIdentifier("set-row-\(set.id)")
+              .contextMenu {
+                Button("Open Source") { open(set) }
+              }
+              if index > 0 {
+                Divider()
+              }
+              if let select {
+                Button {
+                  select(set)
+                } label: {
+                  row
+                }
+                .buttonStyle(.plain)
+              } else {
                 row
               }
-              .buttonStyle(.plain)
-            } else {
-              row
-            }
-            if index < sets.count - 1 {
-              Divider().padding(.leading)
             }
           }
         }
-        .padding(.vertical, 6)
-        .orbisRaised()
-        Text(footer)
-          .font(.orbis.mono)
-          .foregroundStyle(.secondary)
-          .padding(.top, 10)
       }
       .padding()
     }
+    .scrollEdgeEffectStyle(.soft, for: .top)
     .accessibilityIdentifier("library-list")
+  }
+
+  /// The Sets in the order given, grouped under the day each was filed.
+  struct DayGroup {
+    let day: String
+    let sets: [SavedSet]
+  }
+
+  static func days(of sets: [SavedSet]) -> [DayGroup] {
+    var groups: [DayGroup] = []
+    for set in sets {
+      let day = SetPresentation.day(set.createdAt)
+      if groups.last?.day == day {
+        groups[groups.count - 1] = DayGroup(day: day, sets: groups[groups.count - 1].sets + [set])
+      } else {
+        groups.append(DayGroup(day: day, sets: [set]))
+      }
+    }
+    return groups
   }
 }

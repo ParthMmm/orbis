@@ -28,8 +28,15 @@ final class AudioPlayer {
   private var statusObservation: NSKeyValueObservation?
   private var rateObservation: NSKeyValueObservation?
   private var stallObservation: NSKeyValueObservation?
-  private var commandTargets: [Any] = []
-  private var observers: [NSObjectProtocol] = []
+
+  /// Which observations are current: a callback carrying an older number is dropped.
+  private var playbackGeneration = 0
+
+  /// The registrations this player made outside itself, held nonisolated so `deinit`, which
+  /// cannot hop actors, takes back exactly its own handlers instead of clearing the shared
+  /// command center. Ignored by observation: nothing reads them.
+  @ObservationIgnored nonisolated(unsafe) private var commandTargets: [Any] = []
+  @ObservationIgnored nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
   private var isObservingInterruptions = false
 
   init() {
@@ -39,14 +46,18 @@ final class AudioPlayer {
   deinit {
     // A nonisolated deinit cannot touch MainActor state, so everything owned here
     // is released through stop(), which every play() enters through first. What
-    // remains is global: the shared command center must not keep this player's
-    // handlers after it is gone. Observation tokens invalidate themselves on
-    // release, and the player itself only ever deallocates stopped or never played.
+    // remains is global, and only this player's own registrations are taken back.
     let center = MPRemoteCommandCenter.shared()
-    center.playCommand.removeTarget(nil)
-    center.pauseCommand.removeTarget(nil)
+    for target in commandTargets {
+      center.playCommand.removeTarget(target)
+      center.pauseCommand.removeTarget(target)
+    }
     center.playCommand.isEnabled = false
     center.pauseCommand.isEnabled = false
+    let notifications = NotificationCenter.default
+    for observer in observers {
+      notifications.removeObserver(observer)
+    }
   }
 
   /// The header fields an asset needs so the service trusts the stream. The token
@@ -113,32 +124,44 @@ final class AudioPlayer {
     )
     let player = AVPlayer(playerItem: item)
     self.player = player
+    playbackGeneration += 1
+    let generation = playbackGeneration
     // KVO can call back on any thread, so each handler captures plain values and
-    // hops here before touching state.
+    // hops here before touching state. The generation check drops a callback that a
+    // stopped or replaced player queued before this one took over.
     statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
       let status = item.status
       let seconds = item.duration.seconds
       Task { @MainActor in
-        self?.itemStatusChanged(status: status, durationSeconds: seconds)
+        guard let self, self.playbackGeneration == generation else { return }
+        self.itemStatusChanged(status: status, durationSeconds: seconds)
       }
     }
     rateObservation = player.observe(\.rate, options: [.new]) { [weak self] player, _ in
       let rate = player.rate
       Task { @MainActor in
-        self?.rateChanged(rate: rate)
+        guard let self, self.playbackGeneration == generation else { return }
+        self.rateChanged(rate: rate)
       }
     }
     stallObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
       let status = player.timeControlStatus
       Task { @MainActor in
-        self?.stallChanged(status: status)
+        guard let self, self.playbackGeneration == generation else { return }
+        self.stallChanged(status: status)
       }
     }
     timeObserver = player.addPeriodicTimeObserver(
       forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
       queue: .main
     ) { [weak self] time in
-      self?.elapsed = time.seconds
+      let seconds = time.seconds
+      // Registered on the main queue, so this closure is already on the main actor; assuming it
+      // avoids a task on every tick.
+      MainActor.assumeIsolated {
+        guard let self, self.playbackGeneration == generation else { return }
+        self.elapsed = seconds
+      }
     }
     observeInterruptions()
     player.play()
@@ -167,6 +190,8 @@ final class AudioPlayer {
   }
 
   func stop() {
+    // Anything the player in hand still has queued belongs to a playback that is over.
+    playbackGeneration += 1
     player?.pause()
     dropPlayerObservers()
     player = nil
