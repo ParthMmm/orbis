@@ -80,6 +80,7 @@ final class AppModel {
   /// response that arrives after a newer one began cannot publish over it.
   private var libraryGeneration = 0
   private var searchGeneration = 0
+  private var playlistGeneration = 0
   private var connectionGeneration = 0
 
   /// What the person has pasted but not filed yet, and what the last filing said.
@@ -125,6 +126,16 @@ final class AppModel {
   /// The latest download progress the service reported, by Set. Terminal states reload
   /// the library instead, so this only ever holds a download that is still running.
   var audioStates: [String: AudioState] = [:]
+
+  /// The watches on downloads that are still running, by Set. Held by the model rather than by
+  /// the page that asked for the download, because a person who starts one and leaves still needs
+  /// its result in the Library.
+  private var downloadWatchers: [String: Task<Void, Never>] = [:]
+
+  /// How many times one download is polled before a watch gives up: ten minutes at one second a
+  /// poll. Bounded, so a service that never reaches a terminal state cannot leave a task running
+  /// for the life of the app.
+  private static let downloadWatchLimit = 600
 
   var destination: Destination = .library
 
@@ -236,6 +247,10 @@ final class AppModel {
       client = candidate
       hasStoredToken = true
       isEditingConnection = false
+      // A different service is a different set of downloads: nothing here asks the new service
+      // about a Set it has never heard of.
+      stopDownloadWatches()
+      audioStates.removeAll()
       await loadLibrary()
       // The sidebar reads playlists separately from the library, so pairing fills both.
       await loadPlaylists()
@@ -275,6 +290,12 @@ final class AppModel {
     connectionGeneration += 1
     libraryGeneration += 1
     searchGeneration += 1
+    playlistGeneration += 1
+    // Audio still playing comes from a service this device no longer holds a token for, and a
+    // download the old service is running is the same: nothing here may keep asking about it.
+    audioPlayer.stop()
+    stopDownloadWatches()
+    audioStates.removeAll()
     settings.serviceAddress = nil
     settings.store(deviceToken: nil)
     client = nil
@@ -303,6 +324,11 @@ final class AppModel {
       guard generation == libraryGeneration, !Task.isCancelled else { return }
       library = .loaded(sets)
       reloadsAfterCancellation = 0
+      // A download the service is still running is watched from here, which is what resumes a
+      // watch after a relaunch and catches one another device started.
+      for set in sets where isDownloading(set.id) {
+        watchDownload(set.id)
+      }
     } catch OrbisError.cancelled {
       guard generation == libraryGeneration, !Task.isCancelled else { return }
       // The screen that asked for this went away, which is not a failure. The retry runs
@@ -397,12 +423,12 @@ final class AppModel {
         // The reveal may have been closed while the request was out; a late response
         // never reopens a screen the person left.
         guard reveal?.set.id == open.set.id, !Task.isCancelled else { return }
-        replace(updated)
+        await publish(updated)
       }
       if open.tags != open.set.tags {
         updated = try await client.updateTags(open.set.id, tags: open.tags)
         guard reveal?.set.id == open.set.id, !Task.isCancelled else { return }
-        replace(updated)
+        await publish(updated)
       }
       closeReveal(with: updated)
     } catch OrbisError.cancelled {
@@ -430,7 +456,7 @@ final class AppModel {
       // draft held now rather than the snapshot the request started from. A reveal that was
       // closed, or replaced by another Set, still discards the late answer.
       guard let current = reveal, current.set.id == open.set.id, !Task.isCancelled else { return }
-      replace(updated)
+      await publish(updated)
       reveal = Reveal(
         set: updated, title: current.titleUntouched ? updated.title : current.title,
         tags: current.tags)
@@ -448,7 +474,8 @@ final class AppModel {
   func downloadAudio(_ id: String) async {
     guard let client else { return }
     do {
-      replace(try await client.requestAudioDownload(id))
+      await publish(try await client.requestAudioDownload(id))
+      watchDownload(id)
     } catch OrbisError.cancelled {
       return
     } catch let error as OrbisError {
@@ -462,7 +489,7 @@ final class AppModel {
   func cancelAudioDownload(_ id: String) async {
     guard let client else { return }
     do {
-      replace(try await client.cancelAudioDownload(id))
+      await publish(try await client.cancelAudioDownload(id))
     } catch OrbisError.cancelled {
       return
     } catch let error as OrbisError {
@@ -483,6 +510,39 @@ final class AppModel {
       audioStates[id] = nil
       await loadLibrary()
     }
+  }
+
+  /// True while the service is still working on this Set's audio.
+  private func isDownloading(_ id: String) -> Bool {
+    ["queued", "downloading"].contains(savedSet(id)?.downloadState ?? "none")
+  }
+
+  /// Watches a Set's download until the service reports a state that is no longer running. One
+  /// watch per Set, ended by the terminal state, by cancellation, or at the attempt limit.
+  private func watchDownload(_ id: String) {
+    guard downloadWatchers[id] == nil, isDownloading(id) else { return }
+    downloadWatchers[id] = Task { [weak self] in
+      defer { self?.downloadWatchers[id] = nil }
+      for _ in 0..<Self.downloadWatchLimit {
+        guard !Task.isCancelled, let self else { return }
+        await self.refreshAudioState(id)
+        guard self.isDownloading(id) else { return }
+        do {
+          try await Task.sleep(for: .seconds(1))
+        } catch {
+          // Cancelled: the answer this watch was waiting for is no longer wanted.
+          return
+        }
+      }
+    }
+  }
+
+  /// Ends every watch, so nothing keeps asking a service this device has left.
+  private func stopDownloadWatches() {
+    for watcher in downloadWatchers.values {
+      watcher.cancel()
+    }
+    downloadWatchers.removeAll()
   }
 
   /// The player this screen drives. One player for the model, because only one Set
@@ -510,14 +570,26 @@ final class AppModel {
 
   /// Swaps one Set in the loaded library for a newer copy of it. While the Library is
   /// showing one playlist, a Set that moved out of it leaves the list; keeping the row
-  /// would say the move did nothing.
-  private func replace(_ set: SavedSet) {
-    guard case .loaded(let sets) = library else { return }
+  /// would say the move did nothing. Answers whether the loaded library took the change.
+  @discardableResult
+  private func replace(_ set: SavedSet) -> Bool {
+    guard case .loaded(let sets) = library else { return false }
     if let selectedPlaylistId, !set.playlistIds.contains(selectedPlaylistId) {
       library = .loaded(sets.filter { $0.id != set.id })
-      return
+    } else {
+      library = .loaded(sets.map { $0.id == set.id ? set : $0 })
     }
-    library = .loaded(sets.map { $0.id == set.id ? set : $0 })
+    return true
+  }
+
+  /// Publishes a Set the service accepted. A write that lands while the library is already being
+  /// loaded has nothing to swap into, and the load in flight may have read the Set before the
+  /// write, so the list is read again rather than the change being dropped.
+  private func publish(_ set: SavedSet) async {
+    guard !replace(set) else { return }
+    if case .loading = library {
+      await loadLibrary()
+    }
   }
 
   // MARK: - One Set's page
@@ -556,7 +628,7 @@ final class AppModel {
     setFailure = nil
     defer { isWorkingOnSet = false }
     do {
-      replace(try await work(client))
+      await publish(try await work(client))
     } catch OrbisError.cancelled {
       return
     } catch let error as OrbisError {
@@ -616,14 +688,23 @@ final class AppModel {
   /// of trying again where the answer belongs.
   func loadPlaylists() async {
     guard let client else { return }
+    playlistGeneration += 1
+    let generation = playlistGeneration
     playlists = .loading
     do {
-      playlists = .loaded(try await client.playlists())
+      let items = try await client.playlists()
+      // Forget clears the sidebar too, so an answer already out cannot put the old service's
+      // Playlists back into a device that no longer holds it.
+      guard generation == playlistGeneration, !Task.isCancelled else { return }
+      playlists = .loaded(items)
     } catch OrbisError.cancelled {
+      guard generation == playlistGeneration else { return }
       playlists = .idle
     } catch let error as OrbisError {
+      guard generation == playlistGeneration else { return }
       playlists = .failed(error.failure(at: client.address))
     } catch {
+      guard generation == playlistGeneration else { return }
       playlists = .failed(OrbisError.unreachable.failure(at: client.address))
     }
   }

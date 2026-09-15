@@ -155,12 +155,13 @@ struct OrbisClient: Sendable {
     return scheme == "https" || (scheme == "http" && loopback.contains(host))
   }
 
+  /// Shared by every call, so one coder's configuration is the whole app's.
+  private static let decoder = JSONDecoder()
+  private static let encoder = JSONEncoder()
+
   func health() async throws -> String {
     let response = try await send(path: "health", method: "GET", body: nil)
-    guard let decoded = try? JSONDecoder().decode(HealthResponse.self, from: response) else {
-      throw OrbisError.malformed
-    }
-    return decoded.status
+    return try Self.decode(HealthResponse.self, from: response).status
   }
 
   func library(query: String = "", playlistId: String? = nil) async throws -> [SavedSet] {
@@ -179,35 +180,28 @@ struct OrbisClient: Sendable {
       path += "?\(components.percentEncodedQuery ?? "")"
     }
     let response = try await send(path: path, method: "GET", body: nil)
-    guard let decoded = try? JSONDecoder().decode(LibraryResponse.self, from: response) else {
-      throw OrbisError.malformed
-    }
-    return decoded.sets
+    return try Self.decode(LibraryResponse.self, from: response).sets
   }
 
   func playlists() async throws -> [Playlist] {
     let response = try await send(path: "playlists", method: "GET", body: nil)
-    guard let decoded = try? JSONDecoder().decode(PlaylistsResponse.self, from: response)
-    else {
-      throw OrbisError.malformed
-    }
-    return decoded.playlists
+    return try Self.decode(PlaylistsResponse.self, from: response).playlists
   }
 
   func save(url: String, tags: [String] = []) async throws -> SavedSet {
-    let body = try JSONEncoder().encode(SaveSetRequest(tags: tags, url: url))
+    let body = try Self.encoder.encode(SaveSetRequest(tags: tags, url: url))
     let response = try await send(path: "sets", method: "POST", body: body)
     return try decodedSet(response)
   }
 
   func updateTitle(_ id: String, title: String) async throws -> SavedSet {
-    let body = try JSONEncoder().encode(SetTitleRequest(title: title))
+    let body = try Self.encoder.encode(SetTitleRequest(title: title))
     let response = try await send(path: "sets/\(id)/title", method: "PATCH", body: body)
     return try decodedSet(response)
   }
 
   func updateTags(_ id: String, tags: [String]) async throws -> SavedSet {
-    let body = try JSONEncoder().encode(SetTagsRequest(tags: tags))
+    let body = try Self.encoder.encode(SetTagsRequest(tags: tags))
     let response = try await send(path: "sets/\(id)/tags", method: "PATCH", body: body)
     return try decodedSet(response)
   }
@@ -221,7 +215,7 @@ struct OrbisClient: Sendable {
   /// States the Playlists a Set belongs to. Sending the whole membership is what lets the
   /// service work out which Playlist the Set left.
   func updatePlaylists(_ id: String, playlistIds: [String]) async throws -> SavedSet {
-    let body = try JSONEncoder().encode(SetPlaylistsRequest(playlistIds: playlistIds))
+    let body = try Self.encoder.encode(SetPlaylistsRequest(playlistIds: playlistIds))
     let response = try await send(path: "sets/\(id)/playlists", method: "PUT", body: body)
     return try decodedSet(response)
   }
@@ -241,10 +235,7 @@ struct OrbisClient: Sendable {
   /// How far the service has got with this Set's audio, if it has started.
   func audioState(_ id: String) async throws -> AudioState {
     let response = try await send(path: "sets/\(id)/audio/state", method: "GET", body: nil)
-    guard let decoded = try? JSONDecoder().decode(AudioState.self, from: response) else {
-      throw OrbisError.malformed
-    }
-    return decoded
+    return try Self.decode(AudioState.self, from: response)
   }
 
   /// Stops a running download and drops its partial file. A finished download stays
@@ -261,10 +252,46 @@ struct OrbisClient: Sendable {
   }
 
   private func decodedSet(_ response: Data) throws -> SavedSet {
-    guard let decoded = try? JSONDecoder().decode(SavedSet.self, from: response) else {
+    try Self.decode(SavedSet.self, from: response)
+  }
+
+  /// Decodes a body, reporting a shape this build cannot read as the one error the screens explain.
+  /// The failing key path reaches the debug log and the values do not: a version skew is worth
+  /// knowing by field, and the fields hold the library's own titles and links.
+  private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+    do {
+      return try decoder.decode(type, from: data)
+    } catch {
+      #if DEBUG
+        if let decoding = error as? DecodingError {
+          let line = "Orbis could not read \(T.self) at \(path(of: decoding))\n"
+          FileHandle.standardError.write(Data(line.utf8))
+        }
+      #endif
       throw OrbisError.malformed
     }
-    return decoded
+  }
+
+  /// Where a decode failed, as the fields leading to it. No value is named.
+  private static func path(of error: DecodingError) -> String {
+    let codingPath: [any CodingKey]
+    switch error {
+    case .keyNotFound(let key, let context):
+      codingPath = context.codingPath + [key]
+    case .typeMismatch(_, let context), .valueNotFound(_, let context),
+      .dataCorrupted(let context):
+      codingPath = context.codingPath
+    @unknown default:
+      codingPath = []
+    }
+    guard !codingPath.isEmpty else { return "the root" }
+    return codingPath.map(\.stringValue).joined(separator: ".")
+  }
+
+  /// What a debug line may say about a request: method, host, and path, because a query string
+  /// carries what the person typed.
+  private static func redacted(method: String, url: URL) -> String {
+    "\(method) \(url.host() ?? "") \(url.path())"
   }
 
   private func send(path: String, method: String, body: Data?) async throws -> Data {
@@ -291,8 +318,10 @@ struct OrbisClient: Sendable {
       #if DEBUG
         // A transport failure is otherwise invisible, which makes a wrong address, a
         // blocked connection, and a rejected certificate look identical. Written to
-        // standard error because stdout is buffered and a killed run loses it.
-        let line = "Orbis transport failure \(request.url?.absoluteString ?? "?"): \(error)\n"
+        // standard error because stdout is buffered and a killed run loses it. The
+        // error is named by its code: its own description carries the URL back in.
+        let code = (error as? URLError)?.code.rawValue ?? -1
+        let line = "Orbis transport failure \(Self.redacted(method: method, url: url)): URLError \(code)\n"
         FileHandle.standardError.write(Data(line.utf8))
       #endif
       throw OrbisError.unreachable
@@ -305,18 +334,18 @@ struct OrbisClient: Sendable {
     // is judged, because a 403 from a web page is not a refusal by the library.
     if head.first == UInt8(ascii: "<") {
       #if DEBUG
-        let line =
-          "Orbis read a web page from \(request.url?.absoluteString ?? "?"): \(String(decoding: head, as: UTF8.self))\n"
+        let line = "Orbis read a web page from \(Self.redacted(method: method, url: url))\n"
         FileHandle.standardError.write(Data(line.utf8))
       #endif
       throw OrbisError.notOrbis
     }
     #if DEBUG
       // A body that is not JSON and not a web page is usually a version skew: something
-      // answered in a shape this build does not know. Print it rather than guess.
+      // answered in a shape this build does not know. Its size is printed rather than its
+      // first bytes, which are the library's own.
       if head.first != UInt8(ascii: "{"), head.first != UInt8(ascii: "[") {
         let line =
-          "Orbis read a non-JSON body from \(request.url?.absoluteString ?? "?"): \(String(decoding: head, as: UTF8.self))\n"
+          "Orbis read a non-JSON body from \(Self.redacted(method: method, url: url)): \(data.count) bytes\n"
         FileHandle.standardError.write(Data(line.utf8))
       }
     #endif
@@ -330,7 +359,7 @@ struct OrbisClient: Sendable {
     case 409:
       throw OrbisError.duplicate
     default:
-      let message = (try? JSONDecoder().decode(ServerMessage.self, from: data))?.message
+      let message = (try? Self.decoder.decode(ServerMessage.self, from: data))?.message
       throw OrbisError.server(status: http.statusCode, message: message ?? "")
     }
   }

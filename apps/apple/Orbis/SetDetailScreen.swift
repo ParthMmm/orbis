@@ -15,7 +15,6 @@ struct SetDetailScreen: View {
   @State private var isEditingTags = false
   @State private var draftTags: [String] = []
   @State private var isConfirmingRemoval = false
-  @State private var scrubPosition: TimeInterval?
 
   var body: some View {
     Group {
@@ -121,6 +120,8 @@ struct SetDetailScreen: View {
           .accessibilityIdentifier("detail-play")
       }
     case "queued", "downloading":
+      // The watch that turns this into a finished download belongs to the model: a task started
+      // here would end when the person leaves, which is when the Library still needs the answer.
       VStack(alignment: .leading, spacing: 8) {
         HStack(spacing: 8) {
           ProgressView()
@@ -132,7 +133,6 @@ struct SetDetailScreen: View {
           Task { await model.cancelAudioDownload(set.id) }
         }
       }
-      .task(id: set.downloadState) { await pollAudio(set.id) }
     default:
       Button("Download") { Task { await model.downloadAudio(set.id) } }
         .accessibilityIdentifier("detail-download")
@@ -149,13 +149,6 @@ struct SetDetailScreen: View {
     return SetPresentation.downloadLabel(set.downloadState) ?? "Downloading"
   }
 
-  private func pollAudio(_ id: String) async {
-    while ["queued", "downloading"].contains(model.savedSet(id)?.downloadState ?? "none") {
-      await model.refreshAudioState(id)
-      try? await Task.sleep(for: .seconds(1))
-    }
-  }
-
   @ViewBuilder
   private func playerControls(_ set: SavedSet) -> some View {
     let player = model.audioPlayer
@@ -170,25 +163,7 @@ struct SetDetailScreen: View {
         }
         .accessibilityIdentifier("detail-play-toggle")
         if let duration = player.duration ?? set.durationSeconds.map(TimeInterval.init) {
-          Slider(
-            value: Binding(
-              get: { scrubPosition ?? player.elapsed },
-              set: { scrubPosition = $0 }
-            ),
-            in: 0...max(duration, 1),
-            onEditingChanged: { editing in
-              if !editing, let position = scrubPosition {
-                player.seek(to: position)
-                scrubPosition = nil
-              }
-            }
-          )
-          .accessibilityIdentifier("detail-seek")
-          Text(
-            "\(SetPresentation.timestamp(scrubPosition ?? player.elapsed)) / \(SetPresentation.timestamp(duration))"
-          )
-          .font(.orbis.mono)
-          .foregroundStyle(.secondary)
+          PlaybackProgress(player: player, duration: duration)
         } else {
           ProgressView()
         }
@@ -252,6 +227,9 @@ struct SetDetailScreen: View {
           Task { await model.replaceTags(setId, with: tags) }
         }
         .buttonStyle(OrbisPrimaryButtonStyle())
+        // Plain Return belongs to the Tag field, which adds a Tag with it, so this takes the
+        // modified key instead.
+        .keyboardShortcut(.return, modifiers: .command)
         .accessibilityIdentifier("tags-done")
         Button("Cancel") { isEditingTags = false }
           .buttonStyle(.plain)
@@ -264,5 +242,46 @@ struct SetDetailScreen: View {
     #if os(iOS)
       .presentationDetents([.medium])
     #endif
+  }
+}
+
+/// The seek bar and the clock for it, in their own view because the player publishes elapsed time
+/// twice a second and SwiftUI redraws the body that read the value. From the page's own body that
+/// was the whole page, tag chips and Playlist picker included, on every tick.
+private struct PlaybackProgress: View {
+  let player: AudioPlayer
+  let duration: TimeInterval
+
+  /// Where the person has dragged to but not let go of. Nil is following the player.
+  @State private var scrubPosition: TimeInterval?
+
+  /// The position the bar shows and the person sets: the drag they are holding, or the player's
+  /// own elapsed time while they are not.
+  private var position: Binding<TimeInterval> {
+    Binding(
+      get: { scrubPosition ?? player.elapsed },
+      set: { scrubPosition = $0 }
+    )
+  }
+
+  var body: some View {
+    HStack(spacing: 12) {
+      Slider(
+        value: position,
+        in: 0...max(duration, 1),
+        onEditingChanged: { editing in
+          if !editing, let position = scrubPosition {
+            player.seek(to: position)
+            scrubPosition = nil
+          }
+        }
+      )
+      .accessibilityIdentifier("detail-seek")
+      Text(
+        "\(SetPresentation.timestamp(scrubPosition ?? player.elapsed)) / \(SetPresentation.timestamp(duration))"
+      )
+      .font(.orbis.mono)
+      .foregroundStyle(.secondary)
+    }
   }
 }

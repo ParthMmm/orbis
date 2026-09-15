@@ -84,11 +84,21 @@ struct SidebarShell: View {
           Button {
             model.destination = destination
           } label: {
-            Label(destination.rawValue, systemImage: destination.symbol)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .contentShape(Rectangle())
+            HStack(spacing: 8) {
+              Label(destination.rawValue, systemImage: destination.symbol)
+              Spacer(minLength: 0)
+              // The tint alone says nothing to a person who cannot see it, so the row is marked.
+              if model.destination == destination {
+                Image(systemName: "checkmark")
+                  .font(.orbis.caption)
+                  .foregroundStyle(.secondary)
+              }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
           }
           .buttonStyle(.plain)
+          .accessibilityAddTraits(model.destination == destination ? [.isSelected] : [])
           .listRowBackground(
             model.destination == destination
               ? Color.accentColor.opacity(0.18)
@@ -142,12 +152,14 @@ struct SidebarShell: View {
       PlaylistRow(
         name,
         count: count,
-        category: id == nil ? nil : SetPresentation.category(for: name)
+        category: id == nil ? nil : SetPresentation.category(for: name),
+        isSelected: model.selectedPlaylistId == id
       )
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .accessibilityAddTraits(model.selectedPlaylistId == id ? [.isSelected] : [])
     .listRowBackground(
       model.selectedPlaylistId == id ? Color.accentColor.opacity(0.18) : Color.clear
     )
@@ -306,6 +318,9 @@ struct DestinationView: View {
         Button("Done") { Task { await model.saveReveal() } }
           .buttonStyle(OrbisPrimaryButtonStyle())
           .disabled(model.isSavingReveal)
+          // Return reaches the default action, which is the common case here; the Tag field keeps
+          // Return while it has focus.
+          .keyboardShortcut(.defaultAction)
           .accessibilityIdentifier("reveal-done")
         Button("Not now") { model.closeReveal() }
           .buttonStyle(.plain)

@@ -15,6 +15,12 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 0.1.0
+    # The app speaks TLS to the service over the tailnet and uses no other cryptography, so it
+    # carries no non-exempt encryption. App Store Connect asks on every upload.
+    INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
+    # Nothing here relaxes App Transport Security: the lanes' service is on 127.0.0.1, which ATS
+    # exempts as loopback. A nested ATS dictionary needs a real Info.plist anyway, because these
+    # settings write flat keys. Reaching a service by name over HTTP would need one.
     # Signing is stated here because this file is the source the project is generated from, and
     # the project itself is gitignored. Setting a team in Xcode writes it into a file that the
     # next `xcodegen generate` replaces, which is why the team kept disappearing. The lanes still
@@ -23,9 +29,6 @@ settings:
     DEVELOPMENT_TEAM: JR398S689Z
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES
-    # The client talks to the server over the tailnet, which uses a real certificate.
-    # Local networking is allowed so lanes can run against a temporary loopback server.
-    INFOPLIST_KEY_NSAppTransportSecurity_NSAllowsLocalNetworking: YES
 targets:
   Orbis:
     type: application

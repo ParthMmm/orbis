@@ -209,4 +209,43 @@ final class AudioDownloadTests: XCTestCase {
     XCTAssertFalse(MPRemoteCommandCenter.shared().playCommand.isEnabled)
     XCTAssertFalse(MPRemoteCommandCenter.shared().pauseCommand.isEnabled)
   }
+
+  /// A download is watched by the model rather than by the page that asked for it, so a download
+  /// that the service finishes while the person is somewhere else still lands in the Library.
+  /// Nothing here polls the page: this is the watch doing the work on its own.
+  func testADownloadThatFinishesElsewhereStillLandsInTheLibrary() async throws {
+    let model = AppModel(
+      client: OrbisClient(
+        address: URL(string: "https://vanta.example.ts.net")!,
+        token: "token",
+        session: StubProtocol.session(responder: { request in
+          switch (request.httpMethod, request.url?.path()) {
+          case ("POST", "/sets/1/audio/download"):
+            (202, Self.setJSON(id: "1", state: "queued"))
+          case ("GET", "/sets/1/audio/state"):
+            (200, "{\"state\":\"ready\",\"bytesReceived\":99,\"bytesTotal\":99,\"format\":\"mp3\"}")
+          case ("GET", "/sets"):
+            (200, Self.libraryJSON(state: "ready"))
+          default:
+            (404, "{\"message\":\"Set not found.\"}")
+          }
+        })
+      ), settings: MemoryClientSettings())
+    model.library = .loaded([
+      try JSONDecoder().decode(
+        SavedSet.self, from: Data(Self.setJSON(id: "1", state: "none").utf8))
+    ])
+
+    await model.downloadAudio("1")
+
+    var waited = 0
+    while model.savedSet("1")?.downloadState != "ready", waited < 200 {
+      try await Task.sleep(for: .milliseconds(20))
+      waited += 1
+    }
+    XCTAssertEqual(
+      model.savedSet("1")?.downloadState, "ready",
+      "the watch must land a finished download in the Library without the page asking again")
+    XCTAssertNil(model.audioStates["1"], "a finished download holds no running progress")
+  }
 }
