@@ -12,8 +12,7 @@ Never guess at Effect patterns - check the guide first.
 
 ## Local Effect Source
 
-The Effect source repository is available at `~/.local/share/effect-solutions/effect` for reference.
-Use it to explore APIs, find usage examples, and understand implementation details when the documentation is not enough.
+The Effect source repository is available at `~/.local/share/effect-solutions/effect` for reference. Use it to explore APIs, find usage examples, and understand implementation details when the documentation is not enough.
 
 ## Agent skills
 

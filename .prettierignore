@@ -5,9 +5,6 @@ dist/
 out/
 .vite/
 
-# Generated from ~/dotfiles by `dot install`, so formatting here is undone on the next install.
-AGENTS.md
-
 # The glossary keeps each term and its avoided synonyms on separate lines on purpose.
 CONTEXT.md
 
