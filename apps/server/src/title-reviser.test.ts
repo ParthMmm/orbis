@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Effect, Layer, Stream } from "effect";
+import { ConfigProvider, Effect, Layer, Stream } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
 
 import { createApp } from "./app.js";
@@ -230,6 +230,52 @@ test("layer without a key or model stays unconfigured", async () => {
       return yield* TitleReviser;
     }).pipe(
       Effect.provide(TitleReviser.layer({ apiKey: "  ", model: undefined }))
+    )
+  );
+  const error = await Effect.runPromise(
+    reviser
+      .revise({ creator: null, source: "youtube", title: "Any" })
+      .pipe(Effect.flip)
+  );
+  expect(error.reason).toBe("not-configured");
+});
+
+test("the config layer stays unconfigured when the environment is empty", async () => {
+  const reviser = await Effect.runPromise(
+    Effect.gen(function* reviser() {
+      return yield* TitleReviser;
+    }).pipe(
+      Effect.provide(
+        TitleReviser.layerConfig().pipe(
+          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
+        )
+      )
+    )
+  );
+  const error = await Effect.runPromise(
+    reviser
+      .revise({ creator: null, source: "youtube", title: "Any" })
+      .pipe(Effect.flip)
+  );
+  expect(error.reason).toBe("not-configured");
+});
+
+test("the config layer needs both the key and the model", async () => {
+  const reviser = await Effect.runPromise(
+    Effect.gen(function* reviser() {
+      return yield* TitleReviser;
+    }).pipe(
+      Effect.provide(
+        TitleReviser.layerConfig().pipe(
+          Layer.provide(
+            ConfigProvider.layer(
+              ConfigProvider.fromUnknown({
+                ORBIS_OPENROUTER_API_KEY: "test-key",
+              })
+            )
+          )
+        )
+      )
     )
   );
   const error = await Effect.runPromise(
