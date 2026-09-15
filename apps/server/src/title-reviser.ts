@@ -119,7 +119,7 @@ export class TitleReviser extends Context.Service<
       return TitleReviser.unconfigured();
     }
     return TitleReviser.layerWithModel(
-      OpenRouterLanguageModel.layer({ model })
+      OpenRouterLanguageModel.layer({ model, config: { strictJsonSchema: true } })
     ).pipe(
       Layer.provide(
         OpenRouterClient.layer({
@@ -173,7 +173,10 @@ export class TitleReviser extends Context.Service<
           return yield* missingVariable("ORBIS_TITLE_MODEL");
         }
         return TitleReviser.layerWithModel(
-          OpenRouterLanguageModel.layer({ model: settings.model.value.trim() })
+          OpenRouterLanguageModel.layer({
+            model: settings.model.value.trim(),
+            config: { strictJsonSchema: true },
+          })
         ).pipe(
           Layer.provide(
             OpenRouterClient.layer({
