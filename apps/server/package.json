@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
     "test": "bun test",
     "diagnostics": "effect-tsgo diagnostics --project tsconfig.json --format text",
+    "eval": "evalite run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "trust": "bun src/trust.ts"
