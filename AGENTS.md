@@ -36,3 +36,5 @@ Three tools, quietest first:
 - **agent-device** reads a macOS or iOS app through accessibility. Its snapshot answers most questions.
 - **agent-browser** drives web pages through the executor MCP. Run it headless.
 - **Codex computer use** acts on the visible screen. Four integrations carry it and only `codex-computer-use` holds the full set, including `set_value` and `scroll`; reach it with `tools.search` from the executor's `execute` tool.
+
+Before driving a real build by hand, read `docs/agents/ui-verification.md`. It records the traps that cost time or produce a wrong conclusion: choosing the platform and session, ref lifetime, and the system alerts that make a screenshot unusable as evidence.
