@@ -10,7 +10,7 @@ const dataDirectory = path.resolve(process.env.ORBIS_DATA_DIR ?? "data");
 await mkdir(dataDirectory, { recursive: true });
 const databasePath = path.join(dataDirectory, "library.sqlite");
 const youTubeApiKey = process.env.ORBIS_YOUTUBE_API_KEY;
-const titleApiKey = process.env.ORBIS_TITLE_API_KEY;
+const titleApiKey = process.env.ORBIS_OPENROUTER_API_KEY;
 const titleModel = process.env.ORBIS_TITLE_MODEL;
 const ports = listenerPorts({
   ORBIS_DEVICE_PORT: process.env.ORBIS_DEVICE_PORT,
@@ -50,7 +50,7 @@ if (titleApiKey && !titleModel) {
   );
 } else if (!titleApiKey && titleModel) {
   console.warn(
-    "ORBIS_TITLE_API_KEY is not set, so automatic title revision is unavailable."
+    "ORBIS_OPENROUTER_API_KEY is not set, so automatic title revision is unavailable."
   );
 }
 let stopping = false;
