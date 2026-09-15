@@ -23,8 +23,10 @@ struct SetDetailScreen: View {
           title: set.title,
           source: set.source.label,
           subtitle: SetPresentation.subtitle(set),
+          artwork: set.artworkUrl.flatMap(URL.init(string:)),
           tags: set.tags,
           position: SetPresentation.playbackPosition(set),
+          progress: SetPresentation.progress(of: set),
           failedToName: set.metadataState == "failed",
           retainedAudio: set.downloadState == "ready",
           playlistId: playlistBinding(set),
@@ -34,10 +36,12 @@ struct SetDetailScreen: View {
           rename: { startRenaming(set) },
           editTags: { startEditingTags(set) },
           remove: { isConfirmingRemoval = true }
-        )
+        ) {
+          audioSection(set)
+        }
         .navigationTitle(set.title)
+        .toolbarTitleDisplayMode(.inline)
         .accessibilityIdentifier("set-detail")
-        audioSection(set)
       } else {
         ContentUnavailableView {
           Label("This set is gone", systemImage: "questionmark.folder")
@@ -116,7 +120,9 @@ struct SetDetailScreen: View {
       if model.audioPlayer.currentSetId == set.id {
         playerControls(set)
       } else {
-        Button("Play") { model.playAudio(set.id) }
+        Button("Play", systemImage: "play.fill") { model.playAudio(set.id) }
+          .buttonStyle(.glass)
+          .controlSize(.large)
           .accessibilityIdentifier("detail-play")
       }
     case "queued", "downloading":
@@ -134,8 +140,12 @@ struct SetDetailScreen: View {
         }
       }
     default:
-      Button("Download") { Task { await model.downloadAudio(set.id) } }
-        .accessibilityIdentifier("detail-download")
+      Button("Download", systemImage: "arrow.down.circle") {
+        Task { await model.downloadAudio(set.id) }
+      }
+      .buttonStyle(.glass)
+      .controlSize(.large)
+      .accessibilityIdentifier("detail-download")
     }
   }
 
@@ -154,13 +164,19 @@ struct SetDetailScreen: View {
     let player = model.audioPlayer
     VStack(alignment: .leading, spacing: 8) {
       HStack(spacing: 12) {
-        Button(player.state == .playing ? "Pause" : "Play") {
+        Button(
+          player.state == .playing ? "Pause" : "Play",
+          systemImage: player.state == .playing ? "pause.fill" : "play.fill"
+        ) {
           if player.state == .playing {
             player.pause()
           } else {
             player.resume()
           }
         }
+        .buttonStyle(.glass)
+        .controlSize(.large)
+        .labelStyle(.iconOnly)
         .accessibilityIdentifier("detail-play-toggle")
         if let duration = player.duration ?? set.durationSeconds.map(TimeInterval.init) {
           PlaybackProgress(player: player, duration: duration)

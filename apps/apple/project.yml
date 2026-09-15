@@ -3,7 +3,7 @@ options:
   bundleIdPrefix: app.orbis
   createIntermediateGroups: true
   deploymentTarget:
-    iOS: "26.0"
+    iOS: "26.1"
     macOS: "26.0"
 packages:
   OrbisDesign:
