@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { Effect } from "effect";
 import { evalite } from "evalite";
 
+import { TitleReviser } from "../src/title-reviser";
+
 // The eval runs the production reviser against the server's credential file, so
 // what the UI shows is what the live save request gets.
 const envPath = path.join(

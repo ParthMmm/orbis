@@ -37,7 +37,8 @@
     "playwright": "^1.55.0",
     "turbo": "^2.5.0",
     "typescript": "7.0.2",
-    "ultracite": "7.11.0"
+    "ultracite": "7.11.0",
+    "vitest": "^5.0.0"
   },
   "packageManager": "bun@1.4.1"
 }
