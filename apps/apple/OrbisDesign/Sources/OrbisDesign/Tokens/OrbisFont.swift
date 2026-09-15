@@ -5,6 +5,8 @@ import SwiftUI
 public enum OrbisFont {
   /// Screen title on iPhone ("Library").
   public static let largeTitle = Font.largeTitle.bold()
+  /// A Set's title on its own page.
+  public static let title = Font.title.bold()
   /// The paste hero headline. Title on Mac, title2 on iPhone — pick with `hero(compact:)`.
   public static func hero(compact: Bool) -> Font {
     compact ? .title2.bold() : .title.bold()
@@ -21,6 +23,10 @@ public enum OrbisFont {
   public static let mono = Font.system(.caption, design: .monospaced)
   /// Source stamps ("YOUTUBE"). Pair with `.textCase(.uppercase)`.
   public static let stamp = Font.system(.caption2, design: .monospaced).weight(.medium)
+  /// Listing labels ("THU 11 SEP", "TAGS"). `ListingLabel` sets the case and tracking.
+  public static let label = Font.system(.caption2, design: .monospaced).weight(.medium)
+  /// The playhead, read the way a deck shows it. Monospaced so the digits do not shuffle.
+  public static let timecode = Font.system(.title, design: .monospaced).weight(.medium)
 }
 
 extension Font {

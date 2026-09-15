@@ -3,23 +3,22 @@ import SwiftUI
 /// How the components assemble into the Library screen. Preview only; the app owns the real view.
 /// Glass comes from the system: the sidebar, toolbar and tab bar are Liquid Glass on their own.
 private struct LibraryPreview: View {
-  @State private var link = ""
   @State private var techno = true
   @State private var house = false
   @State private var selection: String? = "Everything"
 
-  private let sets: [(String, String, String, [SetRow.Tag])] = [
+  private let sets: [(String, String, String, String, [SetRow.Tag], Double?)] = [
     (
-      "YouTube", "Ben UFO — Dekmantel Festival 2019", "youtube.com/watch?v=dk19benufo",
-      [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)]
+      "YouTube", "Ben UFO — Dekmantel Festival 2019", "Dekmantel", "1h 58m",
+      [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)], nil
     ),
     (
-      "SoundCloud", "Objekt — Live at Freerotation", "soundcloud.com/objekt/freerotation-2023",
-      [.init("techno", .pink), .init("live", .mint)]
+      "SoundCloud", "Objekt — Live at Freerotation", "Objekt", "2h 33m",
+      [.init("techno", .pink), .init("live", .mint)], 0.27
     ),
     (
-      "YouTube", "DJ Stingray 313 — Dekmantel 2017", "youtube.com/watch?v=stingray-dkmtl17",
-      [.init("techno", .pink), .init("electro", .cyan)]
+      "YouTube", "DJ Stingray 313 — Dekmantel 2017", "Dekmantel", "1h 12m",
+      [.init("techno", .pink), .init("electro", .cyan)], nil
     ),
   ]
 
@@ -37,37 +36,43 @@ private struct LibraryPreview: View {
     } detail: {
       ScrollView {
         VStack(alignment: .leading) {
-          PasteHero(link: $link) {}
+          Text("Library").font(.orbis.largeTitle)
+          ListingRule().padding(.top, 12)
           HStack {
-            Text("Everything \(Text("/ techno").foregroundStyle(OrbisColor.Category.pink.text))")
-              .font(.orbis.sectionTitle)
+            ListingLabel("3 of 8 · 5 sets outside this filter")
             Spacer()
-            TagPill("techno", category: .pink, isOn: $techno)
-            TagPill("house", category: .yellow, isOn: $house)
+            TagWord("techno", category: .pink, active: techno)
+            TagWord("house", category: .yellow, active: house)
           }
-          .padding(.top)
+          .padding(.vertical, 12)
+          .overlay(alignment: .bottom) { Divider() }
+          ListingHeader("Thu 11 Sep")
           VStack(spacing: 0) {
             ForEach(Array(sets.enumerated()), id: \.offset) { index, set in
               SetRow(
-                index: index + 1, source: set.0, title: set.1, url: set.2, tags: set.3,
-                added: .now, activeTag: "techno"
+                title: set.1, source: set.0, creator: set.2, length: set.3, tags: set.4,
+                activeTag: "techno", progress: set.5
               )
-              .padding(.horizontal)
               if index < sets.count - 1 {
-                Divider().padding(.leading)
+                Divider()
               }
             }
           }
-          .padding(.vertical, 4)
-          .orbisRaised()
-          Text("3 of 8 · 5 sets outside this filter")
-            .font(.orbis.mono)
-            .foregroundStyle(.secondary)
         }
         .padding()
       }
       .background(Color.orbis.paper)
+      .safeAreaInset(edge: .bottom) {
+        MiniPlayer(
+          title: "Objekt — Live at Freerotation", time: "41:02 · 2:33:00", isPlaying: true,
+          toggle: {}, open: {}
+        )
+        .padding()
+      }
       .toolbar {
+        ToolbarItem {
+          Button("File a set", systemImage: "plus") {}
+        }
         ToolbarItem {
           Button("Search", systemImage: "magnifyingglass") {}
         }

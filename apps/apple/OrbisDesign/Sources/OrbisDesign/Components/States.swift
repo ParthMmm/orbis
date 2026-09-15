@@ -160,21 +160,17 @@ public struct LoadingState: View {
       VStack(alignment: .leading, spacing: 0) {
         ForEach(0..<rows, id: \.self) { index in
           SetRow(
-            index: index + 1,
-            source: "Source",
             title: "A Set title the row will hold when it arrives",
-            url: "source.example/set",
-            tags: [.init("tag", .pink), .init("another", .teal)],
-            added: .now
+            source: "Source",
+            creator: "Whoever made it",
+            length: "1h 00m",
+            tags: [.init("tag", .pink), .init("another", .teal)]
           )
-          .padding(.horizontal)
           if index < rows - 1 {
-            Divider().padding(.leading)
+            Divider()
           }
         }
       }
-      .padding(.vertical, 6)
-      .orbisRaised()
       .padding()
     }
     .redacted(reason: .placeholder)

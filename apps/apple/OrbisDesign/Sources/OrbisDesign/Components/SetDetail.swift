@@ -2,19 +2,23 @@ import SwiftUI
 
 /// One Set, open for reading and for changing.
 ///
-/// The composition is fixed even when the Set is not: Open is the only tinted control and the
-/// one thing a person came to do, the two edit rows are neutral, and removal sits last in red
-/// with the consequences stated before it happens rather than after.
+/// The composition is fixed even when the Set is not: the artwork leads, the title is said once,
+/// Open is the only tinted control and the one thing a person came to do, the edit rows are
+/// neutral listing rows, and removal sits last in red with the consequences stated before it
+/// happens rather than after.
 public struct SetDetail: View {
   public let title: String
-  /// The Source Link's name, as `SourceStamp` draws it.
+  /// The Source Link's name, as the header reads it out.
   public let source: String
   /// Who made it, how long it runs, when it arrived. Composed by the caller, which knows which
   /// of the three the service filled in.
   public let subtitle: String?
+  public let artwork: URL?
   public let tags: [String]
   /// Where playback left off, when it has started.
   public let position: String?
+  /// How far listening got, from 0 to 1, for the bar along the artwork.
+  public let progress: Double?
   /// The service could not name this Set, so the name is the caller's to supply or the
   /// service's to try again.
   public let failedToName: Bool
@@ -32,20 +36,28 @@ public struct SetDetail: View {
   public let rename: () -> Void
   public let editTags: () -> Void
   public let remove: () -> Void
+  /// Download and playback for this Set, which the app owns. It sits under the position, in the
+  /// page, so no bar can cover it. Erased, so the static text helpers stay reachable without a
+  /// type parameter.
+  private let transport: AnyView
 
   public init(
-    title: String, source: String, subtitle: String? = nil, tags: [String] = [],
-    position: String? = nil, failedToName: Bool = false, retainedAudio: Bool = false,
+    title: String, source: String, subtitle: String? = nil, artwork: URL? = nil,
+    tags: [String] = [], position: String? = nil, progress: Double? = nil,
+    failedToName: Bool = false, retainedAudio: Bool = false,
     playlistId: Binding<String?>, playlists: [PlaylistPicker.Choice] = [],
     category: @escaping @MainActor (String) -> OrbisColor.Category = OrbisColor.Category.forTag,
     open: @escaping () -> Void, retryName: @escaping () -> Void = {}, rename: @escaping () -> Void,
-    editTags: @escaping () -> Void, remove: @escaping () -> Void
+    editTags: @escaping () -> Void, remove: @escaping () -> Void,
+    @ViewBuilder transport: () -> some View = { EmptyView() }
   ) {
     self.title = title
     self.source = source
     self.subtitle = subtitle
+    self.artwork = artwork
     self.tags = tags
     self.position = position
+    self.progress = progress
     self.failedToName = failedToName
     self.retainedAudio = retainedAudio
     _playlistId = playlistId
@@ -56,6 +68,7 @@ public struct SetDetail: View {
     self.rename = rename
     self.editTags = editTags
     self.remove = remove
+    self.transport = AnyView(transport())
   }
 
   /// What removal costs, said before it happens. The first line always holds; the second only
@@ -78,86 +91,80 @@ public struct SetDetail: View {
     "\(title), \(source)"
   }
 
+  /// The line under the artwork: the source, then whatever the caller composed.
+  public static func stampLine(source: String, subtitle: String?) -> String {
+    [source, subtitle].compactMap { $0 }.joined(separator: " · ")
+  }
+
   public var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 16) {
-        header
-        Button("Open", action: open)
-          .buttonStyle(.orbisPrimary)
-          .accessibilityIdentifier("detail-open")
-        if failedToName {
-          HStack(spacing: 6) {
-            Text("Orbis could not name this set.")
-              .font(.orbis.mono)
-              .foregroundStyle(.secondary)
-            Button("Try again", action: retryName)
-              .buttonStyle(.plain)
-              .foregroundStyle(Color.orbis.tint)
-          }
-        }
-        if let position {
-          Text(position)
-            .font(.orbis.mono)
-            .foregroundStyle(.secondary)
-        }
-        VStack(spacing: 0) {
-          DetailRow(label: "Tags", action: editTags, identifier: "detail-tags-row") {
-            if tags.isEmpty {
-              Text("None")
+      VStack(alignment: .leading, spacing: 0) {
+        Artwork(url: artwork, seed: title, size: .header, progress: progress)
+        VStack(alignment: .leading, spacing: 16) {
+          header
+          if failedToName {
+            HStack(spacing: 6) {
+              Text("Orbis could not name this set.")
+                .font(.orbis.mono)
                 .foregroundStyle(.secondary)
-            } else {
-              ChipFlow {
-                ForEach(tags, id: \.self) { tag in
-                  TagChip(tag, category: category(tag))
+              Button("Try again", action: retryName)
+                .buttonStyle(.plain)
+                .foregroundStyle(Color.orbis.tint)
+            }
+          }
+          if let position {
+            Text(position)
+              .font(.orbis.timecode)
+              .monospacedDigit()
+              .accessibilityLabel("Resumes at \(position)")
+          }
+          transport
+          VStack(spacing: 0) {
+            ListingRule()
+            ListingRow("Tags", action: editTags, identifier: "detail-tags-row") {
+              if tags.isEmpty {
+                Text("None")
+                  .font(.orbis.mono)
+                  .foregroundStyle(.secondary)
+              } else {
+                ChipFlow {
+                  ForEach(tags, id: \.self) { tag in
+                    TagWord(tag, category: category(tag))
+                  }
                 }
               }
             }
+            ListingRow("Playlist") {
+              PlaylistPicker(selection: $playlistId, choices: playlists, category: category)
+            }
+            ListingRow("Source", value: source) {
+              // The one tinted control on the page: the thing a person came here to do.
+              Button("Open", action: open)
+                .buttonStyle(.plain)
+                .fontWeight(.semibold)
+                .foregroundStyle(Color.orbis.tint)
+                .accessibilityIdentifier("detail-open")
+            }
+            ListingRow("Title", value: title, action: rename, identifier: "detail-title-row")
           }
-          Divider()
-          PlaylistPicker(selection: $playlistId, choices: playlists, category: category)
-            .padding(.vertical, 10)
-          Divider()
-          DetailRow(
-            label: "Title", value: title, action: rename, identifier: "detail-title-row")
+          removal
         }
-        .padding(.horizontal)
-        .orbisRaised()
-        removal
+        .padding()
       }
-      .padding()
     }
     .background(Color.orbis.paper)
   }
 
   private var header: some View {
     VStack(alignment: .leading, spacing: 6) {
+      ListingLabel(Self.stampLine(source: source, subtitle: subtitle))
       Text(title)
-        .font(.orbis.sectionTitle)
+        .font(.orbis.title)
         .accessibilityIdentifier("detail-title")
-      // The stamp and the subtitle sit on one line until the text grows too large for both.
-      if typeSize.isAccessibilitySize {
-        VStack(alignment: .leading, spacing: 2) {
-          SourceStamp(source)
-          subtitleText
-        }
-      } else {
-        HStack(spacing: 8) {
-          SourceStamp(source)
-          subtitleText
-        }
-      }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
     .accessibilityLabel(Self.headerLabel(title: title, source: source))
-  }
-
-  @ViewBuilder private var subtitleText: some View {
-    if let subtitle {
-      Text(subtitle)
-        .font(.orbis.mono)
-        .foregroundStyle(.secondary)
-    }
   }
 
   private var removal: some View {
@@ -165,6 +172,7 @@ public struct SetDetail: View {
     return VStack(alignment: .leading, spacing: 6) {
       Button("Remove from library", action: remove)
         .buttonStyle(.plain)
+        .font(.orbis.mono)
         .foregroundStyle(Color.orbis.destructive)
         .orbisRowHeight()
         .accessibilityIdentifier("detail-remove")
@@ -178,72 +186,7 @@ public struct SetDetail: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
-  }
-}
-
-/// A neutral row that discloses the way to change what it shows.
-private struct DetailRow<Value: View>: View {
-  let label: String
-  var value: String?
-  let action: () -> Void
-  let identifier: String
-  @ViewBuilder let content: () -> Value
-
-  @Environment(\.dynamicTypeSize) private var typeSize
-
-  var body: some View {
-    Button(action: action) {
-      // At the largest sizes the label, the value, and the disclosure cannot share a line, so
-      // the value moves under the label rather than being squeezed out.
-      Group {
-        if typeSize.isAccessibilitySize {
-          VStack(alignment: .leading, spacing: 4) {
-            HStack(spacing: 8) {
-              Text(label)
-              Spacer()
-              disclosure
-            }
-            valueText
-            content()
-          }
-        } else {
-          HStack(spacing: 8) {
-            Text(label)
-            Spacer()
-            valueText.lineLimit(1)
-            content()
-            disclosure
-          }
-        }
-      }
-      .contentShape(.rect)
-    }
-    .buttonStyle(.plain)
-    .orbisRowHeight()
-    .padding(.vertical, 10)
-    .accessibilityIdentifier(identifier)
-  }
-
-  /// The value the row discloses. Its styling lives here so the two arrangements cannot drift.
-  @ViewBuilder private var valueText: some View {
-    if let value {
-      Text(value)
-        .foregroundStyle(.secondary)
-    }
-  }
-
-  /// `chevron.forward`, not `chevron.right`: the disclosure points the way the language reads,
-  /// and the system mirrors it in a right-to-left layout.
-  private var disclosure: some View {
-    Image(systemName: "chevron.forward")
-      .font(.orbis.caption)
-      .foregroundStyle(.tertiary)
-  }
-}
-
-extension DetailRow where Value == EmptyView {
-  init(label: String, value: String, action: @escaping () -> Void, identifier: String) {
-    self.init(label: label, value: value, action: action, identifier: identifier) { EmptyView() }
+    .padding(.top, 8)
   }
 }
 
@@ -257,7 +200,8 @@ private struct SetDetailSample: View {
       source: "YouTube",
       subtitle: "CHRIS STASSY · 2h 33m · Sep 11",
       tags: ["techno", "festival", "hardgroove"],
-      position: "42m in",
+      position: "42:00",
+      progress: 0.27,
       playlistId: $playlist,
       playlists: [
         .init(id: "1", name: "Long drives", category: .cyan),

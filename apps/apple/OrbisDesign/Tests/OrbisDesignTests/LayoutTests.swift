@@ -14,15 +14,11 @@ import Testing
   private let widths = [AccessibilityPreview.macWidth, AccessibilityPreview.phoneWidth]
   private let directions: [LayoutDirection] = [.leftToRight, .rightToLeft]
 
-  @Test func `a row stacks at the largest sizes and on a phone`() {
-    #expect(!SetRow.stacks(sizeClass: .regular, dynamicTypeSize: .large))
-    #expect(!SetRow.stacks(sizeClass: .regular, dynamicTypeSize: .xLarge))
-    #expect(!SetRow.stacks(sizeClass: .regular, dynamicTypeSize: .xxLarge))
-    #expect(SetRow.stacks(sizeClass: .compact, dynamicTypeSize: .large))
+  @Test func `a row stacks its artwork above the text when the text grows`() {
+    #expect(!SetRow.stacks(dynamicTypeSize: .large))
+    #expect(!SetRow.stacks(dynamicTypeSize: .xxLarge))
     for size in sizes {
-      #expect(
-        SetRow.stacks(sizeClass: .regular, dynamicTypeSize: size),
-        "a row at \(size) still tries to hold one line")
+      #expect(SetRow.stacks(dynamicTypeSize: size), "a row at \(size) keeps the text beside the artwork")
     }
   }
 
@@ -43,14 +39,32 @@ import Testing
     }
   }
 
-  @Test func `a row that cannot hold one line makes room instead of squeezing its title`() {
-    let oneLine = measured(row, width: AccessibilityPreview.macWidth, textSize: .large)
+  @Test func `a row that cannot hold its text beside the artwork makes room instead`() {
+    let beside = measured(row, width: AccessibilityPreview.phoneWidth, textSize: .large)
     for size in sizes {
-      let row = measured(row, width: AccessibilityPreview.macWidth, textSize: size)
+      let row = measured(row, width: AccessibilityPreview.phoneWidth, textSize: size)
       #expect(
-        row.height > oneLine.height,
-        "the row at \(size) is still the one-line arrangement, so its chips sit beside the title")
+        row.height > beside.height,
+        "the row at \(size) still squeezes its title beside the artwork")
     }
+  }
+
+  @Test func `the artwork bar is drawn only for a Set in progress`() {
+    #expect(!Artwork.showsProgress(nil))
+    #expect(!Artwork.showsProgress(0))
+    #expect(Artwork.showsProgress(0.34))
+    #expect(!Artwork.showsProgress(1))
+  }
+
+  @Test func `the data line puts a resume position where the creator was`() {
+    #expect(SetRow.dataLine(creator: "Dekmantel", length: "1h 58m", state: nil) == "Dekmantel · 1h 58m")
+    #expect(
+      SetRow.dataLine(creator: "Dekmantel", length: "1h 58m", state: .init(resumeAt: 2462))
+        == "Resume at 41:02 · 1h 58m")
+    #expect(
+      SetRow.dataLine(creator: "Dekmantel", length: "1h 58m", state: .init(download: "Audio ready"))
+        == "Dekmantel · 1h 58m · Audio ready")
+    #expect(SetRow.dataLine(creator: nil, length: nil, state: nil) == "")
   }
 
   @Test func `chips reflow onto more lines when the width runs out, in either direction`() {
@@ -135,10 +149,10 @@ import Testing
 
   private var row: some View {
     SetRow(
-      index: 1, source: "YouTube", title: "Ben UFO — Dekmantel Festival 2019",
-      url: "youtube.com/watch?v=dk19benufo",
+      title: "Ben UFO — Dekmantel Festival 2019", source: "YouTube", creator: "Dekmantel",
+      length: "1h 58m",
       tags: [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)],
-      added: .now, activeTag: "techno"
+      activeTag: "techno", progress: 0.34
     )
   }
 
