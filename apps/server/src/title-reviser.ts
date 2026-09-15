@@ -119,7 +119,10 @@ export class TitleReviser extends Context.Service<
       return TitleReviser.unconfigured();
     }
     return TitleReviser.layerWithModel(
-      OpenRouterLanguageModel.layer({ model, config: { strictJsonSchema: true } })
+      OpenRouterLanguageModel.layer({
+        config: { strictJsonSchema: true },
+        model,
+      })
     ).pipe(
       Layer.provide(
         OpenRouterClient.layer({
@@ -143,28 +146,25 @@ export class TitleReviser extends Context.Service<
       ).pipe(Effect.as(TitleReviser.unconfigured()));
     return Layer.unwrap(
       Effect.gen(function* layerConfig() {
-        const settings = yield* Effect.matchEffect(
-          Effect.gen(function* readSettings() {
-            return {
-              apiKey: yield* Config.option(
-                Config.Redacted("ORBIS_OPENROUTER_API_KEY")
-              ),
-              model: yield* Config.option(Config.String("ORBIS_TITLE_MODEL")),
-            };
-          }),
-          {
-            onFailure: (error) =>
-              Effect.logWarning(
-                "title revision settings could not be read, so automatic title revision is unavailable."
-              ).pipe(
-                Effect.annotateLogs({ error: String(error) }),
-                Effect.as({
-                  apiKey: Option.none<Redacted.Redacted<string>>(),
-                  model: Option.none<string>(),
-                })
-              ),
-            onSuccess: (read) => Effect.succeed(read),
-          }
+        const settings = yield* Effect.gen(function* readSettings() {
+          return {
+            apiKey: yield* Config.option(
+              Config.Redacted("ORBIS_OPENROUTER_API_KEY")
+            ),
+            model: yield* Config.option(Config.String("ORBIS_TITLE_MODEL")),
+          };
+        }).pipe(
+          Effect.catchTag("ConfigError", (error) =>
+            Effect.logWarning(
+              "title revision settings could not be read, so automatic title revision is unavailable."
+            ).pipe(
+              Effect.annotateLogs({ error: String(error) }),
+              Effect.as({
+                apiKey: Option.none<Redacted.Redacted<string>>(),
+                model: Option.none<string>(),
+              })
+            )
+          )
         );
         if (Option.isNone(settings.apiKey)) {
           return yield* missingVariable("ORBIS_OPENROUTER_API_KEY");
@@ -174,8 +174,8 @@ export class TitleReviser extends Context.Service<
         }
         return TitleReviser.layerWithModel(
           OpenRouterLanguageModel.layer({
-            model: settings.model.value.trim(),
             config: { strictJsonSchema: true },
+            model: settings.model.value.trim(),
           })
         ).pipe(
           Layer.provide(

@@ -71,6 +71,13 @@ const startApp = async (options: {
   };
 };
 
+const loadReviser = (layer: Layer.Layer<TitleReviser>) =>
+  Effect.runPromise(
+    Effect.gen(function* loadReviser() {
+      return yield* TitleReviser;
+    }).pipe(Effect.provide(layer))
+  );
+
 const saveSet = (app: ReturnType<typeof createApp>, title?: string) =>
   request(app, {
     method: "POST",
@@ -162,16 +169,9 @@ test("a typed title is final, so no revision is asked", async () => {
 });
 
 test("the model layer returns the revised title it was given", async () => {
-  const reviser = await Effect.runPromise(
-    Effect.gen(function* reviser() {
-      const service = yield* TitleReviser;
-      return service;
-    }).pipe(
-      Effect.provide(
-        TitleReviser.layerWithModel(
-          modelAnswering('{"title": "Ada Lovelace - Analytical Engine"}')
-        )
-      )
+  const reviser = await loadReviser(
+    TitleReviser.layerWithModel(
+      modelAnswering('{"title": "Ada Lovelace - Analytical Engine"}')
     )
   );
   const title = await Effect.runPromise(
@@ -185,14 +185,8 @@ test("the model layer returns the revised title it was given", async () => {
 });
 
 test("the model layer reports an empty model answer as unexpected", async () => {
-  const reviser = await Effect.runPromise(
-    Effect.gen(function* reviser() {
-      return yield* TitleReviser;
-    }).pipe(
-      Effect.provide(
-        TitleReviser.layerWithModel(modelAnswering('{"title": "  "}'))
-      )
-    )
+  const reviser = await loadReviser(
+    TitleReviser.layerWithModel(modelAnswering('{"title": "  "}'))
   );
   const error = await Effect.runPromise(
     reviser
@@ -207,10 +201,8 @@ test("the model layer reports an empty model answer as unexpected", async () => 
 });
 
 test("the model layer reports a model failure as unavailable", async () => {
-  const reviser = await Effect.runPromise(
-    Effect.gen(function* reviser() {
-      return yield* TitleReviser;
-    }).pipe(Effect.provide(TitleReviser.layerWithModel(modelFailing())))
+  const reviser = await loadReviser(
+    TitleReviser.layerWithModel(modelFailing())
   );
   const error = await Effect.runPromise(
     reviser
@@ -225,12 +217,8 @@ test("the model layer reports a model failure as unavailable", async () => {
 });
 
 test("layer without a key or model stays unconfigured", async () => {
-  const reviser = await Effect.runPromise(
-    Effect.gen(function* reviser() {
-      return yield* TitleReviser;
-    }).pipe(
-      Effect.provide(TitleReviser.layer({ apiKey: "  ", model: undefined }))
-    )
+  const reviser = await loadReviser(
+    TitleReviser.layer({ apiKey: "  ", model: undefined })
   );
   const error = await Effect.runPromise(
     reviser
@@ -241,15 +229,9 @@ test("layer without a key or model stays unconfigured", async () => {
 });
 
 test("the config layer stays unconfigured when the environment is empty", async () => {
-  const reviser = await Effect.runPromise(
-    Effect.gen(function* reviser() {
-      return yield* TitleReviser;
-    }).pipe(
-      Effect.provide(
-        TitleReviser.layerConfig().pipe(
-          Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
-        )
-      )
+  const reviser = await loadReviser(
+    TitleReviser.layerConfig().pipe(
+      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
     )
   );
   const error = await Effect.runPromise(
@@ -261,19 +243,13 @@ test("the config layer stays unconfigured when the environment is empty", async 
 });
 
 test("the config layer needs both the key and the model", async () => {
-  const reviser = await Effect.runPromise(
-    Effect.gen(function* reviser() {
-      return yield* TitleReviser;
-    }).pipe(
-      Effect.provide(
-        TitleReviser.layerConfig().pipe(
-          Layer.provide(
-            ConfigProvider.layer(
-              ConfigProvider.fromUnknown({
-                ORBIS_OPENROUTER_API_KEY: "test-key",
-              })
-            )
-          )
+  const reviser = await loadReviser(
+    TitleReviser.layerConfig().pipe(
+      Layer.provide(
+        ConfigProvider.layer(
+          ConfigProvider.fromUnknown({
+            ORBIS_OPENROUTER_API_KEY: "test-key",
+          })
         )
       )
     )
