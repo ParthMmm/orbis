@@ -9,6 +9,15 @@ enum Loadable<Value: Equatable>: Equatable {
   case loading
   case loaded(Value)
   case failed(OrbisFailure)
+
+  /// Whether the answer has arrived, in either form. A failure is settled: it has something to
+  /// say, and a splash covering it would only delay the sentence and its retry.
+  var isSettled: Bool {
+    switch self {
+    case .idle, .loading: false
+    case .loaded, .failed: true
+    }
+  }
 }
 
 @MainActor

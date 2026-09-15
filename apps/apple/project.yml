@@ -41,12 +41,14 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client
         PRODUCT_NAME: Orbis
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         INFOPLIST_KEY_CFBundleDisplayName: Orbis
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        # UILaunchScreen, a dictionary, and UIBackgroundModes, an array, cannot be build settings:
+        # INFOPLIST_KEY_ carries only flat values, so both live in Orbis/Info.plist, where
+        # UILaunchScreen names the color the splash is drawn on. Everything flat stays here.
+        INFOPLIST_FILE: Orbis/Info.plist
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        # Playback continues with the screen locked. macOS ignores this key.
-        INFOPLIST_KEY_UIBackgroundModes: [audio]
   OrbisTests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]

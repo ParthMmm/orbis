@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!--
+	The launch screen is the splash's own field with no orb in it yet: the first frame the app
+	draws puts the orb on that same color, so the handoff is a field that does not change. An
+	image here could not do that. A launch screen holds one image at its natural size, so the
+	orb would be drawn at a different scale on every screen and would jump when the responsive
+	splash replaced it.
+
+	This dictionary is the reason the target carries a real Info.plist: a nested dictionary has
+	no INFOPLIST_KEY_ setting. Every flat key the app needs is still a build setting.
+	-->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchField</string>
+	</dict>
+	<!--
+	Playback continues with the screen locked. An array is the second thing no INFOPLIST_KEY_
+	setting can express, so this key lived in project.yml as a setting that never reached a
+	built product. macOS ignores it.
+	-->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>audio</string>
+	</array>
+</dict>
+</plist>

@@ -9,7 +9,8 @@ import SwiftUI
 /// - `destructive` is reserved for removal.
 /// - Source stamps stay neutral; brand colors of YouTube or SoundCloud are not used.
 public enum OrbisColor {
-  /// Window and content background. Warm near-black in dark, warm off-white in light.
+  /// Window and content background. The eclipse: near-black with a violet cast in dark, a
+  /// periwinkle-cast off-white in light.
   public static let paper = GeneratedColor.paper.color
   /// Grouped list and card surface, one step above `paper`.
   public static let paperRaised = GeneratedColor.paperRaised.color
@@ -20,8 +21,11 @@ public enum OrbisColor {
   /// Secondary text. Prefer `.secondary` in views; this exists for drawing on non-system surfaces.
   public static let muted = GeneratedColor.muted.color
 
-  /// The app tint. System orange adapts to appearance and accessibility settings on its own.
-  public static let tint = Color.orange
+  /// The app tint: the coral corona of the eclipse. A control color, not body text: it clears
+  /// Lc 64 on either paper, which is what semibold labels and filled buttons need, and it
+  /// carries its own increased-contrast pair. Warmer and lighter than `destructive`, so the
+  /// one action on a screen and the one removal on it never read as the same colour.
+  public static let tint = GeneratedColor.tint.color
   /// Removal only.
   public static let destructive = Color.red
 

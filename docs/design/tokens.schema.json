@@ -21,6 +21,7 @@
         "field",
         "ink",
         "muted",
+        "tint",
         "categoryText"
       ],
       "properties": {
@@ -29,6 +30,7 @@
         "field": { "$ref": "#/$defs/appearances" },
         "ink": { "$ref": "#/$defs/appearances" },
         "muted": { "$ref": "#/$defs/appearances" },
+        "tint": { "$ref": "#/$defs/appearances" },
         "categoryText": {
           "type": "object",
           "additionalProperties": false,

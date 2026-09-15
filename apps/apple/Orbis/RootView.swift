@@ -18,27 +18,30 @@ struct OrbisApp: App {
 struct RootView: View {
   let model: AppModel
 
+  /// How long the splash holds and how long it takes to leave.
+  private let timing = SplashTiming()
+
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
+    /// The splash covers one launch and one load: a refresh, a Playlist, or a screen change is
+    /// not an opening, so nothing puts it back.
+    @State private var splash: SplashPhase = .up
   #endif
 
   var body: some View {
-    Group {
-      if model.isConfigured, !model.isEditingConnection {
-        #if os(macOS)
-          SidebarShell(model: model)
-        #else
-          if sizeClass == .compact {
-            CompactShell(model: model)
-          } else {
-            SidebarShell(model: model)
-          }
-        #endif
-      } else {
-        NavigationStack {
-          ConnectionView(model: model, cancellable: model.isConfigured)
+    ZStack {
+      content
+      #if os(iOS)
+        if splash != .gone {
+          SplashView()
+            // Faded by a value the animation watches rather than inserted and removed with a
+            // transition. A transition on a removal did not play here — the splash cut to the
+            // Library with the fade left unused — and an opacity the animation is told about
+            // does, on a dismissal that arrives from a task either way.
+            .opacity(splash == .up ? 1 : 0)
+            .animation(timing.fadeAnimation, value: splash)
         }
-      }
+      #endif
     }
     // The first load starts here rather than on the Library screen, because a screen the
     // window builds and discards while laying itself out takes its task down with it, and a
@@ -49,7 +52,72 @@ struct RootView: View {
         await model.loadPlaylists()
       }
     }
+    #if os(iOS)
+      .task { await uncoverWhenFirstLoadSettles() }
+    #endif
   }
+
+  @ViewBuilder
+  private var content: some View {
+    if model.isConfigured, !model.isEditingConnection {
+      #if os(macOS)
+        SidebarShell(model: model)
+      #else
+        if sizeClass == .compact {
+          CompactShell(model: model)
+        } else {
+          SidebarShell(model: model)
+        }
+      #endif
+    } else {
+      NavigationStack {
+        ConnectionView(model: model, cancellable: model.isConfigured)
+      }
+    }
+  }
+
+  #if os(iOS)
+    /// The splash's life: up, on its way out, or done with for this launch. The last case keeps
+    /// the screen-sized image out of the tree once it stops being drawn.
+    private enum SplashPhase: Equatable {
+      case up
+      case leaving
+      case gone
+    }
+
+    /// Holds the splash until the first load has an answer, or until the hold's ceiling passes.
+    ///
+    /// The wait is a bounded loop rather than a signal from the model. The load is watched for
+    /// a change to `library`, and the ceiling has to interrupt that watch anyway, so one loop
+    /// keeps both exits in one place and leaves `AppModel` with nothing to know about a splash.
+    private func uncoverWhenFirstLoadSettles() async {
+      let start = ContinuousClock.now
+      while true {
+        // With no service paired there is no first load to wait for: the floor alone decides,
+        // and the connection screen is ready the moment the splash lifts.
+        if timing.shouldDismiss(
+          after: start.duration(to: .now),
+          firstLoadSettled: !model.isConfigured || model.library.isSettled
+        ) {
+          break
+        }
+        do {
+          // Faster than a handoff anyone can see, slow enough that watching a network answer
+          // costs nothing.
+          try await Task.sleep(for: .milliseconds(50))
+        } catch {
+          // The window went away mid-wait, so there is nothing left to reveal.
+          return
+        }
+      }
+      splash = .leaving
+      // A cross-fade is its own Reduce Motion form: nothing travels, so the accessibility
+      // setting has nothing to remove. The sleep is a floor and not a guess, so the image is
+      // released after it has finished drawing rather than while it still is.
+      try? await Task.sleep(for: timing.fade)
+      splash = .gone
+    }
+  #endif
 }
 
 #if os(iOS)
