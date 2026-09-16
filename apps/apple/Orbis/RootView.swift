@@ -21,6 +21,10 @@ struct RootView: View {
   /// How long the splash holds and how long it takes to leave.
   private let timing = SplashTiming()
 
+  /// Coming back to the app is when a device finds out what the other one has been doing: the
+  /// queue it left playing, and the Playback Position it reported while this one was away.
+  @Environment(\.scenePhase) private var scenePhase
+
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
     /// The splash covers one launch and one load: a refresh, a Playlist, or a screen change is
@@ -51,6 +55,15 @@ struct RootView: View {
         await model.loadLibrary()
         await model.loadPlaylists()
         await model.loadQueue()
+      }
+    }
+    .onChange(of: scenePhase) { _, phase in
+      guard phase == .active, model.isConfigured else { return }
+      // Read quietly: a spinner over a list the person was already reading would be a flicker for
+      // a refresh they did not ask for.
+      Task {
+        await model.loadQueue()
+        await model.refreshLibraryQuietly()
       }
     }
     #if os(iOS)
