@@ -21,10 +21,11 @@ public enum OrbisColor {
   /// Secondary text. Prefer `.secondary` in views; this exists for drawing on non-system surfaces.
   public static let muted = GeneratedColor.muted.color
 
-  /// The app tint: the coral corona of the eclipse. A control color, not body text: it clears
-  /// Lc 64 on either paper, which is what semibold labels and filled buttons need, and it
-  /// carries its own increased-contrast pair. Warmer and lighter than `destructive`, so the
-  /// one action on a screen and the one removal on it never read as the same colour.
+  /// The app tint: the orange-coral corona of the eclipse, at the edge of Display P3. A control
+  /// color, not body text: it clears Lc 59 on light paper and Lc 54 on dark, enough for fills,
+  /// icons, and semibold labels, and it carries its own increased-contrast pair. Warmer than
+  /// `destructive`, so the one action on a screen and the one removal on it never read as the
+  /// same colour. The asset catalog's AccentColor carries the same values for system chrome.
   public static let tint = GeneratedColor.tint.color
   /// Removal only.
   public static let destructive = Color.red

@@ -43,13 +43,14 @@ public struct ListingHeader: View {
   }
 }
 
-/// The rule that opens a listing under its title. Heavier than a hairline, in the ink.
+/// The rule that opens a listing under its title. Heavier than a hairline, in the tint: the
+/// one line of the corona on a page, so the palette shows where a list begins.
 public struct ListingRule: View {
   public init() {}
 
   public var body: some View {
     Rectangle()
-      .fill(.primary)
+      .fill(Color.orbis.tint)
       .frame(height: 2)
       .accessibilityHidden(true)
   }

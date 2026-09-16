@@ -42,6 +42,9 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client
         PRODUCT_NAME: Orbis
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # The system tint (tab selection, links, toggles) comes from the catalog, so it carries the
+        # same values as the tint token in docs/design/tokens.json.
+        ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         INFOPLIST_KEY_CFBundleDisplayName: Orbis
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
         # UILaunchScreen, a dictionary, and UIBackgroundModes, an array, cannot be build settings:

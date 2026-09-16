@@ -22,18 +22,22 @@ public struct MiniPlayer: View {
   public let time: String
   public let artwork: URL?
   public let isPlaying: Bool
+  /// How far listening got, from 0 to 1, for the hairline along the bottom edge.
+  public let progress: Double?
   public let surface: Surface
   public let toggle: () -> Void
   public let open: () -> Void
 
   public init(
     title: String, time: String, artwork: URL? = nil, isPlaying: Bool,
-    surface: Surface = .floating, toggle: @escaping () -> Void, open: @escaping () -> Void
+    progress: Double? = nil, surface: Surface = .floating,
+    toggle: @escaping () -> Void, open: @escaping () -> Void
   ) {
     self.title = title
     self.time = time
     self.artwork = artwork
     self.isPlaying = isPlaying
+    self.progress = progress
     self.surface = surface
     self.toggle = toggle
     self.open = open
@@ -73,11 +77,23 @@ public struct MiniPlayer: View {
           .frame(width: 44, height: 44)
       }
       .buttonStyle(.plain)
+      .foregroundStyle(Color.orbis.tint)
       .accessibilityLabel(Self.toggleLabel(isPlaying: isPlaying))
       .accessibilityIdentifier("mini-player-toggle")
     }
     .padding(.horizontal, 8)
     .frame(height: 60)
+    .overlay(alignment: .bottom) {
+      if Artwork.showsProgress(progress), let progress {
+        GeometryReader { proxy in
+          Color.orbis.tint
+            .frame(width: proxy.size.width * progress, height: 2)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+        }
+        .padding(.horizontal, 20)
+        .accessibilityHidden(true)
+      }
+    }
     .background {
       if surface == .floating {
         Color.clear.orbisGlass(radius: 30, interactive: true)
