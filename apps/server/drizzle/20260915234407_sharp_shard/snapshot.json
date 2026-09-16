@@ -1,0 +1,441 @@
+{
+  "version": "7",
+  "dialect": "sqlite",
+  "id": "6856fe68-ea34-4aa0-bbaf-faee97c3c180",
+  "prevIds": ["7ecbda90-6bcd-433a-abe5-5fc8d3eb0408"],
+  "ddl": [
+    {
+      "name": "playlist_sets",
+      "entityType": "tables"
+    },
+    {
+      "name": "playlists",
+      "entityType": "tables"
+    },
+    {
+      "name": "queue_entries",
+      "entityType": "tables"
+    },
+    {
+      "name": "sets",
+      "entityType": "tables"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "playlist_id",
+      "entityType": "columns",
+      "table": "playlist_sets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position",
+      "entityType": "columns",
+      "table": "playlist_sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "set_id",
+      "entityType": "columns",
+      "table": "playlist_sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "playlists"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "playlists"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "playlists"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "false",
+      "generated": null,
+      "name": "is_active",
+      "entityType": "columns",
+      "table": "queue_entries"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "position",
+      "entityType": "columns",
+      "table": "queue_entries"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "set_id",
+      "entityType": "columns",
+      "table": "queue_entries"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "artwork_url",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "created_at",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "creator",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'none'",
+      "generated": null,
+      "name": "download_state",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "duration_seconds",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "finish_count",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_listened_at",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "listen_count",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "'pending'",
+      "generated": null,
+      "name": "metadata_state",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "playback_position_seconds",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "retained_audio_bytes",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "retained_audio_format",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "source",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "tags",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "title",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "title_edited_by_user",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "url",
+      "entityType": "columns",
+      "table": "sets"
+    },
+    {
+      "columns": ["playlist_id"],
+      "tableTo": "playlists",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_playlist_sets_playlist_id_playlists_id_fk",
+      "entityType": "fks",
+      "table": "playlist_sets"
+    },
+    {
+      "columns": ["set_id"],
+      "tableTo": "sets",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_playlist_sets_set_id_sets_id_fk",
+      "entityType": "fks",
+      "table": "playlist_sets"
+    },
+    {
+      "columns": ["set_id"],
+      "tableTo": "sets",
+      "columnsTo": ["id"],
+      "onUpdate": "NO ACTION",
+      "onDelete": "NO ACTION",
+      "nameExplicit": false,
+      "name": "fk_queue_entries_set_id_sets_id_fk",
+      "entityType": "fks",
+      "table": "queue_entries"
+    },
+    {
+      "columns": ["playlist_id", "set_id"],
+      "nameExplicit": false,
+      "name": "playlist_sets_pk",
+      "entityType": "pks",
+      "table": "playlist_sets"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "playlists_pk",
+      "table": "playlists",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["set_id"],
+      "nameExplicit": false,
+      "name": "queue_entries_pk",
+      "table": "queue_entries",
+      "entityType": "pks"
+    },
+    {
+      "columns": ["id"],
+      "nameExplicit": false,
+      "name": "sets_pk",
+      "table": "sets",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "playlist_id",
+          "isExpression": false
+        },
+        {
+          "value": "position",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "playlist_sets_position_unique",
+      "entityType": "indexes",
+      "table": "playlist_sets"
+    },
+    {
+      "columns": [
+        {
+          "value": "set_id",
+          "isExpression": false
+        },
+        {
+          "value": "playlist_id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "playlist_sets_by_set",
+      "entityType": "indexes",
+      "table": "playlist_sets"
+    },
+    {
+      "columns": [
+        {
+          "value": "\"name\" COLLATE NOCASE",
+          "isExpression": true
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "playlists_name_unique",
+      "entityType": "indexes",
+      "table": "playlists"
+    },
+    {
+      "columns": [
+        {
+          "value": "position",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "queue_entries_position_unique",
+      "entityType": "indexes",
+      "table": "queue_entries"
+    },
+    {
+      "columns": [
+        {
+          "value": "is_active",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": "\"queue_entries\".\"is_active\" = 1",
+      "origin": "manual",
+      "name": "queue_entries_active_unique",
+      "entityType": "indexes",
+      "table": "queue_entries"
+    },
+    {
+      "columns": ["url"],
+      "nameExplicit": false,
+      "name": "sets_url_unique",
+      "entityType": "uniques",
+      "table": "sets"
+    }
+  ],
+  "renames": []
+}

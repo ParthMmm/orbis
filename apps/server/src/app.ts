@@ -31,6 +31,8 @@ import {
 import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
 import type { EnrichedMetadata } from "./metadata.js";
+import { Queue } from "./queue.js";
+import { Stats } from "./stats.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
 
@@ -56,6 +58,12 @@ const SaveInput = Schema.Struct({
   title: Schema.optionalKey(Title),
   url: Schema.String.check(Schema.isMaxLength(2048)),
 });
+// A Playback Position never goes backwards from zero, and the ceiling only refuses a number that
+// is not a moment in any Set. A real position is bounded by the Set's own duration in the Library.
+const PositionSeconds = Schema.Number.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(604_800)
+);
 
 /**
  * A failed library call is the one server-side failure the response status does not
@@ -184,12 +192,21 @@ export const createApp = (
     databasePath,
     migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
   });
+  // The Database layer is one value used by every service that writes, so a build opens one
+  // connection however many services depend on it. Queue composes the three below itself,
+  // because it is the only service that needs the sets, the counters, and the queue at once.
+  const libraryLayer = Library.layer.pipe(Layer.provide(database));
+  const statsLayer = Stats.layer.pipe(Layer.provide(database));
+  const queueLayer = Queue.layer.pipe(
+    Layer.provide(Layer.mergeAll(database, libraryLayer, statsLayer))
+  );
   const routes = HttpRouter.use((router) =>
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
       const audio = yield* Audio;
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
+      const queue = yield* Queue;
       const reviseTitle = Effect.fn("reviseSavedSetTitle")((
         set: SavedSet,
         enriched: EnrichedMetadata
@@ -412,6 +429,91 @@ export const createApp = (
       );
       yield* router.add(
         "GET",
+        "/queue",
+        respond(
+          queue
+            .read()
+            .pipe(Effect.map((listeningQueue) => ({ queue: listeningQueue })))
+        )
+      );
+      yield* router.add(
+        "PUT",
+        "/queue/active",
+        respond(
+          Effect.gen(function* setActiveQueueEntry() {
+            const input = yield* HttpServerRequest.schemaBodyJson(
+              Schema.Struct({
+                setId: Schema.String.check(Schema.isMaxLength(100)),
+              })
+            );
+            return { queue: yield* queue.play(input.setId) };
+          })
+        )
+      );
+      yield* router.add(
+        "POST",
+        "/queue/entries",
+        respond(
+          Effect.gen(function* addQueueEntry() {
+            const input = yield* HttpServerRequest.schemaBodyJson(
+              Schema.Struct({
+                placement: Schema.Literals(["next", "end"]),
+                setId: Schema.String.check(Schema.isMaxLength(100)),
+              })
+            );
+            return { queue: yield* queue.insert(input.setId, input.placement) };
+          }),
+          201
+        )
+      );
+      yield* router.add(
+        "PUT",
+        "/queue/playlist",
+        respond(
+          Effect.gen(function* replaceQueueFromPlaylist() {
+            const input = yield* HttpServerRequest.schemaBodyJson(
+              Schema.Struct({
+                playlistId: Schema.String.check(Schema.isMaxLength(100)),
+              })
+            );
+            return {
+              queue: yield* queue.replaceWithPlaylist(input.playlistId),
+            };
+          })
+        )
+      );
+      yield* router.add(
+        "POST",
+        "/queue/completion",
+        respond(
+          Effect.gen(function* completeQueueEntry() {
+            const input = yield* HttpServerRequest.schemaBodyJson(
+              Schema.Struct({
+                setId: Schema.String.check(Schema.isMaxLength(100)),
+              })
+            );
+            return { queue: yield* queue.complete(input.setId) };
+          })
+        )
+      );
+      yield* router.add(
+        "PUT",
+        "/sets/:id/position",
+        respond(
+          Effect.gen(function* setPlaybackPosition() {
+            const { params } = yield* HttpRouter.RouteContext;
+            const input = yield* HttpServerRequest.schemaBodyJson(
+              Schema.Struct({ seconds: PositionSeconds })
+            );
+            return yield* library.setPlaybackPosition(
+              params.id ?? "",
+              input.seconds
+            );
+          })
+        )
+      );
+      yield* router.add(
+        "GET",
         "/tags",
         respond(library.tags().pipe(Effect.map((tags) => ({ tags }))))
       );
@@ -482,7 +584,9 @@ export const createApp = (
   const app = HttpRouter.toWebHandler(
     routes.pipe(
       Layer.provide(Audio.layer(options.audio ?? {})),
-      Layer.provide(Library.layer.pipe(Layer.provide(database))),
+      Layer.provide(queueLayer),
+      Layer.provide(libraryLayer),
+      Layer.provide(statsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
       Layer.provide(options.titleReviser ?? TitleReviser.unconfigured())
     ),

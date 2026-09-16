@@ -9,7 +9,7 @@ import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { Database } from "./db/database.js";
-import { playlistSets, playlists, sets } from "./db/schema.js";
+import { playlistSets, playlists, queueEntries, sets } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import {
   MAX_PLAYLISTS_PER_SET,
@@ -85,6 +85,14 @@ export class Library extends Context.Service<
       input: SaveSetInput
     ) => Effect.Effect<SavedSet, LibraryError>;
     readonly find: (id: string) => Effect.Effect<SavedSet, LibraryError>;
+    /** The Sets with these identifiers, in the order asked for. Missing ones are left out. */
+    readonly byIds: (
+      ids: readonly string[]
+    ) => Effect.Effect<SavedSet[], LibraryError>;
+    readonly setPlaybackPosition: (
+      id: string,
+      seconds: number
+    ) => Effect.Effect<SavedSet, LibraryError>;
     readonly recordEnrichment: (
       id: string,
       metadata: EnrichedMetadata
@@ -332,6 +340,59 @@ export class Library extends Context.Service<
         execute(findSavedSet(id))
       );
 
+      // One query for a whole Listening Queue, rather than a find per entry. The order comes from
+      // the caller, because that order is the queue's, not the database's.
+      const byIds = Effect.fn("Library.byIds")((ids: readonly string[]) =>
+        execute(
+          Effect.gen(function* byIdsEffect() {
+            if (ids.length === 0) {
+              return [];
+            }
+            const rows = yield* db
+              .select()
+              .from(sets)
+              .where(inArray(sets.id, [...ids]));
+            const found = new Map(rows.map((row) => [row.id, row]));
+            return yield* Effect.forEach(
+              ids.flatMap((id) => {
+                const row = found.get(id);
+                return row ? [row] : [];
+              }),
+              (row) => hydrateSet(row)
+            );
+          })
+        )
+      );
+
+      // A position past the end of the Set is not a place to resume from, and a fraction of a
+      // second is not a value the app can read back, so both are settled here rather than stored
+      // and explained later.
+      const setPlaybackPosition = Effect.fn("Library.setPlaybackPosition")(
+        (id: string, seconds: number) =>
+          execute(
+            Effect.gen(function* setPlaybackPositionEffect() {
+              const [current] = yield* findRow(id);
+              if (!current) {
+                return yield* Effect.fail(setNotFound());
+              }
+              const wanted = Math.max(seconds, 0);
+              const bounded =
+                current.durationSeconds === null
+                  ? wanted
+                  : Math.min(wanted, current.durationSeconds);
+              const [row] = yield* db
+                .update(sets)
+                .set({ playbackPositionSeconds: Math.round(bounded) })
+                .where(eq(sets.id, id))
+                .returning();
+              if (!row) {
+                return yield* Effect.fail(setNotFound());
+              }
+              return yield* hydrateSet(row);
+            })
+          )
+      );
+
       const recordEnrichment = Effect.fn("Library.recordEnrichment")(
         (id: string, metadata: EnrichedMetadata) =>
           execute(
@@ -388,6 +449,11 @@ export class Library extends Context.Service<
                 yield* tx
                   .delete(playlistSets)
                   .where(eq(playlistSets.setId, id));
+                // A removed Set cannot stay scheduled for playback: the queue would hold an
+                // entry with nothing behind it.
+                yield* tx
+                  .delete(queueEntries)
+                  .where(eq(queueEntries.setId, id));
                 yield* tx.delete(sets).where(eq(sets.id, id));
               })
             );
@@ -877,6 +943,7 @@ export class Library extends Context.Service<
       );
 
       return {
+        byIds,
         cancelDownload,
         claimDownload,
         createPlaylist,
@@ -893,6 +960,7 @@ export class Library extends Context.Service<
         renamePlaylist,
         resetStuckDownloads,
         save,
+        setPlaybackPosition,
         setPlaylistMembers,
         setPlaylistMemberships,
         tags,

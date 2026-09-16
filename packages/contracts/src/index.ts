@@ -79,6 +79,18 @@ export interface Playlist {
   setCount: number;
 }
 
+/**
+ * The one Listening Queue. Entries are in play order, and at most one of them is the active
+ * Set: the Set whose Listen is open and whose Playback Position is being kept.
+ */
+export interface ListeningQueue {
+  activeSetId: string | null;
+  entries: SavedSet[];
+}
+
+/** Where a queued Set goes. `next` starts after the active Set; `end` goes last. */
+export type QueuePlacement = "next" | "end";
+
 export {
   normalizeSourceUrl,
   SOURCE_URL_MESSAGE,
