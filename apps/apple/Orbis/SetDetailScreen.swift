@@ -23,9 +23,10 @@ struct SetDetailScreen: View {
           title: set.title,
           source: set.source.label,
           subtitle: SetPresentation.subtitle(set),
-          artwork: set.artworkUrl.flatMap(URL.init(string:)),
+          artwork: SetPresentation.pageArtwork(set),
           tags: set.tags,
-          position: SetPresentation.playbackPosition(set),
+          position: model.audioPlayer.currentSetId == set.id
+            ? nil : SetPresentation.playbackPosition(set),
           progress: SetPresentation.progress(of: set),
           failedToName: set.metadataState == "failed",
           retainedAudio: set.downloadState == "ready",
@@ -162,8 +163,22 @@ struct SetDetailScreen: View {
   @ViewBuilder
   private func playerControls(_ set: SavedSet) -> some View {
     let player = model.audioPlayer
-    VStack(alignment: .leading, spacing: 8) {
-      HStack(spacing: 12) {
+    // The bar takes the whole width on its own line, the way a music app lays it out: a Set
+    // runs an hour or more, and every point of width is seconds of precision. The clock sits
+    // under its ends, and the skips beside Play are the fine control the bar cannot give.
+    VStack(alignment: .leading, spacing: 16) {
+      if let duration = player.duration ?? set.durationSeconds.map(TimeInterval.init) {
+        PlaybackProgress(player: player, duration: duration)
+      } else {
+        ProgressView()
+          .frame(maxWidth: .infinity)
+      }
+      HStack {
+        Button("Back 15 seconds", systemImage: "gobackward.15") {
+          player.seek(to: player.elapsed - 15)
+        }
+        .accessibilityIdentifier("detail-back")
+        Spacer()
         Button(
           player.state == .playing ? "Pause" : "Play",
           systemImage: player.state == .playing ? "pause.fill" : "play.fill"
@@ -174,16 +189,20 @@ struct SetDetailScreen: View {
             player.resume()
           }
         }
-        .buttonStyle(.glass)
-        .controlSize(.large)
-        .labelStyle(.iconOnly)
+        .buttonStyle(.glassProminent)
+        .tint(Color.orbis.tint)
+        .controlSize(.extraLarge)
         .accessibilityIdentifier("detail-play-toggle")
-        if let duration = player.duration ?? set.durationSeconds.map(TimeInterval.init) {
-          PlaybackProgress(player: player, duration: duration)
-        } else {
-          ProgressView()
+        Spacer()
+        Button("Forward 30 seconds", systemImage: "goforward.30") {
+          player.seek(to: player.elapsed + 30)
         }
+        .accessibilityIdentifier("detail-forward")
       }
+      .buttonStyle(.plain)
+      .labelStyle(.iconOnly)
+      .font(.title2)
+      .padding(.horizontal, 24)
       if case .failed(let message) = player.state {
         Text(message)
           .font(.orbis.mono)
@@ -281,7 +300,8 @@ private struct PlaybackProgress: View {
   }
 
   var body: some View {
-    HStack(spacing: 12) {
+    let shown = scrubPosition ?? player.elapsed
+    VStack(spacing: 4) {
       Slider(
         value: position,
         in: 0...max(duration, 1),
@@ -293,11 +313,17 @@ private struct PlaybackProgress: View {
         }
       )
       .accessibilityIdentifier("detail-seek")
-      Text(
-        "\(SetPresentation.timestamp(scrubPosition ?? player.elapsed)) / \(SetPresentation.timestamp(duration))"
-      )
+      .accessibilityValue(SetPresentation.timestamp(shown))
+      // Elapsed under the left end, what is left under the right, the way a deck reads.
+      HStack {
+        Text(SetPresentation.timestamp(shown))
+        Spacer()
+        Text("-\(SetPresentation.timestamp(max(duration - shown, 0)))")
+      }
       .font(.orbis.mono)
+      .monospacedDigit()
       .foregroundStyle(.secondary)
+      .accessibilityHidden(true)
     }
   }
 }
