@@ -217,6 +217,28 @@ final class AudioDownloadTests: XCTestCase {
     XCTAssertNil(AudioPlayer.artwork(from: Data("not an image".utf8)))
   }
 
+  func testLetterboxedThumbnailsAreCroppedToTheirPicture() throws {
+    let letterboxed = try XCTUnwrap(solidImage(width: 480, height: 360))
+    let cropped = AudioPlayer.widescreen(letterboxed)
+    XCTAssertEqual(cropped.width, 480)
+    XCTAssertEqual(cropped.height, 270, "a 4:3 frame keeps its middle 16:9 band")
+
+    let widescreen = try XCTUnwrap(solidImage(width: 1280, height: 720))
+    XCTAssertEqual(AudioPlayer.widescreen(widescreen).height, 720, "16:9 is left alone")
+    let wider = try XCTUnwrap(solidImage(width: 1000, height: 400))
+    XCTAssertEqual(AudioPlayer.widescreen(wider).height, 400, "wider than 16:9 is left alone")
+  }
+
+  private func solidImage(width: Int, height: Int) -> CGImage? {
+    let context = CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+      space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+    context?.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
+    context?.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    return context?.makeImage()
+  }
+
   /// A 1×1 PNG, so artwork decoding is exercised without a fixture on disk.
   private var onePixelPNG: Data {
     Data(

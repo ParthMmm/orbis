@@ -133,13 +133,35 @@ final class AudioPlayer {
 
   /// The image the provider offered, as the system wants it: a handler that returns the same
   /// image at any size, since the provider gives one size and the system scales it.
+  ///
+  /// YouTube's listing thumbnail is a 4:3 frame with the 16:9 picture letterboxed inside it, so
+  /// an image taller than 16:9 is cropped to the middle band first; otherwise the lock screen
+  /// shows the provider's black bars as if they were the picture.
   static func artwork(from data: Data) -> MPMediaItemArtwork? {
     #if os(macOS)
-      guard let image = NSImage(data: data) else { return nil }
+      guard let source = NSImage(data: data),
+        let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil)
+      else { return nil }
+      let cropped = widescreen(cg)
+      let image = NSImage(
+        cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
     #else
-      guard let image = UIImage(data: data) else { return nil }
+      guard let source = UIImage(data: data), let cg = source.cgImage else { return nil }
+      let image = UIImage(cgImage: widescreen(cg))
     #endif
     return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+  }
+
+  /// The middle 16:9 band of an image that is taller than 16:9; an image that is already as
+  /// wide, or wider, is returned as it is.
+  static func widescreen(_ image: CGImage) -> CGImage {
+    let width = image.width
+    let height = image.height
+    let target = width * 9 / 16
+    // A few pixels of tolerance, so a 1280×721 render is not cropped for nothing.
+    guard height > target + 2 else { return image }
+    let rect = CGRect(x: 0, y: (height - target) / 2, width: width, height: target)
+    return image.cropping(to: rect) ?? image
   }
 
   /// Brings the audio session up for playback and answers whether it came up.
