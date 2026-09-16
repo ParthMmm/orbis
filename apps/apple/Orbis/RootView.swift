@@ -130,12 +130,11 @@ struct RootView: View {
 
     var body: some View {
       TabView(selection: $model.destination) {
-        Tab(
-          Destination.library.rawValue, systemImage: Destination.library.symbol,
-          value: Destination.library
-        ) {
-          NavigationStack {
-            DestinationView(model: model, destination: .library)
+        ForEach([Destination.home, .library]) { destination in
+          Tab(destination.rawValue, systemImage: destination.symbol, value: destination) {
+            NavigationStack {
+              DestinationView(model: model, destination: destination)
+            }
           }
         }
         Tab(value: Destination.search, role: .search) {
@@ -161,7 +160,6 @@ struct RootView: View {
       let player = model.audioPlayer
       MiniPlayer(
         title: player.currentTitle,
-        time: SetPresentation.miniPlayerTime(elapsed: player.elapsed, duration: player.duration),
         artwork: player.currentSetId.flatMap { model.savedSet($0)?.artworkUrl }
           .flatMap(URL.init(string:)),
         isPlaying: player.state == .playing,
@@ -172,7 +170,8 @@ struct RootView: View {
         },
         open: {
           if let id = player.currentSetId {
-            model.destination = .library
+            // Home and Library both open a Set in place; Search hands it to the Library.
+            if model.destination == .search { model.destination = .library }
             model.openSet(id)
           }
         }
@@ -293,6 +292,8 @@ struct DestinationView: View {
 
   var body: some View {
     switch destination {
+    case .home:
+      home
     case .library:
       SetList(
         state: model.visibleSets,
@@ -363,6 +364,38 @@ struct DestinationView: View {
   /// The large title already says Library, so the list carries no heading of its own; the
   /// active filter is underlined in the ledger row instead.
   private var libraryHeading: Text? { nil }
+
+  /// Home: what is new and where to go, in rails, with a waiting link above them. The full
+  /// collection is the Library tab.
+  private var home: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 20) {
+        if let linkWaiting {
+          linkWaiting
+        }
+        HomeRails(model: model)
+      }
+      .padding()
+    }
+    .background(Color.orbis.paper)
+    .navigationTitle("Home")
+    .largeTitleOnIOS()
+    .toolbar {
+      ToolbarItem {
+        Button("File a set", systemImage: "plus") { openFilingSheet() }
+          .tint(Color.orbis.tint)
+          .accessibilityIdentifier("home-file")
+      }
+      settingsMenu
+    }
+    .sheet(isPresented: $isFilingSheetShown) { filingSheet }
+    .onChange(of: model.reveal != nil) { _, hasReveal in
+      if hasReveal { isFilingSheetShown = true }
+    }
+    .navigationDestination(item: $model.openedSetId) { id in
+      SetDetailScreen(model: model, setId: id)
+    }
+  }
 
   private func openFilingSheet() {
     isFilingSheetShown = true
@@ -547,8 +580,7 @@ struct DestinationView: View {
           .accessibilityIdentifier("library-connection-settings")
         Button("Forget this device", role: .destructive) { isConfirmingForget = true }
       } label: {
-        // The profile shape a music app's home carries: a person in the bar's own glass button.
-        Label("Library actions", systemImage: "person.crop.circle")
+        Label("Library actions", systemImage: "gearshape")
       }
       .accessibilityIdentifier("library-actions")
     }

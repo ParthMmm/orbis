@@ -146,7 +146,7 @@ final class AppModel {
   /// for the life of the app.
   private static let downloadWatchLimit = 600
 
-  var destination: Destination = .library
+  var destination: Destination = .home
 
   /// True while the connection screen is open over a configured library. An address that stops
   /// working used to leave Forget this device as the only way back to it, which throws away a
@@ -765,6 +765,7 @@ final class AppModel {
 }
 
 enum Destination: String, CaseIterable, Identifiable, Hashable {
+  case home = "Home"
   case library = "Library"
   case search = "Search"
 
@@ -773,6 +774,7 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
 
   var symbol: String {
     switch self {
+    case .home: "house"
     case .library: "music.note.list"
     case .search: "magnifyingglass"
     }

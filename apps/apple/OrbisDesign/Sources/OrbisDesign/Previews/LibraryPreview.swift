@@ -64,7 +64,7 @@ private struct LibraryPreview: View {
       .background(Color.orbis.paper)
       .safeAreaInset(edge: .bottom) {
         MiniPlayer(
-          title: "Objekt — Live at Freerotation", time: "41:02 · 2:33:00", isPlaying: true,
+          title: "Objekt — Live at Freerotation", isPlaying: true, progress: 0.27,
           toggle: {}, open: {}
         )
         .padding()

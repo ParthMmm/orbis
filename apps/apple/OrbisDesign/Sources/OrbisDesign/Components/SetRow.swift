@@ -34,17 +34,27 @@ public struct SetRow: View {
   /// does for `source`, so it stays free of the app's domain types.
   public struct State: Hashable, Sendable {
     public let resumeAt: Int?
+    /// What a Download in flight is doing ("Download queued"); nothing once it is done.
     public let download: String?
-    public init(resumeAt: Int? = nil, download: String? = nil) {
+    /// Audio is kept on the device. Drawn as a symbol, because it is a fact about the Set, not
+    /// news about it.
+    public let kept: Bool
+    public init(resumeAt: Int? = nil, download: String? = nil, kept: Bool = false) {
       self.resumeAt = resumeAt
       self.download = download
+      self.kept = kept
     }
-    public var isEmpty: Bool { resumeAt == nil && download == nil }
-    /// "Resume at 1:01:01 · Download queued"
+    public var isEmpty: Bool { resumeAt == nil && download == nil && !kept }
+    /// The symbol beside a Download in flight, and the one that stands for kept audio.
+    public static let downloadSymbol = "arrow.down.circle"
+    public static let keptSymbol = "arrow.down.circle.fill"
+    public static let keptLabel = "Audio kept"
+    /// "Resume at 1:01:01 · Download queued · Audio kept"
     public var label: String {
       var parts: [String] = []
       if let resumeAt { parts.append("Resume at \(Self.clock(resumeAt))") }
       if let download { parts.append(download) }
+      if kept { parts.append(Self.keptLabel) }
       return parts.joined(separator: " · ")
     }
     static func clock(_ seconds: Int) -> String {
@@ -75,9 +85,9 @@ public struct SetRow: View {
     self.progress = progress
   }
 
-  /// The data line. A resume position takes the creator's place, because once a person has
-  /// started a Set the question is where they were, not who made it. What the Download is
-  /// doing comes last, after the length.
+  /// The data line's words. A resume position takes the creator's place, because once a person
+  /// has started a Set the question is where they were, not who made it. What the Download is
+  /// doing comes last, after the length; kept audio is a symbol, drawn beside the words.
   public static func dataLine(creator: String?, length: String?, state: State?) -> String {
     var parts: [String] = []
     if let resumeAt = state?.resumeAt {
@@ -134,6 +144,18 @@ public struct SetRow: View {
             .font(.orbis.mono)
             .foregroundStyle(.secondary)
         }
+        if let state, state.download != nil {
+          Image(systemName: State.downloadSymbol)
+            .font(.orbis.mono)
+            .foregroundStyle(.secondary)
+            .accessibilityHidden(true)
+        }
+        if state?.kept == true {
+          Image(systemName: State.keptSymbol)
+            .font(.orbis.mono)
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(State.keptLabel)
+        }
         ForEach(tags) { tag in
           TagWord(tag.name, category: tag.category, active: tag.name == activeTag)
         }
@@ -146,6 +168,7 @@ public struct SetRow: View {
     var parts = [title, source]
     let line = Self.dataLine(creator: creator, length: length, state: state)
     if !line.isEmpty { parts.append(line) }
+    if state?.kept == true { parts.append(State.keptLabel) }
     if !tags.isEmpty { parts.append(tags.map(\.name).joined(separator: ", ")) }
     return parts.joined(separator: ", ")
   }
@@ -171,6 +194,11 @@ private struct SetRowSample: View {
       SetRow(
         title: "DJ Stingray 313 — Dekmantel 2017", source: "YouTube", creator: "Dekmantel",
         length: "1h 12m", state: .init(download: "Download queued")
+      )
+      Divider()
+      SetRow(
+        title: "Objekt — Boiler Room Berlin", source: "SoundCloud", creator: "Boiler Room",
+        length: "1h 00m", state: .init(kept: true)
       )
     }
     .padding(.horizontal)

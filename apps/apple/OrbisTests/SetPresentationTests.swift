@@ -77,7 +77,9 @@ final class SetPresentationTests: XCTestCase {
       SetPresentation.row(try makeSet(downloadState: "ready")).state
     )
     XCTAssertNil(downloadOnly.resumeAt)
-    XCTAssertEqual(downloadOnly.label, "Audio ready")
+    XCTAssertNil(downloadOnly.download, "kept audio is a symbol on the row, not a line of words")
+    XCTAssertTrue(downloadOnly.kept)
+    XCTAssertEqual(downloadOnly.label, "Audio kept")
   }
 
   func testDownloadLabelsCoverEveryServerState() {

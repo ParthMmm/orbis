@@ -2,9 +2,10 @@ import SwiftUI
 
 /// Now playing, docked above the tab bar on every screen but the Set's own page.
 ///
-/// Glass, because it floats over content the way the tab bar does. It shows the Set and its
-/// position and offers one control; tapping the rest opens the Set's page, where the transport
-/// lives. The bar is the one place playback is reachable after that page closes.
+/// Glass, because it floats over content the way the tab bar does. It names the Set and offers
+/// one control; the position is the hairline along its bottom edge, and the clock lives on the
+/// Set's page, which tapping the rest opens. The bar is the one place playback is reachable
+/// after that page closes.
 ///
 /// On iOS the tab view's bottom accessory is the right home: the system draws that glass and
 /// morphs the bar with the tab bar, so the player passes `.accessory` and draws none of its own.
@@ -18,8 +19,6 @@ public struct MiniPlayer: View {
   }
 
   public let title: String
-  /// "26:14 · 1:15:25", composed by the caller, which owns the clock.
-  public let time: String
   public let artwork: URL?
   public let isPlaying: Bool
   /// How far listening got, from 0 to 1, for the hairline along the bottom edge.
@@ -29,12 +28,11 @@ public struct MiniPlayer: View {
   public let open: () -> Void
 
   public init(
-    title: String, time: String, artwork: URL? = nil, isPlaying: Bool,
+    title: String, artwork: URL? = nil, isPlaying: Bool,
     progress: Double? = nil, surface: Surface = .floating,
     toggle: @escaping () -> Void, open: @escaping () -> Void
   ) {
     self.title = title
-    self.time = time
     self.artwork = artwork
     self.isPlaying = isPlaying
     self.progress = progress
@@ -55,21 +53,15 @@ public struct MiniPlayer: View {
           Artwork(url: artwork, seed: title, size: .row)
             .frame(width: 62, height: 44)
             .clipShape(.capsule)
-          VStack(alignment: .leading, spacing: 1) {
-            Text(title)
-              .font(.orbis.rowTitle)
-              .lineLimit(1)
-            Text(time)
-              .font(.orbis.mono)
-              .foregroundStyle(.secondary)
-              .monospacedDigit()
-          }
+          Text(title)
+            .font(.orbis.rowTitle)
+            .lineLimit(1)
           Spacer(minLength: 0)
         }
         .contentShape(.rect)
       }
       .buttonStyle(.plain)
-      .accessibilityLabel("Now playing, \(title), \(time)")
+      .accessibilityLabel("Now playing, \(title)")
       .accessibilityHint("Opens the set")
       Button(action: toggle) {
         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
@@ -107,7 +99,7 @@ public struct MiniPlayer: View {
   VStack {
     Spacer()
     MiniPlayer(
-      title: "KETTAMA @ Creamfields 2026", time: "26:14 · 1:15:25", isPlaying: true,
+      title: "KETTAMA @ Creamfields 2026", isPlaying: true, progress: 0.34,
       toggle: {}, open: {}
     )
     .padding()
@@ -119,7 +111,7 @@ public struct MiniPlayer: View {
   VStack {
     Spacer()
     MiniPlayer(
-      title: "Objekt — Live at Freerotation", time: "1:02:10 · 2:33:00", isPlaying: false,
+      title: "Objekt — Live at Freerotation", isPlaying: false, progress: 0.41,
       toggle: {}, open: {}
     )
     .padding()

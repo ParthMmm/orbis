@@ -75,9 +75,12 @@ enum SetPresentation {
 
   @MainActor
   static func state(of set: SavedSet) -> SetRow.State? {
+    // Kept audio is a fact the row draws as a symbol; the words are for a Download in flight.
+    let kept = set.downloadState == "ready"
     let state = SetRow.State(
       resumeAt: set.playbackPositionSeconds > 0 ? set.playbackPositionSeconds : nil,
-      download: downloadLabel(set.downloadState)
+      download: kept ? nil : downloadLabel(set.downloadState),
+      kept: kept
     )
     return state.isEmpty ? nil : state
   }
