@@ -6,7 +6,8 @@ import SwiftUI
 /// where they sit and what they are called.
 struct SetList: View {
   let state: Loadable<[SavedSet]>
-  let heading: Text
+  /// The heading over the list, absent on a screen whose title already names it.
+  let heading: Text?
   /// The state a loaded-but-empty list shows, composed by the caller from OrbisDesign and
   /// carrying its own accessibility identifier.
   let empty: AnyView
@@ -94,9 +95,11 @@ struct SetList: View {
   /// rows and the no-matches state share it, because both are answers about the same list.
   private var listHeader: some View {
     VStack(alignment: .leading, spacing: 0) {
-      heading
-        .font(.orbis.sectionTitle)
-        .padding(.bottom, 12)
+      if let heading {
+        heading
+          .font(.orbis.sectionTitle)
+          .padding(.bottom, 12)
+      }
       ListingRule()
       HStack(alignment: .firstTextBaseline) {
         ListingLabel(footer)

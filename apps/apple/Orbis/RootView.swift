@@ -283,6 +283,9 @@ struct DestinationView: View {
   @State private var isConfirmingForget = false
   /// The empty Library's action asks the paste field to take focus.
   @State private var focusLink = false
+  /// Filing happens in a sheet from the toolbar's +, and the naming step follows in the same
+  /// sheet, so the Library itself is the collection and nothing else.
+  @State private var isFilingSheetShown = false
 
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -295,7 +298,7 @@ struct DestinationView: View {
         state: model.visibleSets,
         heading: libraryHeading,
         empty: AnyView(
-          EmptyLibraryState(recover: { focusLink = true })
+          EmptyLibraryState(recover: { openFilingSheet() })
             .accessibilityIdentifier("library-empty")
         ),
         failureContext: "loading the library",
@@ -309,17 +312,31 @@ struct DestinationView: View {
             NoResultsState(recoverLabel: "Clear filters", recover: { model.setTagFilter(nil) })
               .accessibilityIdentifier("library-no-matches")
           ),
-        hero: AnyView(pasteHero),
-        rails: AnyView(HomeRails(model: model)),
+        hero: linkWaiting,
+        rails: nil,
         footer: libraryFooter,
         retry: { await model.loadLibrary() },
         select: { set in model.openSet(set.id) }
       )
       .navigationTitle("Library")
       // Pinned rather than left to the default, so the large title stays large whatever the
-      // tab's content state is; the Set page pins its inline counterpart the same way.
-      .toolbarTitleDisplayMode(.large)
-      .toolbar { settingsMenu }
+      // tab's content state is; the Set page pins its inline counterpart the same way. A Mac
+      // has no large title to pin.
+      .largeTitleOnIOS()
+      .toolbar {
+        ToolbarItem {
+          Button("File a set", systemImage: "plus") { openFilingSheet() }
+            .tint(Color.orbis.tint)
+            .accessibilityIdentifier("library-file")
+        }
+        settingsMenu
+      }
+      .sheet(isPresented: $isFilingSheetShown) { filingSheet }
+      // A filing that arrives from the share sheet or the clipboard card opens the naming
+      // step the same way one from the field does.
+      .onChange(of: model.reveal != nil) { _, hasReveal in
+        if hasReveal { isFilingSheetShown = true }
+      }
       .navigationDestination(item: $model.openedSetId) { id in
         SetDetailScreen(model: model, setId: id)
       }
@@ -343,14 +360,13 @@ struct DestinationView: View {
     }
   }
 
-  /// The design's heading names the filter in the filtered tag's colour, so the screen says
-  /// what it is showing without a separate label.
-  private var libraryHeading: Text {
-    guard let activeTag = model.activeTag else {
-      return Text("Everything")
-    }
-    let colour = SetPresentation.category(for: activeTag).text
-    return Text("Everything \(Text("/ \(activeTag)").foregroundStyle(colour))")
+  /// The large title already says Library, so the list carries no heading of its own; the
+  /// active filter is underlined in the ledger row instead.
+  private var libraryHeading: Text? { nil }
+
+  private func openFilingSheet() {
+    isFilingSheetShown = true
+    focusLink = true
   }
 
   /// Each Tag is a word; the active one is underlined. Pressing it again clears the filter.
@@ -386,8 +402,41 @@ struct DestinationView: View {
     return "\(visible) of \(total) · \(outsideLabel) outside this filter"
   }
 
-  /// The design's Library screen opens with the paste field, and the outcome of the last
-  /// filing sits under it so the answer appears where the action was taken.
+  /// The filing sheet: the paste field, then the naming step once a link is filed. The outcome
+  /// of the last filing sits under the field so the answer appears where the action was taken,
+  /// and the sheet stays up so the next link can follow.
+  private var filingSheet: some View {
+    NavigationStack {
+      ScrollView {
+        pasteHero
+          .padding()
+      }
+      .background(Color.orbis.paper)
+      .navigationTitle(model.reveal == nil ? "File a set" : "Name this set")
+      .toolbarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Done", role: .close) { isFilingSheetShown = false }
+        }
+      }
+    }
+    .presentationDetents([.medium, .large])
+  }
+
+  /// What a link on the clipboard gets: one card above the list that files it in a tap. The
+  /// clipboard is not read for it; the system says whether it holds a link, and reading waits
+  /// for the tap, which is the permission.
+  private var linkWaiting: AnyView? {
+    #if os(iOS)
+      AnyView(
+        LinkWaitingCard(notice: model.pasteNotice) { text in
+          Task { await model.pasteAndFile(text) }
+        })
+    #else
+      nil
+    #endif
+  }
+
   private var pasteHero: some View {
     VStack(alignment: .leading, spacing: 8) {
       if let reveal = model.reveal {
@@ -691,5 +740,16 @@ struct SearchDestination: View {
   private var searchFooter: String {
     guard case .loaded(let sets) = model.search else { return "" }
     return sets.count == 1 ? "1 set" : "\(sets.count) sets"
+  }
+}
+
+extension View {
+  /// `toolbarTitleDisplayMode(.large)` where the platform has a large title, and nothing on a Mac.
+  @ViewBuilder fileprivate func largeTitleOnIOS() -> some View {
+    #if os(iOS)
+      toolbarTitleDisplayMode(.large)
+    #else
+      self
+    #endif
   }
 }

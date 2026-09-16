@@ -201,10 +201,17 @@ final class LibraryUITests: XCTestCase {
     let app = try launch()
     connect(app)
 
+    // Filing lives in a sheet behind the toolbar's +, so the Library stays the collection.
+    let file = app.buttons["library-file"]
+    XCTAssertTrue(
+      file.waitForExistence(timeout: 60),
+      "the Library must offer File a set\n\(app.debugDescription)"
+    )
+    file.tap()
     let link = app.textFields["Paste a link"]
     XCTAssertTrue(
-      link.waitForExistence(timeout: 60),
-      "the Library must open with the paste field\n\(app.debugDescription)"
+      link.waitForExistence(timeout: 15),
+      "File a set must open with the paste field\n\(app.debugDescription)"
     )
     tapAtCentre(of: link, in: app)
     link.typeText("https://youtu.be/tPEMP9oYxTo")
