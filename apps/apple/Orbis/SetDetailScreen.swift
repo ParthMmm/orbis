@@ -21,6 +21,11 @@ struct SetDetailScreen: View {
             ? nil : SetPresentation.playbackPosition(set),
           progress: SetPresentation.progress(of: set),
           failedToName: set.metadataState == "failed",
+          statistics: SetDetail.Statistics(
+            listenCount: set.listenCount,
+            finishCount: set.finishCount,
+            lastHeard: set.lastListenedAt.map(SetPresentation.day)
+          ),
           retryName: { Task { await model.nameAgain(set.id) } }
         ) {
           audioSection(set)
@@ -48,16 +53,27 @@ struct SetDetailScreen: View {
   private func audioSection(_ set: SavedSet) -> some View {
     switch set.downloadState {
     case "ready":
-      if model.audioPlayer.currentSetId == set.id {
-        Transport(
-          player: model.audioPlayer,
-          fallbackDuration: set.durationSeconds.map(TimeInterval.init)
-        )
-      } else {
-        Button("Play", systemImage: "play.fill") { model.playAudio(set.id) }
-          .buttonStyle(.glass)
-          .controlSize(.large)
-          .accessibilityIdentifier("detail-play")
+      VStack(alignment: .leading, spacing: 8) {
+        if model.audioPlayer.currentSetId == set.id {
+          Transport(
+            player: model.audioPlayer,
+            fallbackDuration: set.durationSeconds.map(TimeInterval.init)
+          )
+        } else {
+          HStack(spacing: 8) {
+            Button("Play", systemImage: "play.fill") { Task { await model.playSet(set.id) } }
+              .buttonStyle(.glass)
+              .controlSize(.large)
+              .accessibilityIdentifier("detail-play")
+            queueActions(set)
+          }
+        }
+        if let notice = model.queueNotice {
+          Text(notice)
+            .font(.orbis.mono)
+            .foregroundStyle(.secondary)
+            .accessibilityIdentifier("detail-queue-notice")
+        }
       }
     case "queued", "downloading":
       // The watch that turns this into a finished download belongs to the model: a task started
@@ -89,6 +105,23 @@ struct SetDetailScreen: View {
           ? "detail-retry-download" : "detail-download"
       )
     }
+  }
+
+  /// Where a Set goes when it is not the one being started now. Both actions are offered only for
+  /// a Set whose audio is kept, because a Set that cannot play cannot be queued either.
+  private func queueActions(_ set: SavedSet) -> some View {
+    Menu {
+      Button("Play next") { Task { await model.playNext(set.id) } }
+        .accessibilityIdentifier("detail-play-next")
+      Button("Add to queue") { Task { await model.addToQueue(set.id) } }
+        .accessibilityIdentifier("detail-add-to-queue")
+    } label: {
+      Image(systemName: "text.badge.plus")
+    }
+    .buttonStyle(.glass)
+    .controlSize(.large)
+    .accessibilityLabel("Queue this set")
+    .accessibilityIdentifier("detail-queue-actions")
   }
 
   private func progressLabel(_ set: SavedSet) -> String {

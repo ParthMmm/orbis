@@ -42,6 +42,15 @@ final class AudioPlayer {
   private var rateObservation: NSKeyValueObservation?
   private var stallObservation: NSKeyValueObservation?
 
+  /// Where a resumed Set should start once its item is ready. AVPlayer refuses a seek before the
+  /// item knows its own timeline, so the position waits here until it does.
+  private var pendingSeek: TimeInterval?
+
+  /// Called with the Set that has just played to its natural end, so the caller can finish its
+  /// Listen and start whatever the Listening Queue holds next. Nothing is called when playback
+  /// stops early: that Set keeps its position and its Listen.
+  @ObservationIgnored var onFinished: ((String) -> Void)?
+
   /// Which observations are current: a callback carrying an older number is dropped.
   private var playbackGeneration = 0
 
@@ -215,13 +224,14 @@ final class AudioPlayer {
     #endif
   }
 
-  func play(set: SavedSet, baseURL: URL, token: String) {
+  func play(set: SavedSet, baseURL: URL, token: String, startAt: TimeInterval = 0) {
     stop()
     currentSetId = set.id
     currentTitle = set.title
     currentArtist = set.creator
     currentArtwork = nil
-    elapsed = 0
+    elapsed = max(startAt, 0)
+    pendingSeek = startAt > 0 ? startAt : nil
     duration = nil
     state = .loading
     // The asset is the Set's own audio file, not the service root: loading the
@@ -270,6 +280,7 @@ final class AudioPlayer {
         self.elapsed = seconds
       }
     }
+    observeCompletion(of: item, generation: generation)
     observeInterruptions()
     // The screen already reads as loading, so the sound can wait for the session rather than
     // the screen waiting for both. A generation that has moved on drops what comes back.
@@ -355,6 +366,7 @@ final class AudioPlayer {
     switch status {
     case .readyToPlay:
       duration = durationSeconds.isFinite ? durationSeconds : nil
+      applyPendingSeek()
       publishNowPlaying(isPlaying: true)
     case .failed:
       state = .failed("This audio would not play.")
@@ -364,6 +376,37 @@ final class AudioPlayer {
     @unknown default:
       break
     }
+  }
+
+  /// Where a resumed Set starts. A position past the end of the audio would leave the item
+  /// finished the moment it began, so the seek is bounded by the length the item reports.
+  private func applyPendingSeek() {
+    guard let pendingSeek else { return }
+    self.pendingSeek = nil
+    guard let player else { return }
+    let bounded = duration.map { min(pendingSeek, $0) } ?? pendingSeek
+    player.seek(to: CMTime(seconds: bounded, preferredTimescale: 600))
+    elapsed = bounded
+  }
+
+  /// The end of the audio, which is the one way a Listen finishes. Registered per play, because
+  /// the notification names the item that ended.
+  private func observeCompletion(of item: AVPlayerItem, generation: Int) {
+    observers.append(
+      NotificationCenter.default.addObserver(
+        forName: AVPlayerItem.didPlayToEndTimeNotification,
+        object: item,
+        queue: .main
+      ) { [weak self] _ in
+        // Registered on the main queue, so this block is already on the main actor.
+        MainActor.assumeIsolated {
+          guard let self, self.playbackGeneration == generation,
+            let finished = self.currentSetId
+          else { return }
+          self.onFinished?(finished)
+        }
+      }
+    )
   }
 
   private func rateChanged(rate: Float) {

@@ -50,6 +50,7 @@ struct RootView: View {
       if model.isConfigured, model.library == .idle {
         await model.loadLibrary()
         await model.loadPlaylists()
+        await model.loadQueue()
       }
     }
     #if os(iOS)
@@ -172,9 +173,7 @@ struct RootView: View {
         isPlaying: player.state == .playing,
         progress: player.duration.map { $0 > 0 ? player.elapsed / $0 : 0 },
         surface: .accessory,
-        toggle: {
-          if player.state == .playing { player.pause() } else { player.resume() }
-        },
+        toggle: { model.togglePlayback() },
         open: open
       )
     }
@@ -281,6 +280,12 @@ struct DestinationView: View {
   @Bindable var model: AppModel
   let destination: Destination
   @State private var isConfirmingForget = false
+  /// The queue is read in a sheet, because it is a fact about playback rather than a place in the
+  /// library.
+  @State private var isShowingQueue = false
+  /// Playing a Playlist replaces the queue, so it is worth a question while something is playing
+  /// and worth nothing while the queue is idle.
+  @State private var isConfirmingPlaylist = false
   /// The empty Library's action asks the paste field to take focus.
   @State private var focusLink = false
   /// Filing happens in a sheet from the toolbar's +, and the naming step follows in the same
@@ -334,13 +339,24 @@ struct DestinationView: View {
             .tint(Color.orbis.tint)
             .accessibilityIdentifier("library-file")
         }
-        settingsMenu
+        libraryToolbar
       }
       .sheet(isPresented: $isFilingSheetShown) { filingSheet }
       // A filing that arrives from the share sheet or the clipboard card opens the naming
       // step the same way one from the field does.
       .onChange(of: model.reveal != nil) { _, hasReveal in
         if hasReveal { isFilingSheetShown = true }
+      }
+      .sheet(isPresented: $isShowingQueue) {
+        QueueScreen(model: model)
+      }
+      .confirmationDialog(
+        "Play this playlist?", isPresented: $isConfirmingPlaylist, titleVisibility: .visible
+      ) {
+        Button("Replace the queue") { playSelectedPlaylist() }
+        Button("Cancel", role: .cancel) {}
+      } message: {
+        Text("This replaces what is playing now and starts the first set in the playlist.")
       }
       .navigationDestination(item: $model.openedSetId) { id in
         SetDetailScreen(model: model, setId: id)
@@ -577,6 +593,34 @@ struct DestinationView: View {
     #else
       false
     #endif
+  }
+
+  @ToolbarContentBuilder
+  private var libraryToolbar: some ToolbarContent {
+    // Playing a Playlist is only offered while the Library is showing one: with Everything
+    // selected there is no Playlist to play.
+    if model.selectedPlaylistId != nil {
+      ToolbarItem {
+        Button("Play playlist", systemImage: "play.circle") {
+          if model.isPlayingNow {
+            isConfirmingPlaylist = true
+          } else {
+            playSelectedPlaylist()
+          }
+        }
+        .accessibilityIdentifier("library-play-playlist")
+      }
+    }
+    ToolbarItem {
+      Button("Queue", systemImage: "list.bullet") { isShowingQueue = true }
+        .accessibilityIdentifier("library-queue")
+    }
+    settingsMenu
+  }
+
+  private func playSelectedPlaylist() {
+    guard let playlistId = model.selectedPlaylistId else { return }
+    Task { await model.playPlaylist(playlistId) }
   }
 
   @ToolbarContentBuilder
