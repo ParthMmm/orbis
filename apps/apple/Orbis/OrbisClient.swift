@@ -280,7 +280,7 @@ struct OrbisClient: Sendable {
   /// The one Listening Queue, in play order.
   func listeningQueue() async throws -> ListeningQueue {
     let response = try await send(path: "queue", method: "GET", body: nil)
-    return try Self.decode(QueueResponse.self, from: response).queue
+    return try decodedQueue(response)
   }
 
   /// Makes a Set the active one, which is what playing it does. The Set keeps its place when it
@@ -288,21 +288,21 @@ struct OrbisClient: Sendable {
   func playSet(_ id: String) async throws -> ListeningQueue {
     let body = try Self.encoder.encode(SetIdRequest(setId: id))
     let response = try await send(path: "queue/active", method: "PUT", body: body)
-    return try Self.decode(QueueResponse.self, from: response).queue
+    return try decodedQueue(response)
   }
 
   func queueSet(_ id: String, placement: QueuePlacement) async throws -> ListeningQueue {
     let body = try Self.encoder.encode(
       QueueEntryRequest(placement: placement.rawValue, setId: id))
     let response = try await send(path: "queue/entries", method: "POST", body: body)
-    return try Self.decode(QueueResponse.self, from: response).queue
+    return try decodedQueue(response)
   }
 
   /// Replaces the queue with a Playlist's playable members, in Playlist order.
   func playPlaylist(_ playlistId: String) async throws -> ListeningQueue {
     let body = try Self.encoder.encode(PlaylistQueueRequest(playlistId: playlistId))
     let response = try await send(path: "queue/playlist", method: "PUT", body: body)
-    return try Self.decode(QueueResponse.self, from: response).queue
+    return try decodedQueue(response)
   }
 
   /// Reports that the active Set reached its natural end. The service removes it, resets its
@@ -310,7 +310,7 @@ struct OrbisClient: Sendable {
   func reportCompletion(_ id: String) async throws -> ListeningQueue {
     let body = try Self.encoder.encode(SetIdRequest(setId: id))
     let response = try await send(path: "queue/completion", method: "POST", body: body)
-    return try Self.decode(QueueResponse.self, from: response).queue
+    return try decodedQueue(response)
   }
 
   /// Reports where playback has reached. The answer is the Set, so the stored position comes
@@ -323,6 +323,10 @@ struct OrbisClient: Sendable {
 
   private func decodedSet(_ response: Data) throws -> SavedSet {
     try Self.decode(SavedSet.self, from: response)
+  }
+
+  private func decodedQueue(_ response: Data) throws -> ListeningQueue {
+    try Self.decode(QueueResponse.self, from: response).queue
   }
 
   /// Decodes a body, reporting a shape this build cannot read as the one error the screens explain.

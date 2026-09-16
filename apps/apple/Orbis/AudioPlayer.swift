@@ -230,7 +230,7 @@ final class AudioPlayer {
     currentTitle = set.title
     currentArtist = set.creator
     currentArtwork = nil
-    elapsed = max(startAt, 0)
+    elapsed = startAt
     pendingSeek = startAt > 0 ? startAt : nil
     duration = nil
     state = .loading

@@ -585,8 +585,8 @@ final class AppModel {
     audioPlayer.currentSetId != nil && audioPlayer.state == .playing
   }
 
-  /// The player reports the end of a Set here, because finishing the Listen and starting what the
-  /// queue holds next are the model's to do.
+  /// The player reports the end of a Set here, because finishing its Listen and starting what the
+  /// queue holds next are the model's work.
   private func wirePlayerToQueue() {
     audioPlayer.onFinished = { [weak self] setId in
       Task { await self?.finishedPlaying(setId) }
@@ -603,7 +603,7 @@ final class AppModel {
     queueNotice = nil
     do {
       let loaded = try await client.playSet(id)
-      publishQueue(loaded)
+      queue = .loaded(loaded)
       guard let playing = loaded.entries.first(where: { $0.id == id }) else { return }
       audioPlayer.play(
         set: playing, baseURL: client.address, token: client.token,
@@ -634,7 +634,7 @@ final class AppModel {
     guard let client else { return }
     queueNotice = nil
     do {
-      publishQueue(try await client.queueSet(id, placement: placement))
+      queue = .loaded(try await client.queueSet(id, placement: placement))
       queueNotice = notice
     } catch OrbisError.cancelled {
       return
@@ -653,8 +653,8 @@ final class AppModel {
     queueNotice = nil
     do {
       let loaded = try await client.playPlaylist(id)
-      publishQueue(loaded)
-      start(loaded, from: client)
+      queue = .loaded(loaded)
+      playActiveEntry(of: loaded, from: client)
     } catch OrbisError.cancelled {
       return
     } catch let error as OrbisError {
@@ -665,7 +665,7 @@ final class AppModel {
   }
 
   /// Plays the active entry of a queue, or stops when it holds none.
-  private func start(_ loaded: ListeningQueue, from client: OrbisClient) {
+  private func playActiveEntry(of loaded: ListeningQueue, from client: OrbisClient) {
     guard let active = loaded.active else {
       audioPlayer.stop()
       stopReportingPosition()
@@ -685,12 +685,12 @@ final class AppModel {
     stopReportingPosition()
     do {
       let loaded = try await client.reportCompletion(id)
-      publishQueue(loaded)
+      queue = .loaded(loaded)
       // The finished Set left the queue and its position went back to the beginning, so the
       // Library is read again rather than patched. Read quietly, because a spinner where the list
       // was would be a flicker the person did not ask for.
       await refreshLibraryQuietly()
-      start(loaded, from: client)
+      playActiveEntry(of: loaded, from: client)
     } catch OrbisError.cancelled {
       return
     } catch let error as OrbisError {
@@ -720,10 +720,6 @@ final class AppModel {
       guard generation == queueGeneration else { return }
       queue = .failed(OrbisError.unreachable.failure(at: client.address))
     }
-  }
-
-  private func publishQueue(_ loaded: ListeningQueue) {
-    queue = .loaded(loaded)
   }
 
   // MARK: - Playback Position
@@ -790,7 +786,7 @@ final class AppModel {
     case .loading, .paused:
       audioPlayer.resume()
     case .idle, .failed:
-      // Nothing loaded to resume, so the button starts the Set the player still names.
+      // A Set that failed to play is not resumable, so the button starts it again.
       if let id = audioPlayer.currentSetId {
         Task { await playSet(id) }
       }

@@ -30,9 +30,9 @@ struct SavedSet: Identifiable, Decodable, Hashable {
 }
 
 extension SavedSet {
-  /// Where playback should start for this Set. A Set nobody has heard starts at the beginning,
-  /// which is also where one that finished starts again.
-  var resumePosition: TimeInterval { TimeInterval(max(playbackPositionSeconds, 0)) }
+  /// Where playback should start for this Set: where the last Listen left off, or the beginning
+  /// for a Set nobody has heard, which is also where a finished one starts again.
+  var resumePosition: TimeInterval { TimeInterval(playbackPositionSeconds) }
 }
 
 /// The decode is written out rather than left to the compiler for one reason: `playlistIds` is

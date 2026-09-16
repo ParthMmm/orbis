@@ -22,8 +22,7 @@ const execute = <A, E>(operation: Effect.Effect<A, E>) =>
  *
  * Nothing here decides whether a Listen happened. The Listening Queue owns that: the entry it
  * marks active is the Set with a Listen open, so a Set that is already active is never counted
- * twice however many times a client repeats a signal. A duplicate write cannot append a second
- * event because there is no event log to append to.
+ * twice however many times a client repeats a signal.
  */
 export class Stats extends Context.Service<
   Stats,

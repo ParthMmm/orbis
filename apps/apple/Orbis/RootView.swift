@@ -21,8 +21,8 @@ struct RootView: View {
   /// How long the splash holds and how long it takes to leave.
   private let timing = SplashTiming()
 
-  /// Coming back to the app is when a device finds out what the other one has been doing: the
-  /// queue it left playing, and the Playback Position it reported while this one was away.
+  /// Coming back to the app is when a device learns what the other one has been playing, and where
+  /// it left the Set it was playing.
   @Environment(\.scenePhase) private var scenePhase
 
   #if os(iOS)
@@ -296,8 +296,7 @@ struct DestinationView: View {
   /// The queue is read in a sheet, because it is a fact about playback rather than a place in the
   /// library.
   @State private var isShowingQueue = false
-  /// Playing a Playlist replaces the queue, so it is worth a question while something is playing
-  /// and worth nothing while the queue is idle.
+  /// Replacing the queue is worth a question only while something is playing.
   @State private var isConfirmingPlaylist = false
   /// The empty Library's action asks the paste field to take focus.
   @State private var focusLink = false

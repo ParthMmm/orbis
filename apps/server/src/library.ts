@@ -353,12 +353,12 @@ export class Library extends Context.Service<
               .from(sets)
               .where(inArray(sets.id, [...ids]));
             const found = new Map(rows.map((row) => [row.id, row]));
-            return yield* Effect.forEach(
-              ids.flatMap((id) => {
-                const row = found.get(id);
-                return row ? [row] : [];
-              }),
-              (row) => hydrateSet(row)
+            const ordered = ids.flatMap((id) => {
+              const row = found.get(id);
+              return row ? [row] : [];
+            });
+            return yield* Effect.forEach((row: SetRow) => hydrateSet(row))(
+              ordered
             );
           })
         )

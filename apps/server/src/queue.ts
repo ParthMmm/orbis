@@ -26,6 +26,14 @@ const notPlayable = () =>
     statusCode: 400,
   });
 
+interface QueueRow {
+  readonly isActive: boolean;
+  readonly setId: string;
+}
+
+const activeIn = (rows: readonly QueueRow[]) =>
+  rows.find((row) => row.isActive)?.setId ?? null;
+
 /**
  * Where a Set goes when it joins a queue behind the active entry.
  */
@@ -100,7 +108,7 @@ export class Queue extends Context.Service<
         Effect.gen(function* readQueue() {
           const rows = yield* execute(order());
           return {
-            activeSetId: rows.find((row) => row.isActive)?.setId ?? null,
+            activeSetId: activeIn(rows),
             entries: yield* library.byIds(rows.map((row) => row.setId)),
           } satisfies ListeningQueue;
         })
@@ -140,7 +148,7 @@ export class Queue extends Context.Service<
         Effect.gen(function* playSet() {
           yield* playable(id);
           const rows = yield* execute(order());
-          const activeSetId = rows.find((row) => row.isActive)?.setId ?? null;
+          const activeSetId = activeIn(rows);
           const ids = rows.map((row) => row.setId);
           // A Set already in the queue takes the active place without moving: the queue behind it
           // is the order the person made. A Set that is not in the queue takes the active place
@@ -162,7 +170,7 @@ export class Queue extends Context.Service<
           Effect.gen(function* insertEntry() {
             yield* playable(id);
             const rows = yield* execute(order());
-            const activeSetId = rows.find((row) => row.isActive)?.setId ?? null;
+            const activeSetId = activeIn(rows);
             // Moving the Set that is playing now would leave the open Listen beside a queue it no
             // longer matches, so a queued action on the active Set changes nothing.
             if (activeSetId === id) {
@@ -190,8 +198,7 @@ export class Queue extends Context.Service<
               tags: [],
             });
             const rows = yield* execute(order());
-            const previousActive =
-              rows.find((row) => row.isActive)?.setId ?? null;
+            const previousActive = activeIn(rows);
             const playableMembers = members.filter(
               (set) => set.downloadState === "ready"
             );
