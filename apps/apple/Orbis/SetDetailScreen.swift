@@ -23,7 +23,7 @@ struct SetDetailScreen: View {
           title: set.title,
           source: set.source.label,
           subtitle: SetPresentation.subtitle(set),
-          artwork: SetPresentation.pageArtwork(set),
+          artwork: set.artworkUrl.flatMap(URL.init(string:)),
           tags: set.tags,
           position: model.audioPlayer.currentSetId == set.id
             ? nil : SetPresentation.playbackPosition(set),
