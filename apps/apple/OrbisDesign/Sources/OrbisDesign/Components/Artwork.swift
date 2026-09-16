@@ -2,9 +2,13 @@ import SwiftUI
 
 /// A Set's artwork, as the provider supplies it: a 16:9 thumbnail.
 ///
-/// Square, because the thumbnail is square-cornered where it came from and a listing parts
-/// its rows with hairlines rather than cards. Until the image arrives, or when there is none,
-/// a flat tone stands in, chosen from the title so the same Set keeps the same tone.
+/// The box is 16:9 and the image is cropped into it, because a provider's image does not always
+/// arrive as one. YouTube's `high` thumbnail is 480x360 with the picture letterboxed inside it,
+/// and an image left to size itself hands that 4:3 shape, bars and all, back to the box.
+///
+/// Square-cornered, because the thumbnail is square-cornered where it came from and a listing
+/// parts its rows with hairlines rather than cards. Until the image arrives, or when there is
+/// none, a flat tone stands in, chosen from the title so the same Set keeps the same tone.
 ///
 /// A Set with a Playback Position that is not Finished carries a bar along the bottom edge,
 /// in the tint, the way a thumbnail shows how far a person got. Nothing else draws on the
@@ -16,6 +20,8 @@ public struct Artwork: View {
     case row
     /// The lead item, or a mini player's thumb: 120 points wide.
     case lead
+    /// A card in a horizontal rail on the Library's home: 150 points wide.
+    case rail
     /// Across the top of a page: as wide as it is offered.
     case header
 
@@ -23,6 +29,7 @@ public struct Artwork: View {
       switch self {
       case .row: 88
       case .lead: 120
+      case .rail: 150
       case .header: nil
       }
     }
@@ -50,17 +57,32 @@ public struct Artwork: View {
   }
 
   public var body: some View {
-    image
-      .aspectRatio(16 / 9, contentMode: .fit)
-      .frame(width: size.width)
-      .frame(maxWidth: size == .header ? .infinity : nil)
-      .overlay(alignment: .bottom) {
+    Self.box(size: size) {
+      image.overlay(alignment: .bottom) {
         if Self.showsProgress(progress), let progress {
           ProgressBar(fraction: progress)
         }
       }
+    }
+    .accessibilityHidden(true)
+  }
+
+  /// The shape the artwork is drawn in: a 16:9 box that sizes itself and crops what it is given.
+  ///
+  /// The box owns the ratio, not the image, which is the whole of it. Held on the image instead,
+  /// a `fit` ratio hands the proposal to an image that answers with its own shape, and a
+  /// letterboxed thumbnail then sets the box to 4:3 and keeps its bars.
+  ///
+  /// Internal, so a test can put a letterboxed image in the real box and read the pixels back.
+  static func box<Content: View>(
+    size: Size, @ViewBuilder content: () -> Content
+  ) -> some View {
+    Color.clear
+      .aspectRatio(16 / 9, contentMode: .fit)
+      .frame(width: size.width)
+      .frame(maxWidth: size == .header ? .infinity : nil)
+      .overlay { content() }
       .clipShape(.rect(cornerRadius: Radius.artwork))
-      .accessibilityHidden(true)
   }
 
   @ViewBuilder private var image: some View {

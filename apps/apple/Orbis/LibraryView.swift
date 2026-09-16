@@ -23,6 +23,10 @@ struct SetList: View {
   /// A screen that files Sets puts its paste field here, so it scrolls with the rows and is
   /// absent on a screen that only reads, such as Search.
   let hero: AnyView?
+  /// A screen with a collection can put its horizontal rails — the recently filed, the
+  /// playlists — between the hero and the list header, the way a music app's home carries its
+  /// sections. Absent on a screen that only reads.
+  var rails: AnyView?
   let footer: String
   let retry: () async -> Void
   /// What a journey or a manual pass reads this list by, so the two destinations do not
@@ -111,6 +115,9 @@ struct SetList: View {
       VStack(alignment: .leading, spacing: 0) {
         if let hero {
           hero.padding(.bottom, 16)
+        }
+        if let rails {
+          rails.padding(.bottom, 20)
         }
         listHeader
         // The list can hold a whole library, so rows are built as they scroll into view

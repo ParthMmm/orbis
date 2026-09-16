@@ -165,6 +165,7 @@ struct RootView: View {
         artwork: player.currentSetId.flatMap { model.savedSet($0)?.artworkUrl }
           .flatMap(URL.init(string:)),
         isPlaying: player.state == .playing,
+        progress: player.duration.map { $0 > 0 ? player.elapsed / $0 : 0 },
         surface: .accessory,
         toggle: {
           if player.state == .playing { player.pause() } else { player.resume() }
@@ -309,11 +310,15 @@ struct DestinationView: View {
               .accessibilityIdentifier("library-no-matches")
           ),
         hero: AnyView(pasteHero),
+        rails: AnyView(HomeRails(model: model)),
         footer: libraryFooter,
         retry: { await model.loadLibrary() },
         select: { set in model.openSet(set.id) }
       )
       .navigationTitle("Library")
+      // Pinned rather than left to the default, so the large title stays large whatever the
+      // tab's content state is; the Set page pins its inline counterpart the same way.
+      .toolbarTitleDisplayMode(.large)
       .toolbar { settingsMenu }
       .navigationDestination(item: $model.openedSetId) { id in
         SetDetailScreen(model: model, setId: id)
@@ -493,9 +498,109 @@ struct DestinationView: View {
           .accessibilityIdentifier("library-connection-settings")
         Button("Forget this device", role: .destructive) { isConfirmingForget = true }
       } label: {
-        Label("Library actions", systemImage: "ellipsis.circle")
+        // The profile shape a music app's home carries: a person in the bar's own glass button.
+        Label("Library actions", systemImage: "person.crop.circle")
       }
       .accessibilityIdentifier("library-actions")
+    }
+  }
+}
+
+/// The Library's horizontal rails, in the shape a music app's home gives its sections: a
+/// heading over a row of cards that scrolls sideways while the page scrolls down. The cards
+/// are artwork, because a Set is recognised by its picture before its words.
+struct HomeRails: View {
+  @Bindable var model: AppModel
+
+  /// How far into the collection the recently-filed rail reaches. A rail shows what is new,
+  /// not the whole library.
+  private static let recentLimit = 6
+  /// The page's own padding, matched so a rail's first card lines up with the list under it.
+  private static let edgeInset: CGFloat = 16
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 20) {
+      if !recentSets.isEmpty {
+        rail("Recently filed") { recentCards }
+      }
+      if !model.playlistItems.isEmpty {
+        rail("Playlists") { playlistCards }
+      }
+    }
+  }
+
+  private var recentSets: [SavedSet] {
+    guard case .loaded(let sets) = model.visibleSets else { return [] }
+    return Array(sets.prefix(Self.recentLimit))
+  }
+
+  private func rail<Cards: View>(
+    _ name: String, @ViewBuilder cards: () -> Cards
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text(name)
+        .font(.orbis.sectionTitle)
+      ScrollView(.horizontal, showsIndicators: false) {
+        LazyHStack(alignment: .top, spacing: 12) { cards() }
+          .padding(.horizontal, Self.edgeInset)
+      }
+      // The rail escapes the page's padding and runs to the screen's edges, the way a music
+      // app's rows bleed; the inner padding keeps the first card on the page's own margin.
+      .padding(.horizontal, -Self.edgeInset)
+      .scrollEdgeEffectStyle(.hard, for: .horizontal)
+    }
+    .accessibilityElement(children: .contain)
+  }
+
+  private var recentCards: some View {
+    ForEach(recentSets) { set in
+      Button {
+        model.openSet(set.id)
+      } label: {
+        let presentation = SetPresentation.row(set)
+        Artwork(
+          url: presentation.artwork,
+          seed: presentation.title,
+          size: .rail,
+          progress: presentation.progress
+        )
+        // A rail is a raised surface of cards, not a listing parted by hairlines, so the
+        // artwork carries the row radius where the listing keeps its corners square.
+        .clipShape(.rect(cornerRadius: Radius.row))
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("recent-card-\(set.id)")
+    }
+  }
+
+  private var playlistCards: some View {
+    ForEach(model.playlistItems) { playlist in
+      Button {
+        Task { await model.selectPlaylist(playlist.id) }
+      } label: {
+        let category = SetPresentation.category(for: playlist.name)
+        // The same 16:9 box the artwork cards answer to, so the two rails share one line.
+        Color.clear
+          .aspectRatio(16 / 9, contentMode: .fit)
+          .frame(width: 150)
+          .overlay(alignment: .bottomLeading) {
+            VStack(alignment: .leading, spacing: 2) {
+              Text(playlist.name)
+                .font(.orbis.rowTitle)
+                .lineLimit(2)
+              Text(playlist.setCount, format: .number)
+                .font(.orbis.mono)
+                .foregroundStyle(.secondary)
+            }
+            .padding(10)
+          }
+          .background(
+            category.dot.opacity(0.35),
+            in: .rect(cornerRadius: Radius.row)
+          )
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("playlist-card-\(playlist.id)")
     }
   }
 }
