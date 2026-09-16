@@ -1,11 +1,18 @@
 import AVFoundation
 import MediaPlayer
 
+#if os(macOS)
+  import AppKit
+#else
+  import UIKit
+#endif
+
 /// Plays one Set's retained audio, streamed from the service with the device token.
 ///
 /// Everything here stays on the main actor: playback control is not CPU-bound, and
 /// AVPlayer does its own threading. Observers that the system can call from any thread
-/// capture plain values first and hop back here before touching state.
+/// capture plain values first and hop back here before touching state. The audio session
+/// is the one exception, and it runs off the main actor: see `sessionWork`.
 @MainActor
 @Observable
 final class AudioPlayer {
@@ -20,6 +27,12 @@ final class AudioPlayer {
   private(set) var state = PlaybackState.idle
   private(set) var currentSetId: String?
   private(set) var currentTitle = ""
+  /// Who made the Set, for the artist line the system draws under the title.
+  private(set) var currentArtist: String?
+  /// The Set's artwork, once it has arrived, for the lock screen, the Dynamic Island, and
+  /// Control Center. Fetched after playback starts so a slow image never delays the sound.
+  private var currentArtwork: MPMediaItemArtwork?
+  private var artworkFetch: Task<Void, Never>?
   private(set) var elapsed: TimeInterval = 0
   private(set) var duration: TimeInterval?
 
@@ -31,6 +44,12 @@ final class AudioPlayer {
 
   /// Which observations are current: a callback carrying an older number is dropped.
   private var playbackGeneration = 0
+
+  /// The audio session work still in flight. Bringing the session up or letting it go talks
+  /// to the audio server and takes long enough to freeze a screen that waits for it, so it
+  /// happens off the main actor. Each step waits for the one before it, because a stop that
+  /// deactivates must never land after the play that follows it.
+  private var sessionWork: Task<Void, Never>?
 
   /// The registrations this player made outside itself, held nonisolated so `deinit`, which
   /// cannot hop actors, takes back exactly its own handlers instead of clearing the shared
@@ -86,6 +105,8 @@ final class AudioPlayer {
   /// them, and a timer would only add jitter.
   static func nowPlayingInfo(
     title: String,
+    artist: String? = nil,
+    artwork: MPMediaItemArtwork? = nil,
     duration: TimeInterval?,
     elapsed: TimeInterval,
     isPlaying: Bool
@@ -94,26 +115,89 @@ final class AudioPlayer {
       MPMediaItemPropertyTitle: title,
       MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
       MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+      // A Set is one long recording, which the system otherwise treats as a song and
+      // offers to skip past.
+      MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
     ]
+    if let artist, !artist.isEmpty {
+      info[MPMediaItemPropertyArtist] = artist
+    }
+    if let artwork {
+      info[MPMediaItemPropertyArtwork] = artwork
+    }
     if let duration {
       info[MPMediaItemPropertyPlaybackDuration] = duration
     }
     return info
   }
 
-  func play(set: SavedSet, baseURL: URL, token: String) {
-    stop()
-    #if !os(macOS)
+  /// The image the provider offered, as the system wants it: a handler that returns the same
+  /// image at any size, since the provider gives one size and the system scales it.
+  static func artwork(from data: Data) -> MPMediaItemArtwork? {
+    #if os(macOS)
+      guard let image = NSImage(data: data) else { return nil }
+    #else
+      guard let image = UIImage(data: data) else { return nil }
+    #endif
+    return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
+  }
+
+  /// Brings the audio session up for playback and answers whether it came up.
+  ///
+  /// Nonisolated, so none of it runs on the main actor: activation is a slow call that the
+  /// system warns will freeze a screen that makes it. From iOS 27 the framework offers a
+  /// handler and never blocks at all; before that the blocking call is the only one there
+  /// is, and running it here keeps it off the main thread just the same.
+  private nonisolated static func startSession() async -> Bool {
+    #if os(macOS)
+      return true
+    #else
+      let session = AVAudioSession.sharedInstance()
       do {
-        try AVAudioSession.sharedInstance().setCategory(.playback, mode: .default)
-        try AVAudioSession.sharedInstance().setActive(true)
+        try session.setCategory(.playback, mode: .default)
       } catch {
-        state = .failed("Audio could not start on this device.")
-        return
+        return false
+      }
+      if #available(iOS 27.0, *) {
+        return await withCheckedContinuation { continuation in
+          session.activate(options: []) { activated, _ in
+            continuation.resume(returning: activated)
+          }
+        }
+      }
+      do {
+        try session.setActive(true)
+        return true
+      } catch {
+        return false
       }
     #endif
+  }
+
+  /// Lets the audio session go, off the main actor for the same reason, and tells whoever this
+  /// playback interrupted that it may resume. Waits for the answer, so the next activation
+  /// queued behind it cannot be undone by this deactivation landing late.
+  private nonisolated static func endSession() async {
+    #if !os(macOS)
+      let session = AVAudioSession.sharedInstance()
+      if #available(iOS 27.0, *) {
+        await withCheckedContinuation { continuation in
+          session.deactivate(options: .notifyOthersOnDeactivation) { _, _ in
+            continuation.resume()
+          }
+        }
+      } else {
+        try? session.setActive(false, options: .notifyOthersOnDeactivation)
+      }
+    #endif
+  }
+
+  func play(set: SavedSet, baseURL: URL, token: String) {
+    stop()
     currentSetId = set.id
     currentTitle = set.title
+    currentArtist = set.creator
+    currentArtwork = nil
     elapsed = 0
     duration = nil
     state = .loading
@@ -164,8 +248,39 @@ final class AudioPlayer {
       }
     }
     observeInterruptions()
-    player.play()
-    publishNowPlaying(isPlaying: true)
+    // The screen already reads as loading, so the sound can wait for the session rather than
+    // the screen waiting for both. A generation that has moved on drops what comes back.
+    let previous = sessionWork
+    sessionWork = Task { [weak self] in
+      await previous?.value
+      let started = await Self.startSession()
+      guard let self, self.playbackGeneration == generation else { return }
+      guard started else {
+        state = .failed("Audio could not start on this device.")
+        return
+      }
+      self.player?.play()
+      publishNowPlaying(isPlaying: true)
+      fetchArtwork(for: set, generation: generation)
+    }
+  }
+
+  /// The largest image the provider offered, fetched off the play path. A stale fetch, one that
+  /// lands after another Set took over, is dropped by the generation it was made under.
+  private func fetchArtwork(for set: SavedSet, generation: Int) {
+    artworkFetch?.cancel()
+    guard let url = (set.artworkLargeUrl ?? set.artworkUrl).flatMap(URL.init(string:)) else {
+      return
+    }
+    artworkFetch = Task { [weak self] in
+      guard let (data, _) = try? await URLSession.shared.data(from: url) else { return }
+      let artwork = Self.artwork(from: data)
+      await MainActor.run {
+        guard let self, self.playbackGeneration == generation, let artwork else { return }
+        self.currentArtwork = artwork
+        self.publishNowPlaying(isPlaying: self.state == .playing)
+      }
+    }
   }
 
   func pause() {
@@ -192,6 +307,9 @@ final class AudioPlayer {
   func stop() {
     // Anything the player in hand still has queued belongs to a playback that is over.
     playbackGeneration += 1
+    artworkFetch?.cancel()
+    artworkFetch = nil
+    currentArtwork = nil
     player?.pause()
     dropPlayerObservers()
     player = nil
@@ -203,12 +321,11 @@ final class AudioPlayer {
     currentSetId = nil
     state = .idle
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
-    #if !os(macOS)
-      try? AVAudioSession.sharedInstance().setActive(
-        false,
-        options: .notifyOthersOnDeactivation
-      )
-    #endif
+    let previous = sessionWork
+    sessionWork = Task {
+      await previous?.value
+      await Self.endSession()
+    }
   }
 
   private func itemStatusChanged(status: AVPlayerItem.Status, durationSeconds: Double) {
@@ -262,6 +379,8 @@ final class AudioPlayer {
     guard !currentTitle.isEmpty else { return }
     MPNowPlayingInfoCenter.default().nowPlayingInfo = Self.nowPlayingInfo(
       title: currentTitle,
+      artist: currentArtist,
+      artwork: currentArtwork,
       duration: duration,
       elapsed: elapsed,
       isPlaying: isPlaying

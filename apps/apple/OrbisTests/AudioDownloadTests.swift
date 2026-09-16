@@ -197,6 +197,34 @@ final class AudioDownloadTests: XCTestCase {
     XCTAssertNil(paused[MPMediaItemPropertyPlaybackDuration])
   }
 
+  func testNowPlayingInfoCarriesTheArtistAndArtworkWhenKnown() {
+    let bare = AudioPlayer.nowPlayingInfo(
+      title: "Seeded set", artist: "", duration: nil, elapsed: 0, isPlaying: true
+    )
+    XCTAssertNil(bare[MPMediaItemPropertyArtist], "an empty creator is no artist line")
+    XCTAssertNil(bare[MPMediaItemPropertyArtwork])
+    XCTAssertEqual(
+      bare[MPNowPlayingInfoPropertyMediaType] as? UInt, MPNowPlayingInfoMediaType.audio.rawValue)
+
+    let artwork = AudioPlayer.artwork(from: onePixelPNG)
+    XCTAssertNotNil(artwork, "a decodable image becomes artwork")
+    let full = AudioPlayer.nowPlayingInfo(
+      title: "Seeded set", artist: "kettlemint", artwork: artwork, duration: 5400, elapsed: 12,
+      isPlaying: true
+    )
+    XCTAssertEqual(full[MPMediaItemPropertyArtist] as? String, "kettlemint")
+    XCTAssertNotNil(full[MPMediaItemPropertyArtwork])
+    XCTAssertNil(AudioPlayer.artwork(from: Data("not an image".utf8)))
+  }
+
+  /// A 1×1 PNG, so artwork decoding is exercised without a fixture on disk.
+  private var onePixelPNG: Data {
+    Data(
+      base64Encoded:
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
+    )!
+  }
+
   func testRemoteCommandsRegisteredAndEnabled() {
     do {
       // The player keeps its command targets alive; leaving the scope tears them
