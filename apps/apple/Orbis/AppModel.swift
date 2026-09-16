@@ -620,15 +620,17 @@ final class AppModel {
 
   /// Puts a Set in the queue to play after the one playing now.
   func playNext(_ id: String) async {
-    await queue(id, placement: .next, notice: "Plays next")
+    await queueSet(id, placement: .next, notice: "Plays next")
   }
 
   /// Adds a Set to the end of the queue.
   func addToQueue(_ id: String) async {
-    await queue(id, placement: .end, notice: "Added to the queue")
+    await queueSet(id, placement: .end, notice: "Added to the queue")
   }
 
-  private func queue(_ id: String, placement: QueuePlacement, notice: String) async {
+  private func queueSet(
+    _ id: String, placement: QueuePlacement, notice: String
+  ) async {
     guard let client else { return }
     queueNotice = nil
     do {
