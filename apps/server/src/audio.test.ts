@@ -460,7 +460,7 @@ test("retrying a failed download queues it again", async () => {
     cobalt: () => {
       attempts += 1;
       if (attempts === 1) {
-        return Response.json({ status: "error", error: "fetch.fail" });
+        return Response.json({ error: "fetch.fail", status: "error" });
       }
       return Response.json({ status: "tunnel", url: "http://cdn.test/a" });
     },

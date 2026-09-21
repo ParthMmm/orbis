@@ -72,8 +72,8 @@ export class Audio extends Context.Service<
             yield* worker.wake();
             yield* Effect.logInfo("audio download queued").pipe(
               Effect.annotateLogs({
-                set: id,
                 from: current.downloadState,
+                set: id,
               })
             );
             return { accepted: true, set: queued };
