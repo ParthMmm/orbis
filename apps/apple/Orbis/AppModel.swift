@@ -34,6 +34,11 @@ final class AppModel {
     didSet { refreshDerivedState() }
   }
   var playlists: Loadable<[Playlist]> = .idle
+  /// The one Listening Queue. It is where the active Set and the Playback Position live, so the
+  /// mini player and the Set page read playback state from it rather than tracking their own.
+  var queue: Loadable<ListeningQueue> = .idle
+  /// What the last queue action did, said where the action was taken.
+  var queueNotice: String?
   /// The playlist the Library is showing. Nil is everything the library holds.
   var selectedPlaylistId: String?
   var searchQuery = ""
@@ -90,6 +95,7 @@ final class AppModel {
   private var libraryGeneration = 0
   private var searchGeneration = 0
   private var playlistGeneration = 0
+  private var queueGeneration = 0
   private var connectionGeneration = 0
 
   /// What the person has pasted but not filed yet, and what the last filing said.
@@ -157,6 +163,10 @@ final class AppModel {
   /// own instead of writing the device's real one.
   private let settings: any ClientSettingsStore
 
+  /// Follows the player and reports where playback has reached. One of these exists at a time,
+  /// because one Set plays at a time.
+  private var positionReporter: Task<Void, Never>?
+
   init(settings: any ClientSettingsStore = ClientSettings.forCurrentProcess()) {
     self.settings = settings
     // A journey lane starts from a clean install so it exercises the connection screen.
@@ -173,6 +183,7 @@ final class AppModel {
     client = settings.configuredClient()
     hasStoredToken = settings.deviceToken?.isEmpty == false
     refreshDerivedState()
+    wirePlayerToQueue()
   }
 
   /// A model already paired with a service. The launch screen and the settings file are the real
@@ -183,6 +194,7 @@ final class AppModel {
     connectionAddress = client.address.absoluteString
     hasStoredToken = settings.deviceToken?.isEmpty == false
     refreshDerivedState()
+    wirePlayerToQueue()
   }
 
   /// Clears the store the model was given when the launch arguments ask for a fresh install.
@@ -263,6 +275,8 @@ final class AppModel {
       await loadLibrary()
       // The sidebar reads playlists separately from the library, so pairing fills both.
       await loadPlaylists()
+      // Playback is shared state: another device may be the one that is playing.
+      await loadQueue()
     } catch let error as OrbisError {
       guard generation == connectionGeneration else { return }
       connectionFailure = error.failure(at: URL(string: connectionAddress))
@@ -300,10 +314,12 @@ final class AppModel {
     libraryGeneration += 1
     searchGeneration += 1
     playlistGeneration += 1
+    queueGeneration += 1
     // Audio still playing comes from a service this device no longer holds a token for, and a
     // download the old service is running is the same: nothing here may keep asking about it.
     audioPlayer.stop()
     stopDownloadWatches()
+    stopReportingPosition()
     audioStates.removeAll()
     settings.serviceAddress = nil
     settings.store(deviceToken: nil)
@@ -315,6 +331,8 @@ final class AppModel {
     search = .idle
     searchResultsFor = nil
     playlists = .idle
+    queue = .idle
+    queueNotice = nil
     selectedPlaylistId = nil
     openedPlaylistId = nil
     playlistMembers = .idle
@@ -561,18 +579,225 @@ final class AppModel {
   /// plays at a time and the lock screen follows whatever it holds.
   private(set) var audioPlayer = AudioPlayer()
 
-  /// Plays a downloaded Set through the player. A sync entry point: the view taps,
-  /// the model pairs the Set with the service it came from.
-  func playAudio(_ id: String) {
-    guard let client, let set = savedSet(id) else { return }
-    audioPlayer.play(set: set, baseURL: client.address, token: client.token)
+  /// True while a Set is playing now. This is what makes replacing the queue worth a question:
+  /// replacing a queue nobody is listening to interrupts nothing.
+  var isPlayingNow: Bool {
+    audioPlayer.currentSetId != nil && audioPlayer.state == .playing
+  }
+
+  /// The player reports the end of a Set here, because finishing its Listen and starting what the
+  /// queue holds next are the model's work.
+  private func wirePlayerToQueue() {
+    audioPlayer.onFinished = { [weak self] setId in
+      Task { await self?.finishedPlaying(setId) }
+    }
+  }
+
+  // MARK: - Playback through the Listening Queue
+
+  /// Plays a Set from where it left off, and makes it the active entry so both devices agree on
+  /// what is playing. Every play goes through the queue for that reason: a Listen is an activation
+  /// on Vanta, not a local press.
+  func playSet(_ id: String) async {
+    guard let client else { return }
+    queueNotice = nil
+    do {
+      let loaded = try await client.playSet(id)
+      queue = .loaded(loaded)
+      guard let playing = loaded.entries.first(where: { $0.id == id }) else { return }
+      audioPlayer.play(
+        set: playing, baseURL: client.address, token: client.token,
+        startAt: playing.resumePosition)
+      startReportingPosition(id)
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Puts a Set in the queue to play after the one playing now.
+  func playNext(_ id: String) async {
+    await queueSet(id, placement: .next, notice: "Plays next")
+  }
+
+  /// Adds a Set to the end of the queue.
+  func addToQueue(_ id: String) async {
+    await queueSet(id, placement: .end, notice: "Added to the queue")
+  }
+
+  private func queueSet(
+    _ id: String, placement: QueuePlacement, notice: String
+  ) async {
+    guard let client else { return }
+    queueNotice = nil
+    do {
+      queue = .loaded(try await client.queueSet(id, placement: placement))
+      queueNotice = notice
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Replaces the queue with a Playlist's playable members, in Playlist order, and starts the
+  /// first of them. A Playlist with no playable member leaves the queue empty, which stops
+  /// playback: the queue no longer holds the Set that was playing.
+  func playPlaylist(_ id: String) async {
+    guard let client else { return }
+    queueNotice = nil
+    do {
+      let loaded = try await client.playPlaylist(id)
+      queue = .loaded(loaded)
+      playActiveEntry(of: loaded, from: client)
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Plays the active entry of a queue, or stops when it holds none.
+  private func playActiveEntry(of loaded: ListeningQueue, from client: OrbisClient) {
+    guard let active = loaded.active else {
+      audioPlayer.stop()
+      stopReportingPosition()
+      return
+    }
+    audioPlayer.play(
+      set: active, baseURL: client.address, token: client.token,
+      startAt: active.resumePosition)
+    startReportingPosition(active.id)
+  }
+
+  /// The active Set reached its natural end. The Listen finishes on Vanta, the queue advances, and
+  /// whatever it holds next starts here, which is what lets a queue play on untouched. An empty
+  /// queue stops.
+  func finishedPlaying(_ id: String) async {
+    guard let client else { return }
+    stopReportingPosition()
+    do {
+      let loaded = try await client.reportCompletion(id)
+      queue = .loaded(loaded)
+      // The finished Set left the queue and its position went back to the beginning, so the
+      // Library is read again rather than patched. Read quietly, because a spinner where the list
+      // was would be a flicker the person did not ask for.
+      await refreshLibraryQuietly()
+      playActiveEntry(of: loaded, from: client)
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Reads the one Listening Queue. A failure keeps its reason, so the queue screen can say what
+  /// went wrong and offer the retry where the answer belongs.
+  func loadQueue() async {
+    guard let client else { return }
+    queueGeneration += 1
+    let generation = queueGeneration
+    do {
+      let loaded = try await client.listeningQueue()
+      guard generation == queueGeneration, !Task.isCancelled else { return }
+      queue = .loaded(loaded)
+    } catch OrbisError.cancelled {
+      guard generation == queueGeneration else { return }
+      queue = .idle
+    } catch let error as OrbisError {
+      guard generation == queueGeneration else { return }
+      queue = .failed(error.failure(at: client.address))
+    } catch {
+      guard generation == queueGeneration else { return }
+      queue = .failed(OrbisError.unreachable.failure(at: client.address))
+    }
+  }
+
+  // MARK: - Playback Position
+
+  /// Follows the player and reports where it has reached, so the other device resumes from the same
+  /// place. When a position is news belongs to `PositionReporting`, which holds the bound.
+  private func startReportingPosition(_ id: String) {
+    stopReportingPosition()
+    var reports = PositionReporting()
+    positionReporter = Task { [weak self] in
+      while !Task.isCancelled {
+        do {
+          try await Task.sleep(for: PositionReporting.interval)
+        } catch {
+          // Cancelled: another Set owns the position now.
+          return
+        }
+        guard let self, self.audioPlayer.currentSetId == id else { return }
+        let state = self.audioPlayer.state
+        guard
+          let seconds = reports.position(
+            elapsed: self.audioPlayer.elapsed, state: state)
+        else { continue }
+        await self.reportPosition(
+          id, seconds: seconds, settled: PositionReporting.settles(state))
+      }
+    }
+  }
+
+  private func stopReportingPosition() {
+    positionReporter?.cancel()
+    positionReporter = nil
+  }
+
+  /// Sends one Playback Position. A report while the Set is still playing stays in the player: the
+  /// Library holds the position for a row's progress bar, and rebuilding that list every five
+  /// seconds would redraw the screen for a bar nobody is watching. A report that settles — a pause
+  /// or a stop — is published, because that is the value the row and the other device should show.
+  private func reportPosition(_ id: String, seconds: Int, settled: Bool) async {
+    guard let client else { return }
+    guard let updated = try? await client.reportPosition(id, seconds: seconds) else { return }
+    if settled {
+      await publish(updated)
+    }
+  }
+
+  /// Reads the library again without blanking it. A change the person did not make on this screen —
+  /// a completion, a settled position — must not put a spinner where the list was.
+  func refreshLibraryQuietly() async {
+    guard let client else { return }
+    libraryGeneration += 1
+    let generation = libraryGeneration
+    guard let sets = try? await client.library(playlistId: selectedPlaylistId) else { return }
+    guard generation == libraryGeneration, !Task.isCancelled else { return }
+    library = .loaded(sets)
+  }
+
+  /// What the mini player's button does. Pausing and resuming stay inside the player, because the
+  /// Set is already the active one and pausing is part of the same Listen.
+  func togglePlayback() {
+    switch audioPlayer.state {
+    case .playing:
+      audioPlayer.pause()
+    case .loading, .paused:
+      audioPlayer.resume()
+    case .idle, .failed:
+      // A Set that failed to play is not resumable, so the button starts it again.
+      if let id = audioPlayer.currentSetId {
+        Task { await playSet(id) }
+      }
+    }
   }
 
   /// What a row's artwork control does: pauses or resumes the Set in the player, and starts
   /// any other. One entry point, so a row never has to know which it is pressing.
   func togglePlayback(_ id: String) {
     guard audioPlayer.currentSetId == id else {
-      playAudio(id)
+      Task { await playSet(id) }
       return
     }
     if audioPlayer.state == .playing {
@@ -700,6 +925,8 @@ final class AppModel {
       if openedSetId == removed.id {
         closeSet()
       }
+      // A removed Set leaves the queue with it, so the queue is read again rather than patched.
+      await loadQueue()
     } catch OrbisError.cancelled {
       return
     } catch let error as OrbisError {

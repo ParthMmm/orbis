@@ -79,4 +79,25 @@ export const playlistSets = sqliteTable(
   ]
 );
 
-export const schema = { playlistSets, playlists, sets };
+export const queueEntries = sqliteTable(
+  "queue_entries",
+  {
+    isActive: integer("is_active", { mode: "boolean" })
+      .notNull()
+      .default(false),
+    position: integer("position").notNull(),
+    setId: text("set_id")
+      .primaryKey()
+      .references(() => sets.id),
+  },
+  (table) => [
+    uniqueIndex("queue_entries_position_unique").on(table.position),
+    // One Listening Queue plays one Set at a time, so at most one entry is the active one. The
+    // index makes that a rule of the table rather than a rule every write has to remember.
+    uniqueIndex("queue_entries_active_unique")
+      .on(table.isActive)
+      .where(sql`${table.isActive} = 1`),
+  ]
+);
+
+export const schema = { playlistSets, playlists, queueEntries, sets };

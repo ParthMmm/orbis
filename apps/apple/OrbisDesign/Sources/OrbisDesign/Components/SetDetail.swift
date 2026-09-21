@@ -21,6 +21,41 @@ public struct SetDetail: View {
   /// The service could not name this Set, so the name is the caller's to supply or the
   /// service's to try again.
   public let failedToName: Bool
+  /// How often this Set was started and finished, and when it was last heard. Nil keeps the two
+  /// rows off the page entirely, which is what a Set that has never been played shows.
+  public let statistics: Statistics?
+
+  /// How often a Set was listened to and finished, and when it was last heard.
+  ///
+  /// A Listen is one activation and a Finish is one Listen reaching the end, so the two counts
+  /// answer different questions: a Set can be started often and finished rarely. The values are
+  /// plain and already formatted, because the design system holds no dates and no counters of its
+  /// own.
+  public struct Statistics: Equatable, Sendable {
+    public let listenCount: Int
+    public let finishCount: Int
+    /// When the Set was last heard, written as the caller wants it read. Nil before the first one.
+    public let lastHeard: String?
+
+    public init(listenCount: Int, finishCount: Int, lastHeard: String? = nil) {
+      self.listenCount = listenCount
+      self.finishCount = finishCount
+      self.lastHeard = lastHeard
+    }
+
+    /// True when nothing has been heard, so the page carries no rows about listening at all.
+    public var isEmpty: Bool { listenCount == 0 && finishCount == 0 }
+
+    /// "3 · last Thu 11 Sep", or "None yet".
+    public var listens: String {
+      guard listenCount > 0 else { return "None yet" }
+      guard let lastHeard else { return "\(listenCount)" }
+      return "\(listenCount) · last \(lastHeard)"
+    }
+
+    /// "1", or "None yet" when no Listen has reached the end of the Set.
+    public var finishes: String { finishCount > 0 ? "\(finishCount)" : "None yet" }
+  }
 
   public let retryName: () -> Void
   /// Download and playback for this Set, which the app owns. It sits under the position, in the
@@ -34,7 +69,7 @@ public struct SetDetail: View {
   public init(
     title: String, source: String, subtitle: String? = nil, artwork: URL? = nil,
     position: String? = nil, progress: Double? = nil, failedToName: Bool = false,
-    retryName: @escaping () -> Void = {},
+    statistics: Statistics? = nil, retryName: @escaping () -> Void = {},
     @ViewBuilder transport: () -> some View = { EmptyView() },
     @ViewBuilder management: () -> some View
   ) {
@@ -45,6 +80,7 @@ public struct SetDetail: View {
     self.position = position
     self.progress = progress
     self.failedToName = failedToName
+    self.statistics = statistics
     self.retryName = retryName
     self.transport = AnyView(transport())
     self.management = AnyView(management())
@@ -84,6 +120,15 @@ public struct SetDetail: View {
               .accessibilityLabel("Resumes at \(position)")
           }
           transport
+          if let statistics, !statistics.isEmpty {
+            VStack(spacing: 0) {
+              ListingRule()
+              ListingRow(
+                "Listens", value: statistics.listens, identifier: "detail-listens")
+              ListingRow(
+                "Finishes", value: statistics.finishes, identifier: "detail-finishes")
+            }
+          }
           management
         }
         .padding()
@@ -226,7 +271,8 @@ private struct SetDetailSample: View {
       source: "YouTube",
       subtitle: "CHRIS STASSY · 2h 33m · Sep 11",
       position: "42:00",
-      progress: 0.27
+      progress: 0.27,
+      statistics: .init(listenCount: 3, finishCount: 1, lastHeard: "Thu 11 Sep")
     ) {
       SetManagement(
         title: "CHRIS STASSY @ N:A:M:E: Birmingham 22.08.2026",

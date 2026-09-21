@@ -29,6 +29,12 @@ struct SavedSet: Identifiable, Decodable, Hashable {
   let lastListenedAt: String?
 }
 
+extension SavedSet {
+  /// Where playback should start for this Set: where the last Listen left off, or the beginning
+  /// for a Set nobody has heard, which is also where a finished one starts again.
+  var resumePosition: TimeInterval { TimeInterval(playbackPositionSeconds) }
+}
+
 /// The decode is written out rather than left to the compiler for one reason: `playlistIds` is
 /// read as empty when it is absent.
 ///
@@ -131,6 +137,25 @@ struct PlaylistsResponse: Decodable {
   let playlists: [Playlist]
 }
 
+/// The one Listening Queue, in play order. `activeSetId` is the Set playing now, and at most one
+/// entry ever matches it.
+struct ListeningQueue: Decodable, Equatable {
+  let activeSetId: String?
+  let entries: [SavedSet]
+
+  /// The Set playing now, if any. A queue with entries but no active Set is a queue nobody has
+  /// started yet.
+  var active: SavedSet? { entries.first { $0.id == activeSetId } }
+
+  func isActive(_ id: String) -> Bool { id == activeSetId }
+}
+
+/// Every queue request answers with the queue itself, so a change is read back from the service
+/// rather than assumed from locally applied rules.
+struct QueueResponse: Decodable {
+  let queue: ListeningQueue
+}
+
 struct HealthResponse: Decodable {
   let status: String
 }
@@ -172,4 +197,28 @@ struct PlaylistMembersRequest: Encodable {
 
 struct PlaylistMembersResponse: Decodable {
   let sets: [SavedSet]
+}
+
+/// Where a queued Set goes: `next` starts after the active Set, `end` goes last.
+enum QueuePlacement: String {
+  case next
+  case end
+}
+
+struct SetIdRequest: Encodable {
+  let setId: String
+}
+
+struct QueueEntryRequest: Encodable {
+  let placement: String
+  let setId: String
+}
+
+struct PlaylistQueueRequest: Encodable {
+  let playlistId: String
+}
+
+/// A Playback Position in whole seconds. The service bounds it to the Set's own length.
+struct PlaybackPositionRequest: Encodable {
+  let seconds: Int
 }

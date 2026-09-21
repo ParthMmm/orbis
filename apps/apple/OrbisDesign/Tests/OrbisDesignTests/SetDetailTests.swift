@@ -38,4 +38,28 @@ import Testing
           PlaylistPicker.Choice(id: "1", name: "Long drives", category: .cyan)
         ]) == "Playlist, none")
   }
+
+  @Test func `a Set nobody has heard has no statistics`() {
+    #expect(SetDetail.Statistics(listenCount: 0, finishCount: 0).isEmpty)
+  }
+
+  @Test func `statistics say how often a Set was heard and when last`() {
+    let heard = SetDetail.Statistics(
+      listenCount: 3, finishCount: 1, lastHeard: "Thu 11 Sep")
+    #expect(!heard.isEmpty)
+    #expect(heard.listens == "3 · last Thu 11 Sep")
+    #expect(heard.finishes == "1")
+  }
+
+  @Test func `a Listen that never reached the end has no finish`() {
+    let started = SetDetail.Statistics(
+      listenCount: 1, finishCount: 0, lastHeard: "Thu 11 Sep")
+    #expect(started.listens == "1 · last Thu 11 Sep")
+    #expect(started.finishes == "None yet")
+  }
+
+  @Test func `a Listen with no date still counts`() {
+    let withoutDate = SetDetail.Statistics(listenCount: 2, finishCount: 0)
+    #expect(withoutDate.listens == "2")
+  }
 }
