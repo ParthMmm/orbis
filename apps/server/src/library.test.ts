@@ -1197,24 +1197,22 @@ test("creates a Playlist with a unique name and rejects a duplicate", async () =
 test("renames and deletes a Playlist while preserving its Sets", async () => {
   const app = createApp();
   try {
-    const playlist = (
-      await request(app, {
-        method: "POST",
-        payload: { name: "Evenings" },
-        url: "/playlists",
-      })
-    ).json();
-    const set = (
-      await request(app, {
-        method: "POST",
-        payload: {
-          tags: [],
-          title: "Night session",
-          url: "https://youtu.be/abcdefghijk",
-        },
-        url: "/sets",
-      })
-    ).json();
+    const playlistResponse = await request(app, {
+      method: "POST",
+      payload: { name: "Evenings" },
+      url: "/playlists",
+    });
+    const playlist = playlistResponse.json();
+    const setResponse = await request(app, {
+      method: "POST",
+      payload: {
+        tags: [],
+        title: "Night session",
+        url: "https://youtu.be/abcdefghijk",
+      },
+      url: "/sets",
+    });
+    const set = setResponse.json();
     await request(app, {
       method: "PUT",
       payload: { setIds: [set.id] },
@@ -1258,9 +1256,9 @@ test("renames and deletes a Playlist while preserving its Sets", async () => {
     });
 
     const lists = await request(app, { method: "GET", url: "/playlists" });
-    expect(lists.json().playlists.map((each: { id: string }) => each.id)).toEqual(
-      [other.id]
-    );
+    expect(
+      lists.json().playlists.map((each: { id: string }) => each.id)
+    ).toEqual([other.id]);
     const library = await request(app, { method: "GET", url: "/sets" });
     expect(library.json().sets).toHaveLength(1);
     expect(library.json().sets[0].playlistIds).toEqual([]);
@@ -1272,46 +1270,42 @@ test("renames and deletes a Playlist while preserving its Sets", async () => {
 test("persists Playlist order across membership writes and removal", async () => {
   const app = createApp();
   try {
-    const playlist = (
-      await request(app, {
-        method: "POST",
-        payload: { name: "Evenings" },
-        url: "/playlists",
-      })
-    ).json();
-    const first = (
-      await request(app, {
-        method: "POST",
-        payload: {
-          tags: [],
-          title: "First",
-          url: "https://youtu.be/aaaaaaaaaaa",
-        },
-        url: "/sets",
-      })
-    ).json();
-    const second = (
-      await request(app, {
-        method: "POST",
-        payload: {
-          tags: [],
-          title: "Second",
-          url: "https://youtu.be/bbbbbbbbbbb",
-        },
-        url: "/sets",
-      })
-    ).json();
-    const third = (
-      await request(app, {
-        method: "POST",
-        payload: {
-          tags: [],
-          title: "Third",
-          url: "https://youtu.be/ccccccccccc",
-        },
-        url: "/sets",
-      })
-    ).json();
+    const playlistResponse = await request(app, {
+      method: "POST",
+      payload: { name: "Evenings" },
+      url: "/playlists",
+    });
+    const playlist = playlistResponse.json();
+    const firstResponse = await request(app, {
+      method: "POST",
+      payload: {
+        tags: [],
+        title: "First",
+        url: "https://youtu.be/aaaaaaaaaaa",
+      },
+      url: "/sets",
+    });
+    const first = firstResponse.json();
+    const secondResponse = await request(app, {
+      method: "POST",
+      payload: {
+        tags: [],
+        title: "Second",
+        url: "https://youtu.be/bbbbbbbbbbb",
+      },
+      url: "/sets",
+    });
+    const second = secondResponse.json();
+    const thirdResponse = await request(app, {
+      method: "POST",
+      payload: {
+        tags: [],
+        title: "Third",
+        url: "https://youtu.be/ccccccccccc",
+      },
+      url: "/sets",
+    });
+    const third = thirdResponse.json();
 
     const added = await request(app, {
       method: "PUT",
@@ -1329,9 +1323,9 @@ test("persists Playlist order across membership writes and removal", async () =>
       payload: { setIds: [third.id, first.id, second.id] },
       url: `/playlists/${playlist.id}/sets`,
     });
-    expect(reordered.json().sets.map((each: { title: string }) => each.title)).toEqual(
-      ["Third", "First", "Second"]
-    );
+    expect(
+      reordered.json().sets.map((each: { title: string }) => each.title)
+    ).toEqual(["Third", "First", "Second"]);
 
     const listed = await request(app, {
       method: "GET",
