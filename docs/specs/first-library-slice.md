@@ -36,4 +36,8 @@ The limits govern new membership only. Data saved before the limits were enforce
 
 Downloads, retention rules, embedded playback, groups, Tailscale identity, remote server configuration, iOS, working Raycast commands, Versos integration, and MCP are later slices. Opening a saved source in the browser is available; this is not in-app playback.
 
-Source metadata fetching, SoundCloud short-link resolution, private SoundCloud links, bulk import, deletion, and title editing are not implemented in this slice. The local directory name can remain `setsapp`; product and workspace names use Orbis.
+Title editing (`PATCH /sets/:id/title`) and deletion (`DELETE /sets/:id`) are implemented in this slice and covered by server and desktop smoke checks. Source metadata fetching, SoundCloud short-link resolution, private SoundCloud links, and bulk import are later work. The local directory name can remain `setsapp`; product and workspace names use Orbis.
+
+## Desktop evidence gate
+
+`bun run smoke:desktop` is the required local gate for desktop renderer changes that affect saving, filtering, empty states, title editing, or deletion. It needs a desktop session and a prior desktop build, so it is not part of the Linux CI job. Automated coverage for the empty-library versus no-matching-results distinction lives in `apps/desktop/src/library-empty-copy.test.ts` and runs in CI through `bun run test`.

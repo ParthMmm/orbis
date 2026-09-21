@@ -2,6 +2,7 @@ import type { LibraryFilters, SavedSet, SetSource } from "@orbis/contracts";
 import { useEffect, useRef, useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
+import { libraryEmptyCopy } from "./library-empty-copy";
 import { Playlists } from "./playlists";
 import { TagInput } from "./tag-input";
 import "./api";
@@ -369,16 +370,10 @@ export const App = () => {
   } else if (loadError) {
     resultCount = "Library unavailable";
   }
-  let emptyTitle = "Start your collection";
-  let emptyMessage =
-    "Save your first YouTube or SoundCloud set using the form.";
-  if (filtering) {
-    emptyTitle = "No matching sets";
-    emptyMessage = "Try another search or clear your filters.";
-  } else if (playlistId) {
-    emptyTitle = "This playlist is empty";
-    emptyMessage = "Add saved sets using Manage playlist.";
-  }
+  const { title: emptyTitle, message: emptyMessage } = libraryEmptyCopy({
+    filtering,
+    playlistId,
+  });
   return (
     <main>
       <header className="page-header">

@@ -52,7 +52,7 @@ bun run smoke:desktop
 bun run format:check
 ```
 
-Run the build before the smoke check. The smoke check launches Electron and a separate Bun server on an ephemeral port, uses a temporary database, and cleans up both processes and data. It leaves a screenshot in the system temporary directory. It needs a desktop session, not a headless shell.
+Run the build before the smoke check. The smoke check launches Electron and a separate Bun server on an ephemeral port, uses a temporary database, and cleans up both processes and data. It leaves a screenshot in the system temporary directory. It needs a desktop session, not a headless shell. Desktop renderer changes that affect saving, filtering, empty states, title editing, or deletion are not complete until `bun run smoke:desktop` has passed locally; that gate is documented rather than a macOS CI job because the check requires a real desktop session.
 
 Desktop builds package the current host platform into `apps/desktop/out/`. Signing, installers, and cross-platform release automation are not configured. Server builds need Bun and installed workspace dependencies.
 
@@ -63,7 +63,9 @@ Desktop builds package the current host platform into `apps/desktop/out/`. Signi
 | GET | `/health` | Health status |
 | POST | `/sets` | Save `{ url, title, tags }` |
 | GET | `/sets` | List newest first; optional `q`, `source`, `playlistId`, repeated `tag` parameters |
+| PATCH | `/sets/:id/title` | Replace title with `{ title }` |
 | PATCH | `/sets/:id/tags` | Replace tags with `{ tags }` |
+| DELETE | `/sets/:id` | Delete a Set and related membership |
 | GET | `/tags` | Existing tags for suggestions |
 | GET / POST | `/playlists` | List playlists or create one with `{ name }` |
 | PUT | `/playlists/:id/sets` | Replace ordered membership with `{ setIds }` |
