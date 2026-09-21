@@ -344,6 +344,31 @@ export const createApp = (
         )
       );
       yield* router.add(
+        "PATCH",
+        "/playlists/:id",
+        respond(
+          Effect.gen(function* renamePlaylist() {
+            const { params } = yield* HttpRouter.RouteContext;
+            const input = yield* HttpServerRequest.schemaBodyJson(
+              Schema.Struct({
+                name: Schema.String.check(Schema.isMaxLength(100)),
+              })
+            );
+            return yield* library.renamePlaylist(params.id ?? "", input.name);
+          })
+        )
+      );
+      yield* router.add(
+        "DELETE",
+        "/playlists/:id",
+        respond(
+          Effect.gen(function* deletePlaylist() {
+            const { params } = yield* HttpRouter.RouteContext;
+            return yield* library.deletePlaylist(params.id ?? "");
+          })
+        )
+      );
+      yield* router.add(
         "PUT",
         "/playlists/:id/sets",
         respond(

@@ -109,6 +109,13 @@ export class Library extends Context.Service<
     readonly createPlaylist: (
       name: string
     ) => Effect.Effect<Playlist, LibraryError>;
+    readonly renamePlaylist: (
+      id: string,
+      name: string
+    ) => Effect.Effect<Playlist, LibraryError>;
+    readonly deletePlaylist: (
+      id: string
+    ) => Effect.Effect<Playlist, LibraryError>;
     readonly setPlaylistMembers: (
       id: string,
       setIds: readonly string[]
@@ -592,6 +599,105 @@ export class Library extends Context.Service<
           )
       );
 
+      const renamePlaylist = Effect.fn("Library.renamePlaylist")(
+        (id: string, name: string) =>
+          execute(
+            Effect.gen(function* renamePlaylistEffect() {
+              const trimmedName = name.trim();
+              if (!trimmedName) {
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: "Enter a playlist name.",
+                    statusCode: 400,
+                  })
+                );
+              }
+              const playlist = yield* db
+                .select({ id: playlists.id })
+                .from(playlists)
+                .where(eq(playlists.id, id))
+                .limit(1);
+              if (!playlist[0]) {
+                return yield* Effect.fail(playlistNotFound());
+              }
+              const taken = yield* db
+                .select({ id: playlists.id })
+                .from(playlists)
+                .where(
+                  and(
+                    sql`lower(${playlists.name}) = ${trimmedName.toLowerCase()}`,
+                    ne(playlists.id, id)
+                  )
+                )
+                .limit(1);
+              if (taken[0]) {
+                return yield* Effect.fail(
+                  new LibraryError({
+                    message: "A playlist with this name already exists.",
+                    statusCode: 409,
+                  })
+                );
+              }
+              const [row] = yield* db
+                .update(playlists)
+                .set({ name: trimmedName })
+                .where(eq(playlists.id, id))
+                .returning({
+                  createdAt: playlists.createdAt,
+                  id: playlists.id,
+                  name: playlists.name,
+                });
+              if (!row) {
+                return yield* Effect.fail(playlistNotFound());
+              }
+              const countRows = yield* db
+                .select({ count: sql<number>`COUNT(*)` })
+                .from(playlistSets)
+                .where(eq(playlistSets.playlistId, id));
+              return {
+                createdAt: row.createdAt,
+                id: row.id,
+                name: row.name,
+                setCount: countRows[0]?.count ?? 0,
+              } satisfies Playlist;
+            })
+          )
+      );
+
+      const deletePlaylist = Effect.fn("Library.deletePlaylist")((id: string) =>
+        execute(
+          Effect.gen(function* deletePlaylistEffect() {
+            const playlist = yield* db
+              .select({
+                createdAt: playlists.createdAt,
+                id: playlists.id,
+                name: playlists.name,
+                setCount: sql<number>`(
+                  SELECT COUNT(*)
+                  FROM ${playlistSets}
+                  WHERE ${playlistSets.playlistId} = ${playlists.id}
+                )`,
+              })
+              .from(playlists)
+              .where(eq(playlists.id, id))
+              .limit(1);
+            const [row] = playlist;
+            if (!row) {
+              return yield* Effect.fail(playlistNotFound());
+            }
+            yield* db.transaction((tx) =>
+              Effect.gen(function* deletePlaylistTransaction() {
+                yield* tx
+                  .delete(playlistSets)
+                  .where(eq(playlistSets.playlistId, id));
+                yield* tx.delete(playlists).where(eq(playlists.id, id));
+              })
+            );
+            return row;
+          })
+        )
+      );
+
       const setPlaylistMembers = Effect.fn("Library.setPlaylistMembers")(
         (id: string, setIds: readonly string[]) =>
           execute(
@@ -768,6 +874,7 @@ export class Library extends Context.Service<
         cancelDownload,
         claimDownload,
         createPlaylist,
+        deletePlaylist,
         failDownload,
         find,
         finishDownload,
@@ -777,6 +884,7 @@ export class Library extends Context.Service<
         recordEnrichment,
         recordEnrichmentFailure,
         remove,
+        renamePlaylist,
         resetStuckDownloads,
         save,
         setPlaylistMembers,

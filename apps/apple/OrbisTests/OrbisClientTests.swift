@@ -289,6 +289,39 @@ final class OrbisClientTests: XCTestCase {
     XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/playlists")
   }
 
+  func testCreatePlaylistPostsTheName() async throws {
+    let body = #"{"id":"p1","name":"Evenings","setCount":0}"#
+    let client = OrbisClient(
+      address: URL(string: "https://vanta.example.ts.net")!,
+      token: "token",
+      session: StubProtocol.session(status: 201, body: body)
+    )
+    let playlist = try await client.createPlaylist(name: "Evenings")
+    XCTAssertEqual(playlist.name, "Evenings")
+    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
+    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/playlists")
+    let sent = try XCTUnwrap(
+      try JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody)) as? [String: Any]
+    )
+    XCTAssertEqual(sent["name"] as? String, "Evenings")
+  }
+
+  func testSetPlaylistMembersStatesTheWholeOrder() async throws {
+    let body = #"{"sets":[]}"#
+    let client = OrbisClient(
+      address: URL(string: "https://vanta.example.ts.net")!,
+      token: "token",
+      session: StubProtocol.session(status: 200, body: body)
+    )
+    _ = try await client.setPlaylistMembers("p1", setIds: ["a", "b"])
+    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PUT")
+    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/playlists/p1/sets")
+    let sent = try XCTUnwrap(
+      try JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody)) as? [String: Any]
+    )
+    XCTAssertEqual(sent["setIds"] as? [String], ["a", "b"])
+  }
+
   func testLibraryAsksForOnePlaylistByItsIdentifier() async throws {
     let session = StubProtocol.session(status: 200, body: #"{"sets":[]}"#)
     let client = OrbisClient(

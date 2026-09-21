@@ -1157,3 +1157,209 @@ test("states a Set's Playlists in one request and lets it leave them", async () 
     await app.dispose();
   }
 });
+
+test("creates a Playlist with a unique name and rejects a duplicate", async () => {
+  const app = createApp();
+  try {
+    const created = await request(app, {
+      method: "POST",
+      payload: { name: "Evenings" },
+      url: "/playlists",
+    });
+    expect(created.statusCode).toBe(201);
+    expect(created.json()).toMatchObject({
+      name: "Evenings",
+      setCount: 0,
+    });
+
+    const duplicate = await request(app, {
+      method: "POST",
+      payload: { name: "evenings" },
+      url: "/playlists",
+    });
+    expect(duplicate.statusCode).toBe(409);
+    expect(duplicate.json().message).toBe(
+      "A playlist with this name already exists."
+    );
+
+    const blank = await request(app, {
+      method: "POST",
+      payload: { name: "   " },
+      url: "/playlists",
+    });
+    expect(blank.statusCode).toBe(400);
+    expect(blank.json().message).toBe("Enter a playlist name.");
+  } finally {
+    await app.dispose();
+  }
+});
+
+test("renames and deletes a Playlist while preserving its Sets", async () => {
+  const app = createApp();
+  try {
+    const playlist = (
+      await request(app, {
+        method: "POST",
+        payload: { name: "Evenings" },
+        url: "/playlists",
+      })
+    ).json();
+    const set = (
+      await request(app, {
+        method: "POST",
+        payload: {
+          tags: [],
+          title: "Night session",
+          url: "https://youtu.be/abcdefghijk",
+        },
+        url: "/sets",
+      })
+    ).json();
+    await request(app, {
+      method: "PUT",
+      payload: { setIds: [set.id] },
+      url: `/playlists/${playlist.id}/sets`,
+    });
+
+    const renamed = await request(app, {
+      method: "PATCH",
+      payload: { name: "Late nights" },
+      url: `/playlists/${playlist.id}`,
+    });
+    expect(renamed.statusCode).toBe(200);
+    expect(renamed.json()).toMatchObject({
+      id: playlist.id,
+      name: "Late nights",
+      setCount: 1,
+    });
+
+    const conflict = await request(app, {
+      method: "POST",
+      payload: { name: "Other" },
+      url: "/playlists",
+    });
+    const other = conflict.json();
+    const taken = await request(app, {
+      method: "PATCH",
+      payload: { name: "Other" },
+      url: `/playlists/${playlist.id}`,
+    });
+    expect(taken.statusCode).toBe(409);
+
+    const deleted = await request(app, {
+      method: "DELETE",
+      url: `/playlists/${playlist.id}`,
+    });
+    expect(deleted.statusCode).toBe(200);
+    expect(deleted.json()).toMatchObject({
+      id: playlist.id,
+      name: "Late nights",
+      setCount: 1,
+    });
+
+    const lists = await request(app, { method: "GET", url: "/playlists" });
+    expect(lists.json().playlists.map((each: { id: string }) => each.id)).toEqual(
+      [other.id]
+    );
+    const library = await request(app, { method: "GET", url: "/sets" });
+    expect(library.json().sets).toHaveLength(1);
+    expect(library.json().sets[0].playlistIds).toEqual([]);
+  } finally {
+    await app.dispose();
+  }
+});
+
+test("persists Playlist order across membership writes and removal", async () => {
+  const app = createApp();
+  try {
+    const playlist = (
+      await request(app, {
+        method: "POST",
+        payload: { name: "Evenings" },
+        url: "/playlists",
+      })
+    ).json();
+    const first = (
+      await request(app, {
+        method: "POST",
+        payload: {
+          tags: [],
+          title: "First",
+          url: "https://youtu.be/aaaaaaaaaaa",
+        },
+        url: "/sets",
+      })
+    ).json();
+    const second = (
+      await request(app, {
+        method: "POST",
+        payload: {
+          tags: [],
+          title: "Second",
+          url: "https://youtu.be/bbbbbbbbbbb",
+        },
+        url: "/sets",
+      })
+    ).json();
+    const third = (
+      await request(app, {
+        method: "POST",
+        payload: {
+          tags: [],
+          title: "Third",
+          url: "https://youtu.be/ccccccccccc",
+        },
+        url: "/sets",
+      })
+    ).json();
+
+    const added = await request(app, {
+      method: "PUT",
+      payload: { setIds: [first.id, second.id, third.id] },
+      url: `/playlists/${playlist.id}/sets`,
+    });
+    expect(added.json().sets.map((each: { id: string }) => each.id)).toEqual([
+      first.id,
+      second.id,
+      third.id,
+    ]);
+
+    const reordered = await request(app, {
+      method: "PUT",
+      payload: { setIds: [third.id, first.id, second.id] },
+      url: `/playlists/${playlist.id}/sets`,
+    });
+    expect(reordered.json().sets.map((each: { title: string }) => each.title)).toEqual(
+      ["Third", "First", "Second"]
+    );
+
+    const listed = await request(app, {
+      method: "GET",
+      url: `/sets?playlistId=${playlist.id}`,
+    });
+    expect(listed.json().sets.map((each: { id: string }) => each.id)).toEqual([
+      third.id,
+      first.id,
+      second.id,
+    ]);
+
+    const removed = await request(app, {
+      method: "PUT",
+      payload: { setIds: [third.id, second.id] },
+      url: `/playlists/${playlist.id}/sets`,
+    });
+    expect(removed.json().sets.map((each: { id: string }) => each.id)).toEqual([
+      third.id,
+      second.id,
+    ]);
+
+    const library = await request(app, { method: "GET", url: "/sets" });
+    expect(library.json().sets).toHaveLength(3);
+    expect(
+      library.json().sets.find((each: { id: string }) => each.id === first.id)
+        .playlistIds
+    ).toEqual([]);
+  } finally {
+    await app.dispose();
+  }
+});
