@@ -74,12 +74,20 @@ struct SetDetailScreen: View {
         }
       }
     default:
-      Button("Download", systemImage: "arrow.down.circle") {
+      Button(
+        set.downloadState == "failed" || set.downloadState == "canceled"
+          ? "Retry download" : "Download",
+        systemImage: set.downloadState == "failed" || set.downloadState == "canceled"
+          ? "arrow.clockwise" : "arrow.down.circle"
+      ) {
         Task { await model.downloadAudio(set.id) }
       }
       .buttonStyle(.glass)
       .controlSize(.large)
-      .accessibilityIdentifier("detail-download")
+      .accessibilityIdentifier(
+        set.downloadState == "failed" || set.downloadState == "canceled"
+          ? "detail-retry-download" : "detail-download"
+      )
     }
   }
 

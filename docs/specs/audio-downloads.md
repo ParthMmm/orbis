@@ -4,7 +4,7 @@ Tap Download on a Set and Vanta fetches the audio through the private Cobalt dep
 
 ## States
 
-The existing `downloadState` carries the whole flow: `none → queued → downloading → ready`, with `failed` and `canceled` as terminal states a new request restarts. `POST` is idempotent: requesting a `ready` Set answers ready, requesting a `queued`/`downloading` one answers its current state. `DELETE` cancels in flight, removes any partial file, and returns the Set to `none`. Finished downloads are kept; there is no eviction.
+The existing `downloadState` carries the whole flow: `none → queued → downloading → ready`, with `failed` and `canceled` as terminal states a new request restarts. `POST` is idempotent: requesting a `ready` Set answers ready, requesting a `queued`/`downloading` one answers its current state, and requesting `failed` or `canceled` re-queues the job. `DELETE` cancels in flight, removes any partial file, and returns the Set to `none`. Finished downloads are kept; there is no eviction.
 
 ## Server
 
