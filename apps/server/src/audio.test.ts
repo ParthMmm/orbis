@@ -58,7 +58,6 @@ const setUp = async (
       cobaltApiKey: "test-key",
       cobaltUrl: "http://cobalt.test/",
       fetch: stubFetch(handlers),
-      pollIntervalMs: 10,
       startWorker: true,
       ...audioOptions,
     },
