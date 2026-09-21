@@ -157,3 +157,19 @@ struct SetTagsRequest: Encodable {
 struct SetPlaylistsRequest: Encodable {
   let playlistIds: [String]
 }
+
+struct CreatePlaylistRequest: Encodable {
+  let name: String
+}
+
+struct PlaylistNameRequest: Encodable {
+  let name: String
+}
+
+struct PlaylistMembersRequest: Encodable {
+  let setIds: [String]
+}
+
+struct PlaylistMembersResponse: Decodable {
+  let sets: [SavedSet]
+}

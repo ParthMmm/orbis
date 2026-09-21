@@ -188,6 +188,30 @@ struct OrbisClient: Sendable {
     return try Self.decode(PlaylistsResponse.self, from: response).playlists
   }
 
+  func createPlaylist(name: String) async throws -> Playlist {
+    let body = try Self.encoder.encode(CreatePlaylistRequest(name: name))
+    let response = try await send(path: "playlists", method: "POST", body: body)
+    return try Self.decode(Playlist.self, from: response)
+  }
+
+  func renamePlaylist(_ id: String, name: String) async throws -> Playlist {
+    let body = try Self.encoder.encode(PlaylistNameRequest(name: name))
+    let response = try await send(path: "playlists/\(id)", method: "PATCH", body: body)
+    return try Self.decode(Playlist.self, from: response)
+  }
+
+  func deletePlaylist(_ id: String) async throws -> Playlist {
+    let response = try await send(path: "playlists/\(id)", method: "DELETE", body: nil)
+    return try Self.decode(Playlist.self, from: response)
+  }
+
+  /// States the ordered Sets a Playlist holds. Removing a Set here leaves it in the Library.
+  func setPlaylistMembers(_ id: String, setIds: [String]) async throws -> [SavedSet] {
+    let body = try Self.encoder.encode(PlaylistMembersRequest(setIds: setIds))
+    let response = try await send(path: "playlists/\(id)/sets", method: "PUT", body: body)
+    return try Self.decode(PlaylistMembersResponse.self, from: response).sets
+  }
+
   func save(url: String, tags: [String] = []) async throws -> SavedSet {
     let body = try Self.encoder.encode(SaveSetRequest(tags: tags, url: url))
     let response = try await send(path: "sets", method: "POST", body: body)
@@ -357,7 +381,11 @@ struct OrbisClient: Sendable {
     case 403:
       throw OrbisError.refused
     case 409:
-      throw OrbisError.duplicate
+      let message = (try? Self.decoder.decode(ServerMessage.self, from: data))?.message
+      if message == "This set is already in your library." {
+        throw OrbisError.duplicate
+      }
+      throw OrbisError.server(status: 409, message: message ?? "")
     default:
       let message = (try? Self.decoder.decode(ServerMessage.self, from: data))?.message
       throw OrbisError.server(status: http.statusCode, message: message ?? "")

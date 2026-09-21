@@ -316,6 +316,9 @@ final class AppModel {
     searchResultsFor = nil
     playlists = .idle
     selectedPlaylistId = nil
+    openedPlaylistId = nil
+    playlistMembers = .idle
+    playlistFailure = nil
     activeTag = nil
     openedSetId = nil
     reveal = nil
@@ -738,6 +741,173 @@ final class AppModel {
     await loadLibrary()
   }
 
+  /// The Playlist whose ordered members the Playlists destination is showing.
+  var openedPlaylistId: String?
+
+  /// The ordered Sets in the opened Playlist, loaded apart from the Library filter so a tab
+  /// change does not disturb what another screen is showing.
+  var playlistMembers: Loadable<[SavedSet]> = .idle
+
+  /// What the last Playlist change refused, kept where the action was taken.
+  var playlistFailure: OrbisFailure?
+  var isWorkingOnPlaylist = false
+
+  func playlist(_ id: String) -> Playlist? {
+    playlistItems.first { $0.id == id }
+  }
+
+  func openPlaylist(_ id: String) {
+    playlistFailure = nil
+    openedPlaylistId = id
+  }
+
+  func closePlaylist() {
+    playlistFailure = nil
+    openedPlaylistId = nil
+    playlistMembers = .idle
+  }
+
+  func loadPlaylistMembers(_ id: String) async {
+    guard let client else { return }
+    playlistMembers = .loading
+    do {
+      let sets = try await client.library(playlistId: id)
+      guard openedPlaylistId == id, !Task.isCancelled else { return }
+      playlistMembers = .loaded(sets)
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      guard openedPlaylistId == id else { return }
+      playlistMembers = .failed(error.failure(at: client.address))
+    } catch {
+      guard openedPlaylistId == id else { return }
+      playlistMembers = .failed(OrbisError.unreachable.failure(at: client.address))
+    }
+  }
+
+  private func playlistChange(_ work: (OrbisClient) async throws -> Void) async {
+    guard let client else { return }
+    isWorkingOnPlaylist = true
+    playlistFailure = nil
+    defer { isWorkingOnPlaylist = false }
+    do {
+      try await work(client)
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      playlistFailure = error.failure(at: client.address)
+    } catch {
+      playlistFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  /// Creates a Playlist and opens it when the service accepts the name.
+  func createPlaylist(named name: String) async -> Playlist? {
+    let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmed.isEmpty else { return nil }
+    guard let client else { return nil }
+    isWorkingOnPlaylist = true
+    playlistFailure = nil
+    defer { isWorkingOnPlaylist = false }
+    do {
+      let created = try await client.createPlaylist(name: trimmed)
+      await loadPlaylists()
+      openPlaylist(created.id)
+      await loadPlaylistMembers(created.id)
+      return created
+    } catch OrbisError.cancelled {
+      return nil
+    } catch let error as OrbisError {
+      playlistFailure = error.failure(at: client.address)
+      return nil
+    } catch {
+      playlistFailure = OrbisError.unreachable.failure(at: client.address)
+      return nil
+    }
+  }
+
+  func renamePlaylist(_ id: String, to name: String) async {
+    let trimmed = String(name.trimmingCharacters(in: .whitespacesAndNewlines).prefix(100))
+    guard !trimmed.isEmpty, trimmed != playlist(id)?.name else { return }
+    await playlistChange { client in
+      _ = try await client.renamePlaylist(id, name: trimmed)
+      await loadPlaylists()
+      if selectedPlaylistId == id {
+        await loadLibrary()
+      }
+      if openedPlaylistId == id {
+        await loadPlaylistMembers(id)
+      }
+    }
+  }
+
+  func deletePlaylist(_ id: String) async {
+    await playlistChange { client in
+      _ = try await client.deletePlaylist(id)
+      if selectedPlaylistId == id {
+        selectedPlaylistId = nil
+        await loadLibrary()
+      }
+      if openedPlaylistId == id {
+        closePlaylist()
+      }
+      await loadPlaylists()
+    }
+  }
+
+  func replacePlaylistMembers(_ playlistId: String, with setIds: [String]) async {
+    guard case .loaded(let current) = playlistMembers, openedPlaylistId == playlistId else {
+      return
+    }
+    guard setIds != current.map(\.id) else { return }
+    await playlistChange { client in
+      let sets = try await client.setPlaylistMembers(playlistId, setIds: setIds)
+      guard openedPlaylistId == playlistId else { return }
+      playlistMembers = .loaded(sets)
+      await loadPlaylists()
+      await refreshLibraryAfterPlaylistChange(playlistId: playlistId, sets: sets)
+    }
+  }
+
+  func addSetToPlaylist(_ playlistId: String, setId: String) async {
+    guard case .loaded(let current) = playlistMembers, openedPlaylistId == playlistId else {
+      return
+    }
+    guard !current.contains(where: { $0.id == setId }) else { return }
+    await replacePlaylistMembers(playlistId, with: current.map(\.id) + [setId])
+  }
+
+  func removeSetFromPlaylist(_ playlistId: String, setId: String) async {
+    guard case .loaded(let current) = playlistMembers, openedPlaylistId == playlistId else {
+      return
+    }
+    await replacePlaylistMembers(
+      playlistId, with: current.filter { $0.id != setId }.map(\.id))
+  }
+
+  func movePlaylistMembers(
+    _ playlistId: String, from source: IndexSet, to destination: Int
+  ) async {
+    guard case .loaded(let current) = playlistMembers, openedPlaylistId == playlistId else {
+      return
+    }
+    var ids = current.map(\.id)
+    ids.move(fromOffsets: source, toOffset: destination)
+    await replacePlaylistMembers(playlistId, with: ids)
+  }
+
+  private func refreshLibraryAfterPlaylistChange(
+    playlistId: String, sets: [SavedSet]
+  ) async {
+    if selectedPlaylistId == playlistId {
+      library = .loaded(sets)
+      return
+    }
+    guard case .loaded(let librarySets) = library else { return }
+    let returned = Dictionary(uniqueKeysWithValues: sets.map { ($0.id, $0) })
+    library = .loaded(librarySets.map { returned[$0.id] ?? $0 })
+  }
+
   func runSearch() async {
     guard let client else { return }
     let query = searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -781,15 +951,22 @@ final class AppModel {
 enum Destination: String, CaseIterable, Identifiable, Hashable {
   case home = "Home"
   case library = "Library"
+  case playlists = "Playlists"
   case search = "Search"
 
   /// Identity is the destination itself, so a list binding can select the case directly.
   var id: Self { self }
 
+  /// Search is a tab role on iPhone and is not repeated in the sidebar list.
+  static var shellCases: [Destination] {
+    allCases.filter { $0 != .search }
+  }
+
   var symbol: String {
     switch self {
     case .home: "house"
     case .library: "music.note.list"
+    case .playlists: "rectangle.stack"
     case .search: "magnifyingglass"
     }
   }

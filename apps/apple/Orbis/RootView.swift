@@ -132,7 +132,7 @@ struct RootView: View {
 
     var body: some View {
       TabView(selection: $model.destination) {
-        ForEach([Destination.home, .library]) { destination in
+        ForEach([Destination.home, .library, .playlists]) { destination in
           Tab(destination.rawValue, systemImage: destination.symbol, value: destination) {
             NavigationStack {
               DestinationView(model: model, destination: destination)
@@ -190,7 +190,7 @@ struct SidebarShell: View {
   var body: some View {
     NavigationSplitView {
       List {
-        ForEach(Destination.allCases) { destination in
+        ForEach(Destination.shellCases) { destination in
           Button {
             model.destination = destination
           } label: {
@@ -355,6 +355,11 @@ struct DestinationView: View {
           "The address and its token leave this device. Pair it again on the host to come back."
         )
       }
+    case .playlists:
+      PlaylistsDestination(model: model)
+        .navigationDestination(item: $model.openedSetId) { id in
+          SetDetailScreen(model: model, setId: id)
+        }
     case .search:
       SearchDestination(model: model)
         // The one open Set is shared with the Library, so a Set found here opens the same page.
@@ -660,7 +665,9 @@ struct HomeRails: View {
   private var playlistCards: some View {
     ForEach(model.playlistItems) { playlist in
       Button {
-        Task { await model.selectPlaylist(playlist.id) }
+        model.destination = .playlists
+        model.openPlaylist(playlist.id)
+        Task { await model.loadPlaylistMembers(playlist.id) }
       } label: {
         let category = SetPresentation.category(for: playlist.name)
         // The same 16:9 box the artwork cards answer to, so the two rails share one line.
@@ -783,7 +790,7 @@ struct SearchDestination: View {
 
 extension View {
   /// `toolbarTitleDisplayMode(.large)` where the platform has a large title, and nothing on a Mac.
-  @ViewBuilder fileprivate func largeTitleOnIOS() -> some View {
+  @ViewBuilder func largeTitleOnIOS() -> some View {
     #if os(iOS)
       toolbarTitleDisplayMode(.large)
     #else
