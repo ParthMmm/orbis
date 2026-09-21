@@ -8,6 +8,10 @@ Orbis is a personal library for collecting and organizing music and DJ sets from
 A saved music recording or DJ performance identified by its source link.
 _Avoid_: Item, bookmark, track
 
+**Artwork**:
+The provider's image for a Set. A Set holds two: the one a listing draws, and the large one its own page draws.
+_Avoid_: Thumbnail, cover, image
+
 **Source Link**:
 The original YouTube or SoundCloud address associated with a Set.
 _Avoid_: Media URL, download URL
