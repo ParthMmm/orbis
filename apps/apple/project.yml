@@ -37,6 +37,10 @@ targets:
       - Orbis
     dependencies:
       - package: OrbisDesign
+      - target: OrbisShare
+        embed: true
+    entitlements:
+      path: Orbis/Orbis.entitlements
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client
@@ -52,6 +56,29 @@ targets:
         # UILaunchScreen names the color the splash is drawn on. Everything flat stays here.
         INFOPLIST_FILE: Orbis/Info.plist
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+  OrbisShare:
+    type: app-extension
+    supportedDestinations: [iOS, macOS]
+    sources:
+      - OrbisShare
+      - path: Orbis
+        includes:
+          - OrbisSharedIdentity.swift
+          - ClientSettings.swift
+          - OrbisClient.swift
+          - Models.swift
+          - ShareCapture.swift
+    dependencies:
+      - package: OrbisDesign
+    entitlements:
+      path: OrbisShare/OrbisShare.entitlements
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.share
+        PRODUCT_NAME: OrbisShare
+        INFOPLIST_FILE: OrbisShare/Info.plist
+        SKIP_INSTALL: YES
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
   OrbisTests:
     type: bundle.unit-test
     supportedDestinations: [iOS, macOS]
@@ -86,6 +113,7 @@ schemes:
     build:
       targets:
         Orbis: all
+        OrbisShare: all
         OrbisTests: [test]
         OrbisUITests: [test]
     run:
