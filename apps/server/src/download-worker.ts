@@ -150,7 +150,7 @@ export class DownloadWorker extends Context.Service<
           }
         });
         const wake = Effect.fn("DownloadWorker.wake")(() =>
-          Queue.offer(wakeQueue)
+          Queue.offer(wakeQueue, undefined)
         );
         if (options.startWorker === true) {
           yield* wake();
