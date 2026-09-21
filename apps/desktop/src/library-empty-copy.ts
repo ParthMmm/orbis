@@ -1,7 +1,7 @@
-export type LibraryEmptyCopy = {
-  title: string;
+export interface LibraryEmptyCopy {
   message: string;
-};
+  title: string;
+}
 
 export const libraryEmptyCopy = (input: {
   filtering: boolean;
@@ -9,18 +9,18 @@ export const libraryEmptyCopy = (input: {
 }): LibraryEmptyCopy => {
   if (input.filtering) {
     return {
-      title: "No matching sets",
       message: "Try another search or clear your filters.",
+      title: "No matching sets",
     };
   }
   if (input.playlistId) {
     return {
-      title: "This playlist is empty",
       message: "Add saved sets using Manage playlist.",
+      title: "This playlist is empty",
     };
   }
   return {
-    title: "Start your collection",
     message: "Save your first YouTube or SoundCloud set using the form.",
+    title: "Start your collection",
   };
 };
