@@ -38,7 +38,7 @@ extension ClientSettingsStore {
 /// development file as a fallback for a build on the developer's Mac.
 @MainActor
 final class LiveClientSettings: ClientSettingsStore {
-  private static let addressKey = "orbis.serviceAddress"
+  static let addressKey = "orbis.serviceAddress"
 
   private let defaults: UserDefaults
   private let keychain: KeychainStore
@@ -157,15 +157,54 @@ enum ClientSettings {
     return liveStore()
   }
 
-  /// The device's own storage: the existing defaults, the production keychain identity, and
-  /// the home-file fallback, which stays lazy until a read asks for it.
+  /// The device's own storage: the App Group defaults and the shared keychain identity, so
+  /// the share extension can read the same pairing. A first launch migrates any address that
+  /// still lives in the process defaults, and any token that still lives outside the access
+  /// group.
   @MainActor
   private static func makeLiveStore() -> any ClientSettingsStore {
-    LiveClientSettings(
-      defaults: .standard,
-      keychain: KeychainStore(service: "app.orbis.client", account: "device-token"),
+    let sharedDefaults =
+      UserDefaults(suiteName: OrbisSharedIdentity.appGroup) ?? .standard
+    migrateAddressIfNeeded(into: sharedDefaults)
+    let sharedKeychain = KeychainStore(
+      service: OrbisSharedIdentity.keychainService,
+      account: OrbisSharedIdentity.keychainAccount,
+      accessGroup: OrbisSharedIdentity.keychainAccessGroup
+    )
+    migrateTokenIfNeeded(into: sharedKeychain)
+    return LiveClientSettings(
+      defaults: sharedDefaults,
+      keychain: sharedKeychain,
       developmentConfiguration: { developmentConfiguration }
     )
+  }
+
+  /// Copies a pairing address out of the process defaults when the App Group has none yet.
+  @MainActor
+  static func migrateAddressIfNeeded(
+    into shared: UserDefaults,
+    legacy: UserDefaults = .standard,
+    key: String = LiveClientSettings.addressKey
+  ) {
+    guard shared.string(forKey: key) == nil,
+      let legacyAddress = legacy.string(forKey: key),
+      !legacyAddress.isEmpty
+    else { return }
+    shared.set(legacyAddress, forKey: key)
+  }
+
+  /// Copies a token that was stored without an access group into the shared keychain item.
+  @MainActor
+  static func migrateTokenIfNeeded(into shared: KeychainStore) {
+    if shared.read() != nil { return }
+    let legacy = KeychainStore(
+      service: OrbisSharedIdentity.keychainService,
+      account: OrbisSharedIdentity.keychainAccount
+    )
+    guard let token = legacy.read() else { return }
+    if shared.write(token) {
+      legacy.delete()
+    }
   }
 }
 
@@ -214,15 +253,20 @@ struct LiveKeychainOperations: KeychainOperations {
 struct KeychainStore {
   let service: String
   let account: String
+  /// When set, the item is shared with every process that carries the same access group
+  /// entitlement — the share extension and the main app.
+  let accessGroup: String?
   private let operations: any KeychainOperations
 
   init(
     service: String,
     account: String,
+    accessGroup: String? = nil,
     operations: any KeychainOperations = LiveKeychainOperations()
   ) {
     self.service = service
     self.account = account
+    self.accessGroup = accessGroup
     self.operations = operations
   }
 
@@ -230,11 +274,15 @@ struct KeychainStore {
   /// query: `SecItemUpdate` refuses an item class or a search property among the attributes it
   /// applies.
   private var identity: [String: Any] {
-    [
+    var query: [String: Any] = [
       kSecClass as String: kSecClassGenericPassword,
       kSecAttrService as String: service,
       kSecAttrAccount as String: account,
     ]
+    if let accessGroup {
+      query[kSecAttrAccessGroup as String] = accessGroup
+    }
+    return query
   }
 
   /// What a write changes about an item: the value and the policy that keeps the credential on
