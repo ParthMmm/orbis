@@ -35,7 +35,7 @@ export class DownloadWorker extends Context.Service<
         const library = yield* Library;
         const cobalt = yield* Cobalt;
         const media = yield* MediaStore;
-        const wakeQueue = yield* Queue.unbounded<void>();
+        const wakeQueue = yield* Queue.unbounded<undefined>();
         const progress = new Map<string, DownloadProgress>();
         const aborts = new Map<string, AbortController>();
         const requeued = yield* library
@@ -150,7 +150,7 @@ export class DownloadWorker extends Context.Service<
           }
         });
         const wake = Effect.fn("DownloadWorker.wake")(() =>
-          Queue.offer(wakeQueue, void 0)
+          Queue.offer(wakeQueue)
         );
         if (options.startWorker === true) {
           yield* wake();

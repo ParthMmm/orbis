@@ -70,7 +70,11 @@ export class Cobalt extends Context.Service<
                   : downloadFailed("Cobalt did not answer in time."),
               try: (requestSignal) => {
                 const timeout = AbortSignal.timeout(COBALT_TIMEOUT_MS);
-                const combined = AbortSignal.any([requestSignal, timeout]);
+                const combined = AbortSignal.any([
+                  requestSignal,
+                  timeout,
+                  signal,
+                ]);
                 return fetchFn(`${options.cobaltUrl}`, {
                   body: JSON.stringify({
                     alwaysProxy: true,

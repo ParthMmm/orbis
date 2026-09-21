@@ -1,16 +1,17 @@
 import type { AudioState, SavedSet } from "@orbis/contracts";
 import { Context, Effect, Layer } from "effect";
 
-import { Cobalt, type CobaltOptions } from "./cobalt.js";
-import { DownloadWorker, type DownloadWorkerOptions } from "./download-worker.js";
+import { Cobalt } from "./cobalt.js";
+import type { CobaltOptions } from "./cobalt.js";
+import { DownloadWorker } from "./download-worker.js";
+import type { DownloadWorkerOptions } from "./download-worker.js";
 import { LibraryError } from "./errors.js";
 import { Library } from "./library.js";
-import { MediaStore, type MediaStoreOptions, type MediaFile } from "./media-store.js";
+import { MediaStore } from "./media-store.js";
+import type { MediaFile, MediaStoreOptions } from "./media-store.js";
 
 export interface AudioOptions
-  extends CobaltOptions,
-    MediaStoreOptions,
-    DownloadWorkerOptions {}
+  extends CobaltOptions, MediaStoreOptions, DownloadWorkerOptions {}
 
 export type AudioFile = MediaFile;
 
