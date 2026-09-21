@@ -5,6 +5,7 @@ import Foundation
 struct SavedSet: Identifiable, Decodable, Hashable {
   enum CodingKeys: String, CodingKey {
     case id, url, title, source, tags, createdAt, creator, artworkUrl, durationSeconds
+    case artworkLargeUrl
     case metadataState, downloadState, playlistIds, playbackPositionSeconds
     case listenCount, finishCount, lastListenedAt
   }
@@ -17,6 +18,7 @@ struct SavedSet: Identifiable, Decodable, Hashable {
   let createdAt: String
   let creator: String?
   let artworkUrl: String?
+  let artworkLargeUrl: String?
   let durationSeconds: Int?
   let metadataState: String
   let downloadState: String
@@ -45,6 +47,7 @@ extension SavedSet {
     createdAt = try values.decode(String.self, forKey: .createdAt)
     creator = try values.decodeIfPresent(String.self, forKey: .creator)
     artworkUrl = try values.decodeIfPresent(String.self, forKey: .artworkUrl)
+    artworkLargeUrl = try values.decodeIfPresent(String.self, forKey: .artworkLargeUrl)
     durationSeconds = try values.decodeIfPresent(Int.self, forKey: .durationSeconds)
     metadataState = try values.decode(String.self, forKey: .metadataState)
     downloadState = try values.decode(String.self, forKey: .downloadState)

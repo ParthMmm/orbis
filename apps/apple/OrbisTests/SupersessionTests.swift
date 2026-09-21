@@ -18,6 +18,7 @@ final class SupersessionTests: XCTestCase {
       createdAt: "2026-01-01T00:00:00.000Z",
       creator: nil,
       artworkUrl: nil,
+      artworkLargeUrl: nil,
       durationSeconds: nil,
       metadataState: "enriched",
       downloadState: "none",

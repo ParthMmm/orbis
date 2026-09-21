@@ -115,7 +115,10 @@ public struct LinkField: View {
   /// Filing a link and opening one need the same shape rule, and so does a page that decides
   /// whether Open has anything to offer. It lives here once rather than three times, because a
   /// text that reads as a link to one of them must read as a link to the others.
-  public static func address(of text: String) -> URL? {
+  ///
+  /// Nonisolated, because the rule is a test on a string and callers that never touch the
+  /// screen, such as the presentation layer, must be able to ask it.
+  public nonisolated static func address(of text: String) -> URL? {
     guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
       let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
       let host = url.host(), !host.isEmpty

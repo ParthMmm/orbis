@@ -4,8 +4,8 @@ import SwiftUI
 ///
 /// Glass, because it floats over content the way the tab bar does. It names the Set and offers
 /// one control; the position is the hairline along its bottom edge, and the clock lives on the
-/// Set's page, which tapping the rest opens. The bar is the one place playback is reachable
-/// after that page closes.
+/// Now Playing screen, which tapping the rest opens. The bar is the one place playback is
+/// reachable after that screen closes.
 ///
 /// On iOS the tab view's bottom accessory is the right home: the system draws that glass and
 /// morphs the bar with the tab bar, so the player passes `.accessory` and draws none of its own.
@@ -62,7 +62,7 @@ public struct MiniPlayer: View {
       }
       .buttonStyle(.plain)
       .accessibilityLabel("Now playing, \(title)")
-      .accessibilityHint("Opens the set")
+      .accessibilityHint("Opens Now Playing")
       Button(action: toggle) {
         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
           .font(.title3)

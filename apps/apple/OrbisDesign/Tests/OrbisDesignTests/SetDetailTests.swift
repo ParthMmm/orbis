@@ -4,15 +4,15 @@ import Testing
 
 @Suite struct SetDetailTests {
   @Test func `removing a Set says the source is left alone`() {
-    let notice = SetDetail.removalNotice(retainedAudio: false)
+    let notice = SetManagement.removalNotice(retainedAudio: false)
     #expect(notice.scope.contains("source is untouched"))
     #expect(notice.retained == nil)
   }
 
   @Test func `removing a Set that keeps audio says the audio goes too`() {
-    let notice = SetDetail.removalNotice(retainedAudio: true)
+    let notice = SetManagement.removalNotice(retainedAudio: true)
     #expect(notice.retained?.contains("audio") == true)
-    #expect(notice.scope == SetDetail.removalNotice(retainedAudio: false).scope)
+    #expect(notice.scope == SetManagement.removalNotice(retainedAudio: false).scope)
   }
 
   @Test func `the header reads out the title and where it came from`() {

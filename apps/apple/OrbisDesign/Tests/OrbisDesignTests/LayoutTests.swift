@@ -56,6 +56,30 @@ import Testing
     #expect(!Artwork.showsProgress(1))
   }
 
+  /// A provider's thumbnail can arrive letterboxed: YouTube's `high` image is 480x360 with the
+  /// picture inside a 16:9 window and black bars above and below it. The box has to keep its own
+  /// 16:9 shape and crop them away, or every Set a provider sends that way is drawn 4:3, taller
+  /// than the rows beside it, with the bars on show.
+  @Test func `artwork crops the bars off a letterboxed thumbnail`() {
+    let row = letterboxed(.row)
+    let box = measured(row, width: 88, textSize: .large)
+    #expect(
+      abs(box.width / box.height - 16.0 / 9.0) < 0.01,
+      "the artwork took the thumbnail's shape: \(box)")
+
+    let middle = box.width / 2
+    let top = sample(row, at: CGPoint(x: middle, y: 1), in: box, direction: .leftToRight)
+    let bottom = sample(
+      row, at: CGPoint(x: middle, y: box.height - 2), in: box, direction: .leftToRight)
+    #expect(!isBlack(top), "the top bar is still on show: \(top)")
+    #expect(!isBlack(bottom), "the bottom bar is still on show: \(bottom)")
+
+    let header = measured(letterboxed(.header), width: 390, textSize: .large)
+    #expect(
+      abs(header.width / header.height - 16.0 / 9.0) < 0.01,
+      "the header artwork took the thumbnail's shape: \(header)")
+  }
+
   @Test func `the data line puts a resume position where the creator was`() {
     #expect(SetRow.dataLine(creator: "Dekmantel", length: "1h 58m", state: nil) == "Dekmantel · 1h 58m")
     #expect(
@@ -65,6 +89,17 @@ import Testing
       SetRow.dataLine(creator: "Dekmantel", length: "1h 58m", state: .init(download: "Audio ready"))
         == "Dekmantel · 1h 58m · Audio ready")
     #expect(SetRow.dataLine(creator: nil, length: nil, state: nil) == "")
+  }
+
+  @Test func `the artwork control is named for the change it makes`() {
+    #expect(SetRow.Playback.ready.label == "Play")
+    #expect(SetRow.Playback.paused.label == "Play")
+    #expect(SetRow.Playback.playing.label == "Pause")
+    #expect(SetRow.Playback.playing.symbol == "pause.fill")
+    #expect(!SetRow.Playback.ready.isCurrent)
+    #expect(SetRow.Playback.paused.isCurrent)
+    #expect(SetRow.Playback.ready.announcement == nil)
+    #expect(SetRow.Playback.playing.announcement == "Now playing")
   }
 
   @Test func `chips reflow onto more lines when the width runs out, in either direction`() {
@@ -182,6 +217,34 @@ import Testing
     PasteHero(link: .constant("https://youtu.be/tPEMP9oYxTo")) {}
   }
 
+  /// The real artwork box around the image a provider sends for a widescreen video at `high`.
+  private func letterboxed(_ size: Artwork.Size) -> some View {
+    Artwork.box(size: size) {
+      Image(decorative: letterboxedThumbnail, scale: 1)
+        .resizable()
+        .aspectRatio(contentMode: .fill)
+    }
+  }
+
+  /// A 16:9 picture inside a 4:3 canvas, with the black bars YouTube adds to fill it.
+  private var letterboxedThumbnail: CGImage {
+    let width = 480
+    let height = 360
+    let bar = 45
+    let context = CGContext(
+      data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
+      space: CGColorSpaceCreateDeviceRGB(),
+      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    let black = CGColor(colorSpace: CGColorSpaceCreateDeviceRGB(), components: [0, 0, 0, 1])!
+    let picture = CGColor(
+      colorSpace: CGColorSpaceCreateDeviceRGB(), components: [0.6, 0.5, 0.85, 1])!
+    context.setFillColor(black)
+    context.fill(CGRect(x: 0, y: 0, width: width, height: height))
+    context.setFillColor(picture)
+    context.fill(CGRect(x: 0, y: bar, width: width, height: height - bar * 2))
+    return context.makeImage()!
+  }
+
   /// The size a view takes when it is offered `width` and as much height as it needs.
   private func measured(
     _ view: some View, width: CGFloat, textSize: DynamicTypeSize,
@@ -197,6 +260,10 @@ import Testing
 
   private func isRed(_ sample: (red: Int, green: Int, blue: Int)) -> Bool {
     sample.red > sample.blue
+  }
+
+  private func isBlack(_ sample: (red: Int, green: Int, blue: Int)) -> Bool {
+    sample.red < 24 && sample.green < 24 && sample.blue < 24
   }
 
   /// The colour of one pixel of a rendered view, at one pixel per point.

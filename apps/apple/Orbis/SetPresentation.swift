@@ -34,6 +34,12 @@ enum SetPresentation {
     )
   }
 
+  /// The image a Set's own page draws across the width of the window: the largest the provider
+  /// offered, or the listing's when a service predates the second image.
+  static func pageArtwork(_ set: SavedSet) -> URL? {
+    (set.artworkLargeUrl ?? set.artworkUrl).flatMap(URL.init(string:))
+  }
+
   /// The fraction of the Set that has been heard, for the bar along its artwork. Nothing when
   /// the length is unknown, because a bar with no end would claim a place it cannot know.
   static func progress(of set: SavedSet) -> Double? {
@@ -83,6 +89,17 @@ enum SetPresentation {
       kept: kept
     )
     return state.isEmpty ? nil : state
+  }
+
+  /// What the row's artwork control does for a Set: nothing without Retained Audio, and for
+  /// the Set in the player, the change the control makes to it.
+  @MainActor
+  static func playback(
+    of set: SavedSet, currentSetId: String?, isPlaying: Bool
+  ) -> SetRow.Playback? {
+    guard set.downloadState == "ready" else { return nil }
+    guard set.id == currentSetId else { return .ready }
+    return isPlaying ? .playing : .paused
   }
 
   static func downloadLabel(_ downloadState: String) -> String? {

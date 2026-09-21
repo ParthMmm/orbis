@@ -12,17 +12,42 @@ final class SetPresentationTests: XCTestCase {
     createdAt: String = "2026-09-11T02:33:14.729Z",
     playbackPositionSeconds: Int = 0,
     durationSeconds: Int? = nil,
+    artworkUrl: String? = nil,
+    artworkLargeUrl: String? = nil,
     downloadState: String = "none"
   ) throws -> SavedSet {
     let json = """
       {"id":"one","url":"\(url)","title":"\(title)","source":"youtube","tags":\(tags),
-      "createdAt":"\(createdAt)","creator":null,"artworkUrl":null,"durationSeconds":\(durationSeconds.map(String.init) ?? "null"),
+      "createdAt":"\(createdAt)","creator":null,"artworkUrl":\(quoted(artworkUrl)),
+      "artworkLargeUrl":\(quoted(artworkLargeUrl)),"durationSeconds":\(durationSeconds.map(String.init) ?? "null"),
       "metadataState":"pending","titleEditedByUser":false,"downloadState":"\(downloadState)",
       "playlistIds":[],"retainedAudioBytes":null,"retainedAudioFormat":null,
       "playbackPositionSeconds":\(playbackPositionSeconds),"listenCount":0,"finishCount":0,
       "lastListenedAt":null}
       """
     return try JSONDecoder().decode(SavedSet.self, from: Data(json.utf8))
+  }
+
+  /// A JSON string, or null when the field is absent.
+  private func quoted(_ value: String?) -> String {
+    value.map { "\"\($0)\"" } ?? "null"
+  }
+
+  func testThePageDrawsTheLargestImageTheProviderOffered() throws {
+    XCTAssertEqual(
+      SetPresentation.pageArtwork(
+        try makeSet(
+          artworkUrl: "https://example.test/listing.jpg",
+          artworkLargeUrl: "https://example.test/large.jpg"
+        )
+      )?.absoluteString,
+      "https://example.test/large.jpg")
+    // A service that predates the second image sends one, and the page still has an image.
+    XCTAssertEqual(
+      SetPresentation.pageArtwork(try makeSet(artworkUrl: "https://example.test/listing.jpg"))?
+        .absoluteString,
+      "https://example.test/listing.jpg")
+    XCTAssertNil(SetPresentation.pageArtwork(try makeSet()))
   }
 
   func testRowCarriesIdentitySourceTagsAndDate() throws {
@@ -80,6 +105,19 @@ final class SetPresentationTests: XCTestCase {
     XCTAssertNil(downloadOnly.download, "kept audio is a symbol on the row, not a line of words")
     XCTAssertTrue(downloadOnly.kept)
     XCTAssertEqual(downloadOnly.label, "Audio kept")
+  }
+
+  /// The artwork's control exists only where there is Retained Audio, and for the Set in the
+  /// player it names the change it makes rather than the state it is in.
+  func testRowPlaybackFollowsRetainedAudioAndThePlayer() throws {
+    XCTAssertNil(
+      SetPresentation.playback(of: try makeSet(), currentSetId: "one", isPlaying: true),
+      "a Set without Retained Audio has nothing to play")
+    let kept = try makeSet(downloadState: "ready")
+    XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: nil, isPlaying: false), .ready)
+    XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "two", isPlaying: true), .ready)
+    XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "one", isPlaying: true), .playing)
+    XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "one", isPlaying: false), .paused)
   }
 
   func testDownloadLabelsCoverEveryServerState() {

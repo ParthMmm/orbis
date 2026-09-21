@@ -20,6 +20,7 @@ final class RevealTests: XCTestCase {
       createdAt: "2026-01-01T00:00:00.000Z",
       creator: "Ada Lovelace",
       artworkUrl: nil,
+      artworkLargeUrl: nil,
       durationSeconds: 5400,
       metadataState: metadataState,
       downloadState: "none",
