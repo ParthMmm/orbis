@@ -138,7 +138,11 @@ test("rendering the same source twice produces the same text", () => {
 test("every colour and radius reaches both generated files", () => {
   const tokens = loadTokens();
   const { css, swift } = render(tokens);
-  const colours = Object.keys(tokens.color.categoryText).length + 5;
+  const colours = Object.entries(tokens.color).reduce(
+    (count, [name, value]) =>
+      count + (name === "categoryText" ? Object.keys(value).length : 1),
+    0
+  );
   const base = css.slice(0, css.indexOf("@media"));
   assert.equal(swift.match(/static let /gu).length, colours);
   assert.equal(base.match(/--orbis-(?!radius-)/gu).length, colours);
@@ -151,8 +155,13 @@ test("every colour and radius reaches both generated files", () => {
 });
 
 test("every colour carries its increased-contrast value into both files", () => {
-  const { css, swift } = render(loadTokens());
-  const colours = Object.keys(loadTokens().color.categoryText).length + 5;
+  const tokens = loadTokens();
+  const { css, swift } = render(tokens);
+  const colours = Object.entries(tokens.color).reduce(
+    (count, [name, value]) =>
+      count + (name === "categoryText" ? Object.keys(value).length : 1),
+    0
+  );
   assert.equal(swift.match(/increasedContrastLight: P3\(/gu).length, colours);
   assert.equal(swift.match(/increasedContrastDark: P3\(/gu).length, colours);
   const increased = css.slice(css.indexOf("@media"));
