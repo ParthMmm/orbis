@@ -277,6 +277,8 @@ struct KeychainStore {
   }
 
   func delete() {
-    operations.delete(query: identity)
+    // Nothing to report: an item that was never there is already gone, which is the
+    // only other answer this call gives.
+    _ = operations.delete(query: identity)
   }
 }
