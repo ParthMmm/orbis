@@ -1,5 +1,6 @@
 {
   "$schema": "https://ui.shadcn.com/schema.json",
+  "preset": "b1VlIttI",
   "style": "base-luma",
   "rsc": false,
   "tsx": true,
