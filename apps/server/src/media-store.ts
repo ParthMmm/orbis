@@ -77,29 +77,30 @@ export class MediaStore extends Context.Service<
     const fileFor = (id: string, format: string) =>
       path.join(audioDir, `${id}.${format}`);
     const partialPath = (id: string) => path.join(audioDir, `${id}.part`);
-    const runCommand = Effect.fn("MediaStore.runCommand")(
-      function* runCommand(command: string, args: readonly string[]) {
-        const ran = yield* Effect.promise(() =>
-          (async () => {
-            const proc = Bun.spawn([command, ...args], {
-              stderr: "ignore",
-              stdout: "pipe",
-            });
-            const [output, code] = await Promise.all([
-              new Response(proc.stdout).text(),
-              proc.exited,
-            ]);
-            return { code, output };
-          })()
+    const runCommand = Effect.fn("MediaStore.runCommand")(function* runCommand(
+      command: string,
+      args: readonly string[]
+    ) {
+      const ran = yield* Effect.promise(() =>
+        (async () => {
+          const proc = Bun.spawn([command, ...args], {
+            stderr: "ignore",
+            stdout: "pipe",
+          });
+          const [output, code] = await Promise.all([
+            new Response(proc.stdout).text(),
+            proc.exited,
+          ]);
+          return { code, output };
+        })()
+      );
+      if (ran.code !== 0) {
+        return yield* Effect.fail(
+          downloadFailed("The downloaded audio could not be read.")
         );
-        if (ran.code !== 0) {
-          return yield* Effect.fail(
-            downloadFailed("The downloaded audio could not be read.")
-          );
-        }
-        return ran.output;
       }
-    );
+      return ran.output;
+    });
     const probe = Effect.fn("MediaStore.probe")(function* probe(
       filePath: string
     ) {
@@ -206,9 +207,7 @@ export class MediaStore extends Context.Service<
         }
         if (container === "mp3" || container === "ogg") {
           const format = container;
-          yield* Effect.promise(() =>
-            rename(tmpPath, fileFor(setId, format))
-          );
+          yield* Effect.promise(() => rename(tmpPath, fileFor(setId, format)));
           return {
             bytes: Bun.file(fileFor(setId, format)).size,
             durationSeconds,
