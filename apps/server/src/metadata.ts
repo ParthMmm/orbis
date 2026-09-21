@@ -6,6 +6,7 @@ import { youTubeVideoId } from "./source-url.js";
 
 export interface EnrichedMetadata {
   readonly artworkUrl: string | null;
+  readonly artworkLargeUrl: string | null;
   readonly creator: string | null;
   readonly durationSeconds: number | null;
   readonly title: string;
@@ -135,7 +136,9 @@ const YouTubeResponse = Schema.Struct({
         thumbnails: Schema.Struct({
           default: Schema.optionalKey(YouTubeThumbnail),
           high: Schema.optionalKey(YouTubeThumbnail),
+          maxres: Schema.optionalKey(YouTubeThumbnail),
           medium: Schema.optionalKey(YouTubeThumbnail),
+          standard: Schema.optionalKey(YouTubeThumbnail),
         }),
         title: Schema.String,
       }),
@@ -153,20 +156,34 @@ type YouTubeVideo = (typeof YouTubeResponse.Type)["items"][number];
 type YouTubeThumbnails = YouTubeVideo["snippet"]["thumbnails"];
 type SoundCloudOEmbed = typeof SoundCloudResponse.Type;
 
-const artworkFrom = (thumbnails: YouTubeThumbnails): string | null =>
+/** The image a listing draws: `medium` is 320x180, which is an 88-point row at 3x. */
+const listingArtworkFrom = (thumbnails: YouTubeThumbnails): string | null =>
+  thumbnails.medium?.url ??
+  thumbnails.high?.url ??
+  thumbnails.standard?.url ??
+  thumbnails.default?.url ??
+  null;
+
+/** The image a Set's own page draws: the sharpest the video has. */
+const pageArtworkFrom = (thumbnails: YouTubeThumbnails): string | null =>
+  thumbnails.maxres?.url ??
+  thumbnails.standard?.url ??
   thumbnails.high?.url ??
   thumbnails.medium?.url ??
   thumbnails.default?.url ??
   null;
 
 const youTubeMetadata = (video: YouTubeVideo): EnrichedMetadata => ({
-  artworkUrl: artworkFrom(video.snippet.thumbnails),
+  artworkLargeUrl: pageArtworkFrom(video.snippet.thumbnails),
+  artworkUrl: listingArtworkFrom(video.snippet.thumbnails),
   creator: video.snippet.channelTitle.trim() || null,
   durationSeconds: parseDurationSeconds(video.contentDetails.duration),
   title: video.snippet.title.trim(),
 });
 
+/** SoundCloud's oEmbed names one image and no size to ask for, so both places draw it. */
 const soundCloudMetadata = (track: SoundCloudOEmbed): EnrichedMetadata => ({
+  artworkLargeUrl: track.thumbnail_url ?? null,
   artworkUrl: track.thumbnail_url ?? null,
   creator: track.author_name?.trim() || null,
   durationSeconds: null,

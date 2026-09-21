@@ -29,7 +29,13 @@ export interface SavedSet {
   tags: string[];
   createdAt: string;
   creator: string | null;
+  /** The provider's image, sized for a listing row. */
   artworkUrl: string | null;
+  /**
+   * The same image at the largest size the provider offers, which only a Set's own page draws.
+   * Null when the provider offers nothing larger, and absent from a service that predates it.
+   */
+  artworkLargeUrl: string | null;
   durationSeconds: number | null;
   metadataState: MetadataState;
   titleEditedByUser: boolean;

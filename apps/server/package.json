@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun --watch src/index.ts",
+    "backfill:artwork": "bun src/backfill-artwork.ts",
     "build": "bun build src/index.ts --target=bun --packages=external --outdir=dist",
     "start": "bun dist/index.js",
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",

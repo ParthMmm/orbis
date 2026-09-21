@@ -332,6 +332,7 @@ export class Library extends Context.Service<
               const rows = yield* db
                 .update(sets)
                 .set({
+                  artworkLargeUrl: metadata.artworkLargeUrl,
                   artworkUrl: metadata.artworkUrl,
                   creator: metadata.creator,
                   durationSeconds: metadata.durationSeconds,

@@ -9,6 +9,8 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 export const sets = sqliteTable("sets", {
+  // Null on a Set enriched before this column existed; a client falls back to artwork_url.
+  artworkLargeUrl: text("artwork_large_url"),
   artworkUrl: text("artwork_url"),
   createdAt: text("created_at").notNull(),
   creator: text("creator"),

@@ -16,6 +16,7 @@ import { Metadata } from "./metadata.js";
 import { request } from "./test-http.js";
 
 const PROVIDER_RESULT: EnrichedMetadata = {
+  artworkLargeUrl: "https://example.test/artwork.jpg",
   artworkUrl: "https://example.test/artwork.jpg",
   creator: "Ada Lovelace",
   durationSeconds: 253,
@@ -63,6 +64,7 @@ test("fills title, creator, artwork, and duration from the provider when the sav
     );
     expect(saved.statusCode).toBe(201);
     expect(saved.json()).toEqual({
+      artworkLargeUrl: "https://example.test/artwork.jpg",
       artworkUrl: "https://example.test/artwork.jpg",
       createdAt: expect.any(String),
       creator: "Ada Lovelace",
@@ -140,6 +142,7 @@ test("records unknown creator, artwork, and duration after a failed enrichment",
       "https://soundcloud.com/artist/track"
     );
     expect(saved.json()).toMatchObject({
+      artworkLargeUrl: null,
       artworkUrl: null,
       creator: null,
       durationSeconds: null,
@@ -174,6 +177,7 @@ test("retry replaces the temporary title that no user edited", async () => {
     expect(retried.statusCode).toBe(200);
     expect(retried.json()).toEqual({
       ...saved.json(),
+      artworkLargeUrl: "https://example.test/artwork.jpg",
       artworkUrl: "https://example.test/artwork.jpg",
       creator: "Ada Lovelace",
       durationSeconds: 253,
@@ -212,6 +216,7 @@ test("retry keeps the title a user edited and fills the rest in", async () => {
     expect(retried.statusCode).toBe(200);
     expect(retried.json()).toEqual({
       ...edited.json(),
+      artworkLargeUrl: "https://example.test/artwork.jpg",
       artworkUrl: "https://example.test/artwork.jpg",
       creator: "Ada Lovelace",
       durationSeconds: 253,
@@ -308,7 +313,9 @@ const reasonFrom = (options: MetadataOptions, input: EnrichInput) =>
 interface Thumbnails {
   default?: { url: string };
   high?: { url: string };
+  maxres?: { url: string };
   medium?: { url: string };
+  standard?: { url: string };
 }
 
 const youTubeBody = (thumbnails: Thumbnails) => ({
@@ -322,6 +329,10 @@ const youTubeBody = (thumbnails: Thumbnails) => ({
       },
     },
   ],
+});
+
+const thumbnailURL = (name: string) => ({
+  url: `https://example.test/${name}.jpg`,
 });
 
 const YouTubeVideo = youTubeBody({
@@ -342,6 +353,7 @@ test("reads the documented YouTube Data API fields into metadata", async () => {
   );
 
   expect(metadata).toEqual({
+    artworkLargeUrl: "https://example.test/default.jpg",
     artworkUrl: "https://example.test/default.jpg",
     creator: "Ada Lovelace",
     durationSeconds: 253,
@@ -352,7 +364,7 @@ test("reads the documented YouTube Data API fields into metadata", async () => {
   ]);
 });
 
-test("prefers the high YouTube thumbnail, then medium, then default", async () => {
+test("fills the listing image and the page image from one payload", async () => {
   const artworkOf = async (thumbnails: Thumbnails) => {
     const metadata = await enrichWith(
       {
@@ -361,23 +373,66 @@ test("prefers the high YouTube thumbnail, then medium, then default", async () =
       },
       { source: "youtube", url: "https://www.youtube.com/watch?v=abcdefghijk" }
     );
-    return metadata.artworkUrl;
+    return [metadata.artworkUrl, metadata.artworkLargeUrl];
   };
 
-  expect(
-    await artworkOf({
-      default: { url: "https://example.test/default.jpg" },
-      high: { url: "https://example.test/high.jpg" },
-      medium: { url: "https://example.test/medium.jpg" },
-    })
-  ).toBe("https://example.test/high.jpg");
-  expect(
-    await artworkOf({
-      default: { url: "https://example.test/default.jpg" },
-      medium: { url: "https://example.test/medium.jpg" },
-    })
-  ).toBe("https://example.test/medium.jpg");
-  expect(await artworkOf({})).toBeNull();
+  // Each row offers one more image than the row above it. The listing image stays at the size a
+  // row draws, so it lands on `medium` as soon as there is one and never climbs higher; the page
+  // image takes the sharpest the video has.
+  const ladder: [Thumbnails, string, string][] = [
+    [
+      {
+        default: thumbnailURL("default"),
+        high: thumbnailURL("high"),
+        maxres: thumbnailURL("maxres"),
+        medium: thumbnailURL("medium"),
+        standard: thumbnailURL("standard"),
+      },
+      "medium",
+      "maxres",
+    ],
+    [
+      {
+        default: thumbnailURL("default"),
+        high: thumbnailURL("high"),
+        medium: thumbnailURL("medium"),
+        standard: thumbnailURL("standard"),
+      },
+      "medium",
+      "standard",
+    ],
+    [
+      {
+        default: thumbnailURL("default"),
+        high: thumbnailURL("high"),
+        medium: thumbnailURL("medium"),
+      },
+      "medium",
+      "high",
+    ],
+    [
+      { default: thumbnailURL("default"), high: thumbnailURL("high") },
+      "high",
+      "high",
+    ],
+    [
+      { default: thumbnailURL("default"), medium: thumbnailURL("medium") },
+      "medium",
+      "medium",
+    ],
+    [{ default: thumbnailURL("default") }, "default", "default"],
+  ];
+
+  const found = await Promise.all(
+    ladder.map(([thumbnails]) => artworkOf(thumbnails))
+  );
+  expect(found).toEqual(
+    ladder.map(([, listing, page]) => [
+      `https://example.test/${listing}.jpg`,
+      `https://example.test/${page}.jpg`,
+    ])
+  );
+  expect(await artworkOf({})).toEqual([null, null]);
 });
 
 test("reads SoundCloud oEmbed and leaves the duration unknown", async () => {
@@ -397,6 +452,7 @@ test("reads SoundCloud oEmbed and leaves the duration unknown", async () => {
   );
 
   expect(metadata).toEqual({
+    artworkLargeUrl: "https://example.test/hopper.jpg",
     artworkUrl: "https://example.test/hopper.jpg",
     creator: "Grace Hopper",
     durationSeconds: null,

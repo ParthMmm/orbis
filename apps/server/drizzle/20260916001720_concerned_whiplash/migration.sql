@@ -1,0 +1,1 @@
+ALTER TABLE `sets` ADD `artwork_large_url` text;

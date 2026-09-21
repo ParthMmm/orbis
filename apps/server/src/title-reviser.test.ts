@@ -14,6 +14,7 @@ import { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
 
 const PROVIDER_RESULT: EnrichedMetadata = {
+  artworkLargeUrl: "https://example.test/artwork.jpg",
   artworkUrl: "https://example.test/artwork.jpg",
   creator: "Ada Lovelace",
   durationSeconds: 253,

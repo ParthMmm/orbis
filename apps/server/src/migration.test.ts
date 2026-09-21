@@ -248,6 +248,7 @@ test("adds the membership index to a version-1 database without touching its dat
       expect(library.json()).toEqual({
         sets: [
           {
+            artworkLargeUrl: null,
             artworkUrl: null,
             createdAt: "2026-02-02T00:00:00.000Z",
             creator: null,
@@ -269,6 +270,7 @@ test("adds the membership index to a version-1 database without touching its dat
             url: "https://www.youtube.com/watch?v=fghijklmnop",
           },
           {
+            artworkLargeUrl: null,
             artworkUrl: null,
             createdAt: "2026-02-01T00:00:00.000Z",
             creator: "Kept Channel",
@@ -435,6 +437,7 @@ test("keeps title ownership after the membership index migration", async () => {
     const metadata = Metadata.layerOf({
       enrich: () =>
         Effect.succeed({
+          artworkLargeUrl: null,
           artworkUrl: null,
           creator: "Some Channel",
           durationSeconds: 120,
@@ -524,6 +527,7 @@ test("keeps sets and playlist membership saved before the extended columns exist
     expect(library.json()).toEqual({
       sets: [
         {
+          artworkLargeUrl: null,
           artworkUrl: null,
           createdAt: "2026-01-01T00:00:00.000Z",
           creator: null,
@@ -602,6 +606,7 @@ test("does not replace the title of a set saved before the column existed", asyn
     metadata: Metadata.layerOf({
       enrich: () =>
         Effect.succeed({
+          artworkLargeUrl: null,
           artworkUrl: null,
           creator: "Some Channel",
           durationSeconds: 120,
