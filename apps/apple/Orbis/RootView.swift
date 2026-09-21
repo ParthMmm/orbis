@@ -127,6 +127,8 @@ struct RootView: View {
   /// list scrolls.
   struct CompactShell: View {
     @Bindable var model: AppModel
+    /// Now Playing is a sheet over the whole shell, so it opens the same from any tab.
+    @State private var isNowPlayingShown = false
 
     var body: some View {
       TabView(selection: $model.destination) {
@@ -147,7 +149,10 @@ struct RootView: View {
       // `isEnabled` is why the target is iOS 26.1: 26.0 reserves an empty pill for an empty
       // accessory, and the only way round it there is to rebuild the tab view.
       .tabViewBottomAccessory(isEnabled: model.audioPlayer.currentSetId != nil) {
-        NowPlayingBar(model: model)
+        NowPlayingBar(model: model) { isNowPlayingShown = true }
+      }
+      .sheet(isPresented: $isNowPlayingShown) {
+        NowPlayingScreen(model: model)
       }
     }
   }
@@ -155,6 +160,8 @@ struct RootView: View {
   /// The mini player, fed from the audio player. The accessory placement supplies the glass.
   struct NowPlayingBar: View {
     @Bindable var model: AppModel
+    /// Opens Now Playing, which the shell presents.
+    let open: () -> Void
 
     var body: some View {
       let player = model.audioPlayer
@@ -168,13 +175,7 @@ struct RootView: View {
         toggle: {
           if player.state == .playing { player.pause() } else { player.resume() }
         },
-        open: {
-          if let id = player.currentSetId {
-            // Home and Library both open a Set in place; Search hands it to the Library.
-            if model.destination == .search { model.destination = .library }
-            model.openSet(id)
-          }
-        }
+        open: open
       )
     }
   }
@@ -317,7 +318,10 @@ struct DestinationView: View {
         rails: nil,
         footer: libraryFooter,
         retry: { await model.loadLibrary() },
-        select: { set in model.openSet(set.id) }
+        select: { set in model.openSet(set.id) },
+        currentSetId: model.audioPlayer.currentSetId,
+        isPlaying: model.audioPlayer.state == .playing,
+        togglePlayback: { set in model.togglePlayback(set.id) }
       )
       .navigationTitle("Library")
       // Pinned rather than left to the default, so the large title stays large whatever the
@@ -353,8 +357,7 @@ struct DestinationView: View {
       }
     case .search:
       SearchDestination(model: model)
-        // The one open Set is shared with the Library, so a Set found here opens the same
-        // page, and the mini player's action keeps routing to the Library.
+        // The one open Set is shared with the Library, so a Set found here opens the same page.
         .navigationDestination(item: $model.openedSetId) { id in
           SetDetailScreen(model: model, setId: id)
         }
@@ -426,7 +429,7 @@ struct DestinationView: View {
   /// wants when a list looks short.
   private var libraryFooter: String {
     let total = model.totalCount
-    guard let activeTag = model.activeTag else {
+    guard model.activeTag != nil else {
       return total == 1 ? "1 set" : "\(total) sets"
     }
     let visible = model.visibleCount
@@ -758,7 +761,10 @@ struct SearchDestination: View {
       retry: { await model.runSearch() },
       listIdentifier: "search-list",
       // A result is something to open, which is the whole reason to search.
-      select: { set in model.openSet(set.id) }
+      select: { set in model.openSet(set.id) },
+      currentSetId: model.audioPlayer.currentSetId,
+      isPlaying: model.audioPlayer.state == .playing,
+      togglePlayback: { set in model.togglePlayback(set.id) }
     )
   }
 

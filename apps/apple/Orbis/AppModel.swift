@@ -565,6 +565,20 @@ final class AppModel {
     audioPlayer.play(set: set, baseURL: client.address, token: client.token)
   }
 
+  /// What a row's artwork control does: pauses or resumes the Set in the player, and starts
+  /// any other. One entry point, so a row never has to know which it is pressing.
+  func togglePlayback(_ id: String) {
+    guard audioPlayer.currentSetId == id else {
+      playAudio(id)
+      return
+    }
+    if audioPlayer.state == .playing {
+      audioPlayer.pause()
+    } else {
+      audioPlayer.resume()
+    }
+  }
+
   /// Closes the reveal, leaving nothing behind when the person filed the Set and walked away.
   func closeReveal(with set: SavedSet? = nil) {
     guard let closed = set ?? reveal?.set else {

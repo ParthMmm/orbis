@@ -134,10 +134,11 @@ final class AudioPlayer {
   /// The image the provider offered, as the system wants it: a handler that returns the same
   /// image at any size, since the provider gives one size and the system scales it.
   ///
-  /// YouTube's listing thumbnail is a 4:3 frame with the 16:9 picture letterboxed inside it, so
-  /// an image taller than 16:9 is cropped to the middle band first; otherwise the lock screen
-  /// shows the provider's black bars as if they were the picture.
-  static func artwork(from data: Data) -> MPMediaItemArtwork? {
+  /// Nonisolated, and it has to be. The system calls the handler on its own Now Playing queue
+  /// whenever it wants the image at a new size, so a handler built on the main actor traps the
+  /// moment it is asked. Nothing in here touches the main actor: the image is already decoded
+  /// and the handler only hands back what it captured.
+  nonisolated static func artwork(from data: Data) -> MPMediaItemArtwork? {
     #if os(macOS)
       guard let source = NSImage(data: data),
         let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -154,7 +155,7 @@ final class AudioPlayer {
 
   /// The middle 16:9 band of an image that is taller than 16:9; an image that is already as
   /// wide, or wider, is returned as it is.
-  static func widescreen(_ image: CGImage) -> CGImage {
+  nonisolated static func widescreen(_ image: CGImage) -> CGImage {
     let width = image.width
     let height = image.height
     let target = width * 9 / 16

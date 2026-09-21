@@ -36,6 +36,13 @@ struct SetList: View {
   /// A screen that opens a Set puts its action here, so a row knows it can be pressed and a
   /// screen that only reads does not pretend otherwise.
   var select: ((SavedSet) -> Void)?
+  /// The Set in the player and whether it is playing, so its row is marked and its control
+  /// says the change it makes. Plain values, not the player, so the list redraws on a change
+  /// of Set or of state and never on the clock.
+  var currentSetId: String?
+  var isPlaying = false
+  /// Starts, pauses, or resumes a Set from its row. Absent on a screen that only reads.
+  var togglePlayback: ((SavedSet) -> Void)?
 
   @Environment(\.openURL) private var openURL
 
@@ -130,36 +137,10 @@ struct SetList: View {
           ForEach(Self.days(of: sets), id: \.day) { group in
             ListingHeader(group.day)
             ForEach(Array(group.sets.enumerated()), id: \.element.id) { index, set in
-              let model = SetPresentation.row(set, activeTag: activeTag)
-              let row = SetRow(
-                title: model.title,
-                source: model.source,
-                artwork: model.artwork,
-                creator: model.creator,
-                length: model.length,
-                tags: model.tags,
-                activeTag: activeTag,
-                state: model.state,
-                progress: model.progress
-              )
-              .contentShape(.rect)
-              .accessibilityIdentifier("set-row-\(set.id)")
-              .contextMenu {
-                Button("Open Source") { open(set) }
-              }
               if index > 0 {
                 Divider()
               }
-              if let select {
-                Button {
-                  select(set)
-                } label: {
-                  row
-                }
-                .buttonStyle(.plain)
-              } else {
-                row
-              }
+              row(set)
             }
           }
         }
@@ -168,6 +149,39 @@ struct SetList: View {
     }
     .scrollEdgeEffectStyle(.soft, for: .top)
     .accessibilityIdentifier(listIdentifier)
+  }
+
+  /// One Set. The row owns both of its targets: the artwork plays and the rest opens. The
+  /// long-press menu repeats both, and adds the Source Link, for anyone who reaches for it.
+  private func row(_ set: SavedSet) -> some View {
+    let model = SetPresentation.row(set, activeTag: activeTag)
+    let playback = SetPresentation.playback(
+      of: set, currentSetId: currentSetId, isPlaying: isPlaying)
+    return SetRow(
+      title: model.title,
+      source: model.source,
+      artwork: model.artwork,
+      creator: model.creator,
+      length: model.length,
+      tags: model.tags,
+      activeTag: activeTag,
+      state: model.state,
+      progress: model.progress,
+      playback: playback,
+      togglePlayback: togglePlayback.map { toggle in { toggle(set) } },
+      select: select.map { select in { select(set) } }
+    )
+    .accessibilityIdentifier("set-row-\(set.id)")
+    .contextMenu {
+      if let playback, let togglePlayback {
+        Button(playback.label, systemImage: playback.symbol) { togglePlayback(set) }
+      }
+      // "Open" is the Source Link's word on this page, so the page itself is "Details".
+      if let select {
+        Button("Details", systemImage: "info.circle") { select(set) }
+      }
+      Button("Open Source", systemImage: "safari") { open(set) }
+    }
   }
 
   /// The Sets in the order given, grouped under the day each was filed.
