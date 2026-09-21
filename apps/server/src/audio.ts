@@ -59,7 +59,10 @@ export class Audio extends Context.Service<
               return yield* Effect.fail(unconfigured());
             }
             const current = yield* library.find(id);
-            if (current.downloadState !== "none") {
+            const retriable = ["none", "failed", "canceled"].includes(
+              current.downloadState
+            );
+            if (!retriable) {
               yield* Effect.logInfo("audio download already have").pipe(
                 Effect.annotateLogs({ set: id, state: current.downloadState })
               );
@@ -68,7 +71,10 @@ export class Audio extends Context.Service<
             const queued = yield* library.queueDownload(id);
             yield* worker.wake();
             yield* Effect.logInfo("audio download queued").pipe(
-              Effect.annotateLogs({ set: id })
+              Effect.annotateLogs({
+                set: id,
+                from: current.downloadState,
+              })
             );
             return { accepted: true, set: queued };
           }

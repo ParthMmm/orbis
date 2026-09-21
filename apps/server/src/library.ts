@@ -5,7 +5,7 @@ import type {
   SaveSetInput,
   SetSource,
 } from "@orbis/contracts";
-import { and, asc, desc, eq, ne, notInArray, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { Database } from "./db/database.js";
@@ -396,8 +396,9 @@ export class Library extends Context.Service<
         )
       );
 
-      // A download request never disturbs finished or running work: only a set with
-      // no download yet enters the queue. Every stored set comes from a source Cobalt
+      // A download request never disturbs finished or running work. A Set with no
+      // download, or one that failed or was canceled, enters the queue; ready and
+      // in-flight states stay put. Every stored set comes from a source Cobalt
       // handles, so the worker's verdict — not a source check here — decides the rest.
       const queueDownload = Effect.fn("Library.queueDownload")((id: string) =>
         execute(
@@ -405,7 +406,12 @@ export class Library extends Context.Service<
             const [queued] = yield* db
               .update(sets)
               .set({ downloadState: "queued" })
-              .where(and(eq(sets.id, id), eq(sets.downloadState, "none")))
+              .where(
+                and(
+                  eq(sets.id, id),
+                  inArray(sets.downloadState, ["none", "failed", "canceled"])
+                )
+              )
               .returning();
             if (queued) {
               return yield* hydrateSet(queued);

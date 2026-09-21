@@ -454,6 +454,38 @@ test("device ingress without a token is rejected on every audio route", async ()
   }
 });
 
+test("retrying a failed download queues it again", async () => {
+  let attempts = 0;
+  const { app, cleanup } = await setUp({
+    cobalt: () => {
+      attempts += 1;
+      if (attempts === 1) {
+        return Response.json({ status: "error", error: "fetch.fail" });
+      }
+      return Response.json({ status: "tunnel", url: "http://cdn.test/a" });
+    },
+    tunnel: tunnelOk(new Uint8Array([1, 2, 3, 4])),
+  });
+  try {
+    const id = await seedSet(app);
+    await request(app, { method: "POST", url: `/sets/${id}/audio/download` });
+    await waitForState(app, id, ["failed"]);
+    const retry = await request(app, {
+      method: "POST",
+      url: `/sets/${id}/audio/download`,
+    });
+    expect(retry.statusCode).toBe(202);
+    expect(retry.json().downloadState).toBe("queued");
+    if (haveFfmpeg) {
+      // Without ffmpeg the fixture may fail again after remux; the queue step is the
+      // contract under test here.
+      await waitForState(app, id, ["ready", "failed"]);
+    }
+  } finally {
+    await cleanup();
+  }
+});
+
 test("audio for a set that never downloaded is a 404", async () => {
   const { app, cleanup } = await setUp({
     cobalt: () => new Response("{}", { status: 500 }),
