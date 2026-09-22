@@ -15,7 +15,9 @@ The masters live outside the repository. They are named and hashed here so a lat
 
 ## The icon
 
-`Orbis/Assets.xcassets/AppIcon.appiconset`. The square render is scaled to the renditions the catalog asks for, tagged sRGB, and never cropped: the orb keeps the margin the render gave it, which puts it inside the rounded-rectangle mask Apple applies.
+`apps/apple/Orbis/orbis.icon` is the icon the app ships. Icon Composer owns it, and the target's App Icon name is `orbis`. The flattened appearances it exported are in `docs/design/orbis-icon/`.
+
+`Orbis/Assets.xcassets/AppIcon.appiconset` is the earlier square render, scaled to the renditions the catalog asks for, tagged sRGB, and never cropped. The orb keeps the margin the render gave it, which puts it inside the rounded-rectangle mask Apple applies. The app no longer reads this set.
 
 - iOS takes one 1024 rendition, `ios-1024.png`, and derives the rest.
 - macOS takes the classic set, `mac-16.png` through `mac-1024.png`. A single-size entry with `"platform": "macos"` is **rejected** by `actool` in Xcode 26 — no icon is compiled and the partial `Info.plist` comes back empty — so macOS is spelled out size by size.
