@@ -77,6 +77,12 @@ Stop before the restart when the runtime preflight, the frozen install, or the c
 
 Record the old and new `InvocationID`, the active status, the Bun version, and the expected HTTP status codes. In a plan-only or repository-only execution, record `live rollout not performed` instead of claiming the new process is live.
 
+## A contract change ships with the service
+
+A change to a field the apps decode is one change with the deploy of this service. Do not ship an app release that requires a new field, or that stops accepting an old one, until this unit is restarted on Vanta and the invocation check above shows the new process. Write `live rollout not performed` on the change when that restart did not happen.
+
+The apps keep reading a library when a newer optional field is missing, so an old service does not look like a dead network. A response the app cannot decode is the Apple client's `malformed` failure, which names a mismatch between the app and the service.
+
 ## Enrol a device
 
 Run this in the checkout with the same `ORBIS_DATA_DIR` the service uses. It prints the token once.
@@ -102,7 +108,7 @@ The Serve rule must read `tailnet only` and must target the device port 4311. Th
 
 **Port 443 is not available on this host.** Caddy runs as a container bound directly to the tailnet address on `443`, so `tailscale serve` cannot bind there. The failure is silent. `tailscale serve` prints `Serve started and running in the background`, and then `tailscale serve status` does not list the rule at all, because Tailscale drops a mapping it cannot bind. A client that asks for the bare hostname therefore reaches whatever Caddy is serving and gets that application's HTML, not a connection error and not a 403.
 
-Orbis is therefore served at `https://vanta.tail01d084.ts.net:8444`, and a client must be given that address with the port. Resolving the `443` conflict is the host owner's decision and is not needed for Orbis to work.
+Orbis stays at `https://vanta.tail01d084.ts.net:8444`. A client must be given that address with the port. Port 443 stays with Caddy. Jellyfin's Funnel stays on `8443`.
 
 ## Cut over Serve to the device listener
 

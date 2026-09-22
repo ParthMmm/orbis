@@ -35,12 +35,50 @@ final class PlaylistUITests: XCTestCase {
     token.tap()
     token.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_TOKEN"] ?? "")
     app.buttons["connection-test"].tap()
+    dismissCredentialOffer(in: app)
+  }
+
+  /// Declines the system's offer to save the typed token. The sheet belongs to SpringBoard,
+  /// so it is absent from this app's tree and swallows the next tap.
+  private func dismissCredentialOffer(in app: XCUIApplication) {
+    let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+    let candidates = [
+      springboard.buttons["Not Now"].firstMatch,
+      app.buttons["Not Now"].firstMatch,
+    ]
+    let deadline = Date().addingTimeInterval(6)
+    while Date() < deadline {
+      for candidate in candidates where candidate.exists {
+        candidate.tap()
+        return
+      }
+      usleep(250_000)
+    }
+  }
+
+  /// Same symbol tap as `LibraryUITests.selectTab`.
+  private func selectTab(_ name: String, in app: XCUIApplication) {
+    let tab = app.tabBars.buttons[name]
+    XCTAssertTrue(tab.waitForExistence(timeout: 8), "\(name) must be a tab\n\(app.debugDescription)")
+    let deadline = Date().addingTimeInterval(12)
+    while Date() < deadline {
+      if app.navigationBars[name].exists { return }
+      let frame = tab.frame
+      guard frame.width > 40, frame.minY > 600 else {
+        usleep(200_000)
+        continue
+      }
+      app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+        .withOffset(CGVector(dx: frame.midX, dy: frame.minY + 18))
+        .tap()
+      if app.navigationBars[name].waitForExistence(timeout: 2) { return }
+    }
+    XCTFail("\(name) must open from its tab\n\(app.debugDescription)")
   }
 
   private func openPlaylists(in app: XCUIApplication) {
-    let tab = app.tabBars.buttons["Playlists"]
-    if tab.waitForExistence(timeout: 8) {
-      tab.tap()
+    if app.tabBars.buttons["Playlists"].waitForExistence(timeout: 8) {
+      selectTab("Playlists", in: app)
       return
     }
     let sidebar = app.buttons["sidebar-playlists"]
@@ -56,7 +94,12 @@ final class PlaylistUITests: XCTestCase {
     connect(app)
 
     openPlaylists(in: app)
-    app.buttons["playlist-create"].tap()
+    let create = app.buttons["playlist-create"]
+    XCTAssertTrue(
+      create.waitForExistence(timeout: 15),
+      "Playlists must offer a way to create one\n\(app.debugDescription)"
+    )
+    create.tap()
     let nameField = app.textFields["playlist-name"]
     XCTAssertTrue(
       nameField.waitForExistence(timeout: 15),
@@ -72,26 +115,27 @@ final class PlaylistUITests: XCTestCase {
       "a new playlist must open for membership\n\(app.debugDescription)"
     )
     app.buttons["playlist-add-sets"].tap()
+    // playlist-add-sets is the toolbar button that opened this sheet. The row that adds one
+    // Set is playlist-add-<id>, and firstMatch would otherwise press the toolbar again.
     let add = app.buttons.matching(
-      NSPredicate(format: "identifier BEGINSWITH %@", "playlist-add-")
+      NSPredicate(
+        format: "identifier BEGINSWITH %@ AND identifier != %@", "playlist-add-", "playlist-add-sets")
     ).firstMatch
     XCTAssertTrue(
       add.waitForExistence(timeout: 30),
       "the library must offer Sets to add\n\(app.debugDescription)"
     )
+    let title = add.label
     add.tap()
 
+    let member = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "identifier BEGINSWITH %@", "playlist-member-")).firstMatch
     XCTAssertTrue(
-      app.descendants(matching: .any)
-        .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
-        .waitForExistence(timeout: 30),
+      member.waitForExistence(timeout: 30),
       "the added Set must appear in playlist order\n\(app.debugDescription)"
     )
     capture("playlist-add-sets")
 
-    let member = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "identifier BEGINSWITH %@", "playlist-member-")).firstMatch
-    XCTAssertTrue(member.exists)
     member.swipeLeft()
     let remove = app.buttons.matching(
       NSPredicate(format: "identifier BEGINSWITH %@", "playlist-remove-")
@@ -109,15 +153,14 @@ final class PlaylistUITests: XCTestCase {
     capture("playlist-removal-preserves-set")
 
     app.buttons["playlist-back"].tap()
-    let libraryTab = app.tabBars.buttons["Library"]
-    if libraryTab.waitForExistence(timeout: 5) {
-      libraryTab.tap()
+    if app.tabBars.buttons["Library"].waitForExistence(timeout: 5) {
+      selectTab("Library", in: app)
     } else {
       app.buttons["sidebar-library"].tap()
     }
     XCTAssertTrue(
       app.descendants(matching: .any)
-        .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
+        .matching(NSPredicate(format: "label CONTAINS %@", title)).firstMatch
         .waitForExistence(timeout: 30),
       "the Set must remain in the Library after playlist removal\n\(app.debugDescription)"
     )

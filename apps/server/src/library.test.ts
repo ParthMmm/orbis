@@ -604,6 +604,25 @@ test("saves a set with tags and reads it after the server restarts", async () =>
   }
 });
 
+test("saves a set from a url alone", async () => {
+  const app = createApp();
+  try {
+    const saved = await request(app, {
+      method: "POST",
+      payload: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
+      url: "/sets",
+    });
+    expect(saved.statusCode).toBe(201);
+    expect(saved.json()).toMatchObject({
+      source: "youtube",
+      tags: [],
+      url: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
+  } finally {
+    await app.dispose();
+  }
+});
+
 test("saves SoundCloud links and rejects invalid input without changing the library", async () => {
   const app = createApp();
   try {

@@ -54,7 +54,7 @@ const Filters = Schema.Struct({
   tags: Tags,
 });
 const SaveInput = Schema.Struct({
-  tags: Tags,
+  tags: Schema.optionalKey(Tags),
   title: Schema.optionalKey(Title),
   url: Schema.String.check(Schema.isMaxLength(2048)),
 });
@@ -312,7 +312,7 @@ export const createApp = (
           Effect.gen(function* saveSet() {
             const input = yield* HttpServerRequest.schemaBodyJson(SaveInput);
             const saved = yield* library.save({
-              tags: [...input.tags],
+              tags: [...(input.tags ?? [])],
               title: input.title ?? "",
               url: input.url,
             });

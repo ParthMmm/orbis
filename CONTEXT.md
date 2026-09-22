@@ -41,8 +41,8 @@ The complete collection of Sets saved by one person.
 _Avoid_: Catalog, collection
 
 **Playlist**:
-A named, ordered selection of Sets from the Library.
-_Avoid_: Folder
+A named, ordered selection of Sets from the Library. The word on screen is Playlist.
+_Avoid_: Folder, Crate
 
 **Listening Queue**:
 The temporary ordered sequence of Sets scheduled for playback.

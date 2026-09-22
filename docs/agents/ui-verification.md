@@ -108,7 +108,13 @@ What no journey asserts yet is geometry: with a Set playing, that the transport'
 
 ## A tap XCUITest cannot compute
 
-XCUITest sometimes cannot turn an element into a tap. It reports `Computed hit point {-1, -1} after scrolling to visible`, which reads like a layout defect and is not one: the same element reports `hittable` in the accessibility tree, and a tap at the centre of its own frame works. The Library's scroll view is where it happens — the paste field and a state's action button are the two observed cases.
+XCUITest sometimes cannot turn an element into a tap. It reports `Computed hit point {-1, -1} after scrolling to visible`, which reads like a layout defect and is not one: the same element reports a real frame, and a tap at the centre of that frame, taken from the window, works. The element's own coordinate space does not.
+
+Measured 2026-09-21 on Orbis Lanes. The Playlists tab was `Button {{206.3, 795.0}, {100.7, 54.0}}` inside `TabBar {{0.0, 791.0}, {402.0, 83.0}}`, and `tap()` reported `{-1, -1}`. The same miss hits the paste field, a filter pill, and a row. `tapAtCentre(of:in:)` is that window-coordinate tap.
+
+Home is the first tab after pairing. The centre of a tab button's frame sometimes hits the scroll view under the floating bar and leaves Home selected. The symbol, about 18 points below the top of the frame, selects Library and Playlists. The list has no "Everything" heading: the large title says Library, and an active filter is named on the pill.
+
+Three `--journeys` runs on Orbis Lanes (`F26942CA-EAA9-46A9-BAC7-FEEB6560133D`) passed in a row on 2026-09-21, nine tests each. The tree was `737f99e` plus the uncommitted journey edits. The app binary was `2327e34c043726aa972fcb2096ead3809869abf74e726996dcc7a60061ef7a21`.
 
 Check the claim before filing it. `get attrs` on the element gives the frame, the accessibility tree gives `hittable`, and a tap at that frame's centre is the third measurement. All three tools are in `orbis-verify` and `agent-device`.
 
@@ -120,8 +126,6 @@ Two habits that avoid the other class of error:
 
 - **Install the build before driving it.** `orbis-verify doctor` reports an installed build that differs from the build on disk, and driving a stale install reproduces yesterday's behaviour against today's code. A run on 2026-09-15 read the pre-change empty state for half an hour because `orbis-verify build` had run without `orbis-verify launch`.
 - **Check which simulator is booted.** Several simulators share the name `iPhone 17 Pro`, across runtimes. A device that is shut down and replaced by another of the same name inside one session changes what is installed where.
-
-## A stale read is not a measurement
 
 ## A stale read is not a measurement
 

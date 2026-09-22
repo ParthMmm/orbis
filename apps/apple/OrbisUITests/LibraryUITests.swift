@@ -73,6 +73,42 @@ final class LibraryUITests: XCTestCase {
     return nil
   }
 
+  /// Home is the first tab after pairing. The Library list, its filter, and File a set live on
+  /// the Library tab, so a journey that wants them has to select it.
+  private func openLibrary(in app: XCUIApplication) {
+    selectTab("Library", in: app, sidebarIdentifier: "sidebar-library")
+  }
+
+  /// Taps the tab's symbol, then waits until that tab's navigation bar is showing. The centre
+  /// of the button's frame falls on the list under the floating bar, so the previous tab stays
+  /// selected. `tap()` on the button itself reports a hit point of `{-1, -1}`.
+  private func selectTab(_ name: String, in app: XCUIApplication, sidebarIdentifier: String) {
+    let tab = app.tabBars.buttons[name]
+    if tab.waitForExistence(timeout: 8) {
+      let deadline = Date().addingTimeInterval(12)
+      while Date() < deadline {
+        if app.navigationBars[name].exists { return }
+        let frame = tab.frame
+        guard frame.width > 40, frame.minY > 600 else {
+          usleep(200_000)
+          continue
+        }
+        app.windows.firstMatch.coordinate(withNormalizedOffset: .zero)
+          .withOffset(CGVector(dx: frame.midX, dy: frame.minY + 18))
+          .tap()
+        if app.navigationBars[name].waitForExistence(timeout: 2) { return }
+      }
+      XCTFail("\(name) must open from its tab\n\(app.debugDescription)")
+      return
+    }
+    let sidebar = app.buttons[sidebarIdentifier]
+    XCTAssertTrue(
+      sidebar.waitForExistence(timeout: 15),
+      "\(name) must be reachable from a tab bar or the sidebar\n\(app.debugDescription)"
+    )
+    sidebar.tap()
+  }
+
   /// The prompt the field shows while it is empty. XCUITest reports it as the field's value.
   private static let searchPrompt = "Title, tag, or source link"
 
@@ -133,6 +169,7 @@ final class LibraryUITests: XCTestCase {
     )
     capture("01-connection")
     connect(app)
+    openLibrary(in: app)
 
     let row = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
@@ -200,6 +237,7 @@ final class LibraryUITests: XCTestCase {
   func testFilingALinkOpensTheNamingStep() throws {
     let app = try launch()
     connect(app)
+    openLibrary(in: app)
 
     // Filing lives in a sheet behind the toolbar's +, so the Library stays the collection.
     let file = app.buttons["library-file"]
@@ -246,6 +284,7 @@ final class LibraryUITests: XCTestCase {
   func testOpensASetRenamesItAndRemovesIt() throws {
     let app = try launch()
     connect(app)
+    openLibrary(in: app)
 
     let row = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
@@ -253,7 +292,7 @@ final class LibraryUITests: XCTestCase {
       row.waitForExistence(timeout: 60),
       "a saved Set must appear after connecting\n\(app.debugDescription)"
     )
-    row.tap()
+    tapAtCentre(of: row, in: app)
 
     let title = app.staticTexts["detail-title"]
     XCTAssertTrue(
@@ -328,30 +367,37 @@ final class LibraryUITests: XCTestCase {
   func testFiltersTheLibraryByTag() throws {
     let app = try launch()
     connect(app)
+    openLibrary(in: app)
 
     let pill = app.descendants(matching: .any)["tag-filter-techno"]
     XCTAssertTrue(
       pill.waitForExistence(timeout: 60),
       "the tag filter must appear above the rows\n\(app.debugDescription)")
-    XCTAssertTrue(app.staticTexts["Everything"].exists, "the Library must open unfiltered")
+    XCTAssertFalse(
+      pill.label.contains("active filter"),
+      "the Library must open unfiltered\n\(app.debugDescription)")
 
     tapAtCentre(of: pill, in: app)
+    let hidden = app.descendants(matching: .any)
+      .matching(NSPredicate(format: "label CONTAINS %@", "outside this filter")).firstMatch
     XCTAssertTrue(
-      app.staticTexts["Everything / techno"].waitForExistence(timeout: 20),
+      hidden.waitForExistence(timeout: 20),
       "pressing the pill must turn the filter on\n\(app.debugDescription)")
+    let active = app.descendants(matching: .any)["tag-filter-techno"]
     XCTAssertTrue(
-      app.descendants(matching: .any)
-        .matching(NSPredicate(format: "label CONTAINS %@", "outside this filter")).firstMatch
-        .exists,
-      "a filtered Library must report what it hides")
+      active.label.contains("active filter"),
+      "the active filter is named on the pill\n\(app.debugDescription)")
     capture("06-library-filtered")
 
-    tapAtCentre(of: pill, in: app)
+    tapAtCentre(of: active, in: app)
+    let inactive = app.descendants(matching: .any)
+      .matching(identifier: "tag-filter-techno")
+      .matching(NSPredicate(format: "NOT (label CONTAINS %@)", "active filter"))
+      .firstMatch
     XCTAssertTrue(
-      app.staticTexts["Everything"].waitForExistence(timeout: 20),
+      inactive.waitForExistence(timeout: 20),
       "pressing the same pill must clear the filter\n\(app.debugDescription)")
-    XCTAssertFalse(
-      app.staticTexts["Everything / techno"].exists, "the heading must stop naming the filter")
+    XCTAssertFalse(hidden.exists, "a cleared filter must stop reporting what it hides")
   }
 
   /// A Set found by search is the reason to search, so the result has to open. The Library row
@@ -374,7 +420,7 @@ final class LibraryUITests: XCTestCase {
     XCTAssertTrue(
       result.waitForExistence(timeout: 30),
       "search must list the Set it found\n\(app.debugDescription)")
-    result.tap()
+    tapAtCentre(of: result, in: app)
 
     let title = app.staticTexts["detail-title"].firstMatch
     XCTAssertTrue(
@@ -434,12 +480,10 @@ final class LibraryUITests: XCTestCase {
   func testAFilterThatAdmitsNothingIsNotAnEmptyLibrary() throws {
     let app = try launch(filteringBy: "hardgroove")
     connect(app)
+    openLibrary(in: app)
 
     XCTAssertTrue(
-      app.staticTexts["Everything / hardgroove"].waitForExistence(timeout: 60),
-      "the screen must name the filter it is showing\n\(app.debugDescription)")
-    XCTAssertTrue(
-      noResults(in: app).exists,
+      noResults(in: app).waitForExistence(timeout: 60),
       "a filter that hides every Set must say so\n\(app.debugDescription)")
     XCTAssertFalse(
       app.staticTexts["Start your collection"].exists,

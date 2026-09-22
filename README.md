@@ -61,7 +61,7 @@ Desktop builds package the current host platform into `apps/desktop/out/`. Signi
 | Method | Route | Purpose |
 | --- | --- | --- |
 | GET | `/health` | Health status |
-| POST | `/sets` | Save `{ url, title, tags }` |
+| POST | `/sets` | Save `{ url }`. `title` and `tags` are optional. A missing `tags` is an empty list. |
 | GET | `/sets` | List newest first; optional `q`, `source`, `playlistId`, repeated `tag` parameters |
 | PATCH | `/sets/:id/title` | Replace title with `{ title }` |
 | PATCH | `/sets/:id/tags` | Replace tags with `{ tags }` |

@@ -195,7 +195,7 @@ struct PlaylistDetailView: View {
       }
     }
     .navigationTitle(playlist.name)
-    .toolbarTitleDisplayMode(.large)
+    .largeTitleOnIOS()
     .toolbar {
       ToolbarItem(placement: .cancellationAction) {
         Button {
