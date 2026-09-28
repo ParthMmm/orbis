@@ -55,8 +55,14 @@ struct SetDetailScreen: View {
 
   /// Download, progress, and playback for this Set. Each state shows exactly one
   /// control, so a Set that is downloading cannot also offer to play.
-  @ViewBuilder
   private func audioSection(_ set: SavedSet) -> some View {
+    // When the audio arrives the capsule grows into the player rather than being swapped for it.
+    Group { audioControl(set) }
+      .orbisAnimation(.downloadProgressed, value: set.downloadState == "ready")
+  }
+
+  @ViewBuilder
+  private func audioControl(_ set: SavedSet) -> some View {
     switch set.downloadState {
     case "ready":
       VStack(spacing: 8) {
@@ -76,6 +82,7 @@ struct SetDetailScreen: View {
             .accessibilityIdentifier("detail-queue-notice")
         }
       }
+      .transition(.opacity.combined(with: .scale(0.96, anchor: .top)))
     default:
       DownloadCapsule(
         phase: downloadPhase(set),
@@ -83,6 +90,7 @@ struct SetDetailScreen: View {
         cancel: { Task { await model.cancelAudioDownload(set.id) } }
       )
       .frame(maxWidth: .infinity)
+      .transition(.opacity.combined(with: .scale(0.96, anchor: .top)))
     }
   }
 

@@ -813,7 +813,7 @@ struct HomeRails: View {
         .background { ArtworkBackdrop(url: SetPresentation.row(set).artwork, style: .card) }
         .clipShape(.rect(cornerRadius: Radius.list))
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.orbisPressable)
       .accessibilityElement(children: .ignore)
       .accessibilityLabel([set.title, SetPresentation.timeLeft(set)].compactMap { $0 }.joined(separator: ", "))
       .accessibilityIdentifier("continue-card-\(set.id)")
@@ -879,7 +879,7 @@ struct HomeRails: View {
         // artwork carries the row radius where the listing keeps its corners square.
         .clipShape(.rect(cornerRadius: Radius.row))
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.orbisPressable)
       .accessibilityIdentifier("recent-card-\(set.id)")
     }
   }
@@ -912,7 +912,7 @@ struct HomeRails: View {
             in: .rect(cornerRadius: Radius.row)
           )
       }
-      .buttonStyle(.plain)
+      .buttonStyle(.orbisPressable)
       .accessibilityIdentifier("playlist-card-\(playlist.id)")
     }
   }
