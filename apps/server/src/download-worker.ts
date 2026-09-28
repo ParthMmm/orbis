@@ -1,7 +1,7 @@
 import { rm } from "node:fs/promises";
 
 import type { SavedSet } from "@orbis/contracts";
-import { Context, Effect, Layer, Queue, Stream } from "effect";
+import { Cause, Context, Effect, Exit, Layer, Queue, Stream } from "effect";
 
 import { Cobalt } from "./cobalt.js";
 import { LibraryError } from "./errors.js";
@@ -110,23 +110,26 @@ export class DownloadWorker extends Context.Service<
             yield* Effect.logInfo("audio download claimed").pipe(
               Effect.annotateLogs({ set: claimed.id, source: claimed.source })
             );
-            yield* Effect.matchEffect(downloadOne(claimed), {
-              onFailure: (error) =>
-                library.failDownload(claimed.id).pipe(
-                  Effect.andThen(
-                    Effect.logWarning("audio download failed").pipe(
-                      Effect.annotateLogs({
-                        reason:
-                          error instanceof LibraryError
-                            ? error.message
-                            : "unknown",
-                        set: claimed.id,
-                      })
-                    )
-                  )
-                ),
-              onSuccess: () => Effect.void,
-            });
+            // The whole outcome, defects included: this loop is the boundary that has to
+            // outlive any one download. A defect that escaped it once ended the worker, and every
+            // Set queued after it stayed queued until the service restarted.
+            const outcome = yield* Effect.exit(downloadOne(claimed));
+            if (Exit.isFailure(outcome)) {
+              if (Cause.hasInterruptsOnly(outcome.cause)) {
+                return yield* Effect.interrupt;
+              }
+              const reason = Cause.squash(outcome.cause);
+              yield* library.failDownload(claimed.id);
+              yield* Effect.logWarning("audio download failed").pipe(
+                Effect.annotateLogs({
+                  reason:
+                    reason instanceof LibraryError || reason instanceof Error
+                      ? reason.message
+                      : "unknown",
+                  set: claimed.id,
+                })
+              );
+            }
             aborts.delete(claimed.id);
             progress.delete(claimed.id);
             return true;

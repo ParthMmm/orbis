@@ -103,6 +103,7 @@ const runBackfill = (databasePath: string, asked: string[]) =>
                 artworkUrl: "https://example.test/listing.jpg",
                 creator: "Ada Lovelace",
                 durationSeconds: 253,
+                releasedAt: null,
                 title: "The provider's title",
               };
             }),

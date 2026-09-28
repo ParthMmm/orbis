@@ -156,7 +156,18 @@ export class MediaStore extends Context.Service<
                 downloadFailed("The download was canceled.")
               );
             }
-            const { done, value } = yield* Effect.promise(() => reader.read());
+            // A read rejects when the request is aborted, which is what a cancel does, and
+            // when the stream breaks off. Both are a failed download, not a defect: as a defect
+            // the rejection escaped the worker and ended it.
+            const { done, value } = yield* Effect.tryPromise({
+              catch: () =>
+                downloadFailed(
+                  signal.aborted
+                    ? "The download was canceled."
+                    : "The audio stream broke off."
+                ),
+              try: () => reader.read(),
+            });
             if (done) {
               return received;
             }

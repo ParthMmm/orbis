@@ -443,6 +443,7 @@ test("keeps title ownership after the membership index migration", async () => {
           artworkUrl: null,
           creator: "Some Channel",
           durationSeconds: 120,
+          releasedAt: null,
           title: "The provider's title",
         }),
     });
@@ -613,6 +614,7 @@ test("does not replace the title of a set saved before the column existed", asyn
           artworkUrl: null,
           creator: "Some Channel",
           durationSeconds: 120,
+          releasedAt: null,
           title: "The provider's title",
         }),
     }),
