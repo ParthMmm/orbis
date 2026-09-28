@@ -361,7 +361,7 @@ struct PlaylistChangeStatus: ViewModifier {
       if let failure = model.playlistFailure {
         VStack(alignment: .leading, spacing: 6) {
           Text(failure.message)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("playlist-error")
           CopyFailureButton(
@@ -374,7 +374,7 @@ struct PlaylistChangeStatus: ViewModifier {
         HStack(spacing: 8) {
           ProgressView()
           Text("Saving")
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
         }
         .padding()

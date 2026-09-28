@@ -61,6 +61,11 @@ final class AppModel {
   /// it on every render.
   private(set) var availableTags: [String] = []
 
+  /// How many Sets carry each tag, for the tag tiles. Derived with `availableTags`, from the
+  /// whole library rather than the filtered list, so a tile's count does not shrink to the
+  /// filter it sets.
+  private(set) var tagCounts: [String: Int] = [:]
+
   /// The Sets the filter admits. Unfiltered, it is the library itself. Held for the same
   /// reason as the tags: the body of every list reads it on every pass.
   private(set) var visibleSets: Loadable<[SavedSet]> = .idle
@@ -70,10 +75,12 @@ final class AppModel {
   private func refreshDerivedState() {
     guard case .loaded(let sets) = library else {
       availableTags = []
+      tagCounts = [:]
       visibleSets = library
       return
     }
     availableTags = Set(sets.flatMap(\.tags)).sorted()
+    tagCounts = SetPresentation.tagCounts(sets)
     if let activeTag {
       visibleSets = .loaded(sets.filter { $0.tags.contains(activeTag) })
     } else {
@@ -1179,6 +1186,7 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
   case home = "Home"
   case library = "Library"
   case playlists = "Playlists"
+  case people = "People"
   case search = "Search"
 
   /// Identity is the destination itself, so a list binding can select the case directly.
@@ -1194,6 +1202,7 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
     case .home: "house"
     case .library: "music.note.list"
     case .playlists: "rectangle.stack"
+    case .people: "person.2"
     case .search: "magnifyingglass"
     }
   }

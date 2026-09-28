@@ -42,7 +42,12 @@ struct NowPlayingScreen: View {
           .accessibilityIdentifier("now-playing-empty")
         }
       }
-      .background(Color.orbis.paper)
+      // The screen takes its colour from the Set's artwork, the way a music app tints Now Playing.
+      .background {
+        ArtworkBackdrop(
+          url: player.currentSetId.flatMap { model.savedSet($0) }.flatMap(
+            SetPresentation.pageArtwork))
+      }
       .setChangeStatus(model)
       .navigationTitle("Now Playing")
       .toolbarTitleDisplayMode(.inline)
@@ -72,12 +77,13 @@ struct NowPlayingScreen: View {
       // where the page's own header keeps its corners square.
       .clipShape(.rect(cornerRadius: Radius.row))
       VStack(alignment: .leading, spacing: 6) {
-        ListingLabel(
-          SetDetail.stampLine(source: set.source.label, subtitle: SetPresentation.subtitle(set)))
         Text(set.title)
           .font(.orbis.title)
           .lineLimit(3)
           .accessibilityIdentifier("now-playing-title")
+        Text(SetDetail.stampLine(source: set.source.label, subtitle: SetPresentation.subtitle(set)))
+          .font(.orbis.body)
+          .foregroundStyle(.secondary)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .accessibilityElement(children: .combine)
@@ -88,6 +94,9 @@ struct NowPlayingScreen: View {
         fallbackDuration: set.durationSeconds.map(TimeInterval.init),
         identifierPrefix: "now-playing"
       )
+      // Under the transport, centred, where a music app keeps the speaker picker.
+      AirPlayButton()
+        .frame(maxWidth: .infinity)
     }
   }
 }

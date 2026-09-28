@@ -47,6 +47,25 @@ enum SetPresentation {
     return min(Double(set.playbackPositionSeconds) / Double(seconds), 1)
   }
 
+  /// How many Sets carry each tag.
+  static func tagCounts(_ sets: [SavedSet]) -> [String: Int] {
+    sets.reduce(into: [:]) { counts, set in
+      for tag in Set(set.tags) { counts[tag, default: 0] += 1 }
+    }
+  }
+
+  /// The Sets a person is part way through, most recently heard first: the Continue Listening
+  /// rail. A Set that has not started, or has finished, is not waiting for anyone.
+  static func continueListening(_ sets: [SavedSet], limit: Int = 6) -> [SavedSet] {
+    let started = sets.filter { set in
+      guard set.playbackPositionSeconds > 0 else { return false }
+      guard let progress = progress(of: set) else { return true }
+      return progress < 1
+    }
+    let ordered = started.sorted { ($0.lastListenedAt ?? "") > ($1.lastListenedAt ?? "") }
+    return Array(ordered.prefix(limit))
+  }
+
   /// The design shows the link without a scheme or `www.`, because it is there to be
   /// recognised, not followed.
   static func displayURL(_ raw: String) -> String {
@@ -208,6 +227,15 @@ enum SetPresentation {
   /// checked without a browser and without leaving the app.
   static func sourceURL(_ set: SavedSet) -> URL? {
     LinkField.address(of: set.url)
+  }
+
+  /// What is left of a started Set, "34m left", or where it stands when its length is unknown.
+  static func timeLeft(_ set: SavedSet) -> String? {
+    guard set.playbackPositionSeconds > 0 else { return nil }
+    guard let duration = set.durationSeconds, duration > set.playbackPositionSeconds else {
+      return playbackPosition(set)
+    }
+    return "\(length(duration - set.playbackPositionSeconds)) left"
   }
 
   /// Where playback left off, said the way a person says it, or nothing when it never started.

@@ -139,7 +139,7 @@ struct SetChangeStatus: ViewModifier {
       if let failure = model.setFailure {
         VStack(alignment: .leading, spacing: 6) {
           Text(failure.message)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("detail-error")
           CopyFailureButton(
@@ -152,7 +152,7 @@ struct SetChangeStatus: ViewModifier {
         HStack(spacing: 8) {
           ProgressView()
           Text("Saving")
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
         }
         .padding()

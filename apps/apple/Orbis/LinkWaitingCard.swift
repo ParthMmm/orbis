@@ -70,7 +70,7 @@ import SwiftUI
         .overlay(alignment: .bottom) { Divider() }
         if let notice {
           Text(notice)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("paste-notice")
         }

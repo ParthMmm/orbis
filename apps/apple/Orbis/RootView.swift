@@ -188,7 +188,7 @@ struct RootView: View {
 
     var body: some View {
       TabView(selection: $model.destination) {
-        ForEach([Destination.home, .library, .playlists]) { destination in
+        ForEach([Destination.home, .library, .playlists, .people]) { destination in
           Tab(destination.rawValue, systemImage: destination.symbol, value: destination) {
             NavigationStack {
               DestinationView(model: model, destination: destination)
@@ -213,27 +213,30 @@ struct RootView: View {
     }
   }
 
-  /// The mini player, fed from the audio player. The accessory placement supplies the glass.
-  struct NowPlayingBar: View {
-    @Bindable var model: AppModel
-    /// Opens Now Playing, which the shell presents.
-    let open: () -> Void
-
-    var body: some View {
-      let player = model.audioPlayer
-      MiniPlayer(
-        title: player.currentTitle,
-        artwork: player.currentSetId.flatMap { model.savedSet($0)?.artworkUrl }
-          .flatMap(URL.init(string:)),
-        isPlaying: player.state == .playing,
-        progress: player.duration.map { $0 > 0 ? player.elapsed / $0 : 0 },
-        surface: .accessory,
-        toggle: { model.togglePlayback() },
-        open: open
-      )
-    }
-  }
 #endif
+
+/// The mini player, fed from the audio player. On iPhone the tab bar's accessory supplies the
+/// glass; on iPad and Mac the bar floats over the detail column and draws its own.
+struct NowPlayingBar: View {
+  @Bindable var model: AppModel
+  var surface: MiniPlayer.Surface = .accessory
+  /// Opens Now Playing, which the shell presents.
+  let open: () -> Void
+
+  var body: some View {
+    let player = model.audioPlayer
+    MiniPlayer(
+      title: player.currentTitle,
+      artwork: player.currentSetId.flatMap { model.savedSet($0)?.artworkUrl }
+        .flatMap(URL.init(string:)),
+      isPlaying: player.state == .playing,
+      progress: player.duration.map { $0 > 0 ? player.elapsed / $0 : 0 },
+      surface: surface,
+      toggle: { model.togglePlayback() },
+      open: open
+    )
+  }
+}
 
 /// iPad and macOS. The same destinations become sidebar items. A plain list with explicit
 /// selection buttons is used because SwiftUI's selection-based `List` initializers are
@@ -273,6 +276,8 @@ struct SidebarShell: View {
   #else
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
   #endif
+  /// Now Playing is a sheet over the whole window, opened from the floating player.
+  @State private var isNowPlayingShown = false
 
   var body: some View {
     #if os(macOS)
@@ -365,6 +370,21 @@ struct SidebarShell: View {
       NavigationStack {
         DestinationView(model: model, destination: model.destination)
       }
+      // A wide window has no tab bar to carry the player, so it floats over the detail column,
+      // clear of the sidebar, the way a music app keeps playback in reach.
+      .safeAreaInset(edge: .bottom) {
+        if model.audioPlayer.currentSetId != nil {
+          NowPlayingBar(model: model, surface: .floating) { isNowPlayingShown = true }
+            .frame(maxWidth: 560)
+            .padding()
+        }
+      }
+    }
+    .sheet(isPresented: $isNowPlayingShown) {
+      NowPlayingScreen(model: model)
+        #if os(macOS)
+          .frame(minWidth: 480, minHeight: 640)
+        #endif
     }
     #if os(macOS)
       .toolbar(removing: .sidebarToggle)
@@ -463,7 +483,9 @@ struct DestinationView: View {
         ),
         failureContext: "loading the library",
         activeTag: model.activeTag,
-        filters: model.availableTags.isEmpty ? nil : tagFilters,
+        // Tags are tiles above the list rather than words beside its count, so they read as
+        // places to go the way a music app's genres do.
+        filters: nil,
         // Only a filter can hide every Set. Without one, an empty list is an empty collection
         // and keeps the empty collection's copy.
         noMatches: librarySearchIsActive
@@ -478,7 +500,7 @@ struct DestinationView: View {
                 .accessibilityIdentifier("library-no-matches")
             ),
         hero: linkWaiting,
-        rails: nil,
+        rails: model.availableTags.isEmpty || librarySearchIsActive ? nil : tagTiles,
         footer: librarySearchIsActive ? "\(libraryMatchCount) sets" : libraryFooter,
         retry: { await model.loadLibrary() },
         select: { set in model.openSet(set.id) },
@@ -536,6 +558,8 @@ struct DestinationView: View {
         .navigationDestination(item: $model.openedSetId) { id in
           SetDetailScreen(model: model, setId: id)
         }
+    case .people:
+      PeopleDestination(model: model)
     case .search:
       SearchDestination(model: model)
         // The one open Set is shared with the Library, so a Set found here opens the same page.
@@ -611,21 +635,27 @@ struct DestinationView: View {
     focusLink = true
   }
 
-  /// Each Tag is a word; the active one is underlined. Pressing it again clears the filter.
-  private var tagFilters: AnyView {
+  /// Each Tag is a tile with its count; the active one is ringed and checked. Pressing it again
+  /// clears the filter.
+  private var tagTiles: AnyView {
     AnyView(
-      HStack(spacing: 14) {
-        ForEach(model.availableTags, id: \.self) { tag in
-          let active = model.activeTag == tag
-          Button {
-            model.setTagFilter(active ? nil : tag)
-          } label: {
-            TagWord(tag, category: SetPresentation.category(for: tag), active: active)
-              .orbisRowHeight()
+      VStack(alignment: .leading, spacing: 10) {
+        Text("Tags")
+          .font(.orbis.sectionTitle)
+        TagGrid {
+          ForEach(model.availableTags, id: \.self) { tag in
+            let active = model.activeTag == tag
+            Button {
+              model.setTagFilter(active ? nil : tag)
+            } label: {
+              TagTile(
+                tag, count: model.tagCounts[tag] ?? 0,
+                category: SetPresentation.category(for: tag), active: active)
+            }
+            .buttonStyle(.plain)
+            .orbisAnimation(.tagToggled, value: active)
+            .accessibilityIdentifier("tag-filter-\(tag)")
           }
-          .buttonStyle(.plain)
-          .accessibilityAddTraits(active ? .isSelected : [])
-          .accessibilityIdentifier("tag-filter-\(tag)")
         }
       }
     )
@@ -697,7 +727,7 @@ struct DestinationView: View {
         }
         if let confirmation = model.fileConfirmation {
           Text(confirmation)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("file-confirmation")
         }
@@ -749,7 +779,7 @@ struct DestinationView: View {
       if let failure = model.revealFailure {
         VStack(alignment: .leading, spacing: 4) {
           Text(failure.message)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("reveal-error")
           CopyFailureButton(
@@ -758,7 +788,7 @@ struct DestinationView: View {
       } else if reveal.set.metadataState == "failed" {
         HStack(spacing: 6) {
           Text("Orbis could not name this set.")
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
           Button("Try again") { Task { await model.retryMetadata() } }
             .buttonStyle(.plain)
@@ -840,11 +870,81 @@ struct HomeRails: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 20) {
+      if !continueSets.isEmpty {
+        rail("Continue Listening") { continueCards }
+      }
       if !recentSets.isEmpty {
         rail("Recently filed") { recentCards }
       }
       if !model.playlistItems.isEmpty {
         rail("Playlists") { playlistCards }
+      }
+      if !model.availableTags.isEmpty {
+        tagRow
+      }
+    }
+  }
+
+  private var continueSets: [SavedSet] {
+    guard case .loaded(let sets) = model.library else { return [] }
+    return SetPresentation.continueListening(sets)
+  }
+
+  /// A started Set as a card in its artwork's colour, the way a music app shows what to pick
+  /// up again.
+  private var continueCards: some View {
+    ForEach(continueSets) { set in
+      Button {
+        model.openSet(set.id)
+      } label: {
+        VStack(alignment: .leading, spacing: 0) {
+          Artwork(
+            url: SetPresentation.row(set).artwork, seed: set.title, size: .header,
+            progress: SetPresentation.progress(of: set))
+          VStack(alignment: .leading, spacing: 2) {
+            Text(set.title)
+              .font(.orbis.rowTitle)
+              .lineLimit(1)
+            if let left = SetPresentation.timeLeft(set) {
+              Text(left)
+                .font(.orbis.detail)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            }
+          }
+          .padding(12)
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .frame(width: 260)
+        .background { ArtworkBackdrop(url: SetPresentation.row(set).artwork, style: .card) }
+        .clipShape(.rect(cornerRadius: Radius.list))
+      }
+      .buttonStyle(.plain)
+      // Named outright: a combined label on the first card of a rail came back as its identifier.
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel([set.title, SetPresentation.timeLeft(set)].compactMap { $0 }.joined(separator: ", "))
+      .accessibilityAddTraits(.isButton)
+      .accessibilityIdentifier("continue-card-\(set.id)")
+    }
+  }
+
+  /// Every tag, as a capsule that opens the Library filtered by it.
+  private var tagRow: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      Text("Tags")
+        .font(.orbis.sectionTitle)
+      ChipFlow {
+        ForEach(model.availableTags, id: \.self) { tag in
+          Button {
+            model.setTagFilter(tag)
+            model.destination = .library
+          } label: {
+            TagWord(tag, category: SetPresentation.category(for: tag))
+              .orbisRowHeight()
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("home-tag-\(tag)")
+        }
       }
     }
   }
@@ -911,7 +1011,7 @@ struct HomeRails: View {
                 .font(.orbis.rowTitle)
                 .lineLimit(2)
               Text(playlist.setCount, format: .number)
-                .font(.orbis.mono)
+                .font(.orbis.detail)
                 .foregroundStyle(.secondary)
             }
             .padding(10)

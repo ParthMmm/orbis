@@ -54,12 +54,12 @@ struct Transport: View {
       .padding(.horizontal, 24)
       if case .failed(let message) = player.state {
         Text(message)
-          .font(.orbis.mono)
+          .font(.orbis.detail)
           .foregroundStyle(.secondary)
       }
       if case .loading = player.state {
         Text("Loading audio")
-          .font(.orbis.mono)
+          .font(.orbis.detail)
           .foregroundStyle(.secondary)
       }
     }
@@ -107,7 +107,7 @@ private struct PlaybackProgress: View {
         Spacer()
         Text("-\(SetPresentation.timestamp(max(duration - shown, 0)))")
       }
-      .font(.orbis.mono)
+      .font(.orbis.detail)
       .monospacedDigit()
       .foregroundStyle(.secondary)
       .accessibilityHidden(true)

@@ -67,8 +67,10 @@ struct SetDetailScreen: View {
           )
         } else {
           HStack(spacing: 8) {
+            // The page's one orange control: the thing a person came here to do.
             Button("Play", systemImage: "play.fill") { Task { await model.playSet(set.id) } }
-              .buttonStyle(.glass)
+              .buttonStyle(.glassProminent)
+              .tint(Color.orbis.tint)
               .controlSize(.large)
               .accessibilityIdentifier("detail-play")
             queueActions(set)
@@ -76,7 +78,7 @@ struct SetDetailScreen: View {
         }
         if let notice = model.queueNotice {
           Text(notice)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("detail-queue-notice")
         }
@@ -88,7 +90,7 @@ struct SetDetailScreen: View {
         HStack(spacing: 8) {
           ProgressView()
           Text(progressLabel(set))
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
         }
         Button("Cancel", role: .cancel) {

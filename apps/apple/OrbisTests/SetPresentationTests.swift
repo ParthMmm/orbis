@@ -6,6 +6,7 @@ import XCTest
 @MainActor
 final class SetPresentationTests: XCTestCase {
   private func makeSet(
+    id: String = "one",
     url: String = "https://www.youtube.com/watch?v=abcdefghijk",
     title: String = "Night session",
     tags: String = #"["techno","breaks"]"#,
@@ -16,17 +17,18 @@ final class SetPresentationTests: XCTestCase {
     releasedAt: String? = nil,
     artworkUrl: String? = nil,
     artworkLargeUrl: String? = nil,
-    downloadState: String = "none"
+    downloadState: String = "none",
+    lastListenedAt: String? = nil
   ) throws -> SavedSet {
     let json = """
-      {"id":"one","url":"\(url)","title":"\(title)","source":"youtube","tags":\(tags),
+      {"id":"\(id)","url":"\(url)","title":"\(title)","source":"youtube","tags":\(tags),
       "createdAt":"\(createdAt)","releasedAt":\(quoted(releasedAt)),"creator":\(quoted(creator)),
       "artworkUrl":\(quoted(artworkUrl)),
       "artworkLargeUrl":\(quoted(artworkLargeUrl)),"durationSeconds":\(durationSeconds.map(String.init) ?? "null"),
       "metadataState":"pending","titleEditedByUser":false,"downloadState":"\(downloadState)",
       "playlistIds":[],"retainedAudioBytes":null,"retainedAudioFormat":null,
       "playbackPositionSeconds":\(playbackPositionSeconds),"listenCount":0,"finishCount":0,
-      "lastListenedAt":null}
+      "lastListenedAt":\(quoted(lastListenedAt))}
       """
     return try JSONDecoder().decode(SavedSet.self, from: Data(json.utf8))
   }
@@ -34,6 +36,46 @@ final class SetPresentationTests: XCTestCase {
   /// A JSON string, or null when the field is absent.
   private func quoted(_ value: String?) -> String {
     value.map { "\"\($0)\"" } ?? "null"
+  }
+
+  func testTagCountsCountEachSetOncePerTag() throws {
+    let counts = SetPresentation.tagCounts([
+      try makeSet(id: "a", tags: #"["techno","house"]"#),
+      try makeSet(id: "b", tags: #"["techno","techno"]"#),
+      try makeSet(id: "c", tags: #"[]"#),
+    ])
+    XCTAssertEqual(counts, ["techno": 2, "house": 1])
+  }
+
+  func testContinueListeningHoldsStartedSetsMostRecentFirst() throws {
+    let sets = [
+      try makeSet(id: "untouched", durationSeconds: 3600),
+      try makeSet(
+        id: "older", playbackPositionSeconds: 600, durationSeconds: 3600,
+        lastListenedAt: "2026-09-10T20:00:00.000Z"),
+      try makeSet(
+        id: "finished", playbackPositionSeconds: 3600, durationSeconds: 3600,
+        lastListenedAt: "2026-09-12T20:00:00.000Z"),
+      try makeSet(
+        id: "newer", playbackPositionSeconds: 60, durationSeconds: 3600,
+        lastListenedAt: "2026-09-11T20:00:00.000Z"),
+      // A length the service has not measured yet still counts once listening started.
+      try makeSet(id: "unmeasured", playbackPositionSeconds: 30),
+    ]
+    XCTAssertEqual(
+      SetPresentation.continueListening(sets).map(\.id), ["newer", "older", "unmeasured"])
+    XCTAssertEqual(SetPresentation.continueListening(sets, limit: 1).map(\.id), ["newer"])
+  }
+
+  func testTimeLeftSaysWhatRemains() throws {
+    XCTAssertEqual(
+      SetPresentation.timeLeft(try makeSet(playbackPositionSeconds: 2460, durationSeconds: 4500)),
+      "34m left")
+    XCTAssertEqual(
+      SetPresentation.timeLeft(try makeSet(playbackPositionSeconds: 600, durationSeconds: 5400)),
+      "1h 20m left")
+    XCTAssertEqual(SetPresentation.timeLeft(try makeSet(playbackPositionSeconds: 90)), "1m in")
+    XCTAssertNil(SetPresentation.timeLeft(try makeSet(durationSeconds: 3600)))
   }
 
   func testThePageDrawsTheLargestImageTheProviderOffered() throws {
