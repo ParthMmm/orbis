@@ -49,10 +49,6 @@ import Testing
     #expect(TagInput.suggestions(from: ["", "  ", "bass"], chosen: []) == ["bass"])
   }
 
-  @Test func `a tag keeps its color across launches and the library`() {
-    #expect(OrbisColor.Category.forTag("techno") == OrbisColor.Category.forTag("techno"))
-  }
-
   @Test func `a tag's color does not change with the case it arrives in`() {
     #expect(OrbisColor.Category.forTag("Techno") == OrbisColor.Category.forTag("techno"))
   }
