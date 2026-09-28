@@ -923,6 +923,30 @@ final class AppModel {
     await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
   }
 
+  /// Adds a Set to a Playlist, or takes it out of one, keeping the others it is in: the Add to
+  /// Playlist sheet's action. The Playlists' counts are read again quietly afterwards, so the
+  /// sheet and the sidebar do not flash a spinner for a change the person just made.
+  func setMembership(_ id: String, in playlistId: String, _ included: Bool) async {
+    guard let current = savedSet(id)?.playlistIds else { return }
+    var wanted = current.filter { $0 != playlistId }
+    if included { wanted.append(playlistId) }
+    guard wanted != current else { return }
+    await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
+    guard setFailure == nil else { return }
+    await refreshPlaylistsQuietly()
+  }
+
+  /// Reads the Playlists again without passing through a loading state.
+  func refreshPlaylistsQuietly() async {
+    guard let client else { return }
+    playlistGeneration += 1
+    let generation = playlistGeneration
+    guard let items = try? await client.playlists(),
+      generation == playlistGeneration, !Task.isCancelled
+    else { return }
+    playlists = .loaded(items)
+  }
+
   func nameAgain(_ id: String) async {
     await change(id) { try await $0.retryMetadata(id) }
   }
@@ -1045,8 +1069,9 @@ final class AppModel {
     }
   }
 
-  /// Creates a Playlist and opens it when the service accepts the name.
-  func createPlaylist(named name: String) async -> Playlist? {
+  /// Creates a Playlist and, unless told otherwise, opens it when the service accepts the name.
+  /// The Add to Playlist sheet creates one without leaving the Set it is adding.
+  func createPlaylist(named name: String, opening: Bool = true) async -> Playlist? {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
     guard let client else { return nil }
@@ -1055,6 +1080,10 @@ final class AppModel {
     defer { isWorkingOnPlaylist = false }
     do {
       let created = try await client.createPlaylist(name: trimmed)
+      guard opening else {
+        await refreshPlaylistsQuietly()
+        return created
+      }
       await loadPlaylists()
       openPlaylist(created.id)
       await loadPlaylistMembers(created.id)

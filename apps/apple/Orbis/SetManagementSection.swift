@@ -18,6 +18,7 @@ struct SetManagementSection: View {
   @Environment(\.openURL) private var openURL
   @State private var isEditingTags = false
   @State private var isConfirmingRemoval = false
+  @State private var isAddingToPlaylist = false
 
   var body: some View {
     SetManagement(
@@ -38,6 +39,9 @@ struct SetManagementSection: View {
       RenameSheet(title: set.title) { title in
         Task { await model.rename(set.id, to: title) }
       }
+    }
+    .sheet(isPresented: $isAddingToPlaylist) {
+      AddToPlaylistSheet(model: model, set: set)
     }
     .sheet(isPresented: $isEditingTags) {
       TagSheet(tags: set.tags, suggestions: model.availableTags) { tags in
@@ -61,16 +65,8 @@ struct SetManagementSection: View {
     Menu {
       Button("Rename", systemImage: "pencil") { isRenaming = true }
         .accessibilityIdentifier("detail-rename-action")
-      Menu("Add to Playlist", systemImage: "text.badge.plus") {
-        Picker("Playlist", selection: playlistBinding) {
-          Text("None").tag(String?.none)
-          ForEach(model.playlistItems) { playlist in
-            Text(playlist.name).tag(Optional(playlist.id))
-          }
-        }
-        .pickerStyle(.inline)
-      }
-      .accessibilityIdentifier("detail-playlist")
+      Button("Add to Playlist", systemImage: "text.badge.plus") { isAddingToPlaylist = true }
+        .accessibilityIdentifier("detail-playlist")
       Button("Open in \(set.source.label)", systemImage: SetPresentation.sourceSymbol(set.source)) {
         open()
       }
@@ -99,15 +95,6 @@ struct SetManagementSection: View {
   private var retainedAudio: Bool {
     // Qualified, because a body that opens with `set` reads as a setter.
     self.set.downloadState == "ready"
-  }
-
-  /// The Playlist the Set is in, moved on a choice, so the write goes out the moment a person
-  /// decides rather than behind a Save button.
-  private var playlistBinding: Binding<String?> {
-    Binding(
-      get: { model.savedSet(set.id)?.playlistIds.first },
-      set: { chosen in Task { await model.move(set.id, to: chosen) } }
-    )
   }
 
   private func open() {
