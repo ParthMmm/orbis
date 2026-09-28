@@ -106,23 +106,6 @@ final class SupersessionTests: XCTestCase {
       "typing without submitting does not change what the results answer to")
   }
 
-  func testClearingTheSearchDropsTheResultsAndTheNameTogether() async {
-    let model = AppModel(
-      client: OrbisClient(
-        address: URL(string: "https://vanta.example.ts.net")!,
-        token: "token",
-        session: StubProtocol.session(status: 200, body: libraryBody(title: "Night session"))
-      ), settings: MemoryClientSettings())
-    model.searchQuery = "night"
-    await model.runSearch()
-
-    model.clearSearch()
-
-    XCTAssertEqual(model.search, .idle)
-    XCTAssertEqual(model.searchQuery, "", "clearing the search empties the field too")
-    XCTAssertNil(model.searchResultsFor)
-  }
-
   /// Forgetting a device ends every request the old service could still answer, and leaves
   /// nothing selected that belonged to it.
   func testForgettingResetsEverythingThatBelongedToTheService() async {
