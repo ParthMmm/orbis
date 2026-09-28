@@ -48,6 +48,14 @@ targets:
         embed: true
     entitlements:
       path: Orbis/Orbis.entitlements
+      # Declared here, not only in the file: xcodegen writes the file from these properties on
+      # every generate, and a file with none was written back empty, which cut the share
+      # extension off from the pairing ("Open Orbis and pair this device first").
+      properties:
+        com.apple.security.application-groups:
+          - group.app.orbis.client
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)app.orbis.client
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client
@@ -80,6 +88,14 @@ targets:
       - package: OrbisDesign
     entitlements:
       path: OrbisShare/OrbisShare.entitlements
+      # Declared here, not only in the file: xcodegen writes the file from these properties on
+      # every generate, and a file with none was written back empty, which cut the share
+      # extension off from the pairing ("Open Orbis and pair this device first").
+      properties:
+        com.apple.security.application-groups:
+          - group.app.orbis.client
+        keychain-access-groups:
+          - $(AppIdentifierPrefix)app.orbis.client
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.share
