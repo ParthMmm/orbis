@@ -8,7 +8,7 @@ The SPA and the API share one origin, so the browser needs no CORS. Browsers sti
 
 An `<audio>` element cannot send an `Authorization` header, and ADR 0008 forbids API keys in URLs. The web player therefore asks for a stream grant: an authenticated `POST /sets/:id/audio/grant` returns a URL to that Set's audio route with an HMAC signature over the Set, the Person, and an expiry 24 hours out. The audio route accepts either a Bearer key or a valid grant; no other route accepts a grant. The request log already drops the query string, so grants do not reach logs. A leaked grant exposes one Set's audio for at most one day, and cannot read or change anything.
 
-Funnel relays encrypted TCP; the certificate and TLS end on Vanta, so Tailscale carries the audio without being able to read it and stores nothing. No router port is open and Vanta's home address stays private. The address is public, so the device listener limits failed key attempts.
+Funnel relays encrypted TCP; the certificate and TLS end on Vanta, so Tailscale carries the audio without being able to read it and stores nothing. Orbis needs no router port forward, and Vanta's home address stays private. Vanta listens on its LAN address only for SSH and SMB, and none of the eero's existing forwards reach an Orbis port. The address is public, so the device listener limits failed key attempts.
 
 Rejected alternatives:
 
