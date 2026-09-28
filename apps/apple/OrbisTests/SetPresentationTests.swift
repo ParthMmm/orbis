@@ -80,7 +80,6 @@ final class SetPresentationTests: XCTestCase {
     let technoAlone = alone.tags.first { $0.name == "techno" }?.category
     let technoMixed = mixed.tags.first { $0.name == "techno" }?.category
 
-    XCTAssertEqual(SetPresentation.category(for: "techno"), SetPresentation.category(for: "techno"))
     XCTAssertEqual(technoAlone, technoMixed)
     XCTAssertNotEqual(
       SetPresentation.category(for: "techno"),

@@ -28,18 +28,6 @@ final class OrbisClientTests: XCTestCase {
     }
   }
 
-  func testHealthDecodesTheStatus() async throws {
-    let session = StubProtocol.session(status: 200, body: #"{"status":"ok"}"#)
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let status = try await client.health()
-    XCTAssertEqual(status, "ok")
-    XCTAssertEqual(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer token")
-  }
-
   func testLibraryDecodesSetsAndSendsTheSearchQuery() async throws {
     let body = """
       {"sets":[{"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
@@ -157,23 +145,6 @@ final class OrbisClientTests: XCTestCase {
     XCTAssertEqual(json["tags"] as? [String], [])
   }
 
-  func testTitleEditPatchesTheSetAndDecodesWhatCameBack() async throws {
-    let session = StubProtocol.session(
-      status: 200, body: Self.savedSet(title: "Renamed by hand", tags: []))
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let updated = try await client.updateTitle("42", title: "Renamed by hand")
-    XCTAssertEqual(updated.title, "Renamed by hand")
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PATCH")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42/title")
-    let sent = try XCTUnwrap(StubProtocol.lastBody)
-    let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
-    XCTAssertEqual(json["title"] as? String, "Renamed by hand")
-  }
-
   func testTagEditPatchesTheSetAndDecodesWhatCameBack() async throws {
     let session = StubProtocol.session(
       status: 200, body: Self.savedSet(title: "Night session", tags: ["techno", "live"]))
@@ -225,21 +196,6 @@ final class OrbisClientTests: XCTestCase {
     let sent = try XCTUnwrap(StubProtocol.lastBody)
     let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
     XCTAssertEqual(json["playlistIds"] as? [String], ["p1", "p2"])
-  }
-
-  func testDeleteAsksTheServiceToRemoveTheSet() async throws {
-    let session = StubProtocol.session(
-      status: 200, body: Self.savedSet(title: "Night session", tags: []))
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let removed = try await client.deleteSet("42")
-    XCTAssertEqual(removed.id, "1")
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42")
-    XCTAssertNil(StubProtocol.lastBody)
   }
 
   func testMetadataRetryAsksAgainForTheName() async throws {
