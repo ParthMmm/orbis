@@ -1,6 +1,8 @@
 # Spec: Orbis tvOS client module
 
-**ADR:** [`../adr/0012-tvos-client.md`](../adr/0012-tvos-client.md) **Research:** [`../research/2026-09-26-tvos.md`](../research/2026-09-26-tvos.md) **Related:** [`carplay-audio-module.md`](carplay-audio-module.md)
+- **ADR:** [`../adr/0012-tvos-client.md`](../adr/0012-tvos-client.md)
+- **Research:** [`../research/2026-09-26-tvos.md`](../research/2026-09-26-tvos.md)
+- **Related:** [`carplay-audio-module.md`](carplay-audio-module.md)
 
 ## Problem Statement
 

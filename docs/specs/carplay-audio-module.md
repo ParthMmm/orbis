@@ -1,6 +1,8 @@
 # Spec: Orbis CarPlay audio module
 
-**ADR:** [`../adr/0011-carplay-audio.md`](../adr/0011-carplay-audio.md) **Research:** [`../research/2026-09-25-carplay.md`](../research/2026-09-25-carplay.md) **Owner action:** request the CarPlay Audio entitlement at https://developer.apple.com/carplay
+- **ADR:** [`../adr/0011-carplay-audio.md`](../adr/0011-carplay-audio.md)
+- **Research:** [`../research/2026-09-25-carplay.md`](../research/2026-09-25-carplay.md)
+- **Owner action:** request the CarPlay Audio entitlement at https://developer.apple.com/carplay
 
 ## Problem Statement
 
