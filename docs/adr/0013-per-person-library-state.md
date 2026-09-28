@@ -10,7 +10,7 @@ Per-Person tables replace the owner-less ones: Playback Position is keyed by Per
 
 The migration creates the Host Person and assigns every existing row to them: one Library Entry per Set, carrying the current title as an override where `title_edited_by_user` is set. It must run and ship before the first friend key is minted.
 
-API routes keep their shapes and gain an implied Person. An Effect Layer builds the Library, Listening Queue, and Playback Position services for the calling Person, so handlers never pass a Person id; only the store underneath knows the owner column. `GET /sets` returns the caller's Library Entries joined to their Sets. Reading another Person's Library is `GET /people/:username/sets`, behind the ADR 0009 gate. Writes to a Set's shared facts, such as a metadata retry or a Download, need only visibility; writes to per-Person state need ownership.
+API routes keep their shapes and gain an implied Person. An Effect Layer builds the Library, Listening Queue, and Playback Position services for the calling Person, so handlers never pass a Person id; only the store underneath knows the owner column. `GET /sets` returns the caller's Library Entries joined to their Sets. Reading another Person's Library is `GET /people/:personId/sets`, behind the ADR 0009 gate. Writes to a Set's shared facts, such as a metadata retry or a Download, need only visibility; writes to per-Person state need ownership.
 
 Rejected alternatives:
 
