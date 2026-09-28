@@ -3,7 +3,7 @@ import SwiftUI
 
 @main
 struct OrbisApp: App {
-  @State private var model = AppModel()
+  @State private var model = OrbisSession.model
 
   var body: some Scene {
     WindowGroup {

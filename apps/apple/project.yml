@@ -52,6 +52,7 @@ targets:
       # every generate, and a file with none was written back empty, which cut the share
       # extension off from the pairing ("Open Orbis and pair this device first").
       properties:
+        com.apple.developer.carplay-audio: true
         com.apple.security.application-groups:
           - group.app.orbis.client
         keychain-access-groups:
@@ -71,7 +72,7 @@ targets:
         # INFOPLIST_KEY_ carries only flat values, so both live in Orbis/Info.plist, where
         # UILaunchScreen names the color the splash is drawn on. Everything flat stays here.
         INFOPLIST_FILE: Orbis/Info.plist
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO
   OrbisShare:
     type: app-extension
     supportedDestinations: [iOS, macOS]
