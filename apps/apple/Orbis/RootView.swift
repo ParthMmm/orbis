@@ -209,7 +209,7 @@ struct RootView: View {
       .tabViewBottomAccessory(isEnabled: model.showsMiniPlayer) {
         NowPlayingBar(model: model, transition: nowPlaying) { isNowPlayingShown = true }
       }
-      .sheet(isPresented: $isNowPlayingShown) {
+      .nowPlayingCover(isPresented: $isNowPlayingShown) {
         NowPlayingScreen(model: model)
           .zoomsFromMiniPlayer(nowPlaying)
       }
@@ -382,7 +382,7 @@ struct SidebarShell: View {
         }
       }
     }
-    .sheet(isPresented: $isNowPlayingShown) {
+    .nowPlayingCover(isPresented: $isNowPlayingShown) {
       NowPlayingScreen(model: model)
         .zoomsFromMiniPlayer(nowPlaying)
         #if os(macOS)
@@ -1076,6 +1076,19 @@ extension View {
       navigationTitle("")
     #else
       navigationTitle(title)
+    #endif
+  }
+
+  /// Now Playing covers the whole screen where the platform can, the way a music app's player
+  /// does; a sheet at full height floats with rounded bottom corners. The zoom from the mini player
+  /// keeps it closable with a swipe.
+  func nowPlayingCover<Content: View>(
+    isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content
+  ) -> some View {
+    #if os(iOS)
+      fullScreenCover(isPresented: isPresented, content: content)
+    #else
+      sheet(isPresented: isPresented, content: content)
     #endif
   }
 

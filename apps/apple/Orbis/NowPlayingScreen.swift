@@ -36,12 +36,19 @@ struct NowPlayingScreen: View {
     .environment(\.colorScheme, .dark)
     .setChangeStatus(model)
     .sheet(isPresented: $isShowingQueue) { QueueScreen(model: model) }
+    .overlay(alignment: .top) {
+      #if os(iOS)
+        Capsule()
+          .fill(.tertiary)
+          .frame(width: 36, height: 5)
+          .padding(.top, 8)
+          .accessibilityHidden(true)
+      #endif
+    }
+    .accessibilityAction(.escape) { dismiss() }
     .onChange(of: player.currentSetId) { _, id in
       if id == nil { dismiss() }
     }
-    #if os(iOS)
-      .presentationDragIndicator(.visible)
-    #endif
   }
 
   private func content(_ set: SavedSet) -> some View {
