@@ -2,7 +2,7 @@
 
 A Set is canonical on the box by Source Link. Retained Audio and Download jobs attach to that canonical Set: one retained file per Source Link on Vanta. Anyone who can see the Set may enqueue a Download if Retained Audio is missing. Playing a visible Set streams that shared file; the listener does not need to add it to their own Library. ADR 0013 splits what belongs to the Set from what belongs to each Person.
 
-Retained Audio is deleted when nothing refers to its Set: no Library Entry, no Playlist, and no Listening Queue. A Person removing a Set from their Library never deletes audio someone else still uses.
+Retained Audio is deleted when nothing refers to its Set: no Library Entry, no Playlist, and no Listening Queue. A Person removing a Set from their Library never deletes audio someone else still uses. The audio storage module owns this rule behind one "release this Set" operation, so remove paths do not count references themselves.
 
 The download worker stays sequential (ADR 0002), so one Person saving fifty Sets would make everyone else wait behind them. The worker takes the next job round-robin across the People who queued jobs, and each Person may have at most 20 jobs waiting. A job records who asked for it only for scheduling; the Retained Audio still belongs to the Set.
 

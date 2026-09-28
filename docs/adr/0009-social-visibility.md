@@ -7,7 +7,7 @@ For each other Person B, Person A holds two independent knobs (defaults on):
 - **see B**: include B in A's social views
 - **appear to B**: allow B to see A
 
-A sees B's Library, Playlists, Presence, and Listen History only when all of these hold: both have Social on, A sees B, B appears to A, and the Host has not removed either. The server evaluates this in one function, and every read route that crosses People goes through it. A request that fails the gate gets 404, not 403, so nobody can learn that someone has hidden them.
+A sees B's Library, Playlists, Presence, and Listen History only when all of these hold: both have Social on, A sees B, B appears to A, and the Host has not removed either. The server evaluates this in one module whose only operation resolves a Person the caller can see. That is the only way a route can reach another Person's data, so no route can forget the check. A request that fails the gate gets 404, not 403, so nobody can learn that someone has hidden them.
 
 When the gate passes, A sees B's full Library and all of B's Playlists. Collaborative editing is separate (ADR 0010). Presence is the Set a Person is in a Listen on now, plus a short recent strip; full Listen History is on the profile.
 
