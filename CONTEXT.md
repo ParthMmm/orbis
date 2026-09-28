@@ -26,6 +26,9 @@ _Avoid_: Download, media file
 
 **Download**:
 A request for Orbis to create Retained Audio for a Set from its Source Link. It never means a copy on a device.
+
+**Auto Download**:
+A Person's setting, on by default, that starts a Download whenever they save a Set without Retained Audio.
 _Avoid_: Save
 
 **Playback Position**:
