@@ -204,7 +204,7 @@ struct RootView: View {
       .tabBarMinimizeBehavior(.onScrollDown)
       // `isEnabled` is why the target is iOS 26.1: 26.0 reserves an empty pill for an empty
       // accessory, and the only way round it there is to rebuild the tab view.
-      .tabViewBottomAccessory(isEnabled: model.audioPlayer.currentSetId != nil) {
+      .tabViewBottomAccessory(isEnabled: model.showsMiniPlayer) {
         NowPlayingBar(model: model) { isNowPlayingShown = true }
       }
       .sheet(isPresented: $isNowPlayingShown) {
@@ -367,7 +367,7 @@ struct SidebarShell: View {
         DestinationView(model: model, destination: model.destination)
       }
       .safeAreaInset(edge: .bottom) {
-        if model.audioPlayer.currentSetId != nil {
+        if model.showsMiniPlayer {
           NowPlayingBar(model: model, surface: .floating) { isNowPlayingShown = true }
             .frame(maxWidth: 560)
             .padding()

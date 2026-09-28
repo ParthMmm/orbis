@@ -851,6 +851,12 @@ final class AppModel {
 
   var openedSets: [Destination: String] = [:]
 
+  /// The mini player stands aside while the page on screen is the Set it would show.
+  var showsMiniPlayer: Bool {
+    guard let current = audioPlayer.currentSetId else { return false }
+    return openedSetId != current
+  }
+
   var openedSetId: String? {
     get { openedSets[destination] }
     set { openedSets[destination] = newValue }

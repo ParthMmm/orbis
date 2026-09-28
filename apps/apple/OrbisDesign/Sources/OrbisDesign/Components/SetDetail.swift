@@ -212,21 +212,18 @@ public struct SetManagement: View {
   public var body: some View {
     ChipFlow(spacing: 8, alignment: .center) {
       ForEach(tags, id: \.self) { tag in
-        TagWord(tag, category: category(tag))
+        Button(action: editTags) {
+          TagWord(tag, category: category(tag))
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Edits Tags")
       }
-      Button(action: editTags) {
-        Label(
-          tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: tags.isEmpty ? "plus" : "pencil"
-        )
-        .font(.orbis.detail.weight(.semibold))
-        .padding(.horizontal, 10)
-        .padding(.vertical, 4)
-        .overlay(Capsule().strokeBorder(.tertiary))
-        .contentShape(.capsule)
-      }
-      .buttonStyle(.plain)
-      .foregroundStyle(.secondary)
-      .accessibilityIdentifier("detail-tags-row")
+      Button(tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag", action: editTags)
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .tint(.secondary)
+        .accessibilityIdentifier("detail-tags-row")
     }
     .frame(maxWidth: .infinity)
   }
