@@ -8,13 +8,13 @@ Authentication becomes an `HttpApiSecurity` bearer middleware that resolves the 
 
 Changes are additive. A route or field may be added; removing or renaming one waits until every client that reads it has shipped a build without it. Native builds lag the server by days and friends update when they update, so there is no `/v1` prefix and no lockstep release.
 
-The web client cannot use `EventSource` for `GET /events`, because it cannot send an `Authorization` header. It reads the stream with `fetch` instead. The server sends a heartbeat every 30 seconds, well inside Cloudflare's idle timeout.
+The web client cannot use `EventSource` for `GET /events`, because it cannot send an `Authorization` header. It reads the stream with `fetch` instead. The server sends a heartbeat every 30 seconds so no proxy between the client and Vanta closes an idle stream.
 
 Rejected alternatives:
 
 - **Keep hand-registered routes and shared interfaces.** Works until a field changes on the server and a client learns about it at runtime.
 - **Generate the Swift client from OpenAPI now.** Replaces working, tested client code for no user-visible gain; the conformance test catches drift first.
 - **Version the API with a path prefix.** Two copies of every route for a Group of a few people, when additive change covers the same need.
-- **Poll for queue and Presence changes.** Simple, and either slow or wasteful through the tunnel; one stream per open client is cheaper.
+- **Poll for queue and Presence changes.** Simple, and either slow or wasteful through Funnel; one stream per open client is cheaper.
 
 The trade this accepts is one migration of every existing route before any new work, with no change in behavior to show for it. It lands first so every later route is written once, in the contract.

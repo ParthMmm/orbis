@@ -1,6 +1,6 @@
 # Orbis: web + Cloudflare/Alchemy instead of Tailscale (research)
 
-**Status:** decided in ADRs [0007](../adr/0007-web-cloudflare-alchemy.md) through [0010](../adr/0010-shared-audio-and-collab-playlists.md) and [0013](../adr/0013-per-person-library-state.md). Plan: [`../plans/web-and-social.md`](../plans/web-and-social.md).
+**Status:** decided in ADRs [0007](../adr/0007-web-tailscale-funnel.md), which chose Tailscale Funnel over Cloudflare, through [0010](../adr/0010-shared-audio-and-collab-playlists.md) and [0013](../adr/0013-per-person-library-state.md). Plan: [`../plans/web-and-social.md`](../plans/web-and-social.md).
 
 Sources: ADR 0001, 0002, 0004; deploy/orbis-server/README.md; CONTEXT.md; Cloudflare Tunnel docs; Alchemy Tunnel docs (alchemy.run).
 
