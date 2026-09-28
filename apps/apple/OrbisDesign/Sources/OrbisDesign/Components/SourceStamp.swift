@@ -11,7 +11,6 @@ public struct SourceStamp: View {
   public var body: some View {
     Text(source)
       .font(.orbis.stamp)
-      .textCase(.uppercase)
       .padding(.horizontal, 6)
       .padding(.vertical, 3)
       .overlay(RoundedRectangle(cornerRadius: Radius.chip).strokeBorder(.tertiary))

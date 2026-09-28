@@ -114,13 +114,18 @@ public struct SetDetail: View {
   public var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
+        // Raised off the tinted field the way an album cover sits on its page, so it takes the
+        // row radius and a shadow where a listing keeps its thumbnails flat.
         Artwork(url: artwork, seed: title, size: .header, progress: progress)
+          .clipShape(.rect(cornerRadius: Radius.row))
+          .shadow(color: .black.opacity(0.3), radius: 18, y: 10)
+          .padding([.horizontal, .top])
         VStack(alignment: .leading, spacing: 16) {
           header
           if failedToName {
             HStack(spacing: 6) {
               Text("Orbis could not name this set.")
-                .font(.orbis.mono)
+                .font(.orbis.detail)
                 .foregroundStyle(.secondary)
               Button("Try again", action: retryName)
                 .buttonStyle(.plain)
@@ -157,15 +162,18 @@ public struct SetDetail: View {
         .padding()
       }
     }
-    .background(Color.orbis.paper)
+    // The page takes its colour from the artwork, the way a music app tints an album's page.
+    .background { ArtworkBackdrop(url: artwork) }
   }
 
   private var header: some View {
     VStack(alignment: .leading, spacing: 6) {
-      ListingLabel(Self.stampLine(source: source, subtitle: subtitle))
       Text(title)
         .font(.orbis.title)
         .accessibilityIdentifier("detail-title")
+      Text(Self.stampLine(source: source, subtitle: subtitle))
+        .font(.orbis.body)
+        .foregroundStyle(.secondary)
     }
     .frame(maxWidth: .infinity, alignment: .leading)
     .accessibilityElement(children: .combine)
@@ -175,7 +183,7 @@ public struct SetDetail: View {
 
 /// The rows a Set is changed with: its Tags, its Playlist, its Source Link, its title, and
 /// last, in red, its removal, with the consequences stated before it happens rather than after.
-/// Open is the only tinted control, and the one thing a person came to do.
+/// Open is a tinted link beside the Source; Play, above the rows, is the page's one filled control.
 public struct SetManagement: View {
   public let title: String
   /// The Source Link's name, as the row reads it.
@@ -234,7 +242,7 @@ public struct SetManagement: View {
         ListingRow("Tags", action: editTags, identifier: "detail-tags-row") {
           if tags.isEmpty {
             Text("None")
-              .font(.orbis.mono)
+              .font(.orbis.detail)
               .foregroundStyle(.secondary)
           } else {
             ChipFlow {
@@ -248,7 +256,7 @@ public struct SetManagement: View {
           PlaylistPicker(selection: $playlistId, choices: playlists, category: category)
         }
         ListingRow("Source", value: source) {
-          // The one tinted control on the page: the thing a person came here to do.
+          // Tinted as a link: it leaves the app for the source.
           Button("Open", action: open)
             .buttonStyle(.plain)
             .fontWeight(.semibold)
@@ -266,16 +274,16 @@ public struct SetManagement: View {
     return VStack(alignment: .leading, spacing: 6) {
       Button("Remove from library", action: remove)
         .buttonStyle(.plain)
-        .font(.orbis.mono)
+        .font(.orbis.detail)
         .foregroundStyle(Color.orbis.destructive)
         .orbisRowHeight()
         .accessibilityIdentifier("detail-remove")
       Text(notice.scope)
-        .font(.orbis.mono)
+        .font(.orbis.detail)
         .foregroundStyle(.secondary)
       if let retained = notice.retained {
         Text(retained)
-          .font(.orbis.mono)
+          .font(.orbis.detail)
           .foregroundStyle(.secondary)
       }
     }

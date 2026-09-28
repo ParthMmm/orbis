@@ -173,7 +173,7 @@ private struct MotionSample: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(sample.motion.rawValue).font(.orbis.caption)
-      Text(sample.motion.purpose).font(.orbis.mono).foregroundStyle(.secondary)
+      Text(sample.motion.purpose).font(.orbis.detail).foregroundStyle(.secondary)
       HStack(spacing: 12) {
         Image(systemName: sample.symbol)
           .frame(width: 22)

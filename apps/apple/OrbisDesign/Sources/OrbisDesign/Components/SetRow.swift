@@ -222,23 +222,23 @@ public struct SetRow: View {
       ChipFlow {
         if !line.isEmpty {
           Text(line)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
         }
         if let dates, !dates.isEmpty {
           Text(dates)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
         }
         if let state, state.download != nil {
           Image(systemName: State.downloadSymbol)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
         }
         if state?.kept == true {
           Image(systemName: State.keptSymbol)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityLabel(State.keptLabel)
         }

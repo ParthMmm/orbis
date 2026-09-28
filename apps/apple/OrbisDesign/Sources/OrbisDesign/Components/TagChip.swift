@@ -18,13 +18,13 @@ public struct TagChip: View {
         .fill(category.dot)
         .frame(width: 7, height: 7)
       Text(name)
-        .font(.orbis.mono)
+        .font(.orbis.detail)
         .fontWeight(active ? .medium : .regular)
     }
     .foregroundStyle(active ? AnyShapeStyle(category.text) : AnyShapeStyle(.primary))
-    .padding(.horizontal, 7)
+    .padding(.horizontal, 9)
     .padding(.vertical, 4)
-    .background(active ? category.soft : Color.primary.opacity(0.07), in: .rect(cornerRadius: Radius.chip))
+    .background(active ? category.soft : Color.primary.opacity(0.07), in: .capsule)
     .accessibilityLabel(active ? "\(name), active filter" : name)
   }
 }

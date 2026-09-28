@@ -94,7 +94,7 @@ public struct TagInput: View {
                 tags.removeAll { $0 == tag }
               } label: {
                 Image(systemName: "xmark.circle.fill")
-                  .font(.orbis.mono)
+                  .font(.orbis.detail)
                   // The glyph is about 13 pt square. 44 pt is the target the touch platforms need
                   // and 20 pt the Mac one; the HStack keeps the chip centred in the taller target.
                   #if os(macOS)
@@ -118,7 +118,7 @@ public struct TagInput: View {
                 tags = Self.adding(tag, to: tags, limit: limit)
               } label: {
                 Label(tag, systemImage: "plus")
-                  .font(.orbis.mono)
+                  .font(.orbis.detail)
               }
               .buttonStyle(.bordered)
               .buttonBorderShape(.capsule)
@@ -129,7 +129,7 @@ public struct TagInput: View {
         .scrollIndicators(.hidden)
       }
       Text(hint)
-        .font(.orbis.mono)
+        .font(.orbis.detail)
         .foregroundStyle(.secondary)
     }
   }
@@ -144,10 +144,14 @@ public struct TagInput: View {
 
 /// Lays chips out in rows, wrapping when the width runs out. Rows are as tall as the tallest
 /// chip in them, so a removed Tag does not move the ones beside it.
-struct ChipFlow: Layout {
-  var spacing: CGFloat = 6
+public struct ChipFlow: Layout {
+  public var spacing: CGFloat = 6
 
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+  public init(spacing: CGFloat = 6) {
+    self.spacing = spacing
+  }
+
+  public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let width = proposal.width ?? .infinity
     var lineWidth: CGFloat = 0
     var height: CGFloat = 0
@@ -165,7 +169,7 @@ struct ChipFlow: Layout {
     return CGSize(width: width == .infinity ? lineWidth : width, height: height + lineHeight)
   }
 
-  func placeSubviews(
+  public func placeSubviews(
     in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
   ) {
     var x = bounds.minX

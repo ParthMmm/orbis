@@ -3,7 +3,7 @@ import SwiftUI
 /// Now playing, docked above the tab bar on every screen but the Set's own page.
 ///
 /// Glass, because it floats over content the way the tab bar does. It names the Set and offers
-/// one control; the position is the hairline along its bottom edge, and the clock lives on the
+/// two controls, AirPlay and Play; the position is the hairline along its bottom edge, and the clock lives on the
 /// Now Playing screen, which tapping the rest opens. The bar is the one place playback is
 /// reachable after that screen closes.
 ///
@@ -47,7 +47,7 @@ public struct MiniPlayer: View {
   }
 
   public var body: some View {
-    HStack(spacing: 12) {
+    HStack(spacing: 4) {
       Button(action: open) {
         HStack(spacing: 12) {
           Artwork(url: artwork, seed: title, size: .row)
@@ -63,6 +63,8 @@ public struct MiniPlayer: View {
       .buttonStyle(.plain)
       .accessibilityLabel("Now playing, \(title)")
       .accessibilityHint("Opens Now Playing")
+      // Beside Play, because sending the Set to a speaker is as common as pausing it.
+      AirPlayButton()
       Button(action: toggle) {
         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
           .font(.title3)

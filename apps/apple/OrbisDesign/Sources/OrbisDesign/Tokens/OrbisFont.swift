@@ -1,7 +1,8 @@
 import SwiftUI
 
 /// Type ramp. Every style is a Dynamic Type text style, so sizes follow the user's setting
-/// and platform. San Francisco is the only family: SF Pro for text, SF Mono for data.
+/// and platform. SF Pro is the only face. Numbers that change while they are read — the
+/// playhead, a count — take `.monospacedDigit()` so the digits hold still, not a monospaced face.
 public enum OrbisFont {
   /// Screen title on iPhone ("Library").
   public static let largeTitle = Font.largeTitle.bold()
@@ -19,17 +20,17 @@ public enum OrbisFont {
   public static let body = Font.body
   /// Section labels in sidebars and forms.
   public static let caption = Font.caption.weight(.semibold)
-  /// URLs, dates, counts, indices.
-  public static let mono = Font.system(.caption, design: .monospaced)
-  /// Source stamps ("YOUTUBE"). Pair with `.textCase(.uppercase)`.
-  public static let stamp = Font.system(.caption2, design: .monospaced).weight(.medium)
-  /// Listing labels ("THU 11 SEP", "TAGS"). `ListingLabel` sets the case and tracking.
-  public static let label = Font.system(.caption2, design: .monospaced).weight(.medium)
-  /// The playhead, read the way a deck shows it. Monospaced so the digits do not shuffle.
-  public static let timecode = Font.system(.title, design: .monospaced).weight(.medium)
+  /// Secondary facts under a title: who made it, how long it runs, a date, a note.
+  public static let detail = Font.footnote
+  /// Source stamps ("YouTube").
+  public static let stamp = Font.caption.weight(.semibold)
+  /// Listing labels: a day heading, a count over a list.
+  public static let label = Font.subheadline.weight(.semibold)
+  /// The playhead. Pair with `.monospacedDigit()` so the digits do not shuffle.
+  public static let timecode = Font.title.weight(.semibold)
 }
 
 extension Font {
-  /// `Font.orbis.rowTitle`, `Font.orbis.mono`, …
+  /// `Font.orbis.rowTitle`, `Font.orbis.detail`, …
   public static var orbis: OrbisFont.Type { OrbisFont.self }
 }
