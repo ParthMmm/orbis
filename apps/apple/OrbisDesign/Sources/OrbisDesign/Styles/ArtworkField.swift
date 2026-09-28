@@ -1,33 +1,14 @@
 import ImageIO
 import SwiftUI
 
-/// The colour a page takes from its artwork, the way a music app tints an album's page.
-///
-/// A thumbnail is reduced to one hue and one chroma, and each appearance draws its own field
-/// from them: dark and quiet under white text in dark appearance, pale under dark text in light.
-/// Only the lightness band differs, so the page feels like the same artwork either way.
-///
-/// The rules are the design's, and each is here so it can be tested:
-/// - The darkest and brightest tenth of the pixels are left out, so letterbox bars and glare do
-///   not decide the colour.
-/// - Each pixel counts by how vivid it is, so the colour the eye picks out of the artwork wins
-///   over the grey around it. A plain average mixes every hue into mud.
-/// - Chroma is capped, so a saturated thumbnail cannot shout over the content.
-/// - Artwork that is close to grey has no hue worth keeping, and gets the brand's purple.
-/// - A hue close to the tint moves away from it, so Play stays the one orange thing on the page.
 public struct ArtworkField: Equatable, Sendable {
-  /// OKLCH hue, in degrees.
   public let hue: Double
-  /// OKLCH chroma, already capped.
   public let chroma: Double
 
-  /// The brand's field, for artwork with no colour to give: the eclipse's violet.
   public static let brand = ArtworkField(hue: 300, chroma: 0.09)
 
-  /// Below this, a colour reads as grey and its hue is noise.
   static let greyChroma = 0.02
   static let maxChroma = 0.10
-  /// The tint's hue, and how close a field may come to it.
   static let tintHue = 48.0
   static let tintClearance = 25.0
 
@@ -36,7 +17,6 @@ public struct ArtworkField: Equatable, Sendable {
     self.chroma = chroma
   }
 
-  /// The field for an average colour, given in OKLab.
   public static func from(averageLab lab: (l: Double, a: Double, b: Double)) -> ArtworkField {
     let chroma = (lab.a * lab.a + lab.b * lab.b).squareRoot()
     guard chroma >= greyChroma else { return brand }
@@ -44,19 +24,16 @@ public struct ArtworkField: Equatable, Sendable {
     if hue < 0 { hue += 360 }
     let distance = angularDistance(hue, tintHue)
     if distance < tintClearance {
-      // Away from orange on the red side, toward the brand's purple.
       hue = (tintHue - tintClearance + 360).truncatingRemainder(dividingBy: 360)
     }
     return ArtworkField(hue: hue, chroma: min(chroma, maxChroma))
   }
 
-  /// The field for a set of pixels, each an sRGB triple from 0 to 1.
   public static func from(pixels: [(r: Double, g: Double, b: Double)]) -> ArtworkField {
     guard !pixels.isEmpty else { return brand }
     let labs = pixels.map { OKLab.from(srgb: $0) }.sorted { $0.l < $1.l }
     let trim = labs.count / 10
     let kept = labs.count > 2 * trim ? Array(labs[trim..<(labs.count - trim)]) : labs
-    // Weighted by chroma squared, so a few vivid pixels outvote a field of near-greys.
     let weights = kept.map { $0.a * $0.a + $0.b * $0.b }
     let total = weights.reduce(0, +)
     guard total > 1e-6 else { return brand }
@@ -70,19 +47,13 @@ public struct ArtworkField: Equatable, Sendable {
       l += lab.l * weight
       chroma += weight.squareRoot() * weight
     }
-    // The hue comes from the weighted direction and the chroma from the weighted strength,
-    // because opposing hues cancel in the direction and would otherwise read as grey.
     let hue = atan2(b, a)
     let strength = chroma / total
     return from(averageLab: (l: l / total, a: strength * cos(hue), b: strength * sin(hue)))
   }
 
-  /// The lightness the field takes in each appearance. White text on the dark band and ink on
-  /// the pale band both clear 4.5:1 at the capped chroma.
   static func lightness(dark: Bool) -> Double { dark ? 0.34 : 0.93 }
 
-  /// The field as a colour for one appearance. The pale field carries less chroma, because a
-  /// pastel at full chroma reads as a highlight rather than a page.
   public func color(dark: Bool) -> Color {
     let c = dark ? chroma : chroma * 0.45
     let radians = hue * .pi / 180
@@ -97,8 +68,6 @@ public struct ArtworkField: Equatable, Sendable {
 }
 
 extension ArtworkField {
-  /// The field for an image: sampled small, because the average of a 16 by 9 grid is the
-  /// average of the picture.
   public static func from(cgImage image: CGImage) -> ArtworkField {
     let width = 16
     let height = 9
@@ -124,7 +93,6 @@ extension ArtworkField {
     return from(pixels: pixels)
   }
 
-  /// The field for encoded image data, or nil when the data is not an image.
   public static func from(imageData data: Data) -> ArtworkField? {
     guard let source = CGImageSourceCreateWithData(data as CFData, nil),
       let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
@@ -133,7 +101,6 @@ extension ArtworkField {
   }
 }
 
-/// sRGB to OKLab and back, after Björn Ottosson's reference.
 enum OKLab {
   static func from(srgb: (r: Double, g: Double, b: Double)) -> (l: Double, a: Double, b: Double) {
     let r = linear(srgb.r)
@@ -149,7 +116,6 @@ enum OKLab {
     )
   }
 
-  /// Back to sRGB, clamped into gamut: the capped chroma keeps the field inside it or close.
   static func srgb(l lightness: Double, a: Double, b: Double) -> (r: Double, g: Double, b: Double) {
     let l = pow(lightness + 0.3963377774 * a + 0.2158037573 * b, 3)
     let m = pow(lightness - 0.1055613458 * a - 0.0638541728 * b, 3)
@@ -171,7 +137,6 @@ enum OKLab {
   }
 }
 
-/// Loads a field for a URL once and remembers it, so a page that reappears is tinted at once.
 @MainActor
 final class ArtworkFieldCache {
   static let shared = ArtworkFieldCache()
@@ -188,12 +153,9 @@ final class ArtworkFieldCache {
   }
 }
 
-/// A surface tinted from a Set's artwork.
 public struct ArtworkBackdrop: View {
   public enum Style: Sendable {
-    /// Behind a whole page: the field at the top, fading into paper, under the safe areas.
     case page
-    /// Behind a card: the field, flat.
     case card
   }
 
@@ -209,8 +171,6 @@ public struct ArtworkBackdrop: View {
 
   public var body: some View {
     let known = field ?? url.flatMap(ArtworkFieldCache.shared.field(for:))
-    // Paper until the colour is known, then the colour fades in: a guess drawn first and then
-    // replaced reads as a cut. A field already seen is read from the cache in the first frame.
     let tone = known.map { $0.color(dark: colorScheme == .dark) } ?? Color.orbis.paper
     surface(tone)
       .orbisAnimation(.pageTinted, value: known)

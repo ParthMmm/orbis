@@ -302,7 +302,6 @@ final class LibraryUITests: XCTestCase {
     XCTAssertTrue(app.buttons["detail-open"].exists, "the page must offer the source")
     capture("10-set-page")
 
-    // Rename lives in the page's menu and opens a sheet with the title in a field.
     app.buttons["detail-actions"].tap()
     app.buttons["detail-rename-action"].tap()
     let field = app.textFields["rename-title"]
@@ -321,9 +320,6 @@ final class LibraryUITests: XCTestCase {
     )
     capture("11-set-renamed")
 
-    // Removal lives in the page's menu and asks first. On iOS 26 the confirmation rises as a
-    // popover with no cancel button, so it is dismissed the way a person dismisses one: by
-    // tapping outside it.
     app.buttons["detail-actions"].tap()
     app.buttons["detail-remove"].tap()
     XCTAssertTrue(

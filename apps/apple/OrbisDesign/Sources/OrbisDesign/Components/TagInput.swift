@@ -146,7 +146,6 @@ public struct TagInput: View {
 /// chip in them, so a removed Tag does not move the ones beside it.
 public struct ChipFlow: Layout {
   public var spacing: CGFloat = 6
-  /// Where each row sits: at the leading edge, or centred, as a Set page centres its Tags.
   public var alignment: HorizontalAlignment = .leading
 
   public init(spacing: CGFloat = 6, alignment: HorizontalAlignment = .leading) {
@@ -175,7 +174,6 @@ public struct ChipFlow: Layout {
   public func placeSubviews(
     in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
   ) {
-    // Rows first, so a centred row knows its own width before any chip in it is placed.
     var rows: [[(subview: LayoutSubview, size: CGSize)]] = [[]]
     var rowWidth: CGFloat = 0
     for subview in subviews {

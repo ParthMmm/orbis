@@ -1,11 +1,5 @@
 import SwiftUI
 
-/// People while Social is off: what turning it on shows, what it shares, and the switch.
-///
-/// Social starts off for every Person, so this is the first thing the People tab shows. It says
-/// both directions plainly, because turning it on shares as well as shows. A server that cannot
-/// offer Social yet passes `unavailable`, and the switch is shown but not offered, with the
-/// reason under it.
 public struct SocialInvite: View {
   public let unavailable: String?
   public let turnOn: () -> Void

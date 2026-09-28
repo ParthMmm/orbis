@@ -47,9 +47,7 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
   case tagToggled
   /// A Set moved within a Playlist.
   case playlistReordered
-  /// A page opened by the person took its colour from the Set's artwork.
   case pageTinted
-  /// A Download the person asked for moved on: queued, filling, done.
   case downloadProgressed
 
   public var purpose: String {

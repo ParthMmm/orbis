@@ -215,12 +215,9 @@ struct RootView: View {
 
 #endif
 
-/// The mini player, fed from the audio player. On iPhone the tab bar's accessory supplies the
-/// glass; on iPad and Mac the bar floats over the detail column and draws its own.
 struct NowPlayingBar: View {
   @Bindable var model: AppModel
   var surface: MiniPlayer.Surface = .accessory
-  /// Opens Now Playing, which the shell presents.
   let open: () -> Void
 
   var body: some View {
@@ -276,7 +273,6 @@ struct SidebarShell: View {
   #else
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
   #endif
-  /// Now Playing is a sheet over the whole window, opened from the floating player.
   @State private var isNowPlayingShown = false
 
   var body: some View {
@@ -370,8 +366,6 @@ struct SidebarShell: View {
       NavigationStack {
         DestinationView(model: model, destination: model.destination)
       }
-      // A wide window has no tab bar to carry the player, so it floats over the detail column,
-      // clear of the sidebar, the way a music app keeps playback in reach.
       .safeAreaInset(edge: .bottom) {
         if model.audioPlayer.currentSetId != nil {
           NowPlayingBar(model: model, surface: .floating) { isNowPlayingShown = true }
@@ -479,8 +473,6 @@ struct DestinationView: View {
         ),
         failureContext: "loading the library",
         activeTag: model.activeTag,
-        // Tags are tiles above the list rather than words beside its count, so they read as
-        // places to go the way a music app's genres do.
         filters: nil,
         // Only a filter can hide every Set. Without one, an empty list is an empty collection
         // and keeps the empty collection's copy.
@@ -623,8 +615,6 @@ struct DestinationView: View {
     }
   }
 
-  /// The Set open in this destination. Bound per destination rather than to the one on screen,
-  /// so a tab that is not showing never picks up a page another tab opened.
   private var openedSet: Binding<String?> {
     Binding(
       get: { model.openedSets[destination] },
@@ -636,9 +626,6 @@ struct DestinationView: View {
     if case .loaded(let sets) = model.library { sets } else { [] }
   }
 
-  /// Opens the sheet. A YouTube or SoundCloud link on the clipboard that the Library does not
-  /// hold yet is filed at once, so the sheet opens on the Set being read rather than on a field
-  /// to paste into; anything else opens the empty field, focused.
   private func openFilingSheet() {
     isFilingSheetShown = true
     #if os(iOS)
@@ -656,8 +643,6 @@ struct DestinationView: View {
     #endif
   }
 
-  /// Each Tag is a tile with its count; the active one is ringed and checked. Pressing it again
-  /// clears the filter.
   private var tagTiles: AnyView {
     AnyView(
       VStack(alignment: .leading, spacing: 10) {
@@ -779,8 +764,6 @@ struct HomeRails: View {
     return SetPresentation.continueListening(sets)
   }
 
-  /// A started Set as a card in its artwork's colour, the way a music app shows what to pick
-  /// up again.
   private var continueCards: some View {
     ForEach(continueSets) { set in
       Button {
@@ -809,14 +792,12 @@ struct HomeRails: View {
         .clipShape(.rect(cornerRadius: Radius.list))
       }
       .buttonStyle(.plain)
-      // Named outright: a combined label on the first card of a rail came back as its identifier.
       .accessibilityElement(children: .ignore)
       .accessibilityLabel([set.title, SetPresentation.timeLeft(set)].compactMap { $0 }.joined(separator: ", "))
       .accessibilityIdentifier("continue-card-\(set.id)")
     }
   }
 
-  /// Every tag, as a capsule that opens the Library filtered by it.
   private var tagRow: some View {
     VStack(alignment: .leading, spacing: 8) {
       Text("Tags")

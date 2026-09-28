@@ -110,9 +110,6 @@ export class DownloadWorker extends Context.Service<
             yield* Effect.logInfo("audio download claimed").pipe(
               Effect.annotateLogs({ set: claimed.id, source: claimed.source })
             );
-            // The whole outcome, defects included: this loop is the boundary that has to
-            // outlive any one download. A defect that escaped it once ended the worker, and every
-            // Set queued after it stayed queued until the service restarted.
             const outcome = yield* Effect.exit(downloadOne(claimed));
             if (Exit.isFailure(outcome)) {
               if (Cause.hasInterruptsOnly(outcome.cause)) {

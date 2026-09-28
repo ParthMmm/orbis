@@ -59,8 +59,6 @@ struct SetDetailScreen: View {
     switch set.downloadState {
     case "ready":
       VStack(spacing: 8) {
-        // The same controls whether or not this Set is in the player, so Play changes a glyph
-        // and nothing on the page moves.
         Transport(
           player: model.audioPlayer,
           fallbackDuration: set.durationSeconds.map(TimeInterval.init),
@@ -78,8 +76,6 @@ struct SetDetailScreen: View {
         }
       }
     default:
-      // One control from the first press to the last byte: the button becomes its own wait and
-      // then its own progress, in place.
       DownloadCapsule(
         phase: downloadPhase(set),
         start: { Task { await model.downloadAudio(set.id) } },

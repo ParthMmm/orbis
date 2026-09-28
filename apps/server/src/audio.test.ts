@@ -380,9 +380,6 @@ test("a download requested again after a cancel is still worked on", async () =>
       if (attempts > 1) {
         return new Response("gone", { status: 500 });
       }
-      // A real fetch body errors its reader when the request is aborted, which is what a
-      // cancel does. That rejection once ended the worker, and everything queued after it
-      // waited forever.
       const stream = new ReadableStream({
         async start(controller) {
           signal.addEventListener("abort", () => {
@@ -410,7 +407,6 @@ test("a download requested again after a cancel is still worked on", async () =>
       url: `/sets/${id}/audio/download`,
     });
     expect(again.json().downloadState).toBe("queued");
-    // The worker must still be alive to take it: the second attempt's 500 lands it in failed.
     const settled = await waitForState(app, id, ["failed", "ready"]);
     expect(settled.state).toBe("failed");
   } finally {

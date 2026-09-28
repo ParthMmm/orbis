@@ -1,11 +1,6 @@
 import AVKit
 import SwiftUI
 
-/// The system's AirPlay control: the route picker, which draws the glyph and opens the list of
-/// speakers and TVs. A custom button could only imitate it, and the system one already knows
-/// when a route is active and tints itself to say so.
-///
-/// Every player carries one, because sending a Set to the room is as common as playing it.
 public struct AirPlayButton: View {
   public init() {}
 

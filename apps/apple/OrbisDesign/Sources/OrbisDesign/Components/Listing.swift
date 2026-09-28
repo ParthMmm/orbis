@@ -2,11 +2,7 @@ import SwiftUI
 
 /// The vocabulary of a listing: the Library, the Queue, a Set's rows.
 ///
-/// A listing is dense and flat. Labels are small and semibold in sentence case; rows are parted
-/// by hairlines. Nothing in a listing is raised.
 
-/// A label in a listing: a day, a count. Semibold and secondary, so it reads as a label and
-/// never as a value.
 public struct ListingLabel: View {
   public let text: String
   public let tint: Color?
@@ -41,8 +37,6 @@ public struct ListingHeader: View {
   }
 }
 
-/// The hairline that opens a listing under its title. The tint is kept for controls, so the
-/// rule is the system separator like every other line in a list.
 public struct ListingRule: View {
   public init() {}
 
@@ -52,9 +46,6 @@ public struct ListingRule: View {
   }
 }
 
-/// A Tag as a listing writes it: a capsule in the Tag's colour, so Tags are the most colourful
-/// thing on a row. `active` marks the Tag the listing is filtered by with a checkmark and a
-/// stronger fill, which survives any colour setting.
 public struct TagWord: View {
   public let name: String
   public let category: OrbisColor.Category
@@ -92,7 +83,6 @@ public struct ListingRow<Value: View>: View {
   public var value: String?
   public let action: (() -> Void)?
   public let identifier: String?
-  /// Whether a hairline parts this row from the next. The last row of a card has none.
   public let divided: Bool
   @ViewBuilder public let content: () -> Value
 
@@ -150,7 +140,6 @@ public struct ListingRow<Value: View>: View {
     }
   }
 
-  /// The field's name, in body text the way a Settings row names itself.
   private var fieldName: some View {
     Text(label)
       .font(.orbis.body)

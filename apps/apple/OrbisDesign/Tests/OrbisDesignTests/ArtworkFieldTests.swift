@@ -17,14 +17,12 @@ import Testing
   }
 
   @Test func `a saturated colour keeps its hue and has its chroma capped`() {
-    // A strong green: OKLCH hue near 142°, chroma far above the cap.
     let field = ArtworkField.from(pixels: Array(repeating: (r: 0.1, g: 0.8, b: 0.2), count: 20))
     #expect(field.chroma == ArtworkField.maxChroma)
     #expect(abs(field.hue - 145) < 10)
   }
 
   @Test func `a hue near the tint moves off it so Play stays the one orange thing`() {
-    // The tint itself, roughly: an orange at OKLCH hue ~48°.
     let field = ArtworkField.from(averageLab: (l: 0.7, a: 0.12, b: 0.13))
     #expect(ArtworkField.angularDistance(field.hue, ArtworkField.tintHue) >= ArtworkField.tintClearance)
   }
@@ -36,7 +34,6 @@ import Testing
   }
 
   @Test func `letterbox bars do not decide the colour`() {
-    // A blue picture between black bars: without the trim the average is mostly black.
     let bars = Array(repeating: (r: 0.0, g: 0.0, b: 0.0), count: 10)
     let picture = Array(repeating: (r: 0.15, g: 0.3, b: 0.8), count: 80)
     let glare = Array(repeating: (r: 1.0, g: 1.0, b: 1.0), count: 10)
@@ -46,8 +43,6 @@ import Testing
   }
 
   @Test func `a vivid accent outweighs a grey background`() {
-    // Mostly grey artwork with a small red highlight: a plain average is near grey, and the field
-    // should carry the highlight rather than falling to the brand.
     let grey = Array(repeating: (r: 0.35, g: 0.35, b: 0.38), count: 85)
     let accent = Array(repeating: (r: 0.9, g: 0.1, b: 0.3), count: 15)
     let field = ArtworkField.from(pixels: grey + accent)
@@ -82,7 +77,6 @@ import Testing
     #expect(ArtworkField.from(imageData: Data("not an image".utf8)) == nil)
   }
 
-  /// Relative luminance of a resolved colour, which is linear already.
   private func luma(_ color: Color.Resolved) -> Double {
     0.2126 * Double(color.linearRed) + 0.7152 * Double(color.linearGreen)
       + 0.0722 * Double(color.linearBlue)

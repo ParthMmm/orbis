@@ -1,12 +1,6 @@
 import OrbisDesign
 import SwiftUI
 
-/// Add to Playlist, the way a music app asks: a sheet with the Playlists used most recently, then
-/// all of them, a field to find one, and a button to make a new one.
-///
-/// Choosing a Playlist adds the Set and closes the sheet, because that is the whole errand. A
-/// Playlist that already holds the Set carries a checkmark, and choosing it takes the Set out
-/// and leaves the sheet up, so an accidental add is undone in the same place.
 struct AddToPlaylistSheet: View {
   @Bindable var model: AppModel
   let set: SavedSet
@@ -16,8 +10,6 @@ struct AddToPlaylistSheet: View {
   @State private var order: Order = .recentlyAdded
   @State private var isCreating = false
   @State private var newName = ""
-  /// The Playlists this device added to last, newest first. Kept on the device: it is a
-  /// convenience of this sheet, not a fact about the library.
   @AppStorage("orbis.recentPlaylistIds") private var recentStore = ""
 
   enum Order: String, CaseIterable, Identifiable {
@@ -27,7 +19,6 @@ struct AddToPlaylistSheet: View {
     var id: Self { self }
   }
 
-  /// Where New Playlist sits: the bottom bar on iPhone, the toolbar elsewhere.
   static var newPlacement: ToolbarItemPlacement {
     #if os(iOS)
       .bottomBar
@@ -36,7 +27,6 @@ struct AddToPlaylistSheet: View {
     #endif
   }
 
-  /// How many Playlists the Recents section shows.
   static let recentLimit = 3
 
   var body: some View {
@@ -163,7 +153,6 @@ struct AddToPlaylistSheet: View {
     return Self.sorted(found, by: order)
   }
 
-  /// The service lists Playlists newest first, so "Recently Added" keeps its order.
   static func sorted(_ playlists: [Playlist], by order: Order) -> [Playlist] {
     switch order {
     case .recentlyAdded:
@@ -175,7 +164,6 @@ struct AddToPlaylistSheet: View {
     }
   }
 
-  /// The recent list with `id` at its head, each Playlist once.
   static func remembering(_ id: String, in recent: [String], limit: Int = 12) -> [String] {
     Array(([id] + recent.filter { $0 != id }).prefix(limit))
   }
@@ -203,8 +191,6 @@ struct AddToPlaylistSheet: View {
   }
 }
 
-/// A Playlist's cover: its colour, as a gradient, with its name in the corner, the way a music
-/// app draws a Playlist that has no picture of its own.
 struct PlaylistCover: View {
   let name: String
   var size: CGFloat = 56
@@ -230,7 +216,6 @@ struct PlaylistCover: View {
 }
 
 extension View {
-  /// The search field, pinned open under the title on iPhone the way a music app's picker has it.
   fileprivate func playlistSearch(text: Binding<String>) -> some View {
     #if os(iOS)
       searchable(

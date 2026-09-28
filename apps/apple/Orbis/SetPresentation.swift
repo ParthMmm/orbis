@@ -47,8 +47,6 @@ enum SetPresentation {
     return min(Double(set.playbackPositionSeconds) / Double(seconds), 1)
   }
 
-  /// The symbol the source button wears. A system symbol rather than the service's logo, which
-  /// the design keeps neutral.
   static func sourceSymbol(_ source: SetSource) -> String {
     switch source {
     case .youtube: "play.rectangle.fill"
@@ -57,15 +55,12 @@ enum SetPresentation {
     }
   }
 
-  /// How many Sets carry each tag.
   static func tagCounts(_ sets: [SavedSet]) -> [String: Int] {
     sets.reduce(into: [:]) { counts, set in
       for tag in Set(set.tags) { counts[tag, default: 0] += 1 }
     }
   }
 
-  /// The Sets a person is part way through, most recently heard first: the Continue Listening
-  /// rail. A Set that has not started, or has finished, is not waiting for anyone.
   static func continueListening(_ sets: [SavedSet], limit: Int = 6) -> [SavedSet] {
     let started = sets.filter { set in
       guard set.playbackPositionSeconds > 0 else { return false }
@@ -239,7 +234,6 @@ enum SetPresentation {
     LinkField.address(of: set.url)
   }
 
-  /// What is left of a started Set, "34m left", or where it stands when its length is unknown.
   static func timeLeft(_ set: SavedSet) -> String? {
     guard set.playbackPositionSeconds > 0 else { return nil }
     guard let duration = set.durationSeconds, duration > set.playbackPositionSeconds else {

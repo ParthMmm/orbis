@@ -1,18 +1,11 @@
 import OrbisDesign
 import SwiftUI
 
-/// How a Set is changed, and the sheets those changes open. The page shows the Tags; the rest —
-/// the title, the Playlist, the source, removal — sits in the toolbar, as one source button and
-/// one menu, the way a music app keeps an album's actions behind one button. The Set's page and
-/// the Now Playing screen both carry it, so a Set is managed the same way wherever it is met,
-/// and every change reports through the model's one `setFailure`.
-///
 /// The section reads the Set from the model on every pass rather than holding a copy, so an
 /// edit shows up the moment the service accepts it.
 struct SetManagementSection: View {
   @Bindable var model: AppModel
   let set: SavedSet
-  /// Owned by the screen, so the sheet survives the section being rebuilt.
   @Binding var isRenaming: Bool
 
   @Environment(\.openURL) private var openURL
@@ -60,7 +53,6 @@ struct SetManagementSection: View {
     }
   }
 
-  /// Everything else a Set is changed with, behind one button.
   private var actions: some View {
     Menu {
       Button("Rename", systemImage: "pencil") { isRenaming = true }
@@ -103,7 +95,6 @@ struct SetManagementSection: View {
   }
 }
 
-/// Renaming a Set: one field in a small sheet, saved from the toolbar.
 private struct RenameSheet: View {
   let save: (String) -> Void
   @State private var draft: String
@@ -154,7 +145,6 @@ private struct RenameSheet: View {
   }
 }
 
-/// Changing a Set's Tags, in the same shape of sheet as renaming it.
 private struct TagSheet: View {
   let suggestions: [String]
   let save: ([String]) -> Void
@@ -186,8 +176,6 @@ private struct TagSheet: View {
             dismiss()
           }
           .tint(Color.orbis.tint)
-          // Plain Return belongs to the Tag field, which adds a Tag with it, so this takes the
-          // modified key instead.
           .keyboardShortcut(.return, modifiers: .command)
           .accessibilityIdentifier("tags-done")
         }

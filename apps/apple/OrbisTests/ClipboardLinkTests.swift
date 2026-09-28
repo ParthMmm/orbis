@@ -8,6 +8,9 @@ final class ClipboardLinkTests: XCTestCase {
     XCTAssertTrue(ClipboardLink.fileable("https://youtu.be/tPEMP9oYxTo"))
     XCTAssertTrue(ClipboardLink.fileable("  https://www.youtube.com/watch?v=abcdefghijk\n"))
     XCTAssertTrue(ClipboardLink.fileable("https://soundcloud.com/artist/set"))
+    XCTAssertTrue(ClipboardLink.fileable("https://on.soundcloud.com/AbCdEf123"))
+    XCTAssertTrue(
+      ClipboardLink.fileable("https://soundcloud.com/rinsefm/skin-on-skin-07-august-2026"))
     XCTAssertFalse(ClipboardLink.fileable("https://example.com/set"))
     XCTAssertFalse(ClipboardLink.fileable("remember to buy milk"))
     XCTAssertFalse(ClipboardLink.fileable(""))

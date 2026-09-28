@@ -5,13 +5,6 @@ import SwiftUI
   import UIKit
 #endif
 
-/// Adding a Set: a link, then the title and Tags the service read from it, in one sheet.
-///
-/// A grouped form, the way a system sheet asks for a few facts. Before a link is filed the sheet
-/// holds the link field; once the service answers it shows the Set it made, on its artwork's
-/// colour, with the title and Tags open to correction. Closing the second step keeps the Set as
-/// filed, so the sheet goes back to the link field with a line saying what was filed, ready for
-/// the next one.
 struct FilingSheet: View {
   @Bindable var model: AppModel
   @Binding var focusLink: Bool
@@ -42,7 +35,6 @@ struct FilingSheet: View {
       .toolbar { toolbar }
     }
     .presentationDetents([.medium, .large], selection: $detent)
-    // The naming step has a preview, a title and Tags; half a screen would hide the Tags.
     .onChange(of: model.reveal != nil, initial: true) { _, hasReveal in
       if hasReveal { detent = .large }
     }
@@ -55,8 +47,6 @@ struct FilingSheet: View {
         Button("Close", systemImage: "xmark", role: .close, action: close)
       }
     } else {
-      // The Set is already in the Library, so leaving this step changes nothing; it keeps what
-      // the service read.
       ToolbarItem(placement: .cancellationAction) {
         Button("Not Now", systemImage: "xmark", role: .close) { model.closeReveal() }
           .accessibilityIdentifier("reveal-dismiss")
@@ -192,25 +182,18 @@ struct FilingSheet: View {
   }
 }
 
-/// The link the clipboard holds, when it is one Orbis takes and the Library does not have yet.
 enum ClipboardLink {
-  /// Whether text names a source Orbis files: a YouTube or SoundCloud address.
   nonisolated static func fileable(_ text: String) -> Bool {
     guard let url = LinkField.address(of: text) else { return false }
     return SetSource.named(by: url) != nil
   }
 
-  /// Whether the Library already holds this address, so a link copied long ago is not filed
-  /// again every time the sheet opens.
   static func isFiled(_ text: String, in sets: [SavedSet]) -> Bool {
     let wanted = text.trimmingCharacters(in: .whitespacesAndNewlines)
     return sets.contains { $0.url == wanted }
   }
 
   #if os(iOS)
-    /// Reads the clipboard only when it holds something shaped like a web address. The shape is
-    /// asked of the system without reading, which shows no paste banner; the read itself follows
-    /// the press of +, which is the person asking for it.
     @MainActor
     static func read() async -> String? {
       let board = UIPasteboard.general

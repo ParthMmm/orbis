@@ -1,11 +1,5 @@
 import SwiftUI
 
-/// A Set's Tags as a grouped list, the way Settings or Reminders edits a list of words: the Tags
-/// it has, with a way to remove each; a field to add one; and the Tags the library already
-/// holds, a tap away. Its sections go straight into a `Form`.
-///
-/// The service's rules apply on the way in, through `TagInput`'s helpers: trimmed, lowercased,
-/// forty characters at most, twenty Tags at most, each once.
 public struct TagListEditor: View {
   @Binding public var tags: [String]
   public let suggestions: [String]
@@ -97,7 +91,6 @@ public struct TagListEditor: View {
                 .accessibilityHidden(true)
             }
           }
-          // The name is a value, not a link; only the plus is tinted.
           .tint(.primary)
           .accessibilityLabel("Add \(tag)")
           .accessibilityIdentifier("tag-suggestion-\(tag)")

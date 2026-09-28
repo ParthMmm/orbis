@@ -1,19 +1,10 @@
 import SwiftUI
 
-/// Getting a Set's audio, as one control that becomes its own progress.
-///
-/// The button that asks for the audio is the same shape, in the same place, as the wait and the
-/// progress that follow, so pressing it changes what it says and how full it is, never where
-/// it is. The way out of a Download is inside it, rather than a second control under it.
 public struct DownloadCapsule: View {
   public enum Phase: Equatable, Sendable {
-    /// No audio yet: the control asks for it.
     case available
-    /// The service has the request and has not started.
     case queued
-    /// Under way, from 0 to 1 when the size is known.
     case downloading(Double?)
-    /// The last attempt stopped: the control offers another.
     case failed
   }
 
@@ -27,7 +18,6 @@ public struct DownloadCapsule: View {
     self.cancel = cancel
   }
 
-  /// How full the capsule is drawn.
   public static func fill(for phase: Phase) -> Double {
     switch phase {
     case .available, .failed: 1
@@ -36,7 +26,6 @@ public struct DownloadCapsule: View {
     }
   }
 
-  /// What the capsule says.
   public static func label(for phase: Phase) -> String {
     switch phase {
     case .available: "Download"
@@ -56,8 +45,6 @@ public struct DownloadCapsule: View {
 
   public var body: some View {
     ZStack {
-      // The track and the fill: the whole capsule in the tint when it is a button, a quiet track
-      // that fills in the tint while the audio arrives.
       Capsule().fill(.quaternary)
       GeometryReader { proxy in
         Capsule()

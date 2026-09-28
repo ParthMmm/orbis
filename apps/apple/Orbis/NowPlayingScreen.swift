@@ -43,7 +43,6 @@ struct NowPlayingScreen: View {
           .accessibilityIdentifier("now-playing-empty")
         }
       }
-      // The screen takes its colour from the Set's artwork, the way a music app tints Now Playing.
       .background {
         ArtworkBackdrop(
           url: player.currentSetId.flatMap { model.savedSet($0) }.flatMap(

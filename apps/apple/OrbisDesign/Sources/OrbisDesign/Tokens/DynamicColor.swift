@@ -21,10 +21,6 @@ nonisolated struct P3: Equatable, Sendable {
 
 /// A color with a value per contrast setting, resolved by the platform at draw time so it
 /// follows the window's appearance and Increase Contrast setting, not the app's.
-///
-/// Nonisolated, and its providers `@Sendable`: SwiftUI resolves colours on its render thread
-/// as well as the main one, and a provider isolated to the main actor traps when it is asked
-/// from anywhere else.
 nonisolated struct DynamicColor: Sendable {
   let light: P3
   let dark: P3

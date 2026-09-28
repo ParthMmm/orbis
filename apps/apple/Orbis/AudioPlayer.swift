@@ -45,8 +45,6 @@ final class AudioPlayer {
   /// Where a resumed Set should start once its item is ready. AVPlayer refuses a seek before the
   /// item knows its own timeline, so the position waits here until it does.
   private var pendingSeek: TimeInterval?
-  /// True from a seek until it lands. The clock keeps ticking with the old time in between, and
-  /// taking those ticks moved the bar back to where it was before jumping to where it went.
   private var isSeeking = false
 
   /// Called with the Set that has just played to its natural end, so the caller can finish its
@@ -394,7 +392,6 @@ final class AudioPlayer {
     elapsed = bounded
   }
 
-  /// Seeks, and holds the clock's ticks until the seek lands.
   private func move(to seconds: TimeInterval) {
     guard let player else { return }
     isSeeking = true

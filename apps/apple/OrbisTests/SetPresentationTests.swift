@@ -59,7 +59,6 @@ final class SetPresentationTests: XCTestCase {
       try makeSet(
         id: "newer", playbackPositionSeconds: 60, durationSeconds: 3600,
         lastListenedAt: "2026-09-11T20:00:00.000Z"),
-      // A length the service has not measured yet still counts once listening started.
       try makeSet(id: "unmeasured", playbackPositionSeconds: 30),
     ]
     XCTAssertEqual(

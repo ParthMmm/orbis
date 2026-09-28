@@ -1,11 +1,5 @@
 import SwiftUI
 
-/// A Tag as a place to go: a tile in the Tag's colour with its name and how many Sets carry it.
-/// The Library lays them out in a grid, the way a music app lays out genres, and pressing one
-/// filters the list by it.
-///
-/// `active` marks the Tag the Library is filtered by with a ring and a checkmark, so the state
-/// survives any colour setting.
 public struct TagTile: View {
   public let name: String
   public let count: Int
@@ -19,7 +13,6 @@ public struct TagTile: View {
     self.active = active
   }
 
-  /// "1 set", "14 sets".
   public static func countLabel(_ count: Int) -> String {
     count == 1 ? "1 set" : "\(count) sets"
   }
@@ -58,7 +51,6 @@ public struct TagTile: View {
   }
 }
 
-/// Tag tiles two to a row on a phone, more where there is room.
 public struct TagGrid<Content: View>: View {
   @ViewBuilder public let content: () -> Content
 

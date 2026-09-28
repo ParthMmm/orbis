@@ -13,19 +13,12 @@ struct Transport: View {
   let fallbackDuration: TimeInterval?
   /// What a journey reads the controls by, so the page and Now Playing stay distinguishable.
   var identifierPrefix = "detail"
-  /// Whether this Set is the one in the player. One that is not shows its saved place and a Play
-  /// that starts it, in the same layout, so starting playback changes one glyph and nothing moves.
   var isCurrent = true
-  /// Where listening left off, for a Set that is not in the player.
   var savedPosition: TimeInterval = 0
-  /// Starts this Set, for a Set that is not in the player.
   var start: () -> Void = {}
-  /// Controls either side of the skips, such as the queue menu and AirPlay.
   var leading: AnyView?
   var trailing: AnyView?
 
-  /// Loading counts as playing: the person asked for sound, and a buffering pause that flipped
-  /// the glyph back to Play and forward again read as the control changing its mind.
   private var isPlaying: Bool {
     guard isCurrent else { return false }
     switch player.state {
@@ -61,7 +54,6 @@ struct Transport: View {
             player.resume()
           }
         }
-        // The one change starting playback makes on screen: the glyph, replaced in place.
         .contentTransition(.symbolEffect(.replace))
         .buttonStyle(.glassProminent)
         .tint(Color.orbis.tint)
@@ -87,8 +79,6 @@ struct Transport: View {
     }
   }
 
-  /// A side control, or the room one would take, so the skips and Play sit in the same place
-  /// with or without it.
   @ViewBuilder private func slot(_ control: AnyView?) -> some View {
     if let control {
       control.frame(width: 44, height: 44)
@@ -103,7 +93,6 @@ struct Transport: View {
 /// was the whole page, tag chips and Playlist picker included, on every tick.
 private struct PlaybackProgress: View {
   let player: AudioPlayer
-  /// The Set's length, or nil while nothing knows it yet.
   let duration: TimeInterval?
   let isCurrent: Bool
   let savedPosition: TimeInterval
@@ -112,8 +101,6 @@ private struct PlaybackProgress: View {
   /// Where the person has dragged to but not let go of. Nil is following the player.
   @State private var scrubPosition: TimeInterval?
 
-  /// The position the bar shows and the person sets: the drag they are holding, the player's own
-  /// elapsed time, or, for a Set not in the player, where it was left.
   private var position: Binding<TimeInterval> {
     Binding(
       get: { scrubPosition ?? (isCurrent ? player.elapsed : savedPosition) },
@@ -135,15 +122,9 @@ private struct PlaybackProgress: View {
           }
         }
       )
-      // Drawn either way, so the page does not move when playback starts; it takes a drag only
-      // once there is audio in the player to move through.
       .disabled(!isCurrent || duration == nil)
       .accessibilityIdentifier("\(identifierPrefix)-seek")
       .accessibilityValue(SetPresentation.timestamp(shown))
-      // Elapsed under the left end, what is left under the right, the way a deck reads. While
-      // the audio loads the line says so in the same place.
-      // The times never leave; a small spinner between them says the audio is on its way, so
-      // loading and buffering change nothing else on the line.
       HStack {
         Text(SetPresentation.timestamp(shown))
         Spacer()

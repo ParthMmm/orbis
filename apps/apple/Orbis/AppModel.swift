@@ -61,9 +61,6 @@ final class AppModel {
   /// it on every render.
   private(set) var availableTags: [String] = []
 
-  /// How many Sets carry each tag, for the tag tiles. Derived with `availableTags`, from the
-  /// whole library rather than the filtered list, so a tile's count does not shrink to the
-  /// filter it sets.
   private(set) var tagCounts: [String: Int] = [:]
 
   /// The Sets the filter admits. Unfiltered, it is the library itself. Held for the same
@@ -79,8 +76,8 @@ final class AppModel {
       visibleSets = library
       return
     }
-    availableTags = Set(sets.flatMap(\.tags)).sorted()
     tagCounts = SetPresentation.tagCounts(sets)
+    availableTags = tagCounts.keys.sorted()
     if let activeTag {
       visibleSets = .loaded(sets.filter { $0.tags.contains(activeTag) })
     } else {
@@ -852,13 +849,8 @@ final class AppModel {
 
   // MARK: - One Set's page
 
-  /// The Set whose page is open in each destination. Each tab keeps its own, the way every tab of
-  /// a tab bar keeps its own stack, so a Set opened from Home does not appear under Library.
-  /// Held as identifiers rather than copies, so an edit shows on the page and a removal closes it
-  /// instead of leaving a stale Set on screen.
   var openedSets: [Destination: String] = [:]
 
-  /// The Set open in the destination on screen.
   var openedSetId: String? {
     get { openedSets[destination] }
     set { openedSets[destination] = newValue }
@@ -923,9 +915,6 @@ final class AppModel {
     await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
   }
 
-  /// Adds a Set to a Playlist, or takes it out of one, keeping the others it is in: the Add to
-  /// Playlist sheet's action. The Playlists' counts are read again quietly afterwards, so the
-  /// sheet and the sidebar do not flash a spinner for a change the person just made.
   func setMembership(_ id: String, in playlistId: String, _ included: Bool) async {
     guard let current = savedSet(id)?.playlistIds else { return }
     var wanted = current.filter { $0 != playlistId }
@@ -936,7 +925,6 @@ final class AppModel {
     await refreshPlaylistsQuietly()
   }
 
-  /// Reads the Playlists again without passing through a loading state.
   func refreshPlaylistsQuietly() async {
     guard let client else { return }
     playlistGeneration += 1
@@ -961,7 +949,6 @@ final class AppModel {
       if case .loaded(let sets) = library {
         library = .loaded(sets.filter { $0.id != removed.id })
       }
-      // Closed wherever it was open, not only in the tab the removal came from.
       if openedSets.values.contains(removed.id) {
         setFailure = nil
         openedSets = openedSets.filter { $0.value != removed.id }
@@ -1069,8 +1056,6 @@ final class AppModel {
     }
   }
 
-  /// Creates a Playlist and, unless told otherwise, opens it when the service accepts the name.
-  /// The Add to Playlist sheet creates one without leaving the Set it is adding.
   func createPlaylist(named name: String, opening: Bool = true) async -> Playlist? {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }

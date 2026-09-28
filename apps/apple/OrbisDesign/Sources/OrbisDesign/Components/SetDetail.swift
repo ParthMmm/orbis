@@ -1,19 +1,11 @@
 import SwiftUI
 
 /// One Set, open for reading and for changing.
-///
-/// Laid out the way a music app lays out an album: centred on one axis. The artwork leads, the
-/// title is said once with the artist under it in the tint, one quiet line carries the source,
-/// the length, the dates and the counts, and then the one action the Set wants — play it, or
-/// get its audio — spans the page. The Tags follow, centred. Everything else lives in the
-/// toolbar's menu.
 public struct SetDetail: View {
   public let title: String
   /// The Source Link's name, as the header reads it out.
   public let source: String
-  /// Who made it, when the service knows.
   public let creator: String?
-  /// How long it runs, already formatted ("1h 59m").
   public let length: String?
   public let artwork: URL?
   /// The service could not name this Set, so the name is the caller's to supply or the
@@ -69,9 +61,6 @@ public struct SetDetail: View {
   }
 
   public let retryName: () -> Void
-  /// Download and playback for this Set, which the app owns. It sits under the header, in the
-  /// page, so no bar can cover it. Erased, so the static text helpers stay reachable without a
-  /// type parameter.
   private let transport: AnyView
   /// The rows a person changes the Set with, usually a `SetManagement`. Erased for the same
   /// reason.
@@ -104,8 +93,6 @@ public struct SetDetail: View {
     "\(title), \(source)"
   }
 
-  /// The quiet line under the title: when the source released it, when it was added, and how
-  /// often it has been heard. "Released 22 Aug 2026 · Added 11 Sep 2026 · 3 listens · finished once".
   public static func factsLine(dates: Dates?, statistics: Statistics?) -> String? {
     var parts: [String] = []
     if let released = dates?.released { parts.append("Released \(released)") }
@@ -122,8 +109,6 @@ public struct SetDetail: View {
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
-  /// The quiet line under the artist: the source, the length, then the facts.
-  /// "YouTube · 1h 59m · Added 27 Sep 2026 · 3 listens".
   public static func metaLine(
     source: String, length: String?, dates: Dates?, statistics: Statistics?
   ) -> String {
@@ -140,8 +125,6 @@ public struct SetDetail: View {
   public var body: some View {
     ScrollView {
       VStack(spacing: 0) {
-        // Raised off the tinted field the way an album cover sits on its page, so it takes the
-        // row radius and a shadow where a listing keeps its thumbnails flat.
         Artwork(url: artwork, seed: title, size: .header)
           .clipShape(.rect(cornerRadius: Radius.row))
           .shadow(color: .black.opacity(0.3), radius: 18, y: 10)
@@ -156,7 +139,6 @@ public struct SetDetail: View {
         .padding(.bottom)
       }
     }
-    // The page takes its colour from the artwork, the way a music app tints an album's page.
     .background { ArtworkBackdrop(url: artwork) }
   }
 
@@ -165,7 +147,6 @@ public struct SetDetail: View {
       Text(title)
         .font(.orbis.title)
         .multilineTextAlignment(.center)
-        // The title alone would leave a person wondering which service it came from.
         .accessibilityLabel(Self.headerLabel(title: title, source: source))
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("detail-title")
@@ -199,9 +180,6 @@ public struct SetDetail: View {
 
 }
 
-/// The Tags on a Set, as the capsules they are everywhere else, with the way to change them at
-/// the end. Everything else a Set is changed with — its title, its Playlist, its removal — lives
-/// in the page's menu, the way a music app keeps an album's actions behind one button.
 public struct SetManagement: View {
   public let tags: [String]
   public let category: @MainActor (String) -> OrbisColor.Category
