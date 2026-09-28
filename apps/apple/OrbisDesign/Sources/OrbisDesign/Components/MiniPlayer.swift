@@ -21,12 +21,14 @@ public struct MiniPlayer: View {
   /// How far listening got, from 0 to 1, for the hairline along the bottom edge.
   public let progress: Double?
   public let surface: Surface
+  /// Where Now Playing zooms out of: the artwork, marked in this namespace.
+  public let transition: Namespace.ID?
   public let toggle: () -> Void
   public let open: () -> Void
 
   public init(
     title: String, artwork: URL? = nil, isPlaying: Bool,
-    progress: Double? = nil, surface: Surface = .floating,
+    progress: Double? = nil, surface: Surface = .floating, transition: Namespace.ID? = nil,
     toggle: @escaping () -> Void, open: @escaping () -> Void
   ) {
     self.title = title
@@ -34,9 +36,13 @@ public struct MiniPlayer: View {
     self.isPlaying = isPlaying
     self.progress = progress
     self.surface = surface
+    self.transition = transition
     self.toggle = toggle
     self.open = open
   }
+
+  /// The id the artwork is marked with, for a zoom into Now Playing.
+  public static let transitionID = "now-playing-artwork"
 
   /// What the control reads out. Named for the change it makes, as a control should be.
   public static func toggleLabel(isPlaying: Bool) -> String {
@@ -50,6 +56,7 @@ public struct MiniPlayer: View {
           Artwork(url: artwork, seed: title, size: .row)
             .frame(width: 62, height: 44)
             .clipShape(.capsule)
+            .transitionSource(in: transition)
           Text(title)
             .font(.orbis.rowTitle)
             .lineLimit(1)
@@ -116,4 +123,16 @@ public struct MiniPlayer: View {
   }
   .background(Color.orbis.paper)
   .preferredColorScheme(.dark)
+}
+
+extension View {
+  @ViewBuilder fileprivate func transitionSource(in namespace: Namespace.ID?) -> some View {
+    if let namespace {
+      matchedTransitionSource(id: MiniPlayer.transitionID, in: namespace) {
+        $0.clipShape(RoundedRectangle(cornerRadius: 22))
+      }
+    } else {
+      self
+    }
+  }
 }

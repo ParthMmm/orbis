@@ -185,6 +185,8 @@ struct RootView: View {
     @Bindable var model: AppModel
     /// Now Playing is a sheet over the whole shell, so it opens the same from any tab.
     @State private var isNowPlayingShown = false
+    /// Now Playing grows out of the mini player's artwork and shrinks back into it.
+    @Namespace private var nowPlaying
 
     var body: some View {
       TabView(selection: $model.destination) {
@@ -205,10 +207,11 @@ struct RootView: View {
       // `isEnabled` is why the target is iOS 26.1: 26.0 reserves an empty pill for an empty
       // accessory, and the only way round it there is to rebuild the tab view.
       .tabViewBottomAccessory(isEnabled: model.showsMiniPlayer) {
-        NowPlayingBar(model: model) { isNowPlayingShown = true }
+        NowPlayingBar(model: model, transition: nowPlaying) { isNowPlayingShown = true }
       }
       .sheet(isPresented: $isNowPlayingShown) {
         NowPlayingScreen(model: model)
+          .zoomsFromMiniPlayer(nowPlaying)
       }
     }
   }
@@ -218,6 +221,7 @@ struct RootView: View {
 struct NowPlayingBar: View {
   @Bindable var model: AppModel
   var surface: MiniPlayer.Surface = .accessory
+  var transition: Namespace.ID?
   let open: () -> Void
 
   var body: some View {
@@ -229,6 +233,7 @@ struct NowPlayingBar: View {
       isPlaying: player.state == .playing,
       progress: player.duration.map { $0 > 0 ? player.elapsed / $0 : 0 },
       surface: surface,
+      transition: transition,
       toggle: { model.togglePlayback() },
       open: open
     )
@@ -274,6 +279,7 @@ struct SidebarShell: View {
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
   #endif
   @State private var isNowPlayingShown = false
+  @Namespace private var nowPlaying
 
   var body: some View {
     #if os(macOS)
@@ -368,14 +374,17 @@ struct SidebarShell: View {
       }
       .safeAreaInset(edge: .bottom) {
         if model.showsMiniPlayer {
-          NowPlayingBar(model: model, surface: .floating) { isNowPlayingShown = true }
-            .frame(maxWidth: 560)
-            .padding()
+          NowPlayingBar(model: model, surface: .floating, transition: nowPlaying) {
+            isNowPlayingShown = true
+          }
+          .frame(maxWidth: 560)
+          .padding()
         }
       }
     }
     .sheet(isPresented: $isNowPlayingShown) {
       NowPlayingScreen(model: model)
+        .zoomsFromMiniPlayer(nowPlaying)
         #if os(macOS)
           .frame(minWidth: 480, minHeight: 640)
         #endif
@@ -1054,6 +1063,15 @@ extension View {
       navigationTitle("")
     #else
       navigationTitle(title)
+    #endif
+  }
+
+  /// Zooms Now Playing out of the mini player's artwork, where the platform has the transition.
+  @ViewBuilder func zoomsFromMiniPlayer(_ namespace: Namespace.ID) -> some View {
+    #if os(iOS)
+      navigationTransition(.zoom(sourceID: MiniPlayer.transitionID, in: namespace))
+    #else
+      self
     #endif
   }
 
