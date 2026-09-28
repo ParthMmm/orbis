@@ -16,6 +16,11 @@ final class ShareCaptureTests: XCTestCase {
         .host(),
       "soundcloud.com"
     )
+    XCTAssertEqual(
+      ShareCapture.sourceLink(from: ["Listen on #SoundCloud https://on.soundcloud.com/AbCdEf123"])?
+        .host(),
+      "on.soundcloud.com"
+    )
   }
 
   func testSourceLinkRejectsUnsupportedHosts() {

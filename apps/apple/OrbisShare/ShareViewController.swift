@@ -94,6 +94,8 @@ enum ShareExtensionPayloads {
         provider.loadItem(forTypeIdentifier: type, options: nil) { item, _ in
           if let url = item as? URL {
             continuation.resume(returning: url)
+          } else if let text = item as? String, let url = URL(string: text) {
+            continuation.resume(returning: url)
           } else if let data = item as? Data,
             let url = URL(dataRepresentation: data, relativeTo: nil)
           {

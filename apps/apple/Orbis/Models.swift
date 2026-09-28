@@ -92,7 +92,10 @@ enum SetSource: Hashable, Decodable {
       "youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be",
     ]
     if youTube.contains(host) { return .youtube }
-    let soundCloud = ["soundcloud.com", "www.soundcloud.com", "m.soundcloud.com"]
+    // The SoundCloud app shares `on.soundcloud.com` short links; the service follows them.
+    let soundCloud = [
+      "soundcloud.com", "www.soundcloud.com", "m.soundcloud.com", "on.soundcloud.com",
+    ]
     if soundCloud.contains(host) { return .soundcloud }
     return nil
   }

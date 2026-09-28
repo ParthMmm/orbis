@@ -32,6 +32,7 @@ import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
 import type { EnrichedMetadata } from "./metadata.js";
 import { Queue } from "./queue.js";
+import { expandShortLink } from "./short-link.js";
 import { Stats } from "./stats.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
@@ -178,6 +179,8 @@ export const createApp = (
     devicesPath?: string;
     logging?: LoggingOptions;
     metadata?: Layer.Layer<Metadata>;
+    /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
+    shortLinkFetch?: (url: string, signal: AbortSignal) => Promise<Response>;
     titleReviser?: Layer.Layer<TitleReviser>;
   } = {}
 ) => {
@@ -311,10 +314,14 @@ export const createApp = (
         respond(
           Effect.gen(function* saveSet() {
             const input = yield* HttpServerRequest.schemaBodyJson(SaveInput);
+            const url = yield* expandShortLink(
+              input.url,
+              options.shortLinkFetch
+            );
             const saved = yield* library.save({
               tags: [...(input.tags ?? [])],
               title: input.title ?? "",
-              url: input.url,
+              url,
             });
             yield* Effect.logInfo("set saved").pipe(
               Effect.annotateLogs({ set: saved.id, source: saved.source })
