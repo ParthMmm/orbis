@@ -47,6 +47,48 @@ enum SetPresentation {
     return min(Double(set.playbackPositionSeconds) / Double(seconds), 1)
   }
 
+  static func sourceSymbol(_ source: SetSource) -> String {
+    switch source {
+    case .youtube: "play.rectangle.fill"
+    case .soundcloud: "cloud.fill"
+    case .unknown: "safari"
+    }
+  }
+
+  /// What the Download control shows. The live state the watch polls leads: the Set's own state
+  /// only moves when the library is read again, so alone it stayed "queued" for the whole Download.
+  static func downloadPhase(_ downloadState: String, live: AudioState?) -> DownloadCapsule.Phase {
+    switch live?.state ?? downloadState {
+    case "queued":
+      return .queued
+    case "downloading":
+      guard let live, let total = live.bytesTotal, total > 0 else { return .downloading(nil) }
+      return .downloading(Double(live.bytesReceived) / Double(total))
+    case "failed", "canceled":
+      return .failed
+    case "ready":
+      return live == nil ? .available : .downloading(1)
+    default:
+      return .available
+    }
+  }
+
+  static func tagCounts(_ sets: [SavedSet]) -> [String: Int] {
+    sets.reduce(into: [:]) { counts, set in
+      for tag in Set(set.tags) { counts[tag, default: 0] += 1 }
+    }
+  }
+
+  static func continueListening(_ sets: [SavedSet], limit: Int = 6) -> [SavedSet] {
+    let started = sets.filter { set in
+      guard set.playbackPositionSeconds > 0 else { return false }
+      guard let progress = progress(of: set) else { return true }
+      return progress < 1
+    }
+    let ordered = started.sorted { ($0.lastListenedAt ?? "") > ($1.lastListenedAt ?? "") }
+    return Array(ordered.prefix(limit))
+  }
+
   /// The design shows the link without a scheme or `www.`, because it is there to be
   /// recognised, not followed.
   static func displayURL(_ raw: String) -> String {
@@ -145,13 +187,27 @@ enum SetPresentation {
     date(from: timestamp).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
   }
 
+  /// A plain date a person can read: "11 Sep 2026".
   @MainActor
-  static func added(_ timestamp: String) -> String {
-    date(from: timestamp).formatted(.dateTime.month(.abbreviated).day())
+  static func plainDate(_ timestamp: String) -> String {
+    date(from: timestamp).formatted(
+      .dateTime.day().month(.abbreviated).year()
+        .locale(Locale(identifier: "en_GB"))
+    )
   }
 
-  /// The line under a Set's title: who made it, how long it runs, when it arrived. Only the
-  /// parts the service filled in, so a Set no provider could name shows a date and nothing else.
+  /// When the Set was saved and, when the provider named it, when it was released.
+  @MainActor
+  static func datesLine(_ set: SavedSet) -> String {
+    var parts = ["Imported \(plainDate(set.createdAt))"]
+    if let releasedAt = set.releasedAt {
+      parts.append("Released \(plainDate(releasedAt))")
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  /// The line under a Set's title: who made it and how long it runs. Only the parts the
+  /// service filled in, so a Set no provider could name shows nothing here.
   @MainActor
   static func subtitle(_ set: SavedSet) -> String? {
     var parts: [String] = []
@@ -161,7 +217,7 @@ enum SetPresentation {
     if let seconds = set.durationSeconds, seconds > 0 {
       parts.append(length(seconds))
     }
-    parts.append(added(set.createdAt))
+    guard !parts.isEmpty else { return nil }
     return parts.joined(separator: " · ")
   }
 
@@ -194,6 +250,14 @@ enum SetPresentation {
   /// checked without a browser and without leaving the app.
   static func sourceURL(_ set: SavedSet) -> URL? {
     LinkField.address(of: set.url)
+  }
+
+  static func timeLeft(_ set: SavedSet) -> String? {
+    guard set.playbackPositionSeconds > 0 else { return nil }
+    guard let duration = set.durationSeconds, duration > set.playbackPositionSeconds else {
+      return playbackPosition(set)
+    }
+    return "\(length(duration - set.playbackPositionSeconds)) left"
   }
 
   /// Where playback left off, said the way a person says it, or nothing when it never started.

@@ -217,7 +217,7 @@ final class OrbisClientTests: XCTestCase {
     """
     {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
     "title":"\(title)","source":"youtube","tags":\(encode(tags)),"createdAt":"2026-01-01T00:00:00.000Z",
-    "creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
+    "releasedAt":null,"creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
     "downloadState":"\(downloadState)","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
     "lastListenedAt":null}
     """

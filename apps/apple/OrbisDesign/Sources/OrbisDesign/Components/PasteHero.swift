@@ -45,12 +45,12 @@ public struct PasteHero: View {
       }
       if let pasteNotice {
         Text(pasteNotice)
-          .font(.orbis.mono)
+          .font(.orbis.detail)
           .foregroundStyle(.secondary)
           .accessibilityIdentifier("paste-notice")
       }
       Text(hint)
-        .font(.orbis.mono)
+        .font(.orbis.detail)
         .foregroundStyle(.secondary)
     }
     .padding()

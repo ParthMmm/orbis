@@ -21,12 +21,15 @@ public enum OrbisCurve: String, CaseIterable, Sendable {
   case smooth
   /// The Reduce Motion form: the change lands without travelling.
   case immediate
+  /// A finger on a control: fast enough to feel attached to the touch.
+  case press
 
   public var animation: Animation? {
     switch self {
     case .snappy: .snappy
     case .smooth: .smooth
     case .immediate: nil
+    case .press: .snappy(duration: 0.15)
     }
   }
 }
@@ -47,6 +50,10 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
   case tagToggled
   /// A Set moved within a Playlist.
   case playlistReordered
+  case pageTinted
+  case downloadProgressed
+  /// A card or row is under a finger.
+  case pressed
 
   public var purpose: String {
     switch self {
@@ -54,6 +61,9 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
     case .filingFailed: "The service refused a Source Link."
     case .tagToggled: "A Tag filter turned on or off."
     case .playlistReordered: "A Set moved within a Playlist."
+    case .pageTinted: "A page took its colour from the Set's artwork."
+    case .downloadProgressed: "A Download the person asked for moved on."
+    case .pressed: "A card or row is under a finger."
     }
   }
 
@@ -63,7 +73,7 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
     switch self {
     case .filingSucceeded: .bounce
     case .filingFailed: .wiggle
-    case .tagToggled, .playlistReordered: nil
+    case .tagToggled, .playlistReordered, .pageTinted, .downloadProgressed, .pressed: nil
     }
   }
 
@@ -79,7 +89,8 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
   public var curve: OrbisCurve {
     switch self {
     case .filingSucceeded, .filingFailed, .tagToggled: .snappy
-    case .playlistReordered: .smooth
+    case .playlistReordered, .pageTinted, .downloadProgressed: .smooth
+    case .pressed: .press
     }
   }
 
@@ -173,7 +184,7 @@ private struct MotionSample: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
       Text(sample.motion.rawValue).font(.orbis.caption)
-      Text(sample.motion.purpose).font(.orbis.mono).foregroundStyle(.secondary)
+      Text(sample.motion.purpose).font(.orbis.detail).foregroundStyle(.secondary)
       HStack(spacing: 12) {
         Image(systemName: sample.symbol)
           .frame(width: 22)

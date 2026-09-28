@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// Type ramp. Every style is a Dynamic Type text style, so sizes follow the user's setting
-/// and platform. San Francisco is the only family: SF Pro for text, SF Mono for data.
+/// Type ramp. Every style is a Dynamic Type text style, so sizes follow the user's setting.
 public enum OrbisFont {
   /// Screen title on iPhone ("Library").
   public static let largeTitle = Font.largeTitle.bold()
@@ -19,17 +18,12 @@ public enum OrbisFont {
   public static let body = Font.body
   /// Section labels in sidebars and forms.
   public static let caption = Font.caption.weight(.semibold)
-  /// URLs, dates, counts, indices.
-  public static let mono = Font.system(.caption, design: .monospaced)
-  /// Source stamps ("YOUTUBE"). Pair with `.textCase(.uppercase)`.
-  public static let stamp = Font.system(.caption2, design: .monospaced).weight(.medium)
-  /// Listing labels ("THU 11 SEP", "TAGS"). `ListingLabel` sets the case and tracking.
-  public static let label = Font.system(.caption2, design: .monospaced).weight(.medium)
-  /// The playhead, read the way a deck shows it. Monospaced so the digits do not shuffle.
-  public static let timecode = Font.system(.title, design: .monospaced).weight(.medium)
+  public static let detail = Font.footnote
+  public static let stamp = Font.caption.weight(.semibold)
+  public static let label = Font.subheadline.weight(.semibold)
+  public static let timecode = Font.title.weight(.semibold)
 }
 
 extension Font {
-  /// `Font.orbis.rowTitle`, `Font.orbis.mono`, …
   public static var orbis: OrbisFont.Type { OrbisFont.self }
 }

@@ -8,6 +8,7 @@ import SwiftUI
 struct SetDetailScreen: View {
   @Bindable var model: AppModel
   let setId: String
+  @State private var isRenaming = false
 
   var body: some View {
     Group {
@@ -15,12 +16,15 @@ struct SetDetailScreen: View {
         SetDetail(
           title: set.title,
           source: set.source.label,
-          subtitle: SetPresentation.subtitle(set),
+          creator: set.creator,
+          showCreator: { model.showCreator(of: set) },
+          length: set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil },
           artwork: SetPresentation.pageArtwork(set),
-          position: model.audioPlayer.currentSetId == set.id
-            ? nil : SetPresentation.playbackPosition(set),
-          progress: SetPresentation.progress(of: set),
           failedToName: set.metadataState == "failed",
+          dates: SetDetail.Dates(
+            imported: SetPresentation.plainDate(set.createdAt),
+            released: set.releasedAt.map(SetPresentation.plainDate)
+          ),
           statistics: SetDetail.Statistics(
             listenCount: set.listenCount,
             finishCount: set.finishCount,
@@ -30,8 +34,10 @@ struct SetDetailScreen: View {
         ) {
           audioSection(set)
         } management: {
-          SetManagementSection(model: model, set: set)
+          SetManagementSection(model: model, set: set, isRenaming: $isRenaming)
         }
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
         .navigationTitle(set.title)
         .toolbarTitleDisplayMode(.inline)
         .accessibilityIdentifier("set-detail")
@@ -49,61 +55,42 @@ struct SetDetailScreen: View {
 
   /// Download, progress, and playback for this Set. Each state shows exactly one
   /// control, so a Set that is downloading cannot also offer to play.
-  @ViewBuilder
   private func audioSection(_ set: SavedSet) -> some View {
+    // When the audio arrives the capsule grows into the player rather than being swapped for it.
+    Group { audioControl(set) }
+      .orbisAnimation(.downloadProgressed, value: set.downloadState == "ready")
+  }
+
+  @ViewBuilder
+  private func audioControl(_ set: SavedSet) -> some View {
     switch set.downloadState {
     case "ready":
-      VStack(alignment: .leading, spacing: 8) {
-        if model.audioPlayer.currentSetId == set.id {
-          Transport(
-            player: model.audioPlayer,
-            fallbackDuration: set.durationSeconds.map(TimeInterval.init)
-          )
-        } else {
-          HStack(spacing: 8) {
-            Button("Play", systemImage: "play.fill") { Task { await model.playSet(set.id) } }
-              .buttonStyle(.glass)
-              .controlSize(.large)
-              .accessibilityIdentifier("detail-play")
-            queueActions(set)
-          }
-        }
+      VStack(spacing: 8) {
+        Transport(
+          player: model.audioPlayer,
+          fallbackDuration: set.durationSeconds.map(TimeInterval.init),
+          isCurrent: model.audioPlayer.currentSetId == set.id,
+          savedPosition: TimeInterval(set.playbackPositionSeconds),
+          start: { Task { await model.playSet(set.id) } },
+          leading: AnyView(queueActions(set)),
+          trailing: AnyView(AirPlayButton())
+        )
         if let notice = model.queueNotice {
           Text(notice)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityIdentifier("detail-queue-notice")
         }
       }
-    case "queued", "downloading":
-      // The watch that turns this into a finished download belongs to the model: a task started
-      // here would end when the person leaves, which is when the Library still needs the answer.
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(spacing: 8) {
-          ProgressView()
-          Text(progressLabel(set))
-            .font(.orbis.mono)
-            .foregroundStyle(.secondary)
-        }
-        Button("Cancel", role: .cancel) {
-          Task { await model.cancelAudioDownload(set.id) }
-        }
-      }
+      .transition(.opacity.combined(with: .scale(0.96, anchor: .top)))
     default:
-      Button(
-        set.downloadState == "failed" || set.downloadState == "canceled"
-          ? "Retry download" : "Download",
-        systemImage: set.downloadState == "failed" || set.downloadState == "canceled"
-          ? "arrow.clockwise" : "arrow.down.circle"
-      ) {
-        Task { await model.downloadAudio(set.id) }
-      }
-      .buttonStyle(.glass)
-      .controlSize(.large)
-      .accessibilityIdentifier(
-        set.downloadState == "failed" || set.downloadState == "canceled"
-          ? "detail-retry-download" : "detail-download"
+      DownloadCapsule(
+        phase: SetPresentation.downloadPhase(set.downloadState, live: model.audioStates[set.id]),
+        start: { Task { await model.downloadAudio(set.id) } },
+        cancel: { Task { await model.cancelAudioDownload(set.id) } }
       )
+      .frame(maxWidth: .infinity)
+      .transition(.opacity.combined(with: .scale(0.96, anchor: .top)))
     }
   }
 
@@ -118,19 +105,10 @@ struct SetDetailScreen: View {
     } label: {
       Image(systemName: "text.badge.plus")
     }
-    .buttonStyle(.glass)
-    .controlSize(.large)
+    .menuStyle(.button)
+    .buttonStyle(.plain)
     .accessibilityLabel("Queue this set")
     .accessibilityIdentifier("detail-queue-actions")
   }
 
-  private func progressLabel(_ set: SavedSet) -> String {
-    if let progress = model.audioStates[set.id], let total = progress.bytesTotal,
-      total > 0
-    {
-      let percent = min(progress.bytesReceived * 100 / total, 100)
-      return "Downloading \(percent)%"
-    }
-    return SetPresentation.downloadLabel(set.downloadState) ?? "Downloading"
-  }
 }

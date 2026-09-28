@@ -18,6 +18,7 @@ const PROVIDER_RESULT: EnrichedMetadata = {
   artworkUrl: "https://example.test/artwork.jpg",
   creator: "Ada Lovelace",
   durationSeconds: 253,
+  releasedAt: "2015-10-28T10:00:00.000Z",
   title: "Analytical Engine live | SoundCloud",
 };
 

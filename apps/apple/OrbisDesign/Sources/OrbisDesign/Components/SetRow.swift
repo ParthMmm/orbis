@@ -28,6 +28,8 @@ public struct SetRow: View {
   public let creator: String?
   /// How long it runs, composed by the caller ("1h 18m").
   public let length: String?
+  /// When the Set was saved and, when known, when the source released it.
+  public let dates: String?
   public let tags: [Tag]
   public let activeTag: String?
   public let state: State?
@@ -106,7 +108,8 @@ public struct SetRow: View {
 
   public init(
     title: String, source: String, artwork: URL? = nil, creator: String? = nil,
-    length: String? = nil, tags: [Tag] = [], activeTag: String? = nil, state: State? = nil,
+    length: String? = nil, dates: String? = nil, tags: [Tag] = [], activeTag: String? = nil,
+    state: State? = nil,
     progress: Double? = nil, playback: Playback? = nil,
     togglePlayback: (() -> Void)? = nil, select: (() -> Void)? = nil
   ) {
@@ -115,6 +118,7 @@ public struct SetRow: View {
     self.artwork = artwork
     self.creator = creator
     self.length = length
+    self.dates = dates
     self.tags = tags
     self.activeTag = activeTag
     self.state = state
@@ -202,7 +206,7 @@ public struct SetRow: View {
   {
     if let action {
       Button(action: action) { content() }
-        .buttonStyle(.plain)
+        .buttonStyle(.orbisPressable)
     } else {
       content()
     }
@@ -218,18 +222,23 @@ public struct SetRow: View {
       ChipFlow {
         if !line.isEmpty {
           Text(line)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
+            .foregroundStyle(.secondary)
+        }
+        if let dates, !dates.isEmpty {
+          Text(dates)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
         }
         if let state, state.download != nil {
           Image(systemName: State.downloadSymbol)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityHidden(true)
         }
         if state?.kept == true {
           Image(systemName: State.keptSymbol)
-            .font(.orbis.mono)
+            .font(.orbis.detail)
             .foregroundStyle(.secondary)
             .accessibilityLabel(State.keptLabel)
         }
@@ -246,6 +255,7 @@ public struct SetRow: View {
     if let announcement = playback?.announcement { parts.append(announcement) }
     let line = Self.dataLine(creator: creator, length: length, state: state)
     if !line.isEmpty { parts.append(line) }
+    if let dates, !dates.isEmpty { parts.append(dates) }
     if state?.kept == true { parts.append(State.keptLabel) }
     if !tags.isEmpty { parts.append(tags.map(\.name).joined(separator: ", ")) }
     return parts.joined(separator: ", ")

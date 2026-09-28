@@ -29,7 +29,7 @@ public struct PlaylistRow: View {
             .foregroundStyle(.secondary)
         }
         Text(count, format: .number)
-          .font(.orbis.mono)
+          .font(.orbis.detail)
           .monospacedDigit()
           .foregroundStyle(.secondary)
       }

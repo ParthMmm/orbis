@@ -4,7 +4,7 @@ import Foundation
 /// server that adds a field does not break this client.
 struct SavedSet: Identifiable, Decodable, Hashable {
   enum CodingKeys: String, CodingKey {
-    case id, url, title, source, tags, createdAt, creator, artworkUrl, durationSeconds
+    case id, url, title, source, tags, createdAt, releasedAt, creator, creatorId, artworkUrl, durationSeconds
     case artworkLargeUrl
     case metadataState, downloadState, playlistIds, playbackPositionSeconds
     case listenCount, finishCount, lastListenedAt
@@ -16,7 +16,10 @@ struct SavedSet: Identifiable, Decodable, Hashable {
   let source: SetSource
   let tags: [String]
   let createdAt: String
+  let releasedAt: String?
   let creator: String?
+  /// The provider's stable id for the creator; nil until the service has read the details.
+  var creatorId: String? = nil
   let artworkUrl: String?
   let artworkLargeUrl: String?
   let durationSeconds: Int?
@@ -51,7 +54,9 @@ extension SavedSet {
     source = try values.decode(SetSource.self, forKey: .source)
     tags = try values.decode([String].self, forKey: .tags)
     createdAt = try values.decode(String.self, forKey: .createdAt)
+    releasedAt = try values.decodeIfPresent(String.self, forKey: .releasedAt)
     creator = try values.decodeIfPresent(String.self, forKey: .creator)
+    creatorId = try values.decodeIfPresent(String.self, forKey: .creatorId)
     artworkUrl = try values.decodeIfPresent(String.self, forKey: .artworkUrl)
     artworkLargeUrl = try values.decodeIfPresent(String.self, forKey: .artworkLargeUrl)
     durationSeconds = try values.decodeIfPresent(Int.self, forKey: .durationSeconds)

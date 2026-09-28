@@ -371,6 +371,49 @@ test("canceling mid-flight returns to none with no files", async () => {
   }
 });
 
+test("a download requested again after a cancel is still worked on", async () => {
+  let attempts = 0;
+  const { app, cleanup } = await setUp({
+    cobalt: () => Response.json({ status: "tunnel", url: "http://cdn.test/a" }),
+    tunnel: (_url, signal) => {
+      attempts += 1;
+      if (attempts > 1) {
+        return new Response("gone", { status: 500 });
+      }
+      const stream = new ReadableStream({
+        async start(controller) {
+          signal.addEventListener("abort", () => {
+            controller.error(new DOMException("aborted", "AbortError"));
+          });
+          for (let index = 0; index < 40 && !signal.aborted; index += 1) {
+            // eslint-disable-next-line no-await-in-loop
+            await Bun.sleep(50);
+            if (!signal.aborted) {
+              controller.enqueue(new Uint8Array(1024));
+            }
+          }
+        },
+      });
+      return new Response(stream);
+    },
+  });
+  try {
+    const id = await seedSet(app);
+    await request(app, { method: "POST", url: `/sets/${id}/audio/download` });
+    await waitForState(app, id, ["downloading"]);
+    await request(app, { method: "DELETE", url: `/sets/${id}/audio/download` });
+    const again = await request(app, {
+      method: "POST",
+      url: `/sets/${id}/audio/download`,
+    });
+    expect(again.json().downloadState).toBe("queued");
+    const settled = await waitForState(app, id, ["failed", "ready"]);
+    expect(settled.state).toBe("failed");
+  } finally {
+    await cleanup();
+  }
+});
+
 test("deleting a ready download is a conflict", async () => {
   if (!haveFfmpeg) {
     return;

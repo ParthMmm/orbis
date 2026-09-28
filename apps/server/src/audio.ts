@@ -9,9 +9,15 @@ import { LibraryError } from "./errors.js";
 import { Library } from "./library.js";
 import { MediaStore } from "./media-store.js";
 import type { MediaFile, MediaStoreOptions } from "./media-store.js";
+import { Ytdlp } from "./ytdlp.js";
+import type { YtdlpOptions } from "./ytdlp.js";
 
 export interface AudioOptions
-  extends CobaltOptions, MediaStoreOptions, DownloadWorkerOptions {}
+  extends
+    CobaltOptions,
+    MediaStoreOptions,
+    DownloadWorkerOptions,
+    YtdlpOptions {}
 
 export type AudioFile = MediaFile;
 
@@ -40,9 +46,11 @@ export class Audio extends Context.Service<
 >()("@orbis/Audio") {
   static layer(options: AudioOptions = {}): Layer.Layer<Audio, never, Library> {
     const cobaltLayer = Cobalt.layer(options);
+    const ytdlpLayer = Ytdlp.layer(options);
     const mediaLayer = MediaStore.layer(options);
     const workerLayer = DownloadWorker.layer(options).pipe(
       Layer.provide(cobaltLayer),
+      Layer.provide(ytdlpLayer),
       Layer.provide(mediaLayer)
     );
     return Layer.effect(
@@ -50,12 +58,14 @@ export class Audio extends Context.Service<
       Effect.gen(function* buildAudio() {
         const library = yield* Library;
         const cobalt = yield* Cobalt;
+        const ytdlp = yield* Ytdlp;
         const media = yield* MediaStore;
         const worker = yield* DownloadWorker;
+        const configured = cobalt.isConfigured || ytdlp.isConfigured;
         yield* media.ensureDirectory();
         const requestDownload = Effect.fn("Audio.requestDownload")(
           function* requestDownload(id: string) {
-            if (!cobalt.isConfigured) {
+            if (!configured) {
               return yield* Effect.fail(unconfigured());
             }
             const current = yield* library.find(id);
@@ -120,7 +130,7 @@ export class Audio extends Context.Service<
           audioFile,
           audioState,
           cancelDownload,
-          isConfigured: cobalt.isConfigured,
+          isConfigured: configured,
           processNext: worker.processNext,
           requestDownload,
         };
@@ -128,6 +138,7 @@ export class Audio extends Context.Service<
     ).pipe(
       Layer.provide(workerLayer),
       Layer.provideMerge(cobaltLayer),
+      Layer.provideMerge(ytdlpLayer),
       Layer.provideMerge(mediaLayer)
     );
   }

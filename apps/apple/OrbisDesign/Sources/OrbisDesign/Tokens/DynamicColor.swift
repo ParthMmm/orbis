@@ -7,7 +7,7 @@ import SwiftUI
 #endif
 
 /// A Display P3 color, components 0…1.
-struct P3: Equatable, Sendable {
+nonisolated struct P3: Equatable, Sendable {
   let red: Double
   let green: Double
   let blue: Double
@@ -21,7 +21,7 @@ struct P3: Equatable, Sendable {
 
 /// A color with a value per contrast setting, resolved by the platform at draw time so it
 /// follows the window's appearance and Increase Contrast setting, not the app's.
-struct DynamicColor: Sendable {
+nonisolated struct DynamicColor: Sendable {
   let light: P3
   let dark: P3
   let increasedContrastLight: P3
@@ -53,7 +53,7 @@ struct DynamicColor: Sendable {
     let forced = setting == .increased
     #if canImport(UIKit)
       return Color(
-        UIColor { traits in
+        UIColor { @Sendable traits in
           Self.platformColor(
             self.p3(
               dark: traits.userInterfaceStyle == .dark,
@@ -63,7 +63,7 @@ struct DynamicColor: Sendable {
         })
     #elseif canImport(AppKit)
       return Color(
-        NSColor(name: nil) { appearance in
+        NSColor(name: nil) { @Sendable appearance in
           // The high-contrast names come first: `bestMatch` returns the first name the
           // appearance matches, and only the accessibility names mean Increase Contrast.
           let names: [NSAppearance.Name] =
