@@ -17,6 +17,7 @@ struct SetDetailScreen: View {
           title: set.title,
           source: set.source.label,
           creator: set.creator,
+          showCreator: { model.showCreator(of: set) },
           length: set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil },
           artwork: SetPresentation.pageArtwork(set),
           failedToName: set.metadataState == "failed",

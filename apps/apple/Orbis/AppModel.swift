@@ -55,6 +55,13 @@ final class AppModel {
     didSet { refreshDerivedState() }
   }
 
+  /// The creator the Library is filtered by, set from a Set's page. It matches on the provider's
+  /// creator id when both sides have one, because names change and collide, and on the name
+  /// otherwise, so a Set saved before the service read its details still belongs to its creator.
+  var activeCreator: CreatorFilter? {
+    didSet { refreshDerivedState() }
+  }
+
   /// Every tag in the loaded library, in a stable order, so the filter row does not reshuffle
   /// between loads. Derived from the Sets rather than fetched, because the Library already
   /// holds all of them. Held rather than derived on demand, because every list body reads
@@ -78,11 +85,10 @@ final class AppModel {
     }
     tagCounts = SetPresentation.tagCounts(sets)
     availableTags = tagCounts.keys.sorted()
-    if let activeTag {
-      visibleSets = .loaded(sets.filter { $0.tags.contains(activeTag) })
-    } else {
-      visibleSets = .loaded(sets)
-    }
+    visibleSets = .loaded(
+      sets.filter { set in
+        (activeTag.map(set.tags.contains) ?? true) && (activeCreator?.admits(set) ?? true)
+      })
   }
 
   /// True when this device already holds a token, which makes the token field optional: a
@@ -231,6 +237,21 @@ final class AppModel {
     activeTag = tag
   }
 
+  /// Shows the Library filtered to one Set's creator, from wherever that Set's page was opened.
+  func showCreator(of set: SavedSet) {
+    guard let name = set.creator, !name.isEmpty else { return }
+    activeCreator = CreatorFilter(id: set.creatorId, name: name)
+    openedSets = [:]
+    destination = .library
+  }
+
+  var isFilteringLibrary: Bool { activeTag != nil || activeCreator != nil }
+
+  func clearLibraryFilters() {
+    activeTag = nil
+    activeCreator = nil
+  }
+
   /// Tests the connection before storing anything, so a wrong address or token never
   /// replaces a working configuration.
   func connect() async {
@@ -342,6 +363,7 @@ final class AppModel {
     playlistMembers = .idle
     playlistFailure = nil
     activeTag = nil
+    activeCreator = nil
     openedSets = [:]
     reveal = nil
     revealFailure = nil
@@ -1235,5 +1257,16 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
     case .people: "person.2"
     case .search: "magnifyingglass"
     }
+  }
+}
+
+/// One creator, as the Library filters by it.
+struct CreatorFilter: Hashable {
+  let id: String?
+  let name: String
+
+  func admits(_ set: SavedSet) -> Bool {
+    if let id, let setId = set.creatorId { return id == setId }
+    return set.creator == name
   }
 }

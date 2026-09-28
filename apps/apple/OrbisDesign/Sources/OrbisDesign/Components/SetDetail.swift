@@ -6,6 +6,8 @@ public struct SetDetail: View {
   /// The Source Link's name, as the header reads it out.
   public let source: String
   public let creator: String?
+  /// Makes the creator a control. Nil leaves it as plain text.
+  public let showCreator: (() -> Void)?
   public let length: String?
   public let artwork: URL?
   /// The service could not name this Set, so the name is the caller's to supply or the
@@ -67,7 +69,8 @@ public struct SetDetail: View {
   private let management: AnyView
 
   public init(
-    title: String, source: String, creator: String? = nil, length: String? = nil,
+    title: String, source: String, creator: String? = nil, showCreator: (() -> Void)? = nil,
+    length: String? = nil,
     artwork: URL? = nil,
     failedToName: Bool = false,
     dates: Dates? = nil, statistics: Statistics? = nil, retryName: @escaping () -> Void = {},
@@ -77,6 +80,7 @@ public struct SetDetail: View {
     self.title = title
     self.source = source
     self.creator = creator
+    self.showCreator = showCreator
     self.length = length
     self.artwork = artwork
     self.failedToName = failedToName
@@ -151,10 +155,18 @@ public struct SetDetail: View {
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("detail-title")
       if let creator, !creator.isEmpty {
-        Text(creator)
+        let name = Text(creator)
           .font(.title3.weight(.semibold))
           .foregroundStyle(Color.orbis.tint)
           .multilineTextAlignment(.center)
+        if let showCreator {
+          Button(action: showCreator) { name }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows this creator's sets in the Library")
+            .accessibilityIdentifier("detail-creator")
+        } else {
+          name
+        }
       }
       Text(Self.metaLine(source: source, length: length, dates: dates, statistics: statistics))
         .font(.orbis.detail)

@@ -490,14 +490,15 @@ struct DestinationView: View {
             NoResultsState(recoverLabel: "Clear search", recover: { libraryQuery = "" })
               .accessibilityIdentifier("library-no-matches")
           )
-          : model.activeTag == nil
+          : !model.isFilteringLibrary
             ? nil
             : AnyView(
-              NoResultsState(recoverLabel: "Clear filters", recover: { model.setTagFilter(nil) })
+              NoResultsState(recoverLabel: "Clear filters", recover: { model.clearLibraryFilters() })
                 .accessibilityIdentifier("library-no-matches")
             ),
         hero: nil,
-        rails: model.availableTags.isEmpty || librarySearchIsActive ? nil : tagTiles,
+        rails: (model.availableTags.isEmpty && model.activeCreator == nil) || librarySearchIsActive
+          ? nil : tagTiles,
         footer: librarySearchIsActive ? "\(libraryMatchCount) sets" : libraryFooter,
         retry: { await model.loadLibrary() },
         select: { set in model.openSet(set.id) },
@@ -655,6 +656,18 @@ struct DestinationView: View {
   private var tagTiles: AnyView {
     AnyView(
       VStack(alignment: .leading, spacing: 10) {
+        if let creator = model.activeCreator {
+          Button {
+            model.activeCreator = nil
+          } label: {
+            Label(creator.name, systemImage: "xmark.circle.fill")
+              .font(.orbis.detail)
+          }
+          .buttonStyle(.bordered)
+          .tint(Color.orbis.tint)
+          .accessibilityLabel("Showing sets by \(creator.name). Clear.")
+          .accessibilityIdentifier("creator-filter")
+        }
         Text("Tags")
           .font(.orbis.sectionTitle)
         TagGrid {
@@ -680,7 +693,7 @@ struct DestinationView: View {
   /// wants when a list looks short.
   private var libraryFooter: String {
     let total = model.totalCount
-    guard model.activeTag != nil else {
+    guard model.isFilteringLibrary else {
       return total == 1 ? "1 set" : "\(total) sets"
     }
     let visible = model.visibleCount
