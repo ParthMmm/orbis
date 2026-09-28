@@ -145,13 +145,27 @@ enum SetPresentation {
     date(from: timestamp).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
   }
 
+  /// A plain date a person can read: "11 Sep 2026".
   @MainActor
-  static func added(_ timestamp: String) -> String {
-    date(from: timestamp).formatted(.dateTime.month(.abbreviated).day())
+  static func plainDate(_ timestamp: String) -> String {
+    date(from: timestamp).formatted(
+      .dateTime.day().month(.abbreviated).year()
+        .locale(Locale(identifier: "en_GB"))
+    )
   }
 
-  /// The line under a Set's title: who made it, how long it runs, when it arrived. Only the
-  /// parts the service filled in, so a Set no provider could name shows a date and nothing else.
+  /// When the Set was saved and, when the provider named it, when it was released.
+  @MainActor
+  static func datesLine(_ set: SavedSet) -> String {
+    var parts = ["Imported \(plainDate(set.createdAt))"]
+    if let releasedAt = set.releasedAt {
+      parts.append("Released \(plainDate(releasedAt))")
+    }
+    return parts.joined(separator: " · ")
+  }
+
+  /// The line under a Set's title: who made it and how long it runs. Only the parts the
+  /// service filled in, so a Set no provider could name shows nothing here.
   @MainActor
   static func subtitle(_ set: SavedSet) -> String? {
     var parts: [String] = []
@@ -161,7 +175,7 @@ enum SetPresentation {
     if let seconds = set.durationSeconds, seconds > 0 {
       parts.append(length(seconds))
     }
-    parts.append(added(set.createdAt))
+    guard !parts.isEmpty else { return nil }
     return parts.joined(separator: " · ")
   }
 

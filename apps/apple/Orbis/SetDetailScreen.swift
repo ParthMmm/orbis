@@ -21,6 +21,10 @@ struct SetDetailScreen: View {
             ? nil : SetPresentation.playbackPosition(set),
           progress: SetPresentation.progress(of: set),
           failedToName: set.metadataState == "failed",
+          dates: SetDetail.Dates(
+            imported: SetPresentation.plainDate(set.createdAt),
+            released: set.releasedAt.map(SetPresentation.plainDate)
+          ),
           statistics: SetDetail.Statistics(
             listenCount: set.listenCount,
             finishCount: set.finishCount,
@@ -32,6 +36,8 @@ struct SetDetailScreen: View {
         } management: {
           SetManagementSection(model: model, set: set)
         }
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
         .navigationTitle(set.title)
         .toolbarTitleDisplayMode(.inline)
         .accessibilityIdentifier("set-detail")

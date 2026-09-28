@@ -12,13 +12,16 @@ final class SetPresentationTests: XCTestCase {
     createdAt: String = "2026-09-11T02:33:14.729Z",
     playbackPositionSeconds: Int = 0,
     durationSeconds: Int? = nil,
+    creator: String? = nil,
+    releasedAt: String? = nil,
     artworkUrl: String? = nil,
     artworkLargeUrl: String? = nil,
     downloadState: String = "none"
   ) throws -> SavedSet {
     let json = """
       {"id":"one","url":"\(url)","title":"\(title)","source":"youtube","tags":\(tags),
-      "createdAt":"\(createdAt)","creator":null,"artworkUrl":\(quoted(artworkUrl)),
+      "createdAt":"\(createdAt)","releasedAt":\(quoted(releasedAt)),"creator":\(quoted(creator)),
+      "artworkUrl":\(quoted(artworkUrl)),
       "artworkLargeUrl":\(quoted(artworkLargeUrl)),"durationSeconds":\(durationSeconds.map(String.init) ?? "null"),
       "metadataState":"pending","titleEditedByUser":false,"downloadState":"\(downloadState)",
       "playlistIds":[],"retainedAudioBytes":null,"retainedAudioFormat":null,
@@ -128,6 +131,31 @@ final class SetPresentationTests: XCTestCase {
     XCTAssertEqual(SetPresentation.downloadLabel("failed"), "Download failed")
     XCTAssertEqual(SetPresentation.downloadLabel("canceled"), "Download canceled")
     XCTAssertNil(SetPresentation.downloadLabel("something-new"))
+  }
+
+  func testDatesLineNamesImportedAndReleased() throws {
+    let json = """
+      {"id":"one","url":"https://www.youtube.com/watch?v=abcdefghijk","title":"Night session",
+      "source":"youtube","tags":[],"createdAt":"2026-09-11T02:33:14.729Z",
+      "releasedAt":"2015-10-28T10:00:00.000Z","creator":null,"artworkUrl":null,
+      "artworkLargeUrl":null,"durationSeconds":null,"metadataState":"pending",
+      "downloadState":"none","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,
+      "finishCount":0,"lastListenedAt":null}
+      """
+    let set = try JSONDecoder().decode(SavedSet.self, from: Data(json.utf8))
+    XCTAssertEqual(
+      SetPresentation.datesLine(set),
+      "Imported \(SetPresentation.plainDate(set.createdAt)) · Released \(SetPresentation.plainDate("2015-10-28T10:00:00.000Z"))")
+    let importedOnly = try makeSet()
+    XCTAssertEqual(
+      SetPresentation.datesLine(importedOnly),
+      "Imported \(SetPresentation.plainDate(importedOnly.createdAt))")
+  }
+
+  func testSubtitleLeavesOutDates() throws {
+    XCTAssertNil(SetPresentation.subtitle(try makeSet()))
+    let named = try makeSet(durationSeconds: 120)
+    XCTAssertEqual(SetPresentation.subtitle(named), "2m")
   }
 
   func testDateParsesWithAndWithoutFractionalSeconds() {

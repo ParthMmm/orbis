@@ -28,6 +28,11 @@ export interface SavedSet {
   source: SetSource;
   tags: string[];
   createdAt: string;
+  /**
+   * When the source published the Set. Null until enrichment, and absent from a service that
+   * predates it.
+   */
+  releasedAt: string | null;
   creator: string | null;
   /** The provider's image, sized for a listing row. */
   artworkUrl: string | null;

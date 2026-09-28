@@ -11,6 +11,7 @@ struct OrbisApp: App {
     }
     #if os(macOS)
       .defaultSize(width: 1000, height: 700)
+      .windowToolbarStyle(.unified)
     #endif
   }
 }
@@ -30,6 +31,8 @@ struct RootView: View {
     /// The splash covers one launch and one load: a refresh, a Playlist, or a screen change is
     /// not an opening, so nothing puts it back.
     @State private var splash: SplashPhase = .up
+  #else
+    @State private var isConfirmingForget = false
   #endif
 
   var body: some View {
@@ -68,12 +71,41 @@ struct RootView: View {
     }
     #if os(iOS)
       .task { await uncoverWhenFirstLoadSettles() }
+    #else
+      .sheet(isPresented: Binding(
+        get: { model.isConfigured && model.isEditingConnection },
+        set: { if !$0 { model.closeConnectionEditor() } }
+      )) {
+        NavigationStack {
+          ConnectionView(model: model, cancellable: true)
+            .toolbar {
+              ToolbarItem(placement: .cancellationAction) {
+                Button("Done") { model.closeConnectionEditor() }
+              }
+              ToolbarItem(placement: .primaryAction) {
+                Menu("More", systemImage: "ellipsis.circle") {
+                  Button("Refresh") { Task { await model.loadLibrary() } }
+                  Button("Forget this device", role: .destructive) {
+                    isConfirmingForget = true
+                  }
+                }
+              }
+            }
+        }
+        .frame(minWidth: 440, minHeight: 360)
+        .confirmationDialog("Forget this device?", isPresented: $isConfirmingForget) {
+          Button("Forget", role: .destructive) { model.forget() }
+          Button("Keep it", role: .cancel) {}
+        } message: {
+          Text("The address and its token leave this device. Pair it again on the host to come back.")
+        }
+      }
     #endif
   }
 
   @ViewBuilder
   private var content: some View {
-    if model.isConfigured, !model.isEditingConnection {
+    if showsLibrary {
       #if os(macOS)
         SidebarShell(model: model)
       #else
@@ -88,6 +120,14 @@ struct RootView: View {
         ConnectionView(model: model, cancellable: model.isConfigured)
       }
     }
+  }
+
+  private var showsLibrary: Bool {
+    #if os(macOS)
+      model.isConfigured
+    #else
+      model.isConfigured && !model.isEditingConnection
+    #endif
   }
 
   #if os(iOS)
@@ -199,8 +239,86 @@ struct RootView: View {
 struct SidebarShell: View {
   @Bindable var model: AppModel
 
+  #if os(macOS)
+    private enum Selection: Hashable {
+      case destination(Destination)
+      case playlist(String)
+    }
+
+    private var selection: Binding<Selection?> {
+      Binding(
+        get: {
+          if model.destination == .library, let id = model.selectedPlaylistId {
+            return .playlist(id)
+          }
+          return .destination(model.destination)
+        },
+        set: { selected in
+          guard let selected else { return }
+          switch selected {
+          case .destination(let destination):
+            model.destination = destination
+            if destination == .library {
+              Task { await model.selectPlaylist(nil) }
+            }
+          case .playlist(let id):
+            model.destination = .library
+            Task { await model.selectPlaylist(id) }
+          }
+        }
+      )
+    }
+  #else
+    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+  #endif
+
   var body: some View {
-    NavigationSplitView {
+    #if os(macOS)
+      let visibility: Binding<NavigationSplitViewVisibility> = .constant(.all)
+    #else
+      let visibility = $columnVisibility
+    #endif
+    NavigationSplitView(columnVisibility: visibility) {
+      #if os(macOS)
+        List(selection: selection) {
+          Label("Search", systemImage: "magnifyingglass")
+            .tag(Selection.destination(.search))
+            .accessibilityIdentifier("sidebar-search")
+          ForEach(Destination.shellCases) { destination in
+            Label(destination.rawValue, systemImage: destination.symbol)
+              .tag(Selection.destination(destination))
+              .accessibilityIdentifier("sidebar-\(destination.rawValue.lowercased())")
+          }
+          Section("Playlists") {
+            ForEach(model.playlistItems) { playlist in
+              PlaylistRow(
+                playlist.name,
+                count: playlist.setCount,
+                category: SetPresentation.category(for: playlist.name)
+              )
+              .tag(Selection.playlist(playlist.id))
+              .accessibilityIdentifier("playlist-\(playlist.name)")
+            }
+            if case .failed(let failure) = model.playlists {
+              playlistsErrorRow(failure)
+            }
+          }
+        }
+        .listStyle(.sidebar)
+        .environment(\.defaultMinListRowHeight, 32)
+        .scrollEdgeEffectStyle(.soft, for: .top)
+        .scrollEdgeEffectStyle(.soft, for: .bottom)
+        .navigationSplitViewColumnWidth(min: 250, ideal: 290, max: 340)
+        .navigationTitle("")
+        .safeAreaBar(edge: .bottom) {
+          Button("Settings", systemImage: "gearshape") { model.editConnection() }
+            .buttonStyle(.plain)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14)
+            .accessibilityIdentifier("sidebar-settings")
+        }
+        .accessibilityIdentifier("sidebar")
+      #else
       List {
         ForEach(Destination.shellCases) { destination in
           Button {
@@ -240,11 +358,16 @@ struct SidebarShell: View {
       }
       .navigationTitle("Orbis")
       .accessibilityIdentifier("sidebar")
+      #endif
     } detail: {
       NavigationStack {
         DestinationView(model: model, destination: model.destination)
       }
     }
+    #if os(macOS)
+      .toolbar(removing: .sidebarToggle)
+      .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+    #endif
   }
 
   /// A playlist section that failed to load must say so, because an empty section reads
@@ -304,6 +427,21 @@ struct DestinationView: View {
   /// sheet, so the Library itself is the collection and nothing else.
   @State private var isFilingSheetShown = false
 
+  @State private var libraryQuery = ""
+
+  #if os(macOS)
+    private var matchingLibrary: Loadable<[SavedSet]> {
+      guard case .loaded(let sets) = model.visibleSets,
+        !libraryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+      else { return model.visibleSets }
+      return .loaded(sets.filter { set in
+        set.title.localizedCaseInsensitiveContains(libraryQuery)
+          || (set.creator?.localizedCaseInsensitiveContains(libraryQuery) ?? false)
+          || set.tags.contains { $0.localizedCaseInsensitiveContains(libraryQuery) }
+      })
+    }
+  #endif
+
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
   #endif
@@ -314,7 +452,7 @@ struct DestinationView: View {
       home
     case .library:
       SetList(
-        state: model.visibleSets,
+        state: librarySets,
         heading: libraryHeading,
         empty: AnyView(
           EmptyLibraryState(recover: { openFilingSheet() })
@@ -325,7 +463,12 @@ struct DestinationView: View {
         filters: model.availableTags.isEmpty ? nil : tagFilters,
         // Only a filter can hide every Set. Without one, an empty list is an empty collection
         // and keeps the empty collection's copy.
-        noMatches: model.activeTag == nil
+        noMatches: librarySearchIsActive
+          ? AnyView(
+            NoResultsState(recoverLabel: "Clear search", recover: { libraryQuery = "" })
+              .accessibilityIdentifier("library-no-matches")
+          )
+          : model.activeTag == nil
           ? nil
           : AnyView(
             NoResultsState(recoverLabel: "Clear filters", recover: { model.setTagFilter(nil) })
@@ -333,14 +476,16 @@ struct DestinationView: View {
           ),
         hero: linkWaiting,
         rails: nil,
-        footer: libraryFooter,
+        footer: librarySearchIsActive ? "\(libraryMatchCount) sets" : libraryFooter,
         retry: { await model.loadLibrary() },
         select: { set in model.openSet(set.id) },
         currentSetId: model.audioPlayer.currentSetId,
         isPlaying: model.audioPlayer.state == .playing,
         togglePlayback: { set in model.togglePlayback(set.id) }
       )
-      .navigationTitle("Library")
+      .macPageSearch(text: $libraryQuery, prompt: "Find in Library")
+      .macSearchToolbarBackground(isSearching: librarySearchIsActive)
+      .sidebarPageTitle("Library")
       // Pinned rather than left to the default, so the large title stays large whatever the
       // tab's content state is; the Set page pins its inline counterpart the same way. A Mac
       // has no large title to pin.
@@ -401,6 +546,27 @@ struct DestinationView: View {
   /// active filter is underlined in the ledger row instead.
   private var libraryHeading: Text? { nil }
 
+  private var librarySets: Loadable<[SavedSet]> {
+    #if os(macOS)
+      matchingLibrary
+    #else
+      model.visibleSets
+    #endif
+  }
+
+  private var librarySearchIsActive: Bool {
+    #if os(macOS)
+      !libraryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    #else
+      false
+    #endif
+  }
+
+  private var libraryMatchCount: Int {
+    guard case .loaded(let sets) = librarySets else { return 0 }
+    return sets.count
+  }
+
   /// Home: what is new and where to go, in rails, with a waiting link above them. The full
   /// collection is the Library tab.
   private var home: some View {
@@ -414,7 +580,9 @@ struct DestinationView: View {
       .padding()
     }
     .background(Color.orbis.paper)
-    .navigationTitle("Home")
+    .scrollEdgeEffectStyle(.soft, for: .top)
+    .scrollEdgeEffectStyle(.soft, for: .bottom)
+    .sidebarPageTitle("Home")
     .largeTitleOnIOS()
     .toolbar {
       ToolbarItem {
@@ -422,7 +590,9 @@ struct DestinationView: View {
           .tint(Color.orbis.tint)
           .accessibilityIdentifier("home-file")
       }
-      settingsMenu
+      #if os(iOS)
+        settingsMenu
+      #endif
     }
     .sheet(isPresented: $isFilingSheetShown) { filingSheet }
     .onChange(of: model.reveal != nil) { _, hasReveal in
@@ -627,7 +797,9 @@ struct DestinationView: View {
       Button("Queue", systemImage: "list.bullet") { isShowingQueue = true }
         .accessibilityIdentifier("library-queue")
     }
-    settingsMenu
+    #if os(iOS)
+      settingsMenu
+    #endif
   }
 
   private func playSelectedPlaylist() {
@@ -760,6 +932,31 @@ struct SearchDestination: View {
   @FocusState private var isFieldFocused: Bool
 
   var body: some View {
+    searchPage
+      // On the screen, not the results: the results view is not there until a search has run.
+      .onSubmit(of: .search) { Task { await model.runSearch() } }
+      .onChange(of: model.searchQuery) { _, query in
+        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+          model.clearSearch()
+        }
+      }
+  }
+
+  private var searchPage: some View {
+    #if os(macOS)
+      searchBody.sidebarPageTitle("Search")
+        .searchable(text: $model.searchQuery, placement: .toolbar,
+          prompt: "Search Sets and Playlists")
+        .macSearchToolbarBackground(isSearching: !model.searchQuery.isEmpty)
+    #else
+      searchBody
+        .sidebarPageTitle("Search")
+        .searchable(text: $model.searchQuery, prompt: "Title, tag, or source link")
+        .searchFocused($isFieldFocused)
+    #endif
+  }
+
+  private var searchBody: some View {
     Group {
       if isUntouched {
         // Nothing has been asked yet, so nothing has failed. One line says what the field
@@ -770,19 +967,6 @@ struct SearchDestination: View {
           .accessibilityIdentifier("search-untouched")
       } else {
         results
-      }
-    }
-    .navigationTitle("Search")
-    .searchable(text: $model.searchQuery, prompt: "Title, tag, or source link")
-    .searchFocused($isFieldFocused)
-    // On the screen, not the results: the results view is not there until a search has run,
-    // and a submit handler on a view that is not there hears nothing.
-    .onSubmit(of: .search) { Task { await model.runSearch() } }
-    .onChange(of: model.searchQuery) { _, query in
-      // Typing then deleting every character leaves the field where the person put it, so this
-      // path only drops the results. Resigning the field belongs to the clear action.
-      if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-        model.clearSearch()
       }
     }
   }
@@ -820,6 +1004,7 @@ struct SearchDestination: View {
       // second one to reach.
       noMatches: nil,
       hero: nil,
+      aboveRows: matchingPlaylistRows,
       footer: searchFooter,
       retry: { await model.runSearch() },
       listIdentifier: "search-list",
@@ -829,6 +1014,33 @@ struct SearchDestination: View {
       isPlaying: model.audioPlayer.state == .playing,
       togglePlayback: { set in model.togglePlayback(set.id) }
     )
+  }
+
+  private var matchingPlaylistRows: AnyView? {
+    #if os(macOS)
+      guard let query = model.searchResultsFor else { return nil }
+      let playlists = model.playlistItems.filter {
+        $0.name.localizedCaseInsensitiveContains(query)
+      }
+      guard !playlists.isEmpty else { return nil }
+      return AnyView(VStack(alignment: .leading, spacing: 8) {
+        Text("Playlists").font(.headline)
+        ForEach(playlists) { playlist in
+          Button {
+            model.destination = .playlists
+            model.openPlaylist(playlist.id)
+            Task { await model.loadPlaylistMembers(playlist.id) }
+          } label: {
+            PlaylistRow(playlist.name, count: playlist.setCount)
+              .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("search-playlist-\(playlist.name)")
+        }
+      })
+    #else
+      nil
+    #endif
   }
 
   /// The heading names the query the results answer, not whatever sits in the field: typing
@@ -845,6 +1057,31 @@ struct SearchDestination: View {
 }
 
 extension View {
+  func macPageSearch(text: Binding<String>, prompt: String) -> some View {
+    #if os(macOS)
+      searchable(text: text, placement: .toolbar, prompt: Text(prompt))
+    #else
+      self
+    #endif
+  }
+
+  func macSearchToolbarBackground(isSearching: Bool) -> some View {
+    #if os(macOS)
+      toolbarBackgroundVisibility(isSearching ? .visible : .hidden, for: .windowToolbar)
+    #else
+      self
+    #endif
+  }
+
+  /// A Mac sidebar already names the destination; keep the window toolbar for actions.
+  func sidebarPageTitle(_ title: String) -> some View {
+    #if os(macOS)
+      navigationTitle("")
+    #else
+      navigationTitle(title)
+    #endif
+  }
+
   /// `toolbarTitleDisplayMode(.large)` where the platform has a large title, and nothing on a Mac.
   @ViewBuilder func largeTitleOnIOS() -> some View {
     #if os(iOS)

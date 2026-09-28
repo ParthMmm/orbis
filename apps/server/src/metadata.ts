@@ -9,6 +9,7 @@ export interface EnrichedMetadata {
   readonly artworkLargeUrl: string | null;
   readonly creator: string | null;
   readonly durationSeconds: number | null;
+  readonly releasedAt: string | null;
   readonly title: string;
 }
 
@@ -133,6 +134,7 @@ const YouTubeResponse = Schema.Struct({
       contentDetails: Schema.Struct({ duration: Schema.String }),
       snippet: Schema.Struct({
         channelTitle: Schema.String,
+        publishedAt: Schema.String,
         thumbnails: Schema.Struct({
           default: Schema.optionalKey(YouTubeThumbnail),
           high: Schema.optionalKey(YouTubeThumbnail),
@@ -178,6 +180,7 @@ const youTubeMetadata = (video: YouTubeVideo): EnrichedMetadata => ({
   artworkUrl: listingArtworkFrom(video.snippet.thumbnails),
   creator: video.snippet.channelTitle.trim() || null,
   durationSeconds: parseDurationSeconds(video.contentDetails.duration),
+  releasedAt: video.snippet.publishedAt,
   title: video.snippet.title.trim(),
 });
 
@@ -187,6 +190,7 @@ const soundCloudMetadata = (track: SoundCloudOEmbed): EnrichedMetadata => ({
   artworkUrl: track.thumbnail_url ?? null,
   creator: track.author_name?.trim() || null,
   durationSeconds: null,
+  releasedAt: null,
   title: track.title.trim(),
 });
 

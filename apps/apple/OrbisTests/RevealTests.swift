@@ -18,6 +18,7 @@ final class RevealTests: XCTestCase {
       source: .youtube,
       tags: tags,
       createdAt: "2026-01-01T00:00:00.000Z",
+      releasedAt: nil,
       creator: "Ada Lovelace",
       artworkUrl: nil,
       artworkLargeUrl: nil,

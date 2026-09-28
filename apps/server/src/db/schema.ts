@@ -34,6 +34,8 @@ export const sets = sqliteTable("sets", {
     .default(0),
   retainedAudioBytes: integer("retained_audio_bytes"),
   retainedAudioFormat: text("retained_audio_format"),
+  /** When the source published the Set. Filled by metadata enrichment when the provider names it. */
+  releasedAt: text("released_at"),
   source: text("source", { enum: ["youtube", "soundcloud"] }).notNull(),
   tags: text("tags").notNull(),
   title: text("title").notNull(),

@@ -20,6 +20,7 @@ const PROVIDER_RESULT: EnrichedMetadata = {
   artworkUrl: "https://example.test/artwork.jpg",
   creator: "Ada Lovelace",
   durationSeconds: 253,
+  releasedAt: "2015-10-28T10:00:00.000Z",
   title: "Analytical Engine live",
 };
 
@@ -75,6 +76,7 @@ test("fills title, creator, artwork, and duration from the provider when the sav
       lastListenedAt: null,
       listenCount: 0,
       metadataState: "enriched",
+      releasedAt: "2015-10-28T10:00:00.000Z",
       playbackPositionSeconds: 0,
       playlistIds: [],
       retainedAudioBytes: null,
@@ -182,6 +184,7 @@ test("retry replaces the temporary title that no user edited", async () => {
       creator: "Ada Lovelace",
       durationSeconds: 253,
       metadataState: "enriched",
+      releasedAt: "2015-10-28T10:00:00.000Z",
       title: "Analytical Engine live",
     });
   } finally {
@@ -221,6 +224,7 @@ test("retry keeps the title a user edited and fills the rest in", async () => {
       creator: "Ada Lovelace",
       durationSeconds: 253,
       metadataState: "enriched",
+      releasedAt: "2015-10-28T10:00:00.000Z",
     });
   } finally {
     await server.dispose();
@@ -324,6 +328,7 @@ const youTubeBody = (thumbnails: Thumbnails) => ({
       contentDetails: { duration: "PT4M13S" },
       snippet: {
         channelTitle: "Ada Lovelace",
+        publishedAt: "2015-10-28T10:00:00.000Z",
         thumbnails,
         title: "Analytical Engine live",
       },
@@ -357,6 +362,7 @@ test("reads the documented YouTube Data API fields into metadata", async () => {
     artworkUrl: "https://example.test/default.jpg",
     creator: "Ada Lovelace",
     durationSeconds: 253,
+    releasedAt: "2015-10-28T10:00:00.000Z",
     title: "Analytical Engine live",
   });
   expect(requested).toEqual([
@@ -456,6 +462,7 @@ test("reads SoundCloud oEmbed and leaves the duration unknown", async () => {
     artworkUrl: "https://example.test/hopper.jpg",
     creator: "Grace Hopper",
     durationSeconds: null,
+    releasedAt: null,
     title: "Compiler talk",
   });
   expect(requested).toEqual([

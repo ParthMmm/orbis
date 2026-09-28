@@ -21,9 +21,22 @@ public struct SetDetail: View {
   /// The service could not name this Set, so the name is the caller's to supply or the
   /// service's to try again.
   public let failedToName: Bool
+  public let dates: Dates?
   /// How often this Set was started and finished, and when it was last heard. Nil keeps the two
   /// rows off the page entirely, which is what a Set that has never been played shows.
   public let statistics: Statistics?
+
+  /// When the Set was saved and, when the provider named it, when the source released it. The
+  /// values are plain and already formatted, because the design system holds no dates of its own.
+  public struct Dates: Equatable, Sendable {
+    public let imported: String
+    public let released: String?
+
+    public init(imported: String, released: String? = nil) {
+      self.imported = imported
+      self.released = released
+    }
+  }
 
   /// How often a Set was listened to and finished, and when it was last heard.
   ///
@@ -69,7 +82,7 @@ public struct SetDetail: View {
   public init(
     title: String, source: String, subtitle: String? = nil, artwork: URL? = nil,
     position: String? = nil, progress: Double? = nil, failedToName: Bool = false,
-    statistics: Statistics? = nil, retryName: @escaping () -> Void = {},
+    dates: Dates? = nil, statistics: Statistics? = nil, retryName: @escaping () -> Void = {},
     @ViewBuilder transport: () -> some View = { EmptyView() },
     @ViewBuilder management: () -> some View
   ) {
@@ -80,6 +93,7 @@ public struct SetDetail: View {
     self.position = position
     self.progress = progress
     self.failedToName = failedToName
+    self.dates = dates
     self.statistics = statistics
     self.retryName = retryName
     self.transport = AnyView(transport())
@@ -120,6 +134,15 @@ public struct SetDetail: View {
               .accessibilityLabel("Resumes at \(position)")
           }
           transport
+          if let dates {
+            VStack(spacing: 0) {
+              ListingRule()
+              ListingRow("Imported", value: dates.imported, identifier: "detail-imported")
+              if let released = dates.released {
+                ListingRow("Released", value: released, identifier: "detail-released")
+              }
+            }
+          }
           if let statistics, !statistics.isEmpty {
             VStack(spacing: 0) {
               ListingRule()
@@ -269,9 +292,10 @@ private struct SetDetailSample: View {
     SetDetail(
       title: "CHRIS STASSY @ N:A:M:E: Birmingham 22.08.2026",
       source: "YouTube",
-      subtitle: "CHRIS STASSY · 2h 33m · Sep 11",
+      subtitle: "CHRIS STASSY · 2h 33m",
       position: "42:00",
       progress: 0.27,
+      dates: .init(imported: "11 Sep 2026", released: "22 Aug 2026"),
       statistics: .init(listenCount: 3, finishCount: 1, lastHeard: "Thu 11 Sep")
     ) {
       SetManagement(

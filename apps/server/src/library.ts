@@ -405,6 +405,7 @@ export class Library extends Context.Service<
                   creator: metadata.creator,
                   durationSeconds: metadata.durationSeconds,
                   metadataState: "enriched",
+                  releasedAt: metadata.releasedAt,
                   title: sql<string>`CASE
                   WHEN ${sets.titleEditedByUser} = 1 THEN ${sets.title}
                   ELSE ${metadata.title}

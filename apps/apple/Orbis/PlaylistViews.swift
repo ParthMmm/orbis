@@ -11,6 +11,7 @@ struct PlaylistsDestination: View {
   @State private var renamingPlaylist: Playlist?
   @State private var renameDraft = ""
   @State private var deletingPlaylist: Playlist?
+  @State private var playlistQuery = ""
 
   var body: some View {
     Group {
@@ -20,7 +21,7 @@ struct PlaylistsDestination: View {
         playlistList
       }
     }
-    .navigationTitle(model.openedPlaylistId == nil ? "Playlists" : "")
+    .sidebarPageTitle(model.openedPlaylistId == nil ? "Playlists" : "")
     .largeTitleOnIOS()
     .toolbar {
       if model.openedPlaylistId == nil {
@@ -79,7 +80,7 @@ struct PlaylistsDestination: View {
           .accessibilityIdentifier("playlists-empty")
         } else {
           List {
-            ForEach(items) { playlist in
+            ForEach(matchingPlaylists(items)) { playlist in
               Button {
                 model.openPlaylist(playlist.id)
                 Task { await model.loadPlaylistMembers(playlist.id) }
@@ -111,6 +112,15 @@ struct PlaylistsDestination: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background(Color.orbis.paper)
+    .macPageSearch(text: $playlistQuery, prompt: "Find in Playlists")
+    .macSearchToolbarBackground(isSearching: !playlistQuery.isEmpty)
+  }
+
+  private func matchingPlaylists(_ items: [Playlist]) -> [Playlist] {
+    guard !playlistQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+      return items
+    }
+    return items.filter { $0.name.localizedCaseInsensitiveContains(playlistQuery) }
   }
 
   private func beginCreate() {
@@ -262,6 +272,7 @@ struct PlaylistDetailView: View {
           artwork: presentation.artwork,
           creator: presentation.creator,
           length: presentation.length,
+          dates: SetPresentation.datesLine(set),
           tags: presentation.tags,
           activeTag: nil,
           state: presentation.state,
@@ -284,6 +295,8 @@ struct PlaylistDetailView: View {
         Task { await model.movePlaylistMembers(playlist.id, from: source, to: destination) }
       }
     }
+    .scrollEdgeEffectStyle(.soft, for: .top)
+    .scrollEdgeEffectStyle(.soft, for: .bottom)
     .accessibilityIdentifier("playlist-members")
   }
 }
