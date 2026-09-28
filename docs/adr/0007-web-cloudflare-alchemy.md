@@ -13,13 +13,13 @@ Tailscale Serve may stay for operator access and native clients; friends do not 
 Rejected alternatives:
 
 - **Move the library server onto Workers/D1.** Wrong runtime for Cobalt, sequential download jobs, and local Retained Audio.
-- **R2 for audio in the first web slice.** Useful later so friends do not pull audio through Vanta's uplink; not required to ship the web edge.
+- **Store Retained Audio in R2.** Takes load off Vanta's uplink, and makes Cloudflare the host of stored copies of audio taken from YouTube and SoundCloud. Retained Audio stays on Vanta and is never stored with a third party.
 - **Cloudflare Access or service tokens as the only friend login.** Wrong experience for "here is a key, open the site."
 - **Tunnel to 4310.** Would restore a token-free path from the internet.
 - **A session cookie for audio.** `orbis` and `api.orbis` are same-site, so a `SameSite=Strict` cookie would work, but it adds a second credential kind with its own lifetime and CSRF surface. A grant touches one route.
 - **Fetch audio into a blob.** Loads a whole DJ set into memory before playback and breaks seeking.
 - **Serve the API from the SPA origin through a Worker proxy.** Removes CORS, and puts every audio byte through a Worker as well as the tunnel.
 
-The trade this accepts is that every friend's audio stream crosses Cloudflare's network and Vanta's uplink. Cloudflare's terms restrict serving large media through its proxy on non-Enterprise plans, and DJ sets are hundreds of megabytes. For a handful of people this is expected to go unnoticed; if Cloudflare objects or the uplink saturates, audio moves to R2 behind the same grant and nothing else changes.
+The trade this accepts is that every friend's audio stream crosses Cloudflare's network and Vanta's uplink. Cloudflare's terms restrict serving large media through its proxy on non-Enterprise plans, and DJ sets are hundreds of megabytes. For a handful of people this is expected to go unnoticed; if Cloudflare objects, audio leaves Cloudflare instead of moving deeper into it. Grants then point at Vanta's tailnet address, served by Tailscale Serve on a port other than 443, and each friend installs Tailscale and accepts Vanta as a shared node. The API and the SPA stay on Cloudflare, and a browser's `<audio>` element loads a cross-origin source without CORS, so nothing else changes.
 
 This picks up the Electron-to-web, Cloudflare, and Alchemy deferral in ADR 0001 for the web path only.

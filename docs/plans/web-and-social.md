@@ -47,4 +47,4 @@ Native clients need no change until step 9 beyond accepting the same key. Their 
 
 ## Out of scope
 
-R2 audio, Cloudflare Access as login, more than one Group, public signup, Orbis-sent key delivery, and one-time claim links.
+Storing Retained Audio with any third party (R2 included), Cloudflare Access as login, more than one Group, public signup, Orbis-sent key delivery, and one-time claim links.
