@@ -3,12 +3,20 @@ import { Context, Effect, Layer, Option, Schema } from "effect";
 
 import { MetadataError } from "./metadata-error.js";
 import { youTubeVideoId } from "./source-url.js";
+import type { SourceDetails, YtDlpMetadataService } from "./ytdlp-metadata.js";
+
+/** What only yt-dlp reports. Absent when yt-dlp is not configured or could not read the link. */
+export type SourceExtras = Pick<
+  SourceDetails,
+  "chapters" | "creatorId" | "creatorUrl" | "description" | "genre" | "tags"
+>;
 
 export interface EnrichedMetadata {
   readonly artworkUrl: string | null;
   readonly artworkLargeUrl: string | null;
   readonly creator: string | null;
   readonly durationSeconds: number | null;
+  readonly extras?: SourceExtras;
   readonly releasedAt: string | null;
   readonly title: string;
 }
@@ -22,10 +30,16 @@ export interface MetadataService {
   readonly enrich: (
     input: EnrichInput
   ) => Effect.Effect<EnrichedMetadata, MetadataError>;
+  /** The slow read a Set gets after it is saved: what only yt-dlp reports, plus any gaps. */
+  readonly details: (
+    input: EnrichInput
+  ) => Effect.Effect<SourceDetails, MetadataError>;
 }
 
 export interface MetadataOptions {
   readonly fetch?: RequestFetch;
+  /** Fills what the provider APIs leave out, and stands in for a YouTube API key that is not set. */
+  readonly ytDlp?: YtDlpMetadataService | undefined;
   readonly youTubeApiKey?: string | undefined;
 }
 
@@ -245,7 +259,51 @@ const soundCloudProvider = (request: RequestFetch): Provider => ({
     }),
 });
 
+const enrichedFromDetails = (details: SourceDetails): EnrichedMetadata => ({
+  artworkLargeUrl: details.thumbnailUrl,
+  artworkUrl: details.thumbnailUrl,
+  creator: details.creator,
+  durationSeconds: details.durationSeconds,
+  extras: {
+    chapters: details.chapters,
+    creatorId: details.creatorId,
+    creatorUrl: details.creatorUrl,
+    description: details.description,
+    genre: details.genre,
+    tags: details.tags,
+  },
+  releasedAt: details.releasedAt,
+  title: details.title,
+});
+
+/**
+ * yt-dlp is slow, so it is only the answer here when the provider API has none: a source with no
+ * API configured, or one that failed. Otherwise the save returns on the provider alone and
+ * `details` fills the rest afterwards.
+ */
+const orYtDlp = (
+  provider: Effect.Effect<EnrichedMetadata, MetadataError>,
+  ytDlp: YtDlpMetadataService,
+  url: string
+): Effect.Effect<EnrichedMetadata, MetadataError> =>
+  Effect.gen(function* answerOrFallBack() {
+    const answer = yield* Effect.result(provider);
+    if (answer._tag === "Success") {
+      return answer.success;
+    }
+    const details = yield* Effect.result(ytDlp.read(url));
+    return yield* details._tag === "Success"
+      ? Effect.succeed(enrichedFromDetails(details.success))
+      : Effect.fail(answer.failure);
+  });
+
 const noProviders: MetadataService = {
+  details: (input) =>
+    Effect.fail(
+      notConfigured(
+        `${input.source} details are not configured on this server.`
+      )
+    ),
   enrich: (input) =>
     Effect.fail(
       notConfigured(
@@ -265,9 +323,16 @@ export class Metadata extends Context.Service<Metadata, MetadataService>()(
     if (options.youTubeApiKey) {
       providers.youtube = youTubeProvider(options.youTubeApiKey, request);
     }
+    const { ytDlp } = options;
     return Layer.succeed(Metadata, {
-      enrich: (input) =>
-        providers[input.source]?.enrich(input.url) ?? noProviders.enrich(input),
+      details: (input) =>
+        ytDlp ? ytDlp.read(input.url) : noProviders.details(input),
+      enrich: (input) => {
+        const provider =
+          providers[input.source]?.enrich(input.url) ??
+          noProviders.enrich(input);
+        return ytDlp ? orYtDlp(provider, ytDlp, input.url) : provider;
+      },
     });
   }
 
@@ -279,7 +344,13 @@ export class Metadata extends Context.Service<Metadata, MetadataService>()(
     return Layer.succeed(Metadata, noProviders);
   }
 
-  static layerOf(metadata: MetadataService): Layer.Layer<Metadata> {
-    return Layer.succeed(Metadata, metadata);
+  static layerOf(
+    metadata: Pick<MetadataService, "enrich"> &
+      Partial<Pick<MetadataService, "details">>
+  ): Layer.Layer<Metadata> {
+    return Layer.succeed(Metadata, {
+      details: noProviders.details,
+      ...metadata,
+    });
   }
 }

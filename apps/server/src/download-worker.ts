@@ -7,6 +7,7 @@ import { Cobalt } from "./cobalt.js";
 import { LibraryError } from "./errors.js";
 import { Library } from "./library.js";
 import { MediaStore } from "./media-store.js";
+import { Ytdlp } from "./ytdlp.js";
 
 export interface DownloadWorkerOptions {
   readonly startWorker?: boolean;
@@ -16,6 +17,57 @@ export interface DownloadProgress {
   readonly received: number;
   readonly total: number | null;
 }
+
+export type BackendName = "cobalt" | "ytdlp";
+
+interface Backend {
+  readonly name: BackendName;
+  readonly run: Effect.Effect<void, LibraryError>;
+}
+
+// Each source goes first to the backend proven on it; the other is the safety net.
+export const backendOrder = (source: SavedSet["source"]) =>
+  source === "youtube"
+    ? (["ytdlp", "cobalt"] as const)
+    : (["cobalt", "ytdlp"] as const);
+
+// A backend failure is retryable on the next backend. A cancel is terminal.
+const fetchWithFallback = (
+  backends: readonly Backend[],
+  setId: string,
+  tmpPath: string,
+  signal: AbortSignal
+): Effect.Effect<BackendName, LibraryError> => {
+  const [current, ...rest] = backends;
+  if (!current) {
+    return Effect.fail(
+      new LibraryError({
+        message: "No download backend is configured.",
+        statusCode: 500,
+      })
+    );
+  }
+  return current.run.pipe(
+    Effect.as(current.name),
+    Effect.matchEffect({
+      onFailure: (error) =>
+        rest.length === 0 || signal.aborted
+          ? Effect.fail(error)
+          : Effect.logWarning("audio backend failed, trying the next").pipe(
+              Effect.annotateLogs({
+                backend: current.name,
+                reason: error.message,
+                set: setId,
+              }),
+              Effect.andThen(
+                Effect.promise(() => rm(tmpPath, { force: true }))
+              ),
+              Effect.andThen(fetchWithFallback(rest, setId, tmpPath, signal))
+            ),
+      onSuccess: (name) => Effect.succeed(name),
+    })
+  );
+};
 
 export class DownloadWorker extends Context.Service<
   DownloadWorker,
@@ -28,13 +80,14 @@ export class DownloadWorker extends Context.Service<
 >()("@orbis/DownloadWorker") {
   static layer(
     options: DownloadWorkerOptions = {}
-  ): Layer.Layer<DownloadWorker, never, Library | Cobalt | MediaStore> {
+  ): Layer.Layer<DownloadWorker, never, Library | Cobalt | MediaStore | Ytdlp> {
     return Layer.effect(
       DownloadWorker,
       Effect.gen(function* buildWorker() {
         const library = yield* Library;
         const cobalt = yield* Cobalt;
         const media = yield* MediaStore;
+        const ytdlp = yield* Ytdlp;
         const wakeQueue = yield* Queue.unbounded<true>();
         const progress = new Map<string, DownloadProgress>();
         const aborts = new Map<string, AbortController>();
@@ -43,8 +96,9 @@ export class DownloadWorker extends Context.Service<
           .pipe(Effect.orDie);
         yield* Effect.logInfo("download worker started").pipe(
           Effect.annotateLogs({
-            configured: cobalt.isConfigured,
+            cobalt: cobalt.isConfigured,
             requeued,
+            ytdlp: ytdlp.isConfigured,
           })
         );
         const downloadOne = Effect.fn("DownloadWorker.downloadOne")(
@@ -55,26 +109,50 @@ export class DownloadWorker extends Context.Service<
             progress.set(set.id, { received: 0, total: null });
             yield* Effect.ensuring(
               Effect.gen(function* runDownload() {
-                const tunnelUrl = yield* cobalt.requestTunnel(
-                  set.url,
-                  abort.signal
+                const onProgress = (received: number, total: number | null) => {
+                  progress.set(set.id, { received, total });
+                };
+                const fetchCobalt = Effect.gen(function* viaCobalt() {
+                  const tunnelUrl = yield* cobalt.requestTunnel(
+                    set.url,
+                    abort.signal
+                  );
+                  const response = yield* cobalt.openTunnel(
+                    tunnelUrl,
+                    abort.signal
+                  );
+                  yield* media.streamResponse(
+                    response,
+                    tmpPath,
+                    onProgress,
+                    abort.signal
+                  );
+                });
+                const backends = backendOrder(set.source).filter((name) =>
+                  name === "ytdlp" ? ytdlp.isConfigured : cobalt.isConfigured
                 );
-                const response = yield* cobalt.openTunnel(
-                  tunnelUrl,
-                  abort.signal
-                );
-                yield* media.streamResponse(
-                  response,
+                const backend = yield* fetchWithFallback(
+                  backends.map((name) => ({
+                    name,
+                    run:
+                      name === "ytdlp"
+                        ? ytdlp.download(
+                            set.url,
+                            tmpPath,
+                            onProgress,
+                            abort.signal
+                          )
+                        : fetchCobalt,
+                  })),
+                  set.id,
                   tmpPath,
-                  (received, total) => {
-                    progress.set(set.id, { received, total });
-                  },
                   abort.signal
                 );
                 const stored = yield* media.storeDownloaded(set.id, tmpPath);
                 const finished = yield* library.finishDownload(set.id, stored);
                 yield* Effect.logInfo("audio download finished").pipe(
                   Effect.annotateLogs({
+                    backend,
                     bytes: finished.retainedAudioBytes ?? 0,
                     durationSeconds: finished.durationSeconds ?? 0,
                     format: stored.format,

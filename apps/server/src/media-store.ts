@@ -41,6 +41,9 @@ const contentTypeFor = (format: string): string | undefined => {
   if (format === "ogg") {
     return "audio/ogg";
   }
+  if (format === "m4a") {
+    return "audio/mp4";
+  }
   return undefined;
 };
 
@@ -222,8 +225,17 @@ export class MediaStore extends Context.Service<
             format,
           } satisfies StoredAudio;
         }
+        // The stored format follows the source codec; m4a is kept as delivered.
+        if (/mp4|m4a/u.test(container)) {
+          yield* Effect.promise(() => rename(tmpPath, fileFor(setId, "m4a")));
+          return {
+            bytes: Bun.file(fileFor(setId, "m4a")).size,
+            durationSeconds,
+            format: "m4a",
+          } satisfies StoredAudio;
+        }
         return yield* Effect.fail(
-          downloadFailed("Cobalt delivered an unsupported container.")
+          downloadFailed("The download delivered an unsupported container.")
         );
       }
     );
@@ -259,7 +271,7 @@ export class MediaStore extends Context.Service<
     const removeFiles = Effect.fn("MediaStore.removeFiles")((id: string) =>
       Effect.promise(() =>
         Promise.allSettled(
-          ["part", "ogg", "mp3"].map((suffix) =>
+          ["part", "ogg", "mp3", "m4a"].map((suffix) =>
             rm(path.join(audioDir, `${id}.${suffix}`), { force: true })
           )
         )

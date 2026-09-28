@@ -34,6 +34,11 @@ export interface SavedSet {
    */
   releasedAt: string | null;
   creator: string | null;
+  /**
+   * The provider's stable id for the creator, the key that groups a creator's Sets. Null until
+   * details are read, and absent from a service that predates it.
+   */
+  creatorId: string | null;
   /** The provider's image, sized for a listing row. */
   artworkUrl: string | null;
   /**
@@ -66,6 +71,7 @@ export interface UpdateSetTitleInput {
 }
 
 export interface LibraryFilters {
+  creatorId?: string;
   playlistId?: string;
   q?: string;
   source?: SetSource;

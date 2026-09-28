@@ -1,7 +1,7 @@
 import path from "node:path";
 
 import type { SavedSet } from "@orbis/contracts";
-import { Effect, Layer, Option, Schema } from "effect";
+import { Effect, Layer, Option, Schema, Scope } from "effect";
 import {
   Headers,
   HttpRouter,
@@ -38,6 +38,7 @@ import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
 
 interface RawFilters {
+  creatorId?: string | null;
   playlistId: string;
   q: string;
   tags: string[];
@@ -49,11 +50,17 @@ const Tags = Schema.Array(Schema.String.check(Schema.isMaxLength(40))).check(
 );
 const Title = Schema.String.check(Schema.isMaxLength(200));
 const Filters = Schema.Struct({
+  creatorId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
   playlistId: Schema.String.check(Schema.isMaxLength(100)),
   q: Schema.String.check(Schema.isMaxLength(200)),
   source: Schema.optionalKey(Schema.Literals(["youtube", "soundcloud"])),
   tags: Tags,
 });
+const logDetailsFailure = (set: SavedSet, reason: string) =>
+  Effect.logWarning("set details fill failed").pipe(
+    Effect.annotateLogs({ reason, set: set.id })
+  );
+
 const SaveInput = Schema.Struct({
   tags: Schema.optionalKey(Tags),
   title: Schema.optionalKey(Title),
@@ -210,6 +217,7 @@ export const createApp = (
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
       const queue = yield* Queue;
+      const scope = yield* Scope.Scope;
       const reviseTitle = Effect.fn("reviseSavedSetTitle")((
         set: SavedSet,
         enriched: EnrichedMetadata
@@ -232,6 +240,26 @@ export const createApp = (
             Effect.catchTag("TitleReviserError", keepProviderTitle)
           );
       });
+      // The slow yt-dlp read runs after the response, tied to the app so `dispose` stops it. A
+      // failure is logged and marks the Set's details failed; the save itself is unaffected.
+      const fillDetails = Effect.fn("fillSavedSetDetails")((set: SavedSet) =>
+        metadata.details({ source: set.source, url: set.url }).pipe(
+          Effect.flatMap((details) => library.recordDetails(set.id, details)),
+          Effect.catchTags({
+            LibraryError: (error) => logDetailsFailure(set, error.message),
+            MetadataError: (error) =>
+              error.reason === "not-configured"
+                ? Effect.void
+                : logDetailsFailure(set, error.reason).pipe(
+                    Effect.andThen(
+                      library.recordDetailsFailure(set.id).pipe(Effect.ignore)
+                    )
+                  ),
+          }),
+          Effect.forkIn(scope),
+          Effect.asVoid
+        )
+      );
       // Enrichment failure is swallowed so the save still succeeds, so it is the
       // one outcome a client cannot see. The log records which set and which reason.
       const enrichSavedSet = Effect.fn("enrichSavedSet")((set: SavedSet) => {
@@ -243,9 +271,18 @@ export const createApp = (
         return metadata.enrich({ source: set.source, url: set.url }).pipe(
           Effect.flatMap((enriched) => reviseTitle(set, enriched)),
           Effect.flatMap((enriched) =>
-            library.recordEnrichment(set.id, enriched)
+            library
+              .recordEnrichment(set.id, enriched)
+              // The yt-dlp fallback already stored the details, so a second read is skipped.
+              .pipe(
+                Effect.tap(() =>
+                  enriched.extras ? Effect.void : fillDetails(set)
+                )
+              )
           ),
-          Effect.catchTag("MetadataError", onMetadataFailure)
+          Effect.catchTag("MetadataError", (failure) =>
+            onMetadataFailure(failure).pipe(Effect.tap(() => fillDetails(set)))
+          )
         );
       });
       yield* router.add(
@@ -328,6 +365,7 @@ export const createApp = (
             );
             // A typed title is final, so the desktop client keeps its offline save path.
             if (saved.titleEditedByUser) {
+              yield* fillDetails(saved);
               return saved;
             }
             return yield* enrichSavedSet(saved);
@@ -573,6 +611,9 @@ export const createApp = (
               q: params.get("q") ?? "",
               tags: params.getAll("tag"),
             };
+            if (params.has("creatorId")) {
+              rawFilters.creatorId = params.get("creatorId");
+            }
             if (params.has("source")) {
               rawFilters.source = params.get("source");
             }

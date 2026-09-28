@@ -15,10 +15,21 @@ import {
   MAX_PLAYLISTS_PER_SET,
   MAX_SETS_PER_PLAYLIST,
 } from "./library-limits.js";
-import type { EnrichedMetadata } from "./metadata.js";
+import type { EnrichedMetadata, SourceExtras } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
+import type { SourceDetails } from "./ytdlp-metadata.js";
 
 type SetRow = typeof sets.$inferSelect;
+
+const extrasColumns = (extras: SourceExtras) => ({
+  creatorId: extras.creatorId,
+  creatorUrl: extras.creatorUrl,
+  description: extras.description,
+  detailsState: "filled" as const,
+  genre: extras.genre,
+  sourceChapters: JSON.stringify(extras.chapters),
+  sourceTags: JSON.stringify(extras.tags),
+});
 
 const JsonStringArray = Schema.fromJsonString(
   Schema.mutable(Schema.Array(Schema.String))
@@ -97,6 +108,13 @@ export class Library extends Context.Service<
       id: string,
       metadata: EnrichedMetadata
     ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly recordDetails: (
+      id: string,
+      details: SourceDetails
+    ) => Effect.Effect<void, LibraryError>;
+    readonly recordDetailsFailure: (
+      id: string
+    ) => Effect.Effect<void, LibraryError>;
     readonly recordEnrichmentFailure: (
       id: string
     ) => Effect.Effect<SavedSet, LibraryError>;
@@ -169,8 +187,18 @@ export class Library extends Context.Service<
         ) =>
           Effect.gen(function* hydrateSetEffect() {
             const tags = yield* decodeJsonArray(row.tags);
+            // The source details stay on the server; the client contract does not carry them.
+            const {
+              creatorUrl: _creatorUrl,
+              description: _description,
+              detailsState: _detailsState,
+              genre: _genre,
+              sourceChapters: _sourceChapters,
+              sourceTags: _sourceTags,
+              ...visible
+            } = row;
             return {
-              ...row,
+              ...visible,
               playlistIds: yield* playlistIds,
               tags,
             };
@@ -235,6 +263,9 @@ export class Library extends Context.Service<
                   OR instr(lower(coalesce(${sets.creator}, '')), lower(${query})) > 0
                 )`
               );
+            }
+            if (filters.creatorId) {
+              conditions.push(eq(sets.creatorId, filters.creatorId));
             }
             if (filters.source) {
               conditions.push(eq(sets.source, filters.source));
@@ -404,6 +435,8 @@ export class Library extends Context.Service<
                   artworkUrl: metadata.artworkUrl,
                   creator: metadata.creator,
                   durationSeconds: metadata.durationSeconds,
+                  // A retry that yt-dlp could not answer keeps the details an earlier run stored.
+                  ...(metadata.extras && extrasColumns(metadata.extras)),
                   metadataState: "enriched",
                   releasedAt: metadata.releasedAt,
                   title: sql<string>`CASE
@@ -420,6 +453,40 @@ export class Library extends Context.Service<
               return yield* hydrateSet(row);
             })
           )
+      );
+
+      // The provider's own values stay: a Set is filled where it has a gap, never overwritten.
+      const recordDetails = Effect.fn("Library.recordDetails")(
+        (id: string, details: SourceDetails) =>
+          execute(
+            Effect.gen(function* recordDetailsEffect() {
+              const rows = yield* db
+                .update(sets)
+                .set({
+                  ...extrasColumns(details),
+                  artworkLargeUrl: sql`coalesce(${sets.artworkLargeUrl}, ${details.thumbnailUrl})`,
+                  artworkUrl: sql`coalesce(${sets.artworkUrl}, ${details.thumbnailUrl})`,
+                  creator: sql`coalesce(${sets.creator}, ${details.creator})`,
+                  durationSeconds: sql`coalesce(${sets.durationSeconds}, ${details.durationSeconds})`,
+                  releasedAt: sql`coalesce(${sets.releasedAt}, ${details.releasedAt})`,
+                })
+                .where(eq(sets.id, id))
+                .returning({ id: sets.id });
+              if (rows.length === 0) {
+                return yield* Effect.fail(setNotFound());
+              }
+            })
+          )
+      );
+
+      const recordDetailsFailure = Effect.fn("Library.recordDetailsFailure")(
+        (id: string) =>
+          execute(
+            db
+              .update(sets)
+              .set({ detailsState: "failed" })
+              .where(eq(sets.id, id))
+          ).pipe(Effect.asVoid)
       );
 
       const recordEnrichmentFailure = Effect.fn(
@@ -955,6 +1022,8 @@ export class Library extends Context.Service<
         list,
         playlists: playlistsList,
         queueDownload,
+        recordDetails,
+        recordDetailsFailure,
         recordEnrichment,
         recordEnrichmentFailure,
         remove,
