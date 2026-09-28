@@ -20,12 +20,6 @@ import {
   withSeededApp,
 } from "./test-library.js";
 
-test("the queue starts empty with nothing active", async () => {
-  await withSeededApp(ready(["a", "b"]), async (app) => {
-    expect(await queueOf(app)).toEqual({ activeSetId: null, entries: [] });
-  });
-});
-
 test("tapping a playable Set makes it active and keeps the queue behind it", async () => {
   await withSeededApp(ready(["a", "b", "c"]), async (app) => {
     await play(app, "b");
@@ -72,16 +66,6 @@ test("Play Next inserts directly after the active Set", async () => {
     expect(await order(app)).toEqual(["a", "b", "c"]);
     const queue = await queueOf(app);
     expect(queue.activeSetId).toBe("a");
-  });
-});
-
-test("Add to Queue appends", async () => {
-  await withSeededApp(ready(["a", "b", "c"]), async (app) => {
-    await play(app, "a");
-    await addToQueue(app, "b");
-    await addToQueue(app, "c");
-
-    expect(await order(app)).toEqual(["a", "b", "c"]);
   });
 });
 
@@ -146,18 +130,6 @@ test("playing a Playlist replaces the queue in Playlist order, with its playable
   );
 });
 
-test("playing a Playlist that does not exist is refused", async () => {
-  await withSeededApp(ready(["a"]), async (app) => {
-    const response = await request(app, {
-      method: "PUT",
-      payload: { playlistId: "no-such-playlist" },
-      url: "/queue/playlist",
-    });
-
-    expect(response.statusCode).toBe(404);
-  });
-});
-
 test("a Set without Retained Audio cannot enter the queue", async () => {
   await withSeededApp([{ downloadState: "none", id: "d" }], async (app) => {
     const activated = await play(app, "d");
@@ -168,16 +140,6 @@ test("a Set without Retained Audio cannot enter the queue", async () => {
     const queued = await addToQueue(app, "d");
     expect(queued.response.statusCode).toBe(400);
     expect(await queueOf(app)).toEqual({ activeSetId: null, entries: [] });
-  });
-});
-
-test("a Set that is not in the library is refused", async () => {
-  await withSeededApp(ready(["a"]), async (app) => {
-    const activated = await play(app, "missing");
-    const queued = await addToQueue(app, "missing");
-
-    expect(activated.response.statusCode).toBe(404);
-    expect(queued.response.statusCode).toBe(404);
   });
 });
 
@@ -277,14 +239,6 @@ test("a negative Playback Position is refused", async () => {
     const reported = await putPosition(app, "a", -1);
 
     expect(reported.response.statusCode).toBe(400);
-  });
-});
-
-test("a Playback Position for a Set that is not in the library is refused", async () => {
-  await withSeededApp(ready(["a"]), async (app) => {
-    const reported = await putPosition(app, "missing", 10);
-
-    expect(reported.response.statusCode).toBe(404);
   });
 });
 

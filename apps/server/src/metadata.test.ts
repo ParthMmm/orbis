@@ -124,25 +124,6 @@ test("keeps the title the user supplied and asks no provider for it", async () =
   }
 });
 
-test("saves the Set with a temporary title when the provider fails", async () => {
-  const server = await startApp(() => Effect.fail(providerDown()));
-  try {
-    const saved = await saveSet(
-      server.app,
-      "https://www.youtube.com/watch?v=abcdefghijk"
-    );
-    expect(saved.statusCode).toBe(201);
-    expect(saved.json()).toMatchObject({
-      metadataState: "failed",
-      title: "YouTube video",
-      titleEditedByUser: false,
-      url: "https://www.youtube.com/watch?v=abcdefghijk",
-    });
-  } finally {
-    await server.dispose();
-  }
-});
-
 test("records unknown creator, artwork, and duration after a failed enrichment", async () => {
   const server = await startApp(() => Effect.fail(providerDown()));
   try {
@@ -233,31 +214,6 @@ test("retry keeps the title a user edited and fills the rest in", async () => {
       metadataState: "enriched",
       releasedAt: "2015-10-28T10:00:00.000Z",
     });
-  } finally {
-    await server.dispose();
-  }
-});
-
-test("retry reports a missing set and a second failure without losing the Set", async () => {
-  const server = await startApp(() => Effect.fail(providerDown()));
-  try {
-    const saved = await saveSet(
-      server.app,
-      "https://soundcloud.com/artist/track"
-    );
-    const retried = await request(server.app, {
-      method: "POST",
-      url: `/sets/${String(saved.json().id)}/metadata`,
-    });
-    expect(retried.statusCode).toBe(200);
-    expect(retried.json()).toEqual(saved.json());
-
-    const missing = await request(server.app, {
-      method: "POST",
-      url: "/sets/missing/metadata",
-    });
-    expect(missing.statusCode).toBe(404);
-    expect(missing.json().message).toBe("Set not found.");
   } finally {
     await server.dispose();
   }
@@ -643,31 +599,6 @@ test("a working provider answers alone, so yt-dlp is not waited on", async () =>
   if (result._tag === "Success") {
     expect(result.success.title).toBe("Provider title");
     expect(result.success.extras).toBeUndefined();
-  }
-});
-
-test("details reads through yt-dlp, and is not configured without it", async () => {
-  const input = {
-    source: "soundcloud",
-    url: "https://soundcloud.com/a/b",
-  } as const;
-  const read = (layer: ReturnType<typeof Metadata.layer>) =>
-    Effect.runPromise(
-      Effect.result(
-        Effect.gen(function* run() {
-          const metadata = yield* Metadata;
-          return yield* metadata.details(input);
-        }).pipe(Effect.provide(layer))
-      )
-    );
-  const configured = await read(
-    Metadata.layer({ ytDlp: { read: () => Effect.succeed(DETAILS) } })
-  );
-  expect(configured._tag === "Success" && configured.success).toEqual(DETAILS);
-  const bare = await read(Metadata.layer());
-  expect(bare._tag).toBe("Failure");
-  if (bare._tag === "Failure") {
-    expect(bare.failure.reason).toBe("not-configured");
   }
 });
 

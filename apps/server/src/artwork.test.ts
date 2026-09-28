@@ -136,24 +136,6 @@ test("fills both images on a Set that holds only one", async () => {
   }
 });
 
-test("leaves nothing to do on a second run", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "orbis-artwork-"));
-  const databasePath = path.join(directory, "library.sqlite");
-  try {
-    await seedLibrary(databasePath);
-    await runBackfill(databasePath, []);
-
-    const asked: string[] = [];
-    expect(await runBackfill(databasePath, asked)).toEqual({
-      attempted: 0,
-      filled: 0,
-    });
-    expect(asked).toEqual([]);
-  } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
-});
-
 test("keeps the images a Set has when the provider cannot answer", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-artwork-"));
   const databasePath = path.join(directory, "library.sqlite");

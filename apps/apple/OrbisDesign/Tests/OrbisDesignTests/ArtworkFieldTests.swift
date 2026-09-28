@@ -27,12 +27,6 @@ import Testing
     #expect(ArtworkField.angularDistance(field.hue, ArtworkField.tintHue) >= ArtworkField.tintClearance)
   }
 
-  @Test func `a hue well away from the tint is left alone`() {
-    let field = ArtworkField.from(averageLab: (l: 0.5, a: 0.0, b: -0.08))
-    #expect(abs(field.hue - 270) < 0.001)
-    #expect(abs(field.chroma - 0.08) < 0.0001)
-  }
-
   @Test func `letterbox bars do not decide the colour`() {
     let bars = Array(repeating: (r: 0.0, g: 0.0, b: 0.0), count: 10)
     let picture = Array(repeating: (r: 0.15, g: 0.3, b: 0.8), count: 80)

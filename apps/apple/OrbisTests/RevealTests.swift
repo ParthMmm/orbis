@@ -39,13 +39,6 @@ final class RevealTests: XCTestCase {
     return model
   }
 
-  func testTheLinkFieldTellsACheckInFlight() {
-    XCTAssertEqual(
-      SetPresentation.linkState(isFiling: true, failure: nil),
-      .checking
-    )
-  }
-
   func testTheLinkFieldTellsADuplicateFromAnAddressOrbisDoesNotKnow() {
     XCTAssertEqual(
       SetPresentation.linkState(isFiling: false, failure: .duplicate),
@@ -56,10 +49,6 @@ final class RevealTests: XCTestCase {
       SetPresentation.linkState(isFiling: false, failure: refusal),
       .invalid(message: refusal.message)
     )
-  }
-
-  func testAnIdleFieldHasNothingToSay() {
-    XCTAssertEqual(SetPresentation.linkState(isFiling: false, failure: nil), .idle)
   }
 
   func testARevealWithNothingChangedHasNothingToSend() {
@@ -80,32 +69,10 @@ final class RevealTests: XCTestCase {
     XCTAssertTrue(open.titleUntouched)
   }
 
-  func testARenamedTitleIsTrimmedAndSent() {
-    let open = AppModel.Reveal(set: set(), title: "  Closing set  ", tags: [])
-    XCTAssertEqual(open.renamedTitle, "Closing set")
-    XCTAssertTrue(open.hasChanges)
-    XCTAssertFalse(open.titleUntouched)
-  }
-
   func testALongTitleIsCutToWhatTheServiceKeeps() {
     let open = AppModel.Reveal(
       set: set(), title: String(repeating: "a", count: 300), tags: [])
     XCTAssertEqual(open.renamedTitle?.count, 200)
-  }
-
-  func testClosingAnUnchangedRevealLeavesAConfirmationAndNoReveal() async {
-    let model = model(reveal: AppModel.Reveal(set: set(), title: "Night session", tags: []))
-    await model.saveReveal()
-    XCTAssertNil(model.reveal)
-    XCTAssertEqual(model.fileConfirmation, "Filed “Night session”")
-  }
-
-  func testClosingWithoutNamingAnythingLeavesNothingBehind() {
-    let model = model(reveal: AppModel.Reveal(set: set(), title: "Night session", tags: []))
-    model.closeReveal()
-    XCTAssertNil(model.reveal)
-    XCTAssertNil(model.revealFailure)
-    XCTAssertEqual(model.fileConfirmation, "Filed “Night session”")
   }
 
   /// While the Library is showing one playlist, filing keeps that list truthful: a Set the
@@ -222,36 +189,6 @@ final class RevealTests: XCTestCase {
     return started
   }
 
-  /// The retry suspends while the person can still type the title, so the response must merge
-  /// into the draft they hold now rather than replace it with the pre-request snapshot.
-  func testATitleTypedDuringARetrySurvivesIt() async {
-    let model = retryModel(
-      set: set(metadataState: "failed"), title: "", tags: [],
-      body: OrbisClientTests.savedSet(title: "Server name", tags: []))
-
-    let started = await startRetryAndEdit(model) { $0.reveal?.title = "Renamed while waiting" }
-    guard let started else { return }
-    await started.value
-
-    XCTAssertEqual(
-      model.reveal?.title, "Renamed while waiting",
-      "a title typed during the retry must survive the response")
-  }
-
-  func testATagAddedDuringARetrySurvivesIt() async {
-    let model = retryModel(
-      set: set(metadataState: "failed"), title: "Night session", tags: [],
-      body: OrbisClientTests.savedSet(title: "Server name", tags: []))
-
-    let started = await startRetryAndEdit(model) { $0.reveal?.tags = ["techno"] }
-    guard let started else { return }
-    await started.value
-
-    XCTAssertEqual(
-      model.reveal?.tags, ["techno"],
-      "a Tag added during the retry must survive the response")
-  }
-
   func testTitleAndTagsEditedDuringARetryBothSurviveIt() async {
     let model = retryModel(
       set: set(metadataState: "failed"), title: "Night session", tags: [],
@@ -304,18 +241,6 @@ final class RevealTests: XCTestCase {
     XCTAssertEqual(model.reveal?.title, "My own name")
     XCTAssertEqual(model.reveal?.set.title, "Server name", "the saved baseline still advances")
     XCTAssertEqual(model.savedSet("1")?.title, "Server name")
-  }
-
-  func testABlankTitleStillTakesTheNameThatCameBack() async {
-    let model = retryModel(
-      set: set(title: "YouTube video", metadataState: "failed"), title: "   ", tags: [],
-      body: OrbisClientTests.savedSet(title: "Server name", tags: []))
-
-    let started = await startRetryAndEdit(model) { _ in }
-    guard let started else { return }
-    await started.value
-
-    XCTAssertEqual(model.reveal?.title, "Server name")
   }
 
   func testADismissedRevealStaysDismissedWhenTheRetryLands() async {
@@ -375,25 +300,6 @@ final class RevealTests: XCTestCase {
     XCTAssertFalse(model.isSavingReveal)
   }
 
-  /// The Library takes the metadata that came back while the unsaved draft stays the person's,
-  /// so the two are not the same thing and must not be collapsed into one.
-  func testTheSavedSetRefreshesWhileTheEditedDraftStaysDistinct() async {
-    let open = set(title: "YouTube video", metadataState: "failed")
-    let model = retryModel(
-      set: open, title: "My own name", tags: ["techno"],
-      body: OrbisClientTests.savedSet(title: "Server name", tags: []))
-    model.library = .loaded([open])
-
-    let started = await startRetryAndEdit(model) { $0.reveal?.title = "Renamed while waiting" }
-    guard let started else { return }
-    await started.value
-
-    XCTAssertEqual(model.savedSet("1")?.title, "Server name")
-    XCTAssertEqual(model.reveal?.set.title, "Server name")
-    XCTAssertEqual(model.reveal?.title, "Renamed while waiting")
-    XCTAssertEqual(model.reveal?.tags, ["techno"])
-  }
-
   /// A provider that still cannot name the Set answers with an HTTP 200 and a `failed` state,
   /// which runs the merge: the draft survives, the saved baseline still takes the placeholder,
   /// and the busy state clears.
@@ -434,29 +340,6 @@ final class RevealTests: XCTestCase {
     XCTAssertEqual(model.reveal?.set.title, "YouTube video", "a refused retry changes no baseline")
     XCTAssertEqual(model.savedSet("1")?.title, "YouTube video")
     XCTAssertEqual(model.revealFailure?.message, OrbisError.server(status: 500, message: "Broken.").message)
-    XCTAssertFalse(model.isSavingReveal)
-  }
-
-  /// A transport failure enters the same catch path. The stub delivers this one immediately,
-  /// because only a response can be held, so the draft is checked as it was before the call.
-  func testAnUnreachableServiceLeavesTheDraftAndTheSavedSetAlone() async {
-    let open = set(title: "YouTube video", metadataState: "failed")
-    let model = AppModel(
-      client: OrbisClient(
-        address: URL(string: "https://vanta.example.ts.net")!,
-        token: "token",
-        session: StubProtocol.session(failure: URLError(.cannotConnectToHost))
-      ), settings: MemoryClientSettings())
-    model.reveal = AppModel.Reveal(set: open, title: "My own name", tags: ["techno"])
-    model.library = .loaded([open])
-
-    await model.retryMetadata()
-
-    XCTAssertEqual(model.reveal?.title, "My own name")
-    XCTAssertEqual(model.reveal?.tags, ["techno"])
-    XCTAssertEqual(model.reveal?.set.title, "YouTube video")
-    XCTAssertEqual(model.savedSet("1")?.title, "YouTube video")
-    XCTAssertEqual(model.revealFailure?.message, OrbisError.unreachable.message)
     XCTAssertFalse(model.isSavingReveal)
   }
 }

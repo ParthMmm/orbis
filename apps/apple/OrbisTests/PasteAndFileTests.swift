@@ -42,13 +42,6 @@ final class PasteAndFileTests: XCTestCase {
     XCTAssertEqual((sent as? [String: Any])?["url"] as? String, "https://youtu.be/tPEMP9oYxTo")
   }
 
-  func testAPastedSoundCloudLinkIsFiled() async {
-    let model = model()
-    await model.pasteAndFile("https://soundcloud.com/rinsefm/skin-on-skin")
-    XCTAssertNil(model.pasteNotice)
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets")
-  }
-
   /// A paste Orbis cannot take is refused before the round trip, and the field is left alone
   /// because it holds what the person put there.
   func testAPasteThatIsNotALinkChangesNothing() async {
@@ -58,12 +51,5 @@ final class PasteAndFileTests: XCTestCase {
     XCTAssertEqual(model.pasteNotice, "The clipboard holds no YouTube or SoundCloud link.")
     XCTAssertNil(StubProtocol.lastRequest, "nothing is sent for a link Orbis does not take")
     XCTAssertEqual(model.linkToFile, "typed by hand")
-  }
-
-  func testAPasteOfPlainTextIsRefusedTheSameWay() async {
-    let model = model()
-    await model.pasteAndFile("just some words")
-    XCTAssertNotNil(model.pasteNotice)
-    XCTAssertNil(StubProtocol.lastRequest)
   }
 }

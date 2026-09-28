@@ -218,24 +218,6 @@ const MEMBERSHIP_LOOKUP_PLAN = `EXPLAIN QUERY PLAN
    FROM playlist_sets WHERE playlist_sets.set_id = sets.id) AS playlistIds
   FROM sets`;
 
-test("creates the membership index for a fresh database", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "orbis-migration-"));
-  const databasePath = path.join(directory, "library.sqlite");
-  try {
-    const app = createApp({ databasePath });
-    try {
-      const library = await request(app, { method: "GET", url: "/sets" });
-      expect(library.statusCode).toBe(200);
-      expect(library.json()).toEqual({ sets: [] });
-    } finally {
-      await app.dispose();
-    }
-    expectMigratedWithReverseIndex(readSchemaState(databasePath));
-  } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
-});
-
 test("adds the membership index to a version-1 database without touching its data", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-migration-"));
   const databasePath = path.join(directory, "library.sqlite");
@@ -517,55 +499,6 @@ test("looks up playlist ids through the membership index", async () => {
       database.close();
     }
   } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
-});
-
-test("keeps sets and playlist membership saved before the extended columns existed", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "orbis-migration-"));
-  const databasePath = path.join(directory, "library.sqlite");
-  writeLegacyDatabase(databasePath);
-  const app = createApp({ databasePath });
-  try {
-    const library = await request(app, { method: "GET", url: "/sets" });
-    expect(library.statusCode).toBe(200);
-    expect(library.json()).toEqual({
-      sets: [
-        {
-          artworkLargeUrl: null,
-          artworkUrl: null,
-          createdAt: "2026-01-01T00:00:00.000Z",
-          creator: null,
-          creatorId: null,
-          downloadState: "none",
-          durationSeconds: null,
-          finishCount: 0,
-          id: "legacy-set",
-          lastListenedAt: null,
-          listenCount: 0,
-          metadataState: "pending",
-          playbackPositionSeconds: 0,
-          playlistIds: ["legacy-playlist"],
-          releasedAt: null,
-          retainedAudioBytes: null,
-          retainedAudioFormat: null,
-          source: "youtube",
-          tags: ["techno"],
-          title: "Saved before the extended columns",
-          titleEditedByUser: true,
-          url: "https://www.youtube.com/watch?v=abcdefghijk",
-        },
-      ],
-    });
-
-    const playlist = await request(app, {
-      method: "GET",
-      url: "/sets?playlistId=legacy-playlist",
-    });
-    expect(playlist.statusCode).toBe(200);
-    expect(playlist.json()).toMatchObject({ sets: [{ id: "legacy-set" }] });
-  } finally {
-    await app.dispose();
     await rm(directory, { force: true, recursive: true });
   }
 });

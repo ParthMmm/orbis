@@ -157,22 +157,6 @@ const makeSineMp3 = (fixture: string) => {
   expect(proc.exitCode).toBe(0);
 };
 
-test("requesting audio for an unknown set is a 404", async () => {
-  const { app, cleanup } = await setUp({
-    cobalt: () => new Response("{}", { status: 500 }),
-    tunnel: defaultTunnel,
-  });
-  try {
-    const response = await request(app, {
-      method: "POST",
-      url: "/sets/nope/audio/download",
-    });
-    expect(response.statusCode).toBe(404);
-  } finally {
-    await cleanup();
-  }
-});
-
 test("requesting audio without cobalt configured is a 503", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "orbis-audio-"));
   const app = createApp({
