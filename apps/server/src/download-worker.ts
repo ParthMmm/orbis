@@ -122,10 +122,7 @@ export class DownloadWorker extends Context.Service<
               yield* library.failDownload(claimed.id);
               yield* Effect.logWarning("audio download failed").pipe(
                 Effect.annotateLogs({
-                  reason:
-                    reason instanceof LibraryError || reason instanceof Error
-                      ? reason.message
-                      : "unknown",
+                  reason: reason instanceof Error ? reason.message : "unknown",
                   set: claimed.id,
                 })
               );

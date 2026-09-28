@@ -116,7 +116,7 @@ struct AddToPlaylistSheet: View {
             .font(.orbis.body)
             .foregroundStyle(.primary)
             .lineLimit(1)
-          Text(TagTile.countLabel(playlist.setCount))
+          Text(playlist.setCount == 1 ? "1 set" : "\(playlist.setCount) sets")
             .font(.orbis.detail)
             .monospacedDigit()
             .foregroundStyle(.secondary)
@@ -151,7 +151,7 @@ struct AddToPlaylistSheet: View {
 
   private var recents: [Playlist] {
     let byId = Dictionary(uniqueKeysWithValues: model.playlistItems.map { ($0.id, $0) })
-    return recentIds.compactMap { byId[$0] }.prefix(Self.recentLimit).map { $0 }
+    return Array(recentIds.compactMap { byId[$0] }.prefix(Self.recentLimit))
   }
 
   private var matching: [Playlist] {
