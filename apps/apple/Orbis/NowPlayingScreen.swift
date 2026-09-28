@@ -1,63 +1,41 @@
 import OrbisDesign
 import SwiftUI
 
-/// Now Playing, the way a music app opens it from the mini player: a sheet the height of the
-/// screen, with the artwork, the title and the transport filling the first fold. The rows a Set
-/// is managed with follow under the fold, and the first of them peeks over it, so scrolling is
-/// the one thing to learn.
-///
-/// One scroll view rather than a sheet on a sheet, because the second layer earns nothing a
-/// scroll cannot, and SwiftUI stacks sheets badly. The screen follows the player: a Set that
-/// is swapped out is replaced on screen, and a player that empties closes it.
+/// Now Playing, laid out the way a music app's full-screen player is: the artwork, the title with
+/// its menu, the seek bar and the transport, and a bottom row for the source, AirPlay and Up Next.
+/// Always dark, on the artwork's colour. The screen follows the player, and closes when it empties.
 struct NowPlayingScreen: View {
   @Bindable var model: AppModel
   @Environment(\.dismiss) private var dismiss
+  @Environment(\.openURL) private var openURL
   @State private var isRenaming = false
-
-  /// How much of the management rows shows above the fold: the rule and the Tags row.
-  static let peek: CGFloat = 56
-  private static let inset: CGFloat = 16
+  @State private var isShowingQueue = false
 
   var body: some View {
     let player = model.audioPlayer
-    NavigationStack {
-      Group {
-        if let id = player.currentSetId, let set = model.savedSet(id) {
-          GeometryReader { proxy in
-            ScrollView {
-              VStack(alignment: .leading, spacing: 20) {
-                hero(set)
-                  .frame(minHeight: proxy.size.height - Self.inset * 2 - Self.peek)
-                SetManagementSection(model: model, set: set, isRenaming: $isRenaming)
-              }
-              .padding(Self.inset)
-            }
-          }
+    let set = player.currentSetId.flatMap { model.savedSet($0) }
+    Group {
+      if let set {
+        content(set)
           .accessibilityIdentifier("now-playing")
-        } else {
-          ContentUnavailableView {
-            Label("Nothing playing", systemImage: "play.slash")
-          } description: {
-            Text("Play a set from your library.")
-          }
-          .accessibilityIdentifier("now-playing-empty")
+      } else {
+        ContentUnavailableView {
+          Label("Nothing playing", systemImage: "play.slash")
+        } description: {
+          Text("Play a set from your library.")
         }
-      }
-      .background {
-        ArtworkBackdrop(
-          url: player.currentSetId.flatMap { model.savedSet($0) }.flatMap(
-            SetPresentation.pageArtwork))
-      }
-      .setChangeStatus(model)
-      .navigationTitle("Now Playing")
-      .toolbarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Done", role: .close) { dismiss() }
-            .accessibilityIdentifier("now-playing-done")
-        }
+        .accessibilityIdentifier("now-playing-empty")
       }
     }
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background {
+      ArtworkBackdrop(url: set.flatMap(SetPresentation.pageArtwork), style: .card)
+        .overlay(LinearGradient(colors: [.clear, .black.opacity(0.35)], startPoint: .top, endPoint: .bottom))
+        .ignoresSafeArea()
+    }
+    .environment(\.colorScheme, .dark)
+    .setChangeStatus(model)
+    .sheet(isPresented: $isShowingQueue) { QueueScreen(model: model) }
     .onChange(of: player.currentSetId) { _, id in
       if id == nil { dismiss() }
     }
@@ -66,35 +44,54 @@ struct NowPlayingScreen: View {
     #endif
   }
 
-  /// The first fold. The transport sits at its foot, where a thumb reaches, and the artwork
-  /// and the title take what is above.
-  private func hero(_ set: SavedSet) -> some View {
-    VStack(alignment: .leading, spacing: 16) {
-      Artwork(
-        url: SetPresentation.pageArtwork(set), seed: set.title, size: .header
-      )
-      // Raised from the page rather than parted from a listing, so it carries the row radius
-      // where the page's own header keeps its corners square.
-      .clipShape(.rect(cornerRadius: Radius.row))
-      VStack(alignment: .leading, spacing: 6) {
-        Text(set.title)
-          .font(.orbis.title)
-          .lineLimit(3)
-          .accessibilityIdentifier("now-playing-title")
-        Text(SetDetail.stampLine(source: set.source.label, subtitle: SetPresentation.subtitle(set)))
-          .font(.orbis.body)
-          .foregroundStyle(.secondary)
+  private func content(_ set: SavedSet) -> some View {
+    VStack(spacing: 0) {
+      Spacer(minLength: 28)
+      Artwork(url: SetPresentation.pageArtwork(set), seed: set.title, size: .header)
+        .clipShape(.rect(cornerRadius: Radius.list))
+        .shadow(color: .black.opacity(0.4), radius: 24, y: 12)
+      Spacer(minLength: 28)
+      HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 2) {
+          Text(set.title)
+            .font(.title3.weight(.semibold))
+            .lineLimit(2)
+            .accessibilityIdentifier("now-playing-title")
+          Text(set.creator ?? set.source.label)
+            .font(.title3)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        SetManagementSection(model: model, set: set, isRenaming: $isRenaming, style: .inline)
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .accessibilityElement(children: .combine)
-      .accessibilityLabel(SetDetail.headerLabel(title: set.title, source: set.source.label))
-      Spacer(minLength: 0)
       Transport(
         player: model.audioPlayer,
         fallbackDuration: set.durationSeconds.map(TimeInterval.init),
         identifierPrefix: "now-playing",
-        trailing: AnyView(AirPlayButton())
+        prominentPlay: false
       )
+      .padding(.top, 24)
+      Spacer(minLength: 24)
+      HStack {
+        Button("Open in \(set.source.label)", systemImage: SetPresentation.sourceSymbol(set.source)) {
+          if let url = SetPresentation.sourceURL(set) { openURL(url) }
+        }
+        .frame(width: 44, height: 44)
+        Spacer()
+        AirPlayButton()
+        Spacer()
+        Button("Up Next", systemImage: "list.bullet") { isShowingQueue = true }
+          .frame(width: 44, height: 44)
+          .accessibilityIdentifier("now-playing-queue")
+      }
+      .labelStyle(.iconOnly)
+      .buttonStyle(.plain)
+      .font(.title3)
+      .foregroundStyle(.secondary)
     }
+    .padding(.horizontal, 24)
+    .padding(.bottom, 12)
   }
 }

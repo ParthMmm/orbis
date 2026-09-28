@@ -7,6 +7,14 @@ struct SetManagementSection: View {
   @Bindable var model: AppModel
   let set: SavedSet
   @Binding var isRenaming: Bool
+  var style: Style = .page
+
+  /// `.page` shows the Tags and puts the source and the menu in the toolbar; `.inline` is the
+  /// menu alone, as one button, for Now Playing.
+  enum Style {
+    case page
+    case inline
+  }
 
   @Environment(\.openURL) private var openURL
   @State private var isEditingTags = false
@@ -14,47 +22,66 @@ struct SetManagementSection: View {
   @State private var isAddingToPlaylist = false
 
   var body: some View {
-    SetManagement(
-      tags: set.tags,
-      category: SetPresentation.category(for:),
-      editTags: { isEditingTags = true }
-    )
-    .toolbar {
-      ToolbarItemGroup(placement: .primaryAction) {
-        Button("Open in \(set.source.label)", systemImage: SetPresentation.sourceSymbol(set.source)) {
-          open()
+    content
+      .sheet(isPresented: $isRenaming) {
+        RenameSheet(title: set.title) { title in
+          Task { await model.rename(set.id, to: title) }
         }
-        .accessibilityIdentifier("detail-open")
-        actions
       }
-    }
-    .sheet(isPresented: $isRenaming) {
-      RenameSheet(title: set.title) { title in
-        Task { await model.rename(set.id, to: title) }
+      .sheet(isPresented: $isAddingToPlaylist) {
+        AddToPlaylistSheet(model: model, set: set)
       }
-    }
-    .sheet(isPresented: $isAddingToPlaylist) {
-      AddToPlaylistSheet(model: model, set: set)
-    }
-    .sheet(isPresented: $isEditingTags) {
-      TagSheet(tags: set.tags, suggestions: model.availableTags) { tags in
-        Task { await model.replaceTags(set.id, with: tags) }
+      .sheet(isPresented: $isEditingTags) {
+        TagSheet(tags: set.tags, suggestions: model.availableTags) { tags in
+          Task { await model.replaceTags(set.id, with: tags) }
+        }
       }
-    }
-    .confirmationDialog(
-      "Remove this set?", isPresented: $isConfirmingRemoval, titleVisibility: .visible
-    ) {
-      Button("Remove from library", role: .destructive) {
-        Task { await model.remove(set.id) }
+      .confirmationDialog(
+        "Remove this set?", isPresented: $isConfirmingRemoval, titleVisibility: .visible
+      ) {
+        Button("Remove from library", role: .destructive) {
+          Task { await model.remove(set.id) }
+        }
+        Button("Keep it", role: .cancel) {}
+      } message: {
+        Text(removalMessage)
       }
-      Button("Keep it", role: .cancel) {}
-    } message: {
-      Text(removalMessage)
+  }
+
+  @ViewBuilder private var content: some View {
+    switch style {
+    case .page:
+      SetManagement(
+        tags: set.tags,
+        category: SetPresentation.category(for:),
+        editTags: { isEditingTags = true }
+      )
+      .toolbar {
+        ToolbarItemGroup(placement: .primaryAction) {
+          Button("Open in \(set.source.label)", systemImage: SetPresentation.sourceSymbol(set.source)) {
+            open()
+          }
+          .accessibilityIdentifier("detail-open")
+          actions
+        }
+      }
+    case .inline:
+      actions
+        .labelStyle(.iconOnly)
+        .font(.title3.weight(.semibold))
+        .frame(width: 44, height: 44)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
     }
   }
 
   private var actions: some View {
     Menu {
+      if style == .inline {
+        Button(set.tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag") {
+          isEditingTags = true
+        }
+      }
       Button("Rename", systemImage: "pencil") { isRenaming = true }
         .accessibilityIdentifier("detail-rename-action")
       Button("Add to Playlist", systemImage: "text.badge.plus") { isAddingToPlaylist = true }

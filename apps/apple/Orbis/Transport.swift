@@ -18,6 +18,8 @@ struct Transport: View {
   var start: () -> Void = {}
   var leading: AnyView?
   var trailing: AnyView?
+  /// Play as the tinted glass disc, or, on Now Playing, as a large plain glyph.
+  var prominentPlay = true
 
   private var isPlaying: Bool {
     guard isCurrent else { return false }
@@ -55,9 +57,7 @@ struct Transport: View {
           }
         }
         .contentTransition(.symbolEffect(.replace))
-        .buttonStyle(.glassProminent)
-        .tint(Color.orbis.tint)
-        .controlSize(.extraLarge)
+        .playStyle(prominent: prominentPlay)
         .accessibilityIdentifier("\(identifierPrefix)-play-toggle")
         Spacer()
         Button("Forward 30 seconds", systemImage: "goforward.30") {
@@ -70,7 +70,7 @@ struct Transport: View {
       }
       .buttonStyle(.plain)
       .labelStyle(.iconOnly)
-      .font(.title2)
+      .font(prominentPlay ? .title2 : .system(size: 30))
       if isCurrent, case .failed(let message) = player.state {
         Text(message)
           .font(.orbis.detail)
@@ -140,6 +140,20 @@ private struct PlaybackProgress: View {
       .monospacedDigit()
       .foregroundStyle(.secondary)
       .accessibilityHidden(true)
+    }
+  }
+}
+
+extension View {
+  @ViewBuilder fileprivate func playStyle(prominent: Bool) -> some View {
+    if prominent {
+      buttonStyle(.glassProminent)
+        .tint(Color.orbis.tint)
+        .controlSize(.extraLarge)
+    } else {
+      font(.system(size: 48))
+        .frame(width: 72, height: 72)
+        .contentShape(.rect)
     }
   }
 }
