@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// The samples a motion preview shows, shared with the tests so a motion added to the
-/// vocabulary cannot miss its preview.
+/// The samples a motion preview shows, derived from the vocabulary so every motion has a demo.
 ///
 /// The preview walks `samples`, and `samples` walks `OrbisMotion.allCases`, so both forms of
 /// every motion are shown by construction rather than by a list someone has to remember to

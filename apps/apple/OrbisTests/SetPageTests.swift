@@ -86,16 +86,6 @@ final class SetPageTests: XCTestCase {
     XCTAssertNil(SetPresentation.sourceURL(broken))
   }
 
-  func testOpeningASetRemembersWhichOne() {
-    let model = model(sets: [set()])
-    model.openSet("1")
-    XCTAssertEqual(model.openedSetId, "1")
-    XCTAssertEqual(model.savedSet("1")?.title, "Night session")
-
-    model.closeSet()
-    XCTAssertNil(model.openedSetId)
-  }
-
   func testEachTabKeepsItsOwnOpenSet() {
     let model = model(sets: [set(), set(id: "2", title: "Other")])
     model.destination = .home

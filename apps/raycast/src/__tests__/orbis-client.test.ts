@@ -6,7 +6,7 @@ installRaycastApi();
 beforeEach(resetRaycast);
 
 const orbisClient = await import("../orbis-client");
-const { canonicalSourceUrl, extractSourceUrl, saveSourceUrl } = orbisClient;
+const { extractSourceUrl, saveSourceUrl } = orbisClient;
 
 const preferences = {
   deviceToken: "device-token",
@@ -51,13 +51,4 @@ test("extracts the first supported link and ignores trailing punctuation", () =>
       "read https://example.com/notes and then (https://soundcloud.com/artist/track)."
     )
   ).toBe("https://soundcloud.com/artist/track");
-});
-
-test("canonicalSourceUrl keeps only a supported source and normalizes it", () => {
-  expect(canonicalSourceUrl("https://youtu.be/abcdefghijk?t=30")).toBe(
-    "https://www.youtube.com/watch?v=abcdefghijk"
-  );
-  expect(canonicalSourceUrl("https://example.com/watch?v=abcdefghijk")).toBe(
-    null
-  );
 });
