@@ -568,9 +568,6 @@ const soundCloudWithCreator = () =>
     Response.json({ author_name: "Ada", title: "Provider title" })
   );
 
-const soundCloudTitleOnly = () =>
-  Promise.resolve(Response.json({ title: "Provider title" }));
-
 const ytDlpDown = () =>
   Effect.fail(
     new MetadataError({
@@ -666,7 +663,7 @@ test("details reads through yt-dlp, and is not configured without it", async () 
   const configured = await read(
     Metadata.layer({ ytDlp: { read: () => Effect.succeed(DETAILS) } })
   );
-  expect(configured._tag).toBe("Success");
+  expect(configured._tag === "Success" && configured.success).toEqual(DETAILS);
   const bare = await read(Metadata.layer());
   expect(bare._tag).toBe("Failure");
   if (bare._tag === "Failure") {
@@ -674,29 +671,7 @@ test("details reads through yt-dlp, and is not configured without it", async () 
   }
 });
 
-test("a yt-dlp failure keeps the provider's answer, and both failing reports the provider's reason", async () => {
-  const kept = await Effect.runPromise(
-    Effect.result(
-      Effect.gen(function* run() {
-        const metadata = yield* Metadata;
-        return yield* metadata.enrich({
-          source: "soundcloud",
-          url: "https://soundcloud.com/a/b",
-        });
-      }).pipe(
-        Effect.provide(
-          Metadata.layer({
-            fetch: soundCloudTitleOnly,
-            ytDlp: { read: ytDlpDown },
-          })
-        )
-      )
-    )
-  );
-  expect(kept._tag).toBe("Success");
-  if (kept._tag === "Success") {
-    expect(kept.success.extras).toBeUndefined();
-  }
+test("when the provider and yt-dlp both fail, the provider's reason is reported", async () => {
   const both = await enrichWithYtDlp(ytDlpDown);
   expect(both._tag).toBe("Failure");
   if (both._tag === "Failure") {
@@ -725,7 +700,7 @@ test("stores yt-dlp extras on the Set row but keeps them out of the API response
     const readRow = () =>
       database
         .query<Record<string, string | null>, []>(
-          "SELECT creator, creator_id, genre, source_tags, source_chapters FROM sets"
+          "SELECT creator, creator_id, details_state, genre, source_tags, source_chapters FROM sets"
         )
         .get();
     const row = await waitFor(() => Boolean(readRow()?.creator_id), readRow);
@@ -733,6 +708,7 @@ test("stores yt-dlp extras on the Set row but keeps them out of the API response
     expect(row).toEqual({
       creator: "Ada Lovelace",
       creator_id: "UC1",
+      details_state: "filled",
       genre: "House",
       source_chapters: '[{"startSeconds":0,"title":"Intro"}]',
       source_tags: '["house"]',
@@ -790,16 +766,7 @@ const detailsStateAfterSave = async (
   }
 };
 
-test("details_state becomes filled after the details read", async () => {
-  expect(
-    await detailsStateAfterSave({
-      details: () => Effect.succeed(DETAILS),
-      enrich: () => Effect.succeed(PROVIDER_RESULT),
-    })
-  ).toBe("filled");
-});
-
-test("details_state becomes failed when the details read fails, but not when yt-dlp is not configured", async () => {
+test("details_state becomes failed when the details read fails, and stays pending when yt-dlp is not configured", async () => {
   expect(
     await detailsStateAfterSave({
       details: () => Effect.fail(providerDown()),

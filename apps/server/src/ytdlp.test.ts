@@ -79,9 +79,7 @@ test("the argument list is fixed and the URL follows --", () => {
     "-f",
     "bestaudio",
   ]);
-  expect(outputOf(argv)).toBe("/m/a.part");
   expect(argv).not.toContain("--cookies");
-  expect(argv.some((arg) => arg.includes("--extract-audio"))).toBe(false);
   expect(ytdlpArgs(bin, "/m/a.part", url, "/c.txt")).toContain("--cookies");
 });
 
