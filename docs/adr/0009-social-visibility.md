@@ -11,7 +11,7 @@ A sees B's Library, Playlists, Presence, and Listen History only when all of the
 
 When the gate passes, A sees B's full Library and all of B's Playlists. Collaborative editing is separate (ADR 0010). Presence is the Set a Person is in a Listen on now, plus a short recent strip; full Listen History is on the profile.
 
-The service does not record Listens today. It keeps `listenCount`, `finishCount`, and `lastListenedAt` on each Set, which cannot answer "what did B play on Tuesday." This decision adds a `listens` table: one row per Listen with Person, Set, start time, and finish time when it produced a Finish. The counters become derived values. Presence is the Person's active queue entry while their last Playback Position report is recent; a paused or abandoned player drops out of Presence.
+The service does not record Listens today. It keeps `listenCount`, `finishCount`, and `lastListenedAt` on each Set, which cannot answer "what did B play on Tuesday." This decision adds a `listens` table: one row per Listen with Person, Set, start time, and finish time when it produced a Finish. The counters become derived values. Presence is the Person's active queue entry while their last Playback Position report is recent; a paused or abandoned player drops out of Presence. Presence changes reach viewers on the event stream (ADR 0014), filtered through the same gate.
 
 Rejected alternatives:
 
