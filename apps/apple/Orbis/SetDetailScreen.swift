@@ -8,6 +8,7 @@ import SwiftUI
 struct SetDetailScreen: View {
   @Bindable var model: AppModel
   let setId: String
+  @State private var isRenaming = false
 
   var body: some View {
     Group {
@@ -17,9 +18,6 @@ struct SetDetailScreen: View {
           source: set.source.label,
           subtitle: SetPresentation.subtitle(set),
           artwork: SetPresentation.pageArtwork(set),
-          position: model.audioPlayer.currentSetId == set.id
-            ? nil : SetPresentation.playbackPosition(set),
-          progress: SetPresentation.progress(of: set),
           failedToName: set.metadataState == "failed",
           dates: SetDetail.Dates(
             imported: SetPresentation.plainDate(set.createdAt),
@@ -34,7 +32,7 @@ struct SetDetailScreen: View {
         ) {
           audioSection(set)
         } management: {
-          SetManagementSection(model: model, set: set)
+          SetManagementSection(model: model, set: set, isRenaming: $isRenaming)
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollEdgeEffectStyle(.soft, for: .bottom)
@@ -60,22 +58,17 @@ struct SetDetailScreen: View {
     switch set.downloadState {
     case "ready":
       VStack(alignment: .leading, spacing: 8) {
-        if model.audioPlayer.currentSetId == set.id {
-          Transport(
-            player: model.audioPlayer,
-            fallbackDuration: set.durationSeconds.map(TimeInterval.init)
-          )
-        } else {
-          HStack(spacing: 8) {
-            // The page's one orange control: the thing a person came here to do.
-            Button("Play", systemImage: "play.fill") { Task { await model.playSet(set.id) } }
-              .buttonStyle(.glassProminent)
-              .tint(Color.orbis.tint)
-              .controlSize(.large)
-              .accessibilityIdentifier("detail-play")
-            queueActions(set)
-          }
-        }
+        // The same controls whether or not this Set is in the player, so Play changes a glyph
+        // and nothing on the page moves.
+        Transport(
+          player: model.audioPlayer,
+          fallbackDuration: set.durationSeconds.map(TimeInterval.init),
+          isCurrent: model.audioPlayer.currentSetId == set.id,
+          savedPosition: TimeInterval(set.playbackPositionSeconds),
+          start: { Task { await model.playSet(set.id) } },
+          leading: AnyView(queueActions(set)),
+          trailing: AnyView(AirPlayButton())
+        )
         if let notice = model.queueNotice {
           Text(notice)
             .font(.orbis.detail)
@@ -126,8 +119,8 @@ struct SetDetailScreen: View {
     } label: {
       Image(systemName: "text.badge.plus")
     }
-    .buttonStyle(.glass)
-    .controlSize(.large)
+    .menuStyle(.button)
+    .buttonStyle(.plain)
     .accessibilityLabel("Queue this set")
     .accessibilityIdentifier("detail-queue-actions")
   }

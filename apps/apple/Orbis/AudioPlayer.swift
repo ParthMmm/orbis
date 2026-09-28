@@ -45,6 +45,9 @@ final class AudioPlayer {
   /// Where a resumed Set should start once its item is ready. AVPlayer refuses a seek before the
   /// item knows its own timeline, so the position waits here until it does.
   private var pendingSeek: TimeInterval?
+  /// True from a seek until it lands. The clock keeps ticking with the old time in between, and
+  /// taking those ticks moved the bar back to where it was before jumping to where it went.
+  private var isSeeking = false
 
   /// Called with the Set that has just played to its natural end, so the caller can finish its
   /// Listen and start whatever the Listening Queue holds next. Nothing is called when playback
@@ -231,6 +234,7 @@ final class AudioPlayer {
     currentArtist = set.creator
     currentArtwork = nil
     elapsed = startAt
+    isSeeking = false
     pendingSeek = startAt > 0 ? startAt : nil
     duration = nil
     state = .loading
@@ -277,6 +281,7 @@ final class AudioPlayer {
       // avoids a task on every tick.
       MainActor.assumeIsolated {
         guard let self, self.playbackGeneration == generation else { return }
+        guard !self.isSeeking, self.pendingSeek == nil else { return }
         self.elapsed = seconds
       }
     }
@@ -333,7 +338,7 @@ final class AudioPlayer {
   func seek(to seconds: TimeInterval) {
     guard let duration, duration.isFinite else { return }
     let clamped = min(max(seconds, 0), duration)
-    player?.seek(to: CMTime(seconds: clamped, preferredTimescale: 600))
+    move(to: clamped)
     elapsed = clamped
     publishNowPlaying(isPlaying: state == .playing)
   }
@@ -383,10 +388,23 @@ final class AudioPlayer {
   private func applyPendingSeek() {
     guard let pendingSeek else { return }
     self.pendingSeek = nil
-    guard let player else { return }
+    guard player != nil else { return }
     let bounded = duration.map { min(pendingSeek, $0) } ?? pendingSeek
-    player.seek(to: CMTime(seconds: bounded, preferredTimescale: 600))
+    move(to: bounded)
     elapsed = bounded
+  }
+
+  /// Seeks, and holds the clock's ticks until the seek lands.
+  private func move(to seconds: TimeInterval) {
+    guard let player else { return }
+    isSeeking = true
+    let generation = playbackGeneration
+    player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) { [weak self] _ in
+      Task { @MainActor in
+        guard let self, self.playbackGeneration == generation else { return }
+        self.isSeeking = false
+      }
+    }
   }
 
   /// The end of the audio, which is the one way a Listen finishes. Registered per play, because

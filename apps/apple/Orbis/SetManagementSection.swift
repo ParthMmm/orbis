@@ -1,47 +1,49 @@
 import OrbisDesign
 import SwiftUI
 
-/// The rows a Set is changed with, and the alerts and sheets those changes open. The Set's
-/// page and the Now Playing screen both carry it, so a Set is managed the same way wherever
-/// it is met, and every change reports through the model's one `setFailure`.
+/// How a Set is changed, and the sheets those changes open. The page shows the Tags; the rest —
+/// the title, the Playlist, the source, removal — sits in the toolbar, as one source button and
+/// one menu, the way a music app keeps an album's actions behind one button. The Set's page and
+/// the Now Playing screen both carry it, so a Set is managed the same way wherever it is met,
+/// and every change reports through the model's one `setFailure`.
 ///
 /// The section reads the Set from the model on every pass rather than holding a copy, so an
 /// edit shows up the moment the service accepts it.
 struct SetManagementSection: View {
   @Bindable var model: AppModel
   let set: SavedSet
+  /// Owned by the screen, so the sheet survives the section being rebuilt.
+  @Binding var isRenaming: Bool
 
   @Environment(\.openURL) private var openURL
-  @State private var isRenaming = false
-  @State private var draftTitle = ""
   @State private var isEditingTags = false
-  @State private var draftTags: [String] = []
   @State private var isConfirmingRemoval = false
 
   var body: some View {
     SetManagement(
-      title: set.title,
-      source: set.source.label,
       tags: set.tags,
-      retainedAudio: retainedAudio,
-      playlistId: playlistBinding,
-      playlists: playlistChoices,
-      open: open,
-      rename: startRenaming,
-      editTags: startEditingTags,
-      remove: { isConfirmingRemoval = true }
+      category: SetPresentation.category(for:),
+      editTags: { isEditingTags = true }
     )
-    .alert("Title", isPresented: $isRenaming) {
-      TextField("Title", text: $draftTitle)
-      Button("Save") {
-        let title = draftTitle
+    .toolbar {
+      ToolbarItemGroup(placement: .primaryAction) {
+        Button("Open in \(set.source.label)", systemImage: SetPresentation.sourceSymbol(set.source)) {
+          open()
+        }
+        .accessibilityIdentifier("detail-open")
+        actions
+      }
+    }
+    .sheet(isPresented: $isRenaming) {
+      RenameSheet(title: set.title) { title in
         Task { await model.rename(set.id, to: title) }
       }
-      Button("Cancel", role: .cancel) {}
-    } message: {
-      Text("The service keeps 200 characters.")
     }
-    .sheet(isPresented: $isEditingTags) { tagEditor }
+    .sheet(isPresented: $isEditingTags) {
+      TagSheet(tags: set.tags, suggestions: model.availableTags) { tags in
+        Task { await model.replaceTags(set.id, with: tags) }
+      }
+    }
     .confirmationDialog(
       "Remove this set?", isPresented: $isConfirmingRemoval, titleVisibility: .visible
     ) {
@@ -54,9 +56,44 @@ struct SetManagementSection: View {
     }
   }
 
+  /// Everything else a Set is changed with, behind one button.
+  private var actions: some View {
+    Menu {
+      Button("Rename", systemImage: "pencil") { isRenaming = true }
+        .accessibilityIdentifier("detail-rename-action")
+      Menu("Add to Playlist", systemImage: "text.badge.plus") {
+        Picker("Playlist", selection: playlistBinding) {
+          Text("None").tag(String?.none)
+          ForEach(model.playlistItems) { playlist in
+            Text(playlist.name).tag(Optional(playlist.id))
+          }
+        }
+        .pickerStyle(.inline)
+      }
+      .accessibilityIdentifier("detail-playlist")
+      Button("Open in \(set.source.label)", systemImage: SetPresentation.sourceSymbol(set.source)) {
+        open()
+      }
+      if let link = SetPresentation.sourceURL(set) {
+        ShareLink(item: link, subject: Text(set.title)) {
+          Label("Share", systemImage: "square.and.arrow.up")
+        }
+        .accessibilityIdentifier("detail-share")
+      }
+      Divider()
+      Button("Remove from Library", systemImage: "trash", role: .destructive) {
+        isConfirmingRemoval = true
+      }
+      .accessibilityIdentifier("detail-remove")
+    } label: {
+      Label("More", systemImage: "ellipsis")
+    }
+    .accessibilityIdentifier("detail-actions")
+  }
+
   private var removalMessage: String {
     let notice = SetManagement.removalNotice(retainedAudio: retainedAudio)
-    return notice.retained ?? notice.scope
+    return [notice.scope, notice.retained].compactMap { $0 }.joined(separator: " ")
   }
 
   private var retainedAudio: Bool {
@@ -64,18 +101,8 @@ struct SetManagementSection: View {
     self.set.downloadState == "ready"
   }
 
-  private var playlistChoices: [PlaylistPicker.Choice] {
-    model.playlistItems.map { playlist in
-      PlaylistPicker.Choice(
-        id: playlist.id,
-        name: playlist.name,
-        category: SetPresentation.category(for: playlist.name)
-      )
-    }
-  }
-
-  /// The picker shows the Playlist the Set is in and moves it on a choice, so the write goes
-  /// out the moment a person decides rather than behind a Save button.
+  /// The Playlist the Set is in, moved on a choice, so the write goes out the moment a person
+  /// decides rather than behind a Save button.
   private var playlistBinding: Binding<String?> {
     Binding(
       get: { model.savedSet(set.id)?.playlistIds.first },
@@ -87,44 +114,99 @@ struct SetManagementSection: View {
     guard let url = SetPresentation.sourceURL(set) else { return }
     openURL(url)
   }
+}
 
-  private func startRenaming() {
-    draftTitle = set.title
-    isRenaming = true
+/// Renaming a Set: one field in a small sheet, saved from the toolbar.
+private struct RenameSheet: View {
+  let save: (String) -> Void
+  @State private var draft: String
+  @Environment(\.dismiss) private var dismiss
+  @FocusState private var focused: Bool
+
+  init(title: String, save: @escaping (String) -> Void) {
+    self.save = save
+    _draft = State(initialValue: title)
   }
 
-  private func startEditingTags() {
-    draftTags = set.tags
-    isEditingTags = true
-  }
-
-  private var tagEditor: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      Text("Tags")
-        .font(.orbis.sectionTitle)
-      TagInput(tags: $draftTags, suggestions: model.availableTags)
-      HStack {
-        Button("Done") {
-          isEditingTags = false
-          let tags = draftTags
-          Task { await model.replaceTags(set.id, with: tags) }
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          TextField("Title", text: $draft, axis: .vertical)
+            .focused($focused)
+            .onSubmit(commit)
+            .accessibilityIdentifier("rename-title")
+        } footer: {
+          Text("The service keeps 200 characters.")
         }
-        .buttonStyle(OrbisPrimaryButtonStyle())
-        // Plain Return belongs to the Tag field, which adds a Tag with it, so this takes the
-        // modified key instead.
-        .keyboardShortcut(.return, modifiers: .command)
-        .accessibilityIdentifier("tags-done")
-        Button("Cancel") { isEditingTags = false }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("tags-cancel")
+      }
+      .formStyle(.grouped)
+      .navigationTitle("Rename")
+      .toolbarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel", systemImage: "xmark", role: .close) { dismiss() }
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Save", systemImage: "checkmark", role: .confirm, action: commit)
+            .tint(Color.orbis.tint)
+            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            .accessibilityIdentifier("rename-save")
+        }
+      }
+      .onAppear { focused = true }
+    }
+    .presentationDetents([.medium])
+  }
+
+  private func commit() {
+    let title = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !title.isEmpty else { return }
+    save(title)
+    dismiss()
+  }
+}
+
+/// Changing a Set's Tags, in the same shape of sheet as renaming it.
+private struct TagSheet: View {
+  let suggestions: [String]
+  let save: ([String]) -> Void
+  @State private var draft: [String]
+  @Environment(\.dismiss) private var dismiss
+
+  init(tags: [String], suggestions: [String], save: @escaping ([String]) -> Void) {
+    self.suggestions = suggestions
+    self.save = save
+    _draft = State(initialValue: tags)
+  }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        TagListEditor(tags: $draft, suggestions: suggestions, category: SetPresentation.category(for:))
+      }
+      .formStyle(.grouped)
+      .navigationTitle("Tags")
+      .toolbarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .cancellationAction) {
+          Button("Cancel", systemImage: "xmark", role: .close) { dismiss() }
+            .accessibilityIdentifier("tags-cancel")
+        }
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done", systemImage: "checkmark", role: .confirm) {
+            save(draft)
+            dismiss()
+          }
+          .tint(Color.orbis.tint)
+          // Plain Return belongs to the Tag field, which adds a Tag with it, so this takes the
+          // modified key instead.
+          .keyboardShortcut(.return, modifiers: .command)
+          .accessibilityIdentifier("tags-done")
+        }
       }
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-    .padding()
-    .background(Color.orbis.paper)
-    #if os(iOS)
-      .presentationDetents([.medium])
-    #endif
+    .presentationDetents([.medium, .large])
   }
 }
 

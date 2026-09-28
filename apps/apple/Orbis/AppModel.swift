@@ -345,7 +345,7 @@ final class AppModel {
     playlistMembers = .idle
     playlistFailure = nil
     activeTag = nil
-    openedSetId = nil
+    openedSets = [:]
     reveal = nil
     revealFailure = nil
     isEditingConnection = false
@@ -852,9 +852,17 @@ final class AppModel {
 
   // MARK: - One Set's page
 
-  /// The Set whose page is open. Held as an identifier rather than a copy, so an edit shows on
-  /// the page and a removal closes it instead of leaving a stale Set on screen.
-  var openedSetId: String?
+  /// The Set whose page is open in each destination. Each tab keeps its own, the way every tab of
+  /// a tab bar keeps its own stack, so a Set opened from Home does not appear under Library.
+  /// Held as identifiers rather than copies, so an edit shows on the page and a removal closes it
+  /// instead of leaving a stale Set on screen.
+  var openedSets: [Destination: String] = [:]
+
+  /// The Set open in the destination on screen.
+  var openedSetId: String? {
+    get { openedSets[destination] }
+    set { openedSets[destination] = newValue }
+  }
 
   /// What the last change from the page said. The Set stays where it is and the message stays
   /// in front of the person, who can try the same action again.
@@ -929,8 +937,10 @@ final class AppModel {
       if case .loaded(let sets) = library {
         library = .loaded(sets.filter { $0.id != removed.id })
       }
-      if openedSetId == removed.id {
-        closeSet()
+      // Closed wherever it was open, not only in the tab the removal came from.
+      if openedSets.values.contains(removed.id) {
+        setFailure = nil
+        openedSets = openedSets.filter { $0.value != removed.id }
       }
       // A removed Set leaves the queue with it, so the queue is read again rather than patched.
       await loadQueue()

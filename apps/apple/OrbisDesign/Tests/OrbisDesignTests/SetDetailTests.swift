@@ -62,4 +62,23 @@ import Testing
     let withoutDate = SetDetail.Statistics(listenCount: 2, finishCount: 0)
     #expect(withoutDate.listens == "2")
   }
+
+  @Test func `the facts line says when a Set arrived and how often it was heard`() {
+    let line = SetDetail.factsLine(
+      dates: .init(imported: "11 Sep 2026", released: "22 Aug 2026"),
+      statistics: .init(listenCount: 3, finishCount: 1, lastHeard: "Thu 11 Sep"))
+    #expect(line == "Released 22 Aug 2026 · Added 11 Sep 2026 · 3 listens · finished once")
+  }
+
+  @Test func `the facts line leaves out what has not happened`() {
+    #expect(
+      SetDetail.factsLine(
+        dates: .init(imported: "11 Sep 2026"), statistics: .init(listenCount: 0, finishCount: 0))
+        == "Added 11 Sep 2026")
+    #expect(
+      SetDetail.factsLine(
+        dates: nil, statistics: .init(listenCount: 1, finishCount: 2))
+        == "1 listen · finished 2 times")
+    #expect(SetDetail.factsLine(dates: nil, statistics: nil) == nil)
+  }
 }

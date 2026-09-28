@@ -10,6 +10,8 @@ import SwiftUI
 /// The rules are the design's, and each is here so it can be tested:
 /// - The darkest and brightest tenth of the pixels are left out, so letterbox bars and glare do
 ///   not decide the colour.
+/// - Each pixel counts by how vivid it is, so the colour the eye picks out of the artwork wins
+///   over the grey around it. A plain average mixes every hue into mud.
 /// - Chroma is capped, so a saturated thumbnail cannot shout over the content.
 /// - Artwork that is close to grey has no hue worth keeping, and gets the brand's purple.
 /// - A hue close to the tint moves away from it, so Play stays the one orange thing on the page.
@@ -54,13 +56,25 @@ public struct ArtworkField: Equatable, Sendable {
     let labs = pixels.map { OKLab.from(srgb: $0) }.sorted { $0.l < $1.l }
     let trim = labs.count / 10
     let kept = labs.count > 2 * trim ? Array(labs[trim..<(labs.count - trim)]) : labs
-    let count = Double(kept.count)
-    let average = (
-      l: kept.reduce(0) { $0 + $1.l } / count,
-      a: kept.reduce(0) { $0 + $1.a } / count,
-      b: kept.reduce(0) { $0 + $1.b } / count
-    )
-    return from(averageLab: average)
+    // Weighted by chroma squared, so a few vivid pixels outvote a field of near-greys.
+    let weights = kept.map { $0.a * $0.a + $0.b * $0.b }
+    let total = weights.reduce(0, +)
+    guard total > 1e-6 else { return brand }
+    var a = 0.0
+    var b = 0.0
+    var l = 0.0
+    var chroma = 0.0
+    for (lab, weight) in zip(kept, weights) {
+      a += lab.a * weight
+      b += lab.b * weight
+      l += lab.l * weight
+      chroma += weight.squareRoot() * weight
+    }
+    // The hue comes from the weighted direction and the chroma from the weighted strength,
+    // because opposing hues cancel in the direction and would otherwise read as grey.
+    let hue = atan2(b, a)
+    let strength = chroma / total
+    return from(averageLab: (l: l / total, a: strength * cos(hue), b: strength * sin(hue)))
   }
 
   /// The lightness the field takes in each appearance. White text on the dark band and ink on
@@ -194,11 +208,12 @@ public struct ArtworkBackdrop: View {
   }
 
   public var body: some View {
-    let tone = (field ?? url.flatMap(ArtworkFieldCache.shared.field(for:)) ?? .brand)
-      .color(dark: colorScheme == .dark)
+    let known = field ?? url.flatMap(ArtworkFieldCache.shared.field(for:))
+    // Paper until the colour is known, then the colour fades in: a guess drawn first and then
+    // replaced reads as a cut. A field already seen is read from the cache in the first frame.
+    let tone = known.map { $0.color(dark: colorScheme == .dark) } ?? Color.orbis.paper
     surface(tone)
-      // No motion: the field arrives with the artwork, not from anything the person did, and a
-      // field already seen is read from the cache in the first frame.
+      .orbisAnimation(.pageTinted, value: known)
       .task(id: url) {
         guard let url else {
           field = .brand
@@ -215,8 +230,10 @@ public struct ArtworkBackdrop: View {
       LinearGradient(
         stops: [
           .init(color: tone, location: 0),
-          .init(color: tone, location: 0.18),
-          .init(color: Color.orbis.paper, location: 0.72),
+          .init(color: tone, location: 0.22),
+          .init(color: tone.mix(with: Color.orbis.paper, by: 0.35), location: 0.42),
+          .init(color: tone.mix(with: Color.orbis.paper, by: 0.75), location: 0.62),
+          .init(color: Color.orbis.paper, location: 0.85),
         ],
         startPoint: .top, endPoint: .bottom
       )

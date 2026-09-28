@@ -47,6 +47,16 @@ enum SetPresentation {
     return min(Double(set.playbackPositionSeconds) / Double(seconds), 1)
   }
 
+  /// The symbol the source button wears. A system symbol rather than the service's logo, which
+  /// the design keeps neutral.
+  static func sourceSymbol(_ source: SetSource) -> String {
+    switch source {
+    case .youtube: "play.rectangle.fill"
+    case .soundcloud: "cloud.fill"
+    case .unknown: "safari"
+    }
+  }
+
   /// How many Sets carry each tag.
   static func tagCounts(_ sets: [SavedSet]) -> [String: Int] {
     sets.reduce(into: [:]) { counts, set in

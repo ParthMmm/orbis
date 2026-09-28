@@ -47,6 +47,7 @@ enum MotionPreview {
     case .filingFailed: "exclamationmark.triangle"
     case .tagToggled: "tag"
     case .playlistReordered: "arrow.up.arrow.down"
+    case .pageTinted: "paintpalette"
     }
   }
 
@@ -56,6 +57,7 @@ enum MotionPreview {
     case .filingFailed: "Refuse it"
     case .tagToggled: "Toggle the Tag"
     case .playlistReordered: "Move the Set"
+    case .pageTinted: "Tint the page"
     }
   }
 }

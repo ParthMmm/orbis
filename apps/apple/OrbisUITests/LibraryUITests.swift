@@ -299,11 +299,13 @@ final class LibraryUITests: XCTestCase {
       title.waitForExistence(timeout: 30),
       "pressing a row must open the Set's page\n\(app.debugDescription)"
     )
-    XCTAssertTrue(app.buttons["detail-open"].exists, "the page must offer Open")
+    XCTAssertTrue(app.buttons["detail-open"].exists, "the page must offer the source")
     capture("10-set-page")
 
-    app.buttons["detail-title-row"].tap()
-    let field = app.alerts.textFields.firstMatch
+    // Rename lives in the page's menu and opens a sheet with the title in a field.
+    app.buttons["detail-actions"].tap()
+    app.buttons["detail-rename-action"].tap()
+    let field = app.textFields["rename-title"]
     XCTAssertTrue(
       field.waitForExistence(timeout: 15),
       "renaming must offer a field\n\(app.debugDescription)"
@@ -311,7 +313,7 @@ final class LibraryUITests: XCTestCase {
     field.tap()
     field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 24))
     field.typeText("Renamed by the journey")
-    app.alerts.buttons["Save"].tap()
+    app.buttons["rename-save"].tap()
 
     XCTAssertTrue(
       app.staticTexts["Renamed by the journey"].waitForExistence(timeout: 30),
@@ -319,8 +321,10 @@ final class LibraryUITests: XCTestCase {
     )
     capture("11-set-renamed")
 
-    // Removal asks first. On iOS 26 the confirmation rises as a popover with no cancel
-    // button, so it is dismissed the way a person dismisses one: by tapping outside it.
+    // Removal lives in the page's menu and asks first. On iOS 26 the confirmation rises as a
+    // popover with no cancel button, so it is dismissed the way a person dismisses one: by
+    // tapping outside it.
+    app.buttons["detail-actions"].tap()
     app.buttons["detail-remove"].tap()
     XCTAssertTrue(
       app.sheets.firstMatch.waitForExistence(timeout: 10),
@@ -329,6 +333,7 @@ final class LibraryUITests: XCTestCase {
     app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92)).tap()
     XCTAssertTrue(app.staticTexts["detail-title"].exists, "dismissing must keep the Set")
 
+    app.buttons["detail-actions"].tap()
     app.buttons["detail-remove"].tap()
     confirmationButton("Remove from library", in: app).tap()
 

@@ -47,6 +47,8 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
   case tagToggled
   /// A Set moved within a Playlist.
   case playlistReordered
+  /// A page opened by the person took its colour from the Set's artwork.
+  case pageTinted
 
   public var purpose: String {
     switch self {
@@ -54,6 +56,7 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
     case .filingFailed: "The service refused a Source Link."
     case .tagToggled: "A Tag filter turned on or off."
     case .playlistReordered: "A Set moved within a Playlist."
+    case .pageTinted: "A page took its colour from the Set's artwork."
     }
   }
 
@@ -63,7 +66,7 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
     switch self {
     case .filingSucceeded: .bounce
     case .filingFailed: .wiggle
-    case .tagToggled, .playlistReordered: nil
+    case .tagToggled, .playlistReordered, .pageTinted: nil
     }
   }
 
@@ -79,7 +82,7 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
   public var curve: OrbisCurve {
     switch self {
     case .filingSucceeded, .filingFailed, .tagToggled: .snappy
-    case .playlistReordered: .smooth
+    case .playlistReordered, .pageTinted: .smooth
     }
   }
 

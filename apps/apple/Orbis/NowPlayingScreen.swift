@@ -12,6 +12,7 @@ import SwiftUI
 struct NowPlayingScreen: View {
   @Bindable var model: AppModel
   @Environment(\.dismiss) private var dismiss
+  @State private var isRenaming = false
 
   /// How much of the management rows shows above the fold: the rule and the Tags row.
   static let peek: CGFloat = 56
@@ -27,7 +28,7 @@ struct NowPlayingScreen: View {
               VStack(alignment: .leading, spacing: 20) {
                 hero(set)
                   .frame(minHeight: proxy.size.height - Self.inset * 2 - Self.peek)
-                SetManagementSection(model: model, set: set)
+                SetManagementSection(model: model, set: set, isRenaming: $isRenaming)
               }
               .padding(Self.inset)
             }
@@ -92,11 +93,9 @@ struct NowPlayingScreen: View {
       Transport(
         player: model.audioPlayer,
         fallbackDuration: set.durationSeconds.map(TimeInterval.init),
-        identifierPrefix: "now-playing"
+        identifierPrefix: "now-playing",
+        trailing: AnyView(AirPlayButton())
       )
-      // Under the transport, centred, where a music app keeps the speaker picker.
-      AirPlayButton()
-        .frame(maxWidth: .infinity)
     }
   }
 }

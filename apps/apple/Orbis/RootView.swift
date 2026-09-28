@@ -465,10 +465,6 @@ struct DestinationView: View {
     }
   #endif
 
-  #if os(iOS)
-    @Environment(\.horizontalSizeClass) private var sizeClass
-  #endif
-
   var body: some View {
     switch destination {
     case .home:
@@ -499,7 +495,7 @@ struct DestinationView: View {
               NoResultsState(recoverLabel: "Clear filters", recover: { model.setTagFilter(nil) })
                 .accessibilityIdentifier("library-no-matches")
             ),
-        hero: linkWaiting,
+        hero: nil,
         rails: model.availableTags.isEmpty || librarySearchIsActive ? nil : tagTiles,
         footer: librarySearchIsActive ? "\(libraryMatchCount) sets" : libraryFooter,
         retry: { await model.loadLibrary() },
@@ -540,7 +536,7 @@ struct DestinationView: View {
       } message: {
         Text("This replaces what is playing now and starts the first set in the playlist.")
       }
-      .navigationDestination(item: $model.openedSetId) { id in
+      .navigationDestination(item: openedSet) { id in
         SetDetailScreen(model: model, setId: id)
       }
       .confirmationDialog(
@@ -555,7 +551,7 @@ struct DestinationView: View {
       }
     case .playlists:
       PlaylistsDestination(model: model)
-        .navigationDestination(item: $model.openedSetId) { id in
+        .navigationDestination(item: openedSet) { id in
           SetDetailScreen(model: model, setId: id)
         }
     case .people:
@@ -563,7 +559,7 @@ struct DestinationView: View {
     case .search:
       SearchDestination(model: model)
         // The one open Set is shared with the Library, so a Set found here opens the same page.
-        .navigationDestination(item: $model.openedSetId) { id in
+        .navigationDestination(item: openedSet) { id in
           SetDetailScreen(model: model, setId: id)
         }
     }
@@ -599,9 +595,6 @@ struct DestinationView: View {
   private var home: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 20) {
-        if let linkWaiting {
-          linkWaiting
-        }
         HomeRails(model: model)
       }
       .padding()
@@ -625,14 +618,42 @@ struct DestinationView: View {
     .onChange(of: model.reveal != nil) { _, hasReveal in
       if hasReveal { isFilingSheetShown = true }
     }
-    .navigationDestination(item: $model.openedSetId) { id in
+    .navigationDestination(item: openedSet) { id in
       SetDetailScreen(model: model, setId: id)
     }
   }
 
+  /// The Set open in this destination. Bound per destination rather than to the one on screen,
+  /// so a tab that is not showing never picks up a page another tab opened.
+  private var openedSet: Binding<String?> {
+    Binding(
+      get: { model.openedSets[destination] },
+      set: { model.openedSets[destination] = $0 }
+    )
+  }
+
+  private var filedSets: [SavedSet] {
+    if case .loaded(let sets) = model.library { sets } else { [] }
+  }
+
+  /// Opens the sheet. A YouTube or SoundCloud link on the clipboard that the Library does not
+  /// hold yet is filed at once, so the sheet opens on the Set being read rather than on a field
+  /// to paste into; anything else opens the empty field, focused.
   private func openFilingSheet() {
     isFilingSheetShown = true
-    focusLink = true
+    #if os(iOS)
+      Task {
+        if model.reveal == nil, !model.isFiling, let link = await ClipboardLink.read(),
+          !ClipboardLink.isFiled(link, in: filedSets)
+        {
+          await model.pasteAndFile(link)
+        } else {
+          focusLink = true
+        }
+      }
+    #else
+      focusLink = true
+    #endif
   }
 
   /// Each Tag is a tile with its count; the active one is ringed and checked. Pressing it again
@@ -674,140 +695,8 @@ struct DestinationView: View {
     return "\(visible) of \(total) · \(outsideLabel) outside this filter"
   }
 
-  /// The filing sheet: the paste field, then the naming step once a link is filed. The outcome
-  /// of the last filing sits under the field so the answer appears where the action was taken,
-  /// and the sheet stays up so the next link can follow.
   private var filingSheet: some View {
-    NavigationStack {
-      ScrollView {
-        pasteHero
-          .padding()
-      }
-      .background(Color.orbis.paper)
-      .navigationTitle(model.reveal == nil ? "File a set" : "Name this set")
-      .toolbarTitleDisplayMode(.inline)
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Done", role: .close) { isFilingSheetShown = false }
-        }
-      }
-    }
-    .presentationDetents([.medium, .large])
-  }
-
-  /// What a link on the clipboard gets: one card above the list that files it in a tap. The
-  /// clipboard is not read for it; the system says whether it holds a link, and reading waits
-  /// for the tap, which is the permission.
-  private var linkWaiting: AnyView? {
-    #if os(iOS)
-      AnyView(
-        LinkWaitingCard(notice: model.pasteNotice) { text in
-          Task { await model.pasteAndFile(text) }
-        })
-    #else
-      nil
-    #endif
-  }
-
-  private var pasteHero: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      if let reveal = model.reveal {
-        revealPanel(reveal)
-      } else {
-        PasteHero(
-          link: $model.linkToFile,
-          state: SetPresentation.linkState(
-            isFiling: model.isFiling, failure: model.fileFailure),
-          compact: isCompact,
-          paste: { text in Task { await model.pasteAndFile(text) } },
-          pasteNotice: model.pasteNotice,
-          focusRequest: $focusLink
-        ) {
-          Task { await model.fileLink() }
-        }
-        if let confirmation = model.fileConfirmation {
-          Text(confirmation)
-            .font(.orbis.detail)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("file-confirmation")
-        }
-      }
-    }
-  }
-
-  /// The step the hero promises: the title and Tags the service read from the link, open to
-  /// correction. Nothing here is required, so pressing Done is the common case.
-  private func revealPanel(_ reveal: AppModel.Reveal) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Text("Name this set")
-          .font(.orbis.sectionTitle)
-        SourceStamp(reveal.set.source.label)
-      }
-      TextField(
-        "Title",
-        text: Binding(
-          get: { model.reveal?.title ?? "" },
-          set: { model.reveal?.title = $0 }
-        )
-      )
-      .textFieldStyle(.plain)
-      .padding(.leading)
-      .padding(.vertical, 8)
-      .padding(.trailing)
-      .background(Color.orbis.field, in: .rect(cornerRadius: Radius.field))
-      .accessibilityIdentifier("reveal-title")
-      TagInput(
-        tags: Binding(
-          get: { model.reveal?.tags ?? [] },
-          set: { model.reveal?.tags = $0 }
-        ),
-        suggestions: model.availableTags
-      )
-      HStack {
-        Button("Done") { Task { await model.saveReveal() } }
-          .buttonStyle(OrbisPrimaryButtonStyle())
-          .disabled(model.isSavingReveal)
-          // Return reaches the default action, which is the common case here; the Tag field keeps
-          // Return while it has focus.
-          .keyboardShortcut(.defaultAction)
-          .accessibilityIdentifier("reveal-done")
-        Button("Not now") { model.closeReveal() }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("reveal-dismiss")
-      }
-      if let failure = model.revealFailure {
-        VStack(alignment: .leading, spacing: 4) {
-          Text(failure.message)
-            .font(.orbis.detail)
-            .foregroundStyle(.secondary)
-            .accessibilityIdentifier("reveal-error")
-          CopyFailureButton(
-            report: FailureReport(failure: failure, context: "naming a filed set"))
-        }
-      } else if reveal.set.metadataState == "failed" {
-        HStack(spacing: 6) {
-          Text("Orbis could not name this set.")
-            .font(.orbis.detail)
-            .foregroundStyle(.secondary)
-          Button("Try again") { Task { await model.retryMetadata() } }
-            .buttonStyle(.plain)
-            .foregroundStyle(Color.orbis.tint)
-            .disabled(model.isSavingReveal)
-            .accessibilityIdentifier("reveal-retry")
-        }
-      }
-    }
-    .padding()
-    .orbisRaised(radius: Radius.hero)
-  }
-
-  private var isCompact: Bool {
-    #if os(iOS)
-      sizeClass == .compact
-    #else
-      false
-    #endif
+    FilingSheet(model: model, focusLink: $focusLink) { isFilingSheetShown = false }
   }
 
   @ToolbarContentBuilder
@@ -923,7 +812,6 @@ struct HomeRails: View {
       // Named outright: a combined label on the first card of a rail came back as its identifier.
       .accessibilityElement(children: .ignore)
       .accessibilityLabel([set.title, SetPresentation.timeLeft(set)].compactMap { $0 }.joined(separator: ", "))
-      .accessibilityAddTraits(.isButton)
       .accessibilityIdentifier("continue-card-\(set.id)")
     }
   }

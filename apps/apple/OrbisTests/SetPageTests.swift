@@ -96,6 +96,35 @@ final class SetPageTests: XCTestCase {
     XCTAssertNil(model.openedSetId)
   }
 
+  func testEachTabKeepsItsOwnOpenSet() {
+    let model = model(sets: [set(), set(id: "2", title: "Other")])
+    model.destination = .home
+    model.openSet("1")
+
+    model.destination = .library
+    XCTAssertNil(model.openedSetId, "a Set opened from Home must not appear under Library")
+    model.openSet("2")
+
+    model.destination = .home
+    XCTAssertEqual(model.openedSetId, "1", "Home keeps the page it had open")
+    model.destination = .library
+    XCTAssertEqual(model.openedSetId, "2")
+  }
+
+  func testRemovingASetClosesItInEveryTab() async {
+    let model = model(sets: [set(), set(id: "2", title: "Other")])
+    model.destination = .home
+    model.openSet("1")
+    model.destination = .search
+    model.openSet("1")
+
+    await model.remove("1")
+
+    XCTAssertNil(model.openedSetId)
+    model.destination = .home
+    XCTAssertNil(model.openedSetId)
+  }
+
   func testRemovingASetTakesItOutOfTheLibraryAndClosesThePage() async {
     let model = model(sets: [set(), set(id: "2", title: "Other")])
     model.openSet("1")

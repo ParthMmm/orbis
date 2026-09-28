@@ -92,18 +92,22 @@ public struct ListingRow<Value: View>: View {
   public var value: String?
   public let action: (() -> Void)?
   public let identifier: String?
+  /// Whether a hairline parts this row from the next. The last row of a card has none.
+  public let divided: Bool
   @ViewBuilder public let content: () -> Value
 
   @Environment(\.dynamicTypeSize) private var typeSize
 
   public init(
     _ label: String, value: String? = nil, action: (() -> Void)? = nil,
-    identifier: String? = nil, @ViewBuilder content: @escaping () -> Value
+    identifier: String? = nil, divided: Bool = true,
+    @ViewBuilder content: @escaping () -> Value
   ) {
     self.label = label
     self.value = value
     self.action = action
     self.identifier = identifier
+    self.divided = divided
     self.content = content
   }
 
@@ -118,7 +122,9 @@ public struct ListingRow<Value: View>: View {
     }
     .orbisRowHeight()
     .padding(.vertical, 12)
-    .overlay(alignment: .bottom) { Divider() }
+    .overlay(alignment: .bottom) {
+      if divided { Divider() }
+    }
     .accessibilityIdentifier(identifier)
   }
 
@@ -184,9 +190,11 @@ extension View {
 extension ListingRow where Value == EmptyView {
   public init(
     _ label: String, value: String? = nil, action: (() -> Void)? = nil,
-    identifier: String? = nil
+    identifier: String? = nil, divided: Bool = true
   ) {
-    self.init(label, value: value, action: action, identifier: identifier) { EmptyView() }
+    self.init(label, value: value, action: action, identifier: identifier, divided: divided) {
+      EmptyView()
+    }
   }
 }
 

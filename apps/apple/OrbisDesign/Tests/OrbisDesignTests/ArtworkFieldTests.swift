@@ -45,6 +45,16 @@ import Testing
     #expect(abs(field.hue - pure.hue) < 1)
   }
 
+  @Test func `a vivid accent outweighs a grey background`() {
+    // Mostly grey artwork with a small red highlight: a plain average is near grey, and the field
+    // should carry the highlight rather than falling to the brand.
+    let grey = Array(repeating: (r: 0.35, g: 0.35, b: 0.38), count: 85)
+    let accent = Array(repeating: (r: 0.9, g: 0.1, b: 0.3), count: 15)
+    let field = ArtworkField.from(pixels: grey + accent)
+    #expect(field != .brand)
+    #expect(field.chroma > 0.06)
+  }
+
   @Test func `the dark field is dark and the light field is light`() {
     var light = EnvironmentValues()
     light.colorScheme = .light
