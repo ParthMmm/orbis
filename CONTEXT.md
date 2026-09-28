@@ -5,8 +5,12 @@ Orbis is a personal library for collecting and organizing music and DJ sets from
 ## Language
 
 **Set**:
-A saved music recording or DJ performance identified by its source link.
+A music recording or DJ performance identified by its Source Link. One Set exists per Source Link, shared by every Library that saves it.
 _Avoid_: Item, bookmark, track
+
+**Library Entry**:
+One Person's saving of one Set, holding that Person's title override and Tags.
+_Avoid_: Save, bookmark
 
 **Artwork**:
 The provider's image for a Set. A Set holds two: the one a listing draws, and the large one its own page draws.
@@ -17,19 +21,19 @@ The original YouTube or SoundCloud address associated with a Set.
 _Avoid_: Media URL, download URL
 
 **Retained Audio**:
-An audio copy associated with a Set and stored by Orbis for playback.
+An audio copy of a Set stored on Vanta for playback. One per Set, streamable by anyone who can see the Set.
 _Avoid_: Download, media file
 
 **Download**:
-A request for Orbis to create Retained Audio for a Set from its Source Link.
+A request for Orbis to create Retained Audio for a Set from its Source Link. It never means a copy on a device.
 _Avoid_: Save
 
 **Playback Position**:
-The point in a Set's Retained Audio where listening should resume.
+The point in a Set's Retained Audio where one Person's listening should resume.
 _Avoid_: Progress
 
 **Listen**:
-One activation of a Set through an intentional play action or automatic Listening Queue advance. Pausing and resuming the active Set remain part of the same Listen.
+One Person's activation of a Set through an intentional play action or automatic Listening Queue advance. Pausing and resuming the active Set remain part of the same Listen.
 _Avoid_: Play, playback session
 
 **Finish**:
@@ -37,17 +41,48 @@ A Listen that reaches the natural end of its Set. A Listen can produce at most o
 _Avoid_: Completion
 
 **Library**:
-The complete collection of Sets saved by one person.
+The complete collection of one Person's Library Entries.
 _Avoid_: Catalog, collection
 
 **Playlist**:
-A named, ordered selection of Sets from the Library. The word on screen is Playlist.
+A named, ordered selection of Sets, owned by the Person who created it. The word on screen is Playlist.
 _Avoid_: Folder, Crate
 
 **Listening Queue**:
-The temporary ordered sequence of Sets scheduled for playback.
+One Person's temporary ordered sequence of Sets scheduled for playback, shared by all of that Person's clients.
 _Avoid_: Playlist, play queue
 
 **Tag**:
 A short label used to classify and filter Sets across the Library.
 _Avoid_: Category
+
+**Collaborative**:
+A Playlist flag, set by its creator, that lets named editors add, remove, and reorder its Sets.
+
+**Person**:
+A member of the Group with a username and one or more API keys.
+_Avoid_: User, account
+
+**Group**:
+Everyone the Host admits to one Orbis deployment. One Group per deployment.
+_Avoid_: Team, org, server
+
+**Host**:
+The Person who runs the deployment and can mint and revoke keys and remove People.
+_Avoid_: Admin
+
+**Social**:
+A Person's switch, off by default. Off hides them from others and others from them.
+_Avoid_: Sharing mode, public mode
+
+**See / Appear**:
+One Person's filters for another. See includes them in your social views; Appear lets them see you.
+_Avoid_: Follow, mute
+
+**Presence**:
+The Set a Person is in a Listen on now, plus their few most recent Sets.
+_Avoid_: Now playing, status
+
+**Listen History**:
+A Person's Listens and Finishes, shown on their profile to People who pass the social gate.
+_Avoid_: Activity feed

@@ -1,5 +1,7 @@
 # Orbis: web + Cloudflare/Alchemy instead of Tailscale (research)
 
+**Status:** decided in ADRs [0007](../adr/0007-web-cloudflare-alchemy.md) through [0010](../adr/0010-shared-audio-and-collab-playlists.md) and [0013](../adr/0013-per-person-library-state.md). Plan: [`../plans/web-and-social.md`](../plans/web-and-social.md).
+
 Sources: ADR 0001, 0002, 0004; deploy/orbis-server/README.md; CONTEXT.md; Cloudflare Tunnel docs; Alchemy Tunnel docs (alchemy.run).
 
 ## Ask
@@ -30,7 +32,7 @@ Web requires superseding ADR 0004 Origin ban with an exact Origin allowlist + CO
 - Exposing token-free local listener.
 - R2 for retained audio in slice 1 (good later for streaming off Vanta bandwidth).
 
-## Open decisions (grill)
+## Open decisions (answered in the ADRs)
 
 1. Shared single Library vs per-friend isolation.
 2. Domain for SPA + API.

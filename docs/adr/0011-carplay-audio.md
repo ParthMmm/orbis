@@ -1,31 +1,24 @@
-# ADR 0011: CarPlay is an audio client of the Apple player
+# CarPlay is an audio client of the iPhone player
 
-**Status:** accepted (defaults locked for v1; entitlement is a human gate)  
-**Date:** 2026-09-25
+A Person should be able to browse Orbis and play Sets while driving. CarPlay is a remote interface: the car draws Apple's templates, and the audio session runs on the iPhone. So CarPlay is a native module in `apps/apple` that drives the existing `AudioPlayer` and `AppModel`, with no second playback stack. It is not Electron, web, or React Native.
 
-## Context
+Orbis requests the CarPlay Audio entitlement (`com.apple.developer.carplay-audio`) through Apple's form and enables it on the iOS App ID after approval. Device and TestFlight builds wait on that approval.
 
-Orbis needs Apple CarPlay so a Person can browse their library and play Sets while driving. Slice 0 already ships: Now Playing metadata and remote commands on the iPhone player. CarPlay must not invent a second playback stack.
+The root tabs are **Library**, **Playlists**, and **Recent**. Recent orders Sets by the Person's last Listen. Only Sets with Retained Audio are playable, because only those can enter the Listening Queue (ADR 0001). A visible Set saved by a friend plays the same way (ADR 0010).
 
-## Decision
+Playback follows the Listening Queue rules in ADR 0001, the same as the phone. Choosing a Set plays it and keeps the rest of the queue. Choosing a Playlist replaces the queue. The Now Playing template's Up Next shows the queue. When the queue runs out, playback stops.
 
-1. **Category:** CarPlay **Audio** (`com.apple.developer.carplay-audio`). Request via Apple’s CarPlay form; enable on the Orbis iOS App ID after approval.
-2. **Home:** native module in `apps/apple` only. Not Electron, not web, not Expo.
-3. **Single player:** CarPlay templates are views of the existing iOS playback session (AVAudioSession + MPNowPlayingInfoCenter + MPRemoteCommandCenter). No parallel audio engine.
-4. **IA (v1 root tabs):** Library (Sets) · Playlists · Downloads. Prefer Downloads when retained audio is local / network is poor.
-5. **Nouns:** browse **Sets** and **Playlists** (Orbis glossary). Playing a visible Set streams shared Retained Audio on Vanta when needed.
-6. **Next/prev:** when playing from a playlist or explicit queue, skip within that order; otherwise skip within the list that started playback.
-7. **Car is read/play only:** no social toggles, key paste, admin, or library destructive edits from CarPlay.
+`AudioPlayer` registers only play and pause remote commands today. Before CarPlay, it gains next track (advance the queue), skip forward and back by 30 seconds, and playback position changes. It does not register previous track: the queue removes a Set when it finishes, so no previous entry exists. These commands also serve the Lock Screen and Bluetooth head units, so they ship without the entitlement.
 
-## Consequences
+The car is read and play only: no social switches, key entry, Host commands, Downloads, or library edits.
 
-- Device/TestFlight CarPlay waits on Apple entitlement approval (Parth, at home).
-- Simulator work can proceed once entitlement is on the App ID / profile.
-- Template limits (~500 rows, shallow stack) force pagination / caps on “All Sets.”
-- Social ADRs 0008–0010 unchanged; CarPlay is another client of the same read/play APIs.
+Rejected alternatives:
 
-## Rejected
+- **A Downloads tab of on-device files.** Orbis keeps no audio on the device; ADR 0001 defers offline copies, and a Download is a request for Retained Audio on Vanta. Offline playback in the car needs that deferred decision first.
+- **Skip within the list that started playback.** Makes CarPlay a second queue that disagrees with the phone and the server.
+- **Previous track restarts or rewinds.** For hour-long Sets, a 30-second skip back is what a driver wants.
+- **Custom drawing or Rive on the car screen.** Apple does not allow it for audio apps.
+- **CarPlay from the Mac or Electron.** The phone is the CarPlay endpoint.
+- **Full social or onboarding in the car.**
 
-- Custom dash UI / Rive on CarPlay (not allowed).
-- CarPlay from Mac/Electron (phone is the CarPlay endpoint).
-- Full social or onboarding in the car.
+CarPlay templates cap list length at about 500 rows and limit stack depth, so Library and Recent paginate or cap. Simulator work can start once the entitlement is on the provisioning profile.

@@ -1,37 +1,22 @@
-# ADR 0012: tvOS is a native Apple client of the same player
+# tvOS is a destination of the existing Apple app
 
-**Status:** accepted (defaults locked for v1)  
-**Date:** 2026-09-26  
-**Related:** [ADR 0011](0011-carplay-audio.md) (CarPlay audio)
+The SwiftUI app in `apps/apple` builds for iOS and macOS (`supportedDestinations: [iOS, macOS]`). An Apple TV app should reuse it rather than start again. Unlike CarPlay (ADR 0011), the Apple TV runs Orbis itself and plays audio on its own output, streaming Retained Audio from Vanta.
 
-## Context
+Orbis adds `tvOS` to the `Orbis` target and the design package in `project.yml`. The app is native SwiftUI with a focus-first shell under `#if os(tvOS)`. `AudioPlayer` and `AppModel` stay the only playback engine and model; the Siri Remote's play and pause already reach `MPRemoteCommandCenter`. `OrbisShare` stays off tvOS.
 
-Orbis already ships a SwiftUI multiplatform app in `apps/apple` for **iOS** and **macOS** (`project.yml` `supportedDestinations: [iOS, macOS]`). Audio playback, Now Playing metadata, and remote commands live in `AudioPlayer`. Parth asked to spec a **tvOS** app because the Apple target is the natural home — not a greenfield TVML or Electron port.
+The root destinations match the other shells: Home, Library, Playlists, and Search. Playback follows the Listening Queue rules in ADR 0001, the same as the phone and CarPlay.
 
-CarPlay (ADR 0011) is a remote UI on the car with audio on the **iPhone**. tvOS is different: the Apple TV runs Orbis itself and plays audio on the TV’s output while streaming retained audio from Vanta.
+The TV streams only. There is no Downloads tab, and on-device data other than settings is purgeable cache, because tvOS keeps little persistent local storage.
 
-## Decision
+The TV connects like any other client: service address plus a Person's API key (ADR 0008), stored in the Keychain as `ClientSettings` already does. Typing a key on the Siri Remote is painful but works; a short pairing code or QR flow is a follow-up slice.
 
-1. **Home:** add **tvOS** to the existing `Orbis` (and shared design) XcodeGen destinations in `apps/apple`. Native SwiftUI. Not TVMLKit, not Electron, not web-on-TV.
-2. **Single player:** reuse `AudioPlayer` / `AppModel` as the sole playback engine on the Apple TV device. No second AVPlayer stack. Same Now Playing + `MPRemoteCommandCenter` surface (Siri Remote play/pause already maps here).
-3. **IA (v1):** Home · Library · Playlists · Search — same destinations as iOS/macOS shells, laid out for the focus engine (sidebar / tab + artwork rails), not a CarPlay template tree.
-4. **Stream-first:** no **Downloads** product tab on tvOS in v1. Apple TV persistent local storage is tiny; treat on-device media as purgeable cache only. Playback streams Set audio from the service the way phone/Mac already do.
-5. **Read/play (+ light library use):** browse and play Sets/playlists; open Set detail; control the queue that `AudioPlayer` already drives. **Out of v1 on TV:** share-extension filing, clipboard Link Waiting, social see/appear toggles, key minting, destructive admin.
-6. **Connection:** reuse Person device pairing (address + host-minted device token). Accept on-screen keyboard for v1; prefer a **short pairing code / QR** follow-up slice because Siri Remote text entry is painful.
-7. **Queue / skip:** same policy as CarPlay — playlist/queue context; **stop at end (no wrap)**.
-8. **Top Shelf:** optional slice after core browse/play works (`TVServices`), not a v1 gate.
+Out of v1 on TV: share-extension filing, clipboard capture, social switches, key entry beyond pairing, and library edits other than queue control. Top Shelf (`TVServices`) is a slice after core browse and play.
 
-## Consequences
+Rejected alternatives:
 
-- Forge enables `tvOS` in `project.yml`, adds `#if os(tvOS)` focus shells, and keeps `OrbisShare` off tvOS (share extension is phone/Mac).
-- Provisioning needs a tvOS App ID / profile (no CarPlay-style entitlement form).
-- Universal Purchase (iOS ↔ tvOS) is a store linkage decision, not a code gate.
-- Social ADRs 0008–0010 unchanged; tvOS is another client of the same read/play APIs.
-- CarPlay module stays iPhone-only; tvOS does not embed CarPlay.
+- **TVMLKit.** Rewrites the client as server markup when Swift models and a player already exist.
+- **CarPlay templates on Apple TV.** Different platform and interaction model.
+- **Offline Downloads on TV.** The storage model does not support it.
+- **`AVPlayerViewController` as Now Playing.** Its chrome is built for video; Orbis plays audio and draws its own Now Playing screen.
 
-## Rejected
-
-- TVML / client-server markup rewrite (Orbis already has Swift models + player).
-- CarPlay templates on Apple TV.
-- Promising offline Downloads parity with iPhone (storage model forbids it as a first-class surface).
-- Porting Mana-style Rive cinema into Orbis TV (wrong product).
+A tvOS App ID and profile need no special entitlement. Universal Purchase with iOS is an App Store Connect choice at release, not a code gate.
