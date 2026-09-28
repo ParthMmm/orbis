@@ -16,7 +16,8 @@ struct SetDetailScreen: View {
         SetDetail(
           title: set.title,
           source: set.source.label,
-          subtitle: SetPresentation.subtitle(set),
+          creator: set.creator,
+          length: set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil },
           artwork: SetPresentation.pageArtwork(set),
           failedToName: set.metadataState == "failed",
           dates: SetDetail.Dates(
@@ -57,7 +58,7 @@ struct SetDetailScreen: View {
   private func audioSection(_ set: SavedSet) -> some View {
     switch set.downloadState {
     case "ready":
-      VStack(alignment: .leading, spacing: 8) {
+      VStack(spacing: 8) {
         // The same controls whether or not this Set is in the player, so Play changes a glyph
         // and nothing on the page moves.
         Transport(
@@ -76,35 +77,30 @@ struct SetDetailScreen: View {
             .accessibilityIdentifier("detail-queue-notice")
         }
       }
-    case "queued", "downloading":
-      // The watch that turns this into a finished download belongs to the model: a task started
-      // here would end when the person leaves, which is when the Library still needs the answer.
-      VStack(alignment: .leading, spacing: 8) {
-        HStack(spacing: 8) {
-          ProgressView()
-          Text(progressLabel(set))
-            .font(.orbis.detail)
-            .foregroundStyle(.secondary)
-        }
-        Button("Cancel", role: .cancel) {
-          Task { await model.cancelAudioDownload(set.id) }
-        }
-      }
     default:
-      Button(
-        set.downloadState == "failed" || set.downloadState == "canceled"
-          ? "Retry download" : "Download",
-        systemImage: set.downloadState == "failed" || set.downloadState == "canceled"
-          ? "arrow.clockwise" : "arrow.down.circle"
-      ) {
-        Task { await model.downloadAudio(set.id) }
-      }
-      .buttonStyle(.glass)
-      .controlSize(.large)
-      .accessibilityIdentifier(
-        set.downloadState == "failed" || set.downloadState == "canceled"
-          ? "detail-retry-download" : "detail-download"
+      // One control from the first press to the last byte: the button becomes its own wait and
+      // then its own progress, in place.
+      DownloadCapsule(
+        phase: downloadPhase(set),
+        start: { Task { await model.downloadAudio(set.id) } },
+        cancel: { Task { await model.cancelAudioDownload(set.id) } }
       )
+      .frame(maxWidth: .infinity)
+    }
+  }
+
+  private func downloadPhase(_ set: SavedSet) -> DownloadCapsule.Phase {
+    switch set.downloadState {
+    case "queued":
+      return .queued
+    case "downloading":
+      guard let progress = model.audioStates[set.id], let total = progress.bytesTotal, total > 0
+      else { return .downloading(nil) }
+      return .downloading(Double(progress.bytesReceived) / Double(total))
+    case "failed", "canceled":
+      return .failed
+    default:
+      return .available
     }
   }
 
@@ -125,13 +121,4 @@ struct SetDetailScreen: View {
     .accessibilityIdentifier("detail-queue-actions")
   }
 
-  private func progressLabel(_ set: SavedSet) -> String {
-    if let progress = model.audioStates[set.id], let total = progress.bytesTotal,
-      total > 0
-    {
-      let percent = min(progress.bytesReceived * 100 / total, 100)
-      return "Downloading \(percent)%"
-    }
-    return SetPresentation.downloadLabel(set.downloadState) ?? "Downloading"
-  }
 }

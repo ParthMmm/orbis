@@ -146,9 +146,12 @@ public struct TagInput: View {
 /// chip in them, so a removed Tag does not move the ones beside it.
 public struct ChipFlow: Layout {
   public var spacing: CGFloat = 6
+  /// Where each row sits: at the leading edge, or centred, as a Set page centres its Tags.
+  public var alignment: HorizontalAlignment = .leading
 
-  public init(spacing: CGFloat = 6) {
+  public init(spacing: CGFloat = 6, alignment: HorizontalAlignment = .leading) {
     self.spacing = spacing
+    self.alignment = alignment
   }
 
   public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
@@ -172,19 +175,28 @@ public struct ChipFlow: Layout {
   public func placeSubviews(
     in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
   ) {
-    var x = bounds.minX
-    var y = bounds.minY
-    var lineHeight: CGFloat = 0
+    // Rows first, so a centred row knows its own width before any chip in it is placed.
+    var rows: [[(subview: LayoutSubview, size: CGSize)]] = [[]]
+    var rowWidth: CGFloat = 0
     for subview in subviews {
       let size = size(of: subview, upTo: bounds.width)
-      if x > bounds.minX, x + size.width > bounds.maxX {
-        x = bounds.minX
-        y += lineHeight + spacing
-        lineHeight = 0
+      if rowWidth > 0, rowWidth + size.width > bounds.width {
+        rows.append([])
+        rowWidth = 0
       }
-      subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-      x += size.width + spacing
-      lineHeight = max(lineHeight, size.height)
+      rows[rows.count - 1].append((subview, size))
+      rowWidth += size.width + spacing
+    }
+    var y = bounds.minY
+    for row in rows where !row.isEmpty {
+      let width = row.map(\.size.width).reduce(0, +) + spacing * CGFloat(row.count - 1)
+      let lineHeight = row.map(\.size.height).max() ?? 0
+      var x = alignment == .center ? bounds.minX + max(bounds.width - width, 0) / 2 : bounds.minX
+      for (subview, size) in row {
+        subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+        x += size.width + spacing
+      }
+      y += lineHeight + spacing
     }
   }
 

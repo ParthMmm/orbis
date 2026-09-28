@@ -81,4 +81,24 @@ import Testing
         == "1 listen · finished 2 times")
     #expect(SetDetail.factsLine(dates: nil, statistics: nil) == nil)
   }
+
+  @Test func `the meta line leads with the source and length`() {
+    #expect(
+      SetDetail.metaLine(
+        source: "YouTube", length: "1h 59m", dates: .init(imported: "27 Sep 2026"),
+        statistics: .init(listenCount: 3, finishCount: 0))
+        == "YouTube · 1h 59m · Added 27 Sep 2026 · 3 listens")
+    #expect(SetDetail.metaLine(source: "SoundCloud", length: nil, dates: nil, statistics: nil) == "SoundCloud")
+  }
+
+  @Test func `the download capsule says where the Download is and fills with it`() {
+    #expect(DownloadCapsule.label(for: .available) == "Download")
+    #expect(DownloadCapsule.label(for: .queued) == "Waiting to download")
+    #expect(DownloadCapsule.label(for: .downloading(0.416)) == "Downloading 42%")
+    #expect(DownloadCapsule.label(for: .downloading(nil)) == "Downloading")
+    #expect(DownloadCapsule.label(for: .failed) == "Retry Download")
+    #expect(DownloadCapsule.fill(for: .queued) == 0)
+    #expect(DownloadCapsule.fill(for: .downloading(1.4)) == 1)
+    #expect(DownloadCapsule.fill(for: .available) == 1)
+  }
 }

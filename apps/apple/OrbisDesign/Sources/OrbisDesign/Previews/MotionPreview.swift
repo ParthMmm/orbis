@@ -48,6 +48,7 @@ enum MotionPreview {
     case .tagToggled: "tag"
     case .playlistReordered: "arrow.up.arrow.down"
     case .pageTinted: "paintpalette"
+    case .downloadProgressed: "arrow.down.circle"
     }
   }
 
@@ -58,6 +59,7 @@ enum MotionPreview {
     case .tagToggled: "Toggle the Tag"
     case .playlistReordered: "Move the Set"
     case .pageTinted: "Tint the page"
+    case .downloadProgressed: "Move the Download on"
     }
   }
 }

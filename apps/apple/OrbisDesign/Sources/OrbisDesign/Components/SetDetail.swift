@@ -2,18 +2,19 @@ import SwiftUI
 
 /// One Set, open for reading and for changing.
 ///
-/// The composition is fixed even when the Set is not: the artwork leads, the title is said once
-/// with one line of facts under it, the transport sits under that, and the Tags and management
-/// rows follow. Dates and counts are one quiet line, not rows of their own. The rows are `SetManagement`,
-/// which the Now Playing screen carries too, so a Set is managed the same way wherever it is
-/// met.
+/// Laid out the way a music app lays out an album: centred on one axis. The artwork leads, the
+/// title is said once with the artist under it in the tint, one quiet line carries the source,
+/// the length, the dates and the counts, and then the one action the Set wants — play it, or
+/// get its audio — spans the page. The Tags follow, centred. Everything else lives in the
+/// toolbar's menu.
 public struct SetDetail: View {
   public let title: String
   /// The Source Link's name, as the header reads it out.
   public let source: String
-  /// Who made it, how long it runs, when it arrived. Composed by the caller, which knows which
-  /// of the three the service filled in.
-  public let subtitle: String?
+  /// Who made it, when the service knows.
+  public let creator: String?
+  /// How long it runs, already formatted ("1h 59m").
+  public let length: String?
   public let artwork: URL?
   /// The service could not name this Set, so the name is the caller's to supply or the
   /// service's to try again.
@@ -77,7 +78,8 @@ public struct SetDetail: View {
   private let management: AnyView
 
   public init(
-    title: String, source: String, subtitle: String? = nil, artwork: URL? = nil,
+    title: String, source: String, creator: String? = nil, length: String? = nil,
+    artwork: URL? = nil,
     failedToName: Bool = false,
     dates: Dates? = nil, statistics: Statistics? = nil, retryName: @escaping () -> Void = {},
     @ViewBuilder transport: () -> some View = { EmptyView() },
@@ -85,7 +87,8 @@ public struct SetDetail: View {
   ) {
     self.title = title
     self.source = source
-    self.subtitle = subtitle
+    self.creator = creator
+    self.length = length
     self.artwork = artwork
     self.failedToName = failedToName
     self.dates = dates
@@ -119,6 +122,16 @@ public struct SetDetail: View {
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
+  /// The quiet line under the artist: the source, the length, then the facts.
+  /// "YouTube · 1h 59m · Added 27 Sep 2026 · 3 listens".
+  public static func metaLine(
+    source: String, length: String?, dates: Dates?, statistics: Statistics?
+  ) -> String {
+    ([source, length] + [factsLine(dates: dates, statistics: statistics)])
+      .compactMap { $0 }
+      .joined(separator: " · ")
+  }
+
   /// The line under the artwork: the source, then whatever the caller composed.
   public static func stampLine(source: String, subtitle: String?) -> String {
     [source, subtitle].compactMap { $0 }.joined(separator: " · ")
@@ -126,19 +139,21 @@ public struct SetDetail: View {
 
   public var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 0) {
+      VStack(spacing: 0) {
         // Raised off the tinted field the way an album cover sits on its page, so it takes the
         // row radius and a shadow where a listing keeps its thumbnails flat.
         Artwork(url: artwork, seed: title, size: .header)
           .clipShape(.rect(cornerRadius: Radius.row))
           .shadow(color: .black.opacity(0.3), radius: 18, y: 10)
           .padding([.horizontal, .top])
-        VStack(alignment: .leading, spacing: 24) {
+        VStack(spacing: 24) {
           header
           transport
           management
         }
-        .padding()
+        .padding(.horizontal)
+        .padding(.top, 20)
+        .padding(.bottom)
       }
     }
     // The page takes its colour from the artwork, the way a music app tints an album's page.
@@ -146,22 +161,26 @@ public struct SetDetail: View {
   }
 
   private var header: some View {
-    VStack(alignment: .leading, spacing: 6) {
+    VStack(spacing: 6) {
       Text(title)
         .font(.orbis.title)
+        .multilineTextAlignment(.center)
         // The title alone would leave a person wondering which service it came from.
         .accessibilityLabel(Self.headerLabel(title: title, source: source))
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("detail-title")
-      Text(Self.stampLine(source: source, subtitle: subtitle))
-        .font(.orbis.body)
-        .foregroundStyle(.secondary)
-      if let facts = Self.factsLine(dates: dates, statistics: statistics) {
-        Text(facts)
-          .font(.orbis.detail)
-          .foregroundStyle(.tertiary)
-          .accessibilityIdentifier("detail-facts")
+      if let creator, !creator.isEmpty {
+        Text(creator)
+          .font(.title3.weight(.semibold))
+          .foregroundStyle(Color.orbis.tint)
+          .multilineTextAlignment(.center)
       }
+      Text(Self.metaLine(source: source, length: length, dates: dates, statistics: statistics))
+        .font(.orbis.detail)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.top, 2)
+        .accessibilityIdentifier("detail-facts")
       if failedToName {
         HStack(spacing: 6) {
           Text("Orbis could not name this set.")
@@ -175,8 +194,9 @@ public struct SetDetail: View {
         .padding(.top, 4)
       }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(maxWidth: .infinity)
   }
+
 }
 
 /// The Tags on a Set, as the capsules they are everywhere else, with the way to change them at
@@ -212,7 +232,7 @@ public struct SetManagement: View {
   }
 
   public var body: some View {
-    ChipFlow(spacing: 8) {
+    ChipFlow(spacing: 8, alignment: .center) {
       ForEach(tags, id: \.self) { tag in
         TagWord(tag, category: category(tag))
       }
@@ -230,7 +250,7 @@ public struct SetManagement: View {
       .foregroundStyle(.secondary)
       .accessibilityIdentifier("detail-tags-row")
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .frame(maxWidth: .infinity)
   }
 }
 
@@ -239,7 +259,8 @@ private struct SetDetailSample: View {
     SetDetail(
       title: "CHRIS STASSY @ N:A:M:E: Birmingham 22.08.2026",
       source: "YouTube",
-      subtitle: "CHRIS STASSY · 2h 33m",
+      creator: "CHRIS STASSY",
+      length: "2h 33m",
       dates: .init(imported: "11 Sep 2026", released: "22 Aug 2026"),
       statistics: .init(listenCount: 3, finishCount: 1, lastHeard: "Thu 11 Sep"),
       management: {
