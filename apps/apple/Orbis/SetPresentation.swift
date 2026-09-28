@@ -55,6 +55,24 @@ enum SetPresentation {
     }
   }
 
+  /// What the Download control shows. The live state the watch polls leads: the Set's own state
+  /// only moves when the library is read again, so alone it stayed "queued" for the whole Download.
+  static func downloadPhase(_ downloadState: String, live: AudioState?) -> DownloadCapsule.Phase {
+    switch live?.state ?? downloadState {
+    case "queued":
+      return .queued
+    case "downloading":
+      guard let live, let total = live.bytesTotal, total > 0 else { return .downloading(nil) }
+      return .downloading(Double(live.bytesReceived) / Double(total))
+    case "failed", "canceled":
+      return .failed
+    case "ready":
+      return live == nil ? .available : .downloading(1)
+    default:
+      return .available
+    }
+  }
+
   static func tagCounts(_ sets: [SavedSet]) -> [String: Int] {
     sets.reduce(into: [:]) { counts, set in
       for tag in Set(set.tags) { counts[tag, default: 0] += 1 }

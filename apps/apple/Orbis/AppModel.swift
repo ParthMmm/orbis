@@ -563,8 +563,10 @@ final class AppModel {
     guard let state = try? await client.audioState(id) else { return }
     audioStates[id] = state
     if state.state == "ready" || state.state == "failed" {
+      // Quietly: a reload through `.loading` emptied the library for a moment, and the open Set
+      // page flashed its "gone" state before the player arrived.
+      await refreshLibraryQuietly()
       audioStates[id] = nil
-      await loadLibrary()
     }
   }
 

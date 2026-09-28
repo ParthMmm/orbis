@@ -85,27 +85,12 @@ struct SetDetailScreen: View {
       .transition(.opacity.combined(with: .scale(0.96, anchor: .top)))
     default:
       DownloadCapsule(
-        phase: downloadPhase(set),
+        phase: SetPresentation.downloadPhase(set.downloadState, live: model.audioStates[set.id]),
         start: { Task { await model.downloadAudio(set.id) } },
         cancel: { Task { await model.cancelAudioDownload(set.id) } }
       )
       .frame(maxWidth: .infinity)
       .transition(.opacity.combined(with: .scale(0.96, anchor: .top)))
-    }
-  }
-
-  private func downloadPhase(_ set: SavedSet) -> DownloadCapsule.Phase {
-    switch set.downloadState {
-    case "queued":
-      return .queued
-    case "downloading":
-      guard let progress = model.audioStates[set.id], let total = progress.bytesTotal, total > 0
-      else { return .downloading(nil) }
-      return .downloading(Double(progress.bytesReceived) / Double(total))
-    case "failed", "canceled":
-      return .failed
-    default:
-      return .available
     }
   }
 

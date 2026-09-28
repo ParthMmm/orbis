@@ -66,6 +66,24 @@ final class SetPresentationTests: XCTestCase {
     XCTAssertEqual(SetPresentation.continueListening(sets, limit: 1).map(\.id), ["newer"])
   }
 
+  func testTheDownloadControlFollowsTheLiveState() {
+    let live = { (state: String, received: Int, total: Int?) in
+      AudioState(state: state, bytesReceived: received, bytesTotal: total, format: nil)
+    }
+    // The Set still says queued; the watch already sees bytes arriving.
+    XCTAssertEqual(
+      SetPresentation.downloadPhase("queued", live: live("downloading", 42, 100)), .downloading(0.42))
+    XCTAssertEqual(
+      SetPresentation.downloadPhase("queued", live: live("downloading", 0, nil)), .downloading(nil))
+    XCTAssertEqual(SetPresentation.downloadPhase("queued", live: nil), .queued)
+    // Finished, before the library is read again: a full bar rather than a step back.
+    XCTAssertEqual(
+      SetPresentation.downloadPhase("queued", live: live("ready", 99, 99)), .downloading(1))
+    XCTAssertEqual(SetPresentation.downloadPhase("failed", live: nil), .failed)
+    XCTAssertEqual(SetPresentation.downloadPhase("canceled", live: nil), .failed)
+    XCTAssertEqual(SetPresentation.downloadPhase("none", live: nil), .available)
+  }
+
   func testTimeLeftSaysWhatRemains() throws {
     XCTAssertEqual(
       SetPresentation.timeLeft(try makeSet(playbackPositionSeconds: 2460, durationSeconds: 4500)),
