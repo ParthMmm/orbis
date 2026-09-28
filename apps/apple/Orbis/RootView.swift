@@ -72,25 +72,27 @@ struct RootView: View {
     #if os(iOS)
       .task { await uncoverWhenFirstLoadSettles() }
     #else
-      .sheet(isPresented: Binding(
-        get: { model.isConfigured && model.isEditingConnection },
-        set: { if !$0 { model.closeConnectionEditor() } }
-      )) {
+      .sheet(
+        isPresented: Binding(
+          get: { model.isConfigured && model.isEditingConnection },
+          set: { if !$0 { model.closeConnectionEditor() } }
+        )
+      ) {
         NavigationStack {
           ConnectionView(model: model, cancellable: true)
-            .toolbar {
-              ToolbarItem(placement: .cancellationAction) {
-                Button("Done") { model.closeConnectionEditor() }
-              }
-              ToolbarItem(placement: .primaryAction) {
-                Menu("More", systemImage: "ellipsis.circle") {
-                  Button("Refresh") { Task { await model.loadLibrary() } }
-                  Button("Forget this device", role: .destructive) {
-                    isConfirmingForget = true
-                  }
+          .toolbar {
+            ToolbarItem(placement: .cancellationAction) {
+              Button("Done") { model.closeConnectionEditor() }
+            }
+            ToolbarItem(placement: .primaryAction) {
+              Menu("More", systemImage: "ellipsis.circle") {
+                Button("Refresh") { Task { await model.loadLibrary() } }
+                Button("Forget this device", role: .destructive) {
+                  isConfirmingForget = true
                 }
               }
             }
+          }
         }
         .frame(minWidth: 440, minHeight: 360)
         .confirmationDialog("Forget this device?", isPresented: $isConfirmingForget) {
@@ -319,45 +321,45 @@ struct SidebarShell: View {
         }
         .accessibilityIdentifier("sidebar")
       #else
-      List {
-        ForEach(Destination.shellCases) { destination in
-          Button {
-            model.destination = destination
-          } label: {
-            HStack(spacing: 8) {
-              Label(destination.rawValue, systemImage: destination.symbol)
-              Spacer(minLength: 0)
-              // The tint alone says nothing to a person who cannot see it, so the row is marked.
-              if model.destination == destination {
-                Image(systemName: "checkmark")
-                  .font(.orbis.caption)
-                  .foregroundStyle(.secondary)
+        List {
+          ForEach(Destination.shellCases) { destination in
+            Button {
+              model.destination = destination
+            } label: {
+              HStack(spacing: 8) {
+                Label(destination.rawValue, systemImage: destination.symbol)
+                Spacer(minLength: 0)
+                // The tint alone says nothing to a person who cannot see it, so the row is marked.
+                if model.destination == destination {
+                  Image(systemName: "checkmark")
+                    .font(.orbis.caption)
+                    .foregroundStyle(.secondary)
+                }
               }
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .contentShape(Rectangle())
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
+            .buttonStyle(.plain)
+            .accessibilityAddTraits(model.destination == destination ? [.isSelected] : [])
+            .listRowBackground(
+              model.destination == destination
+                ? Color.accentColor.opacity(0.18)
+                : Color.clear
+            )
+            .accessibilityIdentifier("sidebar-\(destination.rawValue.lowercased())")
           }
-          .buttonStyle(.plain)
-          .accessibilityAddTraits(model.destination == destination ? [.isSelected] : [])
-          .listRowBackground(
-            model.destination == destination
-              ? Color.accentColor.opacity(0.18)
-              : Color.clear
-          )
-          .accessibilityIdentifier("sidebar-\(destination.rawValue.lowercased())")
-        }
-        Section("Playlists") {
-          playlistRow(nil, name: "Everything", count: model.totalCount)
-          ForEach(model.playlistItems) { playlist in
-            playlistRow(playlist.id, name: playlist.name, count: playlist.setCount)
-          }
-          if case .failed(let failure) = model.playlists {
-            playlistsErrorRow(failure)
+          Section("Playlists") {
+            playlistRow(nil, name: "Everything", count: model.totalCount)
+            ForEach(model.playlistItems) { playlist in
+              playlistRow(playlist.id, name: playlist.name, count: playlist.setCount)
+            }
+            if case .failed(let failure) = model.playlists {
+              playlistsErrorRow(failure)
+            }
           }
         }
-      }
-      .navigationTitle("Orbis")
-      .accessibilityIdentifier("sidebar")
+        .navigationTitle("Orbis")
+        .accessibilityIdentifier("sidebar")
       #endif
     } detail: {
       NavigationStack {
@@ -434,11 +436,12 @@ struct DestinationView: View {
       guard case .loaded(let sets) = model.visibleSets,
         !libraryQuery.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
       else { return model.visibleSets }
-      return .loaded(sets.filter { set in
-        set.title.localizedCaseInsensitiveContains(libraryQuery)
-          || (set.creator?.localizedCaseInsensitiveContains(libraryQuery) ?? false)
-          || set.tags.contains { $0.localizedCaseInsensitiveContains(libraryQuery) }
-      })
+      return .loaded(
+        sets.filter { set in
+          set.title.localizedCaseInsensitiveContains(libraryQuery)
+            || (set.creator?.localizedCaseInsensitiveContains(libraryQuery) ?? false)
+            || set.tags.contains { $0.localizedCaseInsensitiveContains(libraryQuery) }
+        })
     }
   #endif
 
@@ -469,11 +472,11 @@ struct DestinationView: View {
               .accessibilityIdentifier("library-no-matches")
           )
           : model.activeTag == nil
-          ? nil
-          : AnyView(
-            NoResultsState(recoverLabel: "Clear filters", recover: { model.setTagFilter(nil) })
-              .accessibilityIdentifier("library-no-matches")
-          ),
+            ? nil
+            : AnyView(
+              NoResultsState(recoverLabel: "Clear filters", recover: { model.setTagFilter(nil) })
+                .accessibilityIdentifier("library-no-matches")
+            ),
         hero: linkWaiting,
         rails: nil,
         footer: librarySearchIsActive ? "\(libraryMatchCount) sets" : libraryFooter,
@@ -945,8 +948,10 @@ struct SearchDestination: View {
   private var searchPage: some View {
     #if os(macOS)
       searchBody.sidebarPageTitle("Search")
-        .searchable(text: $model.searchQuery, placement: .toolbar,
-          prompt: "Search Sets and Playlists")
+        .searchable(
+          text: $model.searchQuery, placement: .toolbar,
+          prompt: "Search Sets and Playlists"
+        )
         .macSearchToolbarBackground(isSearching: !model.searchQuery.isEmpty)
     #else
       searchBody
@@ -1023,21 +1028,22 @@ struct SearchDestination: View {
         $0.name.localizedCaseInsensitiveContains(query)
       }
       guard !playlists.isEmpty else { return nil }
-      return AnyView(VStack(alignment: .leading, spacing: 8) {
-        Text("Playlists").font(.headline)
-        ForEach(playlists) { playlist in
-          Button {
-            model.destination = .playlists
-            model.openPlaylist(playlist.id)
-            Task { await model.loadPlaylistMembers(playlist.id) }
-          } label: {
-            PlaylistRow(playlist.name, count: playlist.setCount)
-              .frame(maxWidth: .infinity, alignment: .leading)
+      return AnyView(
+        VStack(alignment: .leading, spacing: 8) {
+          Text("Playlists").font(.headline)
+          ForEach(playlists) { playlist in
+            Button {
+              model.destination = .playlists
+              model.openPlaylist(playlist.id)
+              Task { await model.loadPlaylistMembers(playlist.id) }
+            } label: {
+              PlaylistRow(playlist.name, count: playlist.setCount)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("search-playlist-\(playlist.name)")
           }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("search-playlist-\(playlist.name)")
-        }
-      })
+        })
     #else
       nil
     #endif

@@ -145,7 +145,8 @@ final class SetPresentationTests: XCTestCase {
     let set = try JSONDecoder().decode(SavedSet.self, from: Data(json.utf8))
     XCTAssertEqual(
       SetPresentation.datesLine(set),
-      "Imported \(SetPresentation.plainDate(set.createdAt)) · Released \(SetPresentation.plainDate("2015-10-28T10:00:00.000Z"))")
+      "Imported \(SetPresentation.plainDate(set.createdAt)) · Released \(SetPresentation.plainDate("2015-10-28T10:00:00.000Z"))"
+    )
     let importedOnly = try makeSet()
     XCTAssertEqual(
       SetPresentation.datesLine(importedOnly),
