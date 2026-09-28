@@ -24,6 +24,15 @@ public struct TagListEditor: View {
   private var isFull: Bool { tags.count >= TagInput.serviceLimit }
 
   public var body: some View {
+    Group { sections }
+      // Picking a Tag you already use is a tap, not typing: it lands without raising the keyboard.
+      .sensoryFeedback(trigger: tags) { old, new in
+        new.count > old.count ? .impact(flexibility: .soft) : .selection
+      }
+      .orbisAnimation(.tagToggled, value: tags)
+  }
+
+  @ViewBuilder private var sections: some View {
     if !tags.isEmpty {
       Section("Tags") {
         ForEach(tags, id: \.self) { tag in
@@ -50,14 +59,14 @@ public struct TagListEditor: View {
         TextField("Add a Tag", text: $draft)
           .focused($isAdding)
           .submitLabel(.done)
-          .onSubmit { add(draft) }
+          .onSubmit { add(draft, keepTyping: true) }
           .autocorrectionDisabled()
           #if os(iOS)
             .textInputAutocapitalization(.never)
           #endif
           .disabled(isFull)
           .accessibilityIdentifier("tag-field")
-        Button("Add", systemImage: "plus.circle.fill") { add(draft) }
+        Button("Add", systemImage: "plus.circle.fill") { add(draft, keepTyping: true) }
           .labelStyle(.iconOnly)
           .font(.title3)
           .foregroundStyle(Color.orbis.tint)
@@ -76,7 +85,7 @@ public struct TagListEditor: View {
       Section("Your Tags") {
         ForEach(offered, id: \.self) { tag in
           Button {
-            add(tag)
+            add(tag, keepTyping: false)
           } label: {
             HStack(spacing: 12) {
               Circle()
@@ -99,8 +108,9 @@ public struct TagListEditor: View {
     }
   }
 
-  private func add(_ raw: String) {
+  private func add(_ raw: String, keepTyping: Bool) {
     tags = TagInput.adding(raw, to: tags)
+    guard keepTyping else { return }
     draft = ""
     isAdding = true
   }
