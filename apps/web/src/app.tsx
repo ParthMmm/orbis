@@ -1,4 +1,4 @@
-import type { SavedSet } from "@orbis/contracts";
+import type { Presence, SavedSet } from "@orbis/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
@@ -206,6 +206,7 @@ const LibraryView = ({
     >
   >({});
   const [reconnecting, setReconnecting] = useState(false);
+  const [presence, setPresence] = useState<Presence[]>([]);
 
   const lastReport = useRef(0);
   const client = api(session.key);
@@ -491,10 +492,19 @@ const LibraryView = ({
     let timer: ReturnType<typeof setTimeout> | undefined;
     const connect = async () => {
       try {
-        await api(session.key).events((current) => {
-          setQueue(current);
-          setReconnecting(false);
-        }, controller.signal);
+        await api(session.key).events(
+          {
+            onPresence: (current) => {
+              setPresence([...current]);
+              setReconnecting(false);
+            },
+            onQueue: (current) => {
+              setQueue(current);
+              setReconnecting(false);
+            },
+          },
+          controller.signal
+        );
       } catch (error) {
         if (controller.signal.aborted) {
           return;
@@ -1098,6 +1108,13 @@ const LibraryView = ({
                 <ul className="people-list">
                   {people.map((person) => (
                     <li key={person.id}>
+                      {presence
+                        .filter((entry) => entry.personId === person.id)
+                        .map((entry) => (
+                          <p key={entry.set.id} role="status">
+                            {person.username} is listening to {entry.set.title}
+                          </p>
+                        ))}
                       <button
                         type="button"
                         onClick={() => {
@@ -1170,6 +1187,25 @@ const LibraryView = ({
                     </ol>
                   </section>
                 ))
+              )}
+              <h2>Recent Sets</h2>
+              {friend.listens.length === 0 ? (
+                <p>No recent Sets.</p>
+              ) : (
+                <ul className="friend-list">
+                  {[
+                    ...new Map(
+                      friend.listens.map((listen) => [
+                        listen.set.id,
+                        listen.set,
+                      ])
+                    ).values(),
+                  ]
+                    .slice(0, 3)
+                    .map((set) => (
+                      <li key={set.id}>{set.title}</li>
+                    ))}
+                </ul>
               )}
               <h2>Listen History</h2>
               {friend.listens.length === 0 ? (

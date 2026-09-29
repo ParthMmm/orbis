@@ -1,4 +1,4 @@
-import type { ListeningQueue } from "@orbis/contracts";
+import type { ListeningQueue, Presence } from "@orbis/contracts";
 import { OrbisApi } from "@orbis/contracts/http-api";
 import { Effect, Stream } from "effect";
 import type { Effect as EffectType, Success } from "effect/Effect";
@@ -70,7 +70,13 @@ export const api = (key: string) => ({
     call(key, (client) => client.playlists.remove({ params: { id } })),
   download: (id: string) =>
     call(key, (client) => client.sets.requestDownload({ params: { id } })),
-  events: (onQueue: (queue: ListeningQueue) => void, signal: AbortSignal) =>
+  events: (
+    handlers: {
+      onPresence: (presence: readonly Presence[]) => void;
+      onQueue: (queue: ListeningQueue) => void;
+    },
+    signal: AbortSignal
+  ) =>
     call(
       key,
       (client) =>
@@ -80,7 +86,9 @@ export const api = (key: string) => ({
             Stream.runForEach((event) =>
               Effect.sync(() => {
                 if (event.kind === "queue") {
-                  onQueue(event.queue);
+                  handlers.onQueue(event.queue);
+                } else if (event.kind === "presence") {
+                  handlers.onPresence(event.presence);
                 }
               })
             )

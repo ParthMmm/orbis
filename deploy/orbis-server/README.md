@@ -163,6 +163,74 @@ Nothing is required for SoundCloud, which uses oEmbed. Without a key the server 
 
 `systemctl --user show -p Environment` will not show this value, because systemd reads the file at exec time. Check it by saving a Source Link with no title and reading `metadataState` in the response.
 
+## Back up the database
+
+Retained Audio downloads again, so only the database and the trust store need a copy. A nightly user timer runs `apps/server/src/backup.ts`, which writes a consistent snapshot with `VACUUM INTO` (safe while the service writes), then `rsync`s the newest 14 snapshots to a destination the Host chooses off Vanta. Set this up before the first friend key is minted.
+
+```sh
+cat > ~/.config/orbis-backup.env <<'CONF'
+ORBIS_BACKUP_DEST=user@backup-host:orbis-backups/
+CONF
+chmod 600 ~/.config/orbis-backup.env
+cp ~/orbis-service/deploy/orbis-server/orbis-backup.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now orbis-backup.timer
+systemctl --user start orbis-backup.service   # first run now
+systemctl --user list-timers orbis-backup.timer --no-pager
+```
+
+The destination needs a key-based SSH login for the service user. `devices.json` holds only key digests, but treat the copy as private because it lists every Person.
+
+### Restore
+
+Restore into a scratch directory first, and start the service against it once before trusting a backup:
+
+```sh
+mkdir -p ~/orbis-restore-test
+rsync -a user@backup-host:orbis-backups/ ~/orbis-backups-restored/
+LATEST="$(ls -1 ~/orbis-backups-restored | tail -1)"
+cp ~/orbis-backups-restored/$LATEST/{library.sqlite,devices.json} ~/orbis-restore-test/
+cd ~/orbis-service/apps/server
+ORBIS_DATA_DIR=~/orbis-restore-test ORBIS_PORT=4320 ORBIS_DEVICE_PORT=4321 \
+  "$HOME/.local/share/mise/installs/bun/1.4.1/bin/bun" src/index.ts &
+sleep 3
+curl -s -H "Authorization: Bearer $ORBIS_DEVICE_TOKEN" http://127.0.0.1:4321/sets | head -c 200
+kill %1
+```
+
+To recover for real, stop `orbis-server`, copy `library.sqlite` and `devices.json` from the chosen snapshot into `~/orbis-service-data` (keep the broken files aside), and start the unit. `apps/server/src/backup.test.ts` runs the same restore in an automated test.
+
+## Put the web address live on Funnel
+
+This makes `https://vanta.tail01d084.ts.net:10000` public (ADR 0007). Run it on Vanta only, with root, after the owner approves. Build the web client first (`bun run --filter @orbis/web build`) and note its `dist` path.
+
+```sh
+sudo tailscale serve --bg --https=10000 --set-path=/api http://127.0.0.1:4311/
+sudo tailscale serve --bg --https=10000 --set-path=/ ~/orbis-service/apps/web/dist
+sudo tailscale funnel --bg 10000
+tailscale serve status
+tailscale funnel status
+```
+
+The device listener must see `/health`, not `/api/health`. Serve may keep the mount path when it proxies, which was not verified when this was written, so the checks below decide it: the first must return 401 and the second 200. A 404 means Serve kept `/api`.
+
+```sh
+curl -s -o /dev/null -w '%{http_code}\n' https://vanta.tail01d084.ts.net:10000/api/health
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $ORBIS_DEVICE_TOKEN" \
+  https://vanta.tail01d084.ts.net:10000/api/health
+```
+
+Run both from a phone on cellular (or another network off the tailnet). `tailscale funnel status` must list only `8443` (Jellyfin) and `10000` (Orbis). The Caddy rule on `443` and the Jellyfin Funnel on `8443` stay unchanged. If the strip check fails, run `sudo tailscale serve --https=10000 off` and `sudo tailscale funnel --https=10000 off`, then fix the target.
+
+### Retire the tailnet-only rule
+
+After every native client and the Raycast extension use `https://vanta.tail01d084.ts.net:10000/api` (the Apple app and Raycast accept an address with a path), remove the old bridge and confirm:
+
+```sh
+sudo tailscale serve --https=8444 off
+tailscale serve status
+```
+
 ## Roll back
 
 ```sh

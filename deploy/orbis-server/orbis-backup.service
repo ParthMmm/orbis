@@ -1,0 +1,8 @@
+[Unit]
+Description=Orbis nightly database backup
+
+[Service]
+Type=oneshot
+# Holds ORBIS_BACKUP_DEST. Create it once; see the README.
+EnvironmentFile=%h/.config/orbis-backup.env
+ExecStart=%h/orbis-service/deploy/orbis-server/orbis-backup.sh
