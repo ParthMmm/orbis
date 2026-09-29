@@ -55,13 +55,22 @@ const call = <A, E>(
 };
 
 export const api = (key: string) => ({
+  audioState: (id: string) =>
+    call(key, (client) => client.sets.audioState({ params: { id } })),
   complete: (setId: string) =>
     call(key, (client) => client.queue.complete({ payload: { setId } })),
+  createPlaylist: (name: string) =>
+    call(key, (client) => client.playlists.create({ payload: { name } })),
+  deletePlaylist: (id: string) =>
+    call(key, (client) => client.playlists.remove({ params: { id } })),
+  download: (id: string) =>
+    call(key, (client) => client.sets.requestDownload({ params: { id } })),
   friendSets: (id: string) =>
     call(key, (client) => client.people.sets({ params: { id } })),
   grant: (id: string) =>
     call(key, (client) => client.sets.audioGrant({ params: { id } })),
   list: (query: {
+    playlistId?: string;
     q?: string;
     source?: "youtube" | "soundcloud";
     tag?: string[];
@@ -70,11 +79,37 @@ export const api = (key: string) => ({
   people: () => call(key, (client) => client.people.list()),
   play: (setId: string) =>
     call(key, (client) => client.queue.play({ payload: { setId } })),
+  playPlaylist: (playlistId: string) =>
+    call(key, (client) =>
+      client.queue.replaceWithPlaylist({ payload: { playlistId } })
+    ),
+  playlistMembers: (id: string) =>
+    call(key, (client) => client.sets.list({ query: { playlistId: id } })),
+  playlists: () => call(key, (client) => client.playlists.list()),
   position: (id: string, seconds: number) =>
     call(key, (client) =>
       client.library.setPosition({ params: { id }, payload: { seconds } })
     ),
+  queue: () => call(key, (client) => client.queue.read()),
+  queueInsert: (setId: string, placement: "next" | "end") =>
+    call(key, (client) =>
+      client.queue.insert({ payload: { placement, setId } })
+    ),
+  renamePlaylist: (id: string, name: string) =>
+    call(key, (client) =>
+      client.playlists.rename({ params: { id }, payload: { name } })
+    ),
+  replaceMembers: (id: string, setIds: string[]) =>
+    call(key, (client) =>
+      client.playlists.replaceMembers({ params: { id }, payload: { setIds } })
+    ),
+  save: (url: string) =>
+    call(key, (client) => client.sets.save({ payload: { url } })),
   tags: () => call(key, (client) => client.library.tags()),
+  updateAutoDownload: (autoDownload: boolean) =>
+    call(key, (client) =>
+      client.people.updateMe({ payload: { autoDownload } })
+    ),
   updateMe: (social: boolean) =>
     call(key, (client) => client.people.updateMe({ payload: { social } })),
 });
