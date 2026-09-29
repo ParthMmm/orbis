@@ -5,7 +5,7 @@
 //
 // Usage:
 //   node scripts/native-lanes.mjs --unit        # unit tests only
-//   node scripts/native-lanes.mjs --journeys    # UI journeys only
+//   node scripts/native-lanes.mjs --journeys    # UI journeys on two simulator clones
 //   node scripts/native-lanes.mjs               # both
 //   node scripts/native-lanes.mjs --unit --macos # unit tests on the macOS host
 //
@@ -13,6 +13,7 @@
 // --macos runs the unit tests on the macOS destination instead of the simulator.
 
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import {
   mkdirSync,
   mkdtempSync,
@@ -21,10 +22,12 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+const startedAt = performance.now();
 const root = path.resolve(import.meta.dirname, "..");
 const native = path.join(root, "apps", "apple");
 const argument = (name, fallback) => {
@@ -45,8 +48,10 @@ const shots = path.resolve(
 
 const only = [];
 // --only narrows a lane to one test, which is how a single journey is re-run after a failure
-// without paying for the other seven.
+// without running the remaining journeys.
 const onlyTest = argument("only");
+const parallelJourneys = journeysOnly && !macos && !unitOnly && !onlyTest;
+const workerCount = parallelJourneys ? 2 : 1;
 if (onlyTest) {
   only.push(`-only-testing:${onlyTest}`);
 } else if (macos || unitOnly) {
@@ -84,11 +89,23 @@ const waitForService = async (address, deadline = Date.now() + 30_000) => {
   }
 };
 
+const unusedPort = async (excluded) => {
+  const listener = createServer();
+  const listening = once(listener, "listening");
+  listener.listen(0, "127.0.0.1");
+  await listening;
+  const { port } = listener.address();
+  const closed = once(listener, "close");
+  listener.close();
+  await closed;
+  return port === excluded ? unusedPort(excluded) : port;
+};
+
 const dataDirectory = mkdtempSync(path.join(tmpdir(), "orbis-lane-"));
 const devicesPath = path.join(dataDirectory, "devices.json");
-const port = 43_000 + Math.floor(Math.random() * 2000);
+const port = await unusedPort();
 const address = `http://127.0.0.1:${port}`;
-const seedPort = port + 2000;
+const seedPort = await unusedPort(port);
 const seedAddress = `http://127.0.0.1:${seedPort}`;
 const resultBundle = path.join(native, "DerivedData", "result.xcresult");
 let server;
@@ -193,7 +210,7 @@ try {
 
   const derived = path.join(native, "DerivedData");
   rmSync(resultBundle, { force: true, recursive: true });
-  run(
+  const testOutput = run(
     [
       "xcodebuild",
       "-project",
@@ -212,6 +229,14 @@ try {
       "-resultBundlePath",
       resultBundle,
       ...only,
+      ...(parallelJourneys
+        ? [
+            "-parallel-testing-enabled",
+            "YES",
+            "-parallel-testing-worker-count",
+            String(workerCount),
+          ]
+        : []),
       "test",
     ],
     {
@@ -224,14 +249,27 @@ try {
         ORBIS_UI_TEST_SEED_ADDRESS: seedAddress,
         ORBIS_UI_TEST_TOKEN: token,
       },
-      stdio: "inherit",
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "inherit"],
     }
   );
+  process.stdout.write(testOutput);
+
+  const testWorkers = new Map();
+  for (const match of testOutput.matchAll(
+    /^Test suite '(?<suite>[^']+)' started on '(?<worker>Clone (?<number>\d+) of .+?) - .+'$/gmu
+  )) {
+    testWorkers.set(match.groups.suite, {
+      directory: `worker-${match.groups.number}`,
+      name: match.groups.worker,
+    });
+  }
 
   // The export refuses to write into a directory that already holds a manifest, so a second
   // run would fail after the tests passed.
   rmSync(shots, { force: true, recursive: true });
   mkdirSync(shots, { recursive: true });
+  writeFileSync(path.join(shots, "xcodebuild.log"), testOutput);
   run(
     [
       "xcrun",
@@ -245,26 +283,68 @@ try {
     ],
     { cwd: native }
   );
-  // The export names files by UUID. Each is renamed to the name its journey gave it, so a run's
-  // record reads the same as the last one and can be compared file by file.
   const manifest = JSON.parse(
     readFileSync(path.join(shots, "manifest.json"), "utf-8")
   );
-  for (const attachment of manifest.flatMap((test) => test.attachments)) {
-    const named = attachment.suggestedHumanReadableName.replace(
-      /_\d+_[0-9A-F-]{36}(?=\.\w+$)/u,
-      ""
-    );
-    renameSync(
-      path.join(shots, attachment.exportedFileName),
-      path.join(shots, named)
-    );
+  const workers = new Map();
+  for (const test of manifest) {
+    for (const attachment of test.attachments) {
+      const assignment = testWorkers.get(test.testIdentifier.split("/")[0]);
+      if (parallelJourneys && !assignment) {
+        throw new Error(`no simulator worker found for ${test.testIdentifier}`);
+      }
+      const worker = assignment ?? {
+        directory: "worker-1",
+        name: attachment.deviceName,
+      };
+      workers.set(worker.name, worker);
+      const named = attachment.suggestedHumanReadableName.replace(
+        /_(?<iteration>\d+)_[0-9A-F-]{36}(?=\.\w+$)/u,
+        (_suffix, iteration) => (iteration === "0" ? "" : `-${iteration}`)
+      );
+      const directory = parallelJourneys
+        ? path.join(
+            worker.directory,
+            test.testIdentifier
+              .replaceAll(/[^a-zA-Z0-9_-]+/gu, "-")
+              .replace(/-$/u, "")
+          )
+        : ".";
+      mkdirSync(path.join(shots, directory), { recursive: true });
+      const exported = path.join(directory, named);
+      renameSync(
+        path.join(shots, attachment.exportedFileName),
+        path.join(shots, exported)
+      );
+      attachment.exportedFileName = exported;
+    }
   }
+  writeFileSync(
+    path.join(shots, "manifest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`
+  );
+  const elapsedSeconds = Number(
+    ((performance.now() - startedAt) / 1000).toFixed(3)
+  );
+  writeFileSync(
+    path.join(shots, "lane.json"),
+    `${JSON.stringify(
+      {
+        elapsedSeconds,
+        requestedWorkers: workerCount,
+        simulator,
+        workers: [...workers.values()],
+      },
+      null,
+      2
+    )}\n`
+  );
   writeFileSync(
     path.join(shots, "lane.txt"),
     `service=${address}\nsimulator=${simulator}\n`
   );
   console.log(`screenshots: ${shots}`);
+  console.log(`lane completed in ${elapsedSeconds}s`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
