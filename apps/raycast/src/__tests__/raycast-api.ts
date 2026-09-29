@@ -8,6 +8,7 @@ export interface ToastSnapshot {
 
 export interface Tab {
   readonly active: boolean;
+  readonly title?: string;
   readonly url: string;
 }
 
@@ -18,6 +19,8 @@ export interface RaycastPreferences {
 
 export interface RaycastState {
   clipboard: string | undefined;
+  /** The `<title>` of the active tab in the focused window, as `getContent` reads it. */
+  focusedTitle: string | undefined;
   getTabsError: Error | null;
   preferences: RaycastPreferences;
   snapshots: ToastSnapshot[];
@@ -26,6 +29,7 @@ export interface RaycastState {
 
 export const raycast: RaycastState = {
   clipboard: undefined,
+  focusedTitle: undefined,
   getTabsError: null,
   preferences: {
     deviceToken: "device-token",
@@ -99,6 +103,10 @@ const trackToast = (options: ToastSnapshot) =>
 export const installRaycastApi = () => {
   mock.module("@raycast/api", () => ({
     BrowserExtension: {
+      getContent: () =>
+        raycast.focusedTitle === undefined
+          ? Promise.reject(new Error("No focused tab"))
+          : Promise.resolve(raycast.focusedTitle),
       getTabs: () =>
         raycast.getTabsError
           ? Promise.reject(raycast.getTabsError)
@@ -117,6 +125,7 @@ export const installRaycastApi = () => {
 
 export const resetRaycast = () => {
   raycast.clipboard = undefined;
+  raycast.focusedTitle = undefined;
   raycast.getTabsError = null;
   raycast.preferences = {
     deviceToken: "device-token",
