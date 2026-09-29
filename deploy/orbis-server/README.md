@@ -214,7 +214,7 @@ tailscale serve status
 tailscale funnel status
 ```
 
-The device listener must see `/health`, not `/api/health`. Serve may keep the mount path when it proxies, which was not verified when this was written, so the checks below decide it: the first must return 401 and the second 200. A 404 means Serve kept `/api`.
+The device listener must see `/health`, not `/api/health`. Serve strips the mount path when it proxies (verified on Vanta on 2026-09-29: a request to `/api/health` is logged as `GET /health`). The server checks the key before it routes, so the first check returns 403 on any path; only the second, which must return 200, proves the route. A 404 there means Serve kept `/api`. A 401 means the key was sent but is not enrolled.
 
 ```sh
 curl -s -o /dev/null -w '%{http_code}\n' https://vanta.tail01d084.ts.net:10000/api/health
