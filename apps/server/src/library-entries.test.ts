@@ -354,6 +354,38 @@ test("legacy Host entry migrates and two People keep separate Library state", as
     } finally {
       stillQueued.close();
     }
+    const sharedId: string = hostUnedited.json().id;
+    const sharedQueue = new Database(databasePath);
+    try {
+      sharedQueue
+        .query(
+          "INSERT INTO queue_entries (set_id, position, is_active) VALUES (?, 1, 0)"
+        )
+        .run(sharedId);
+    } finally {
+      sharedQueue.close();
+    }
+    const hostRemovedFirst = await request(app, {
+      method: "DELETE",
+      url: `/sets/${sharedId}`,
+    });
+    expect(hostRemovedFirst.statusCode).toBe(200);
+    const bRemovedLast = await request(
+      app,
+      remote("DELETE", `/sets/${sharedId}`)
+    );
+    expect(bRemovedLast.statusCode).toBe(200);
+    const hostAfterBothRemove = await request(app, {
+      method: "GET",
+      url: "/sets",
+    });
+    expect(hostAfterBothRemove.json()).toEqual({ sets: [] });
+    const hostCannotClaimShared = await request(app, {
+      method: "PATCH",
+      payload: { title: "Host claim" },
+      url: `/sets/${sharedId}/title`,
+    });
+    expect(hostCannotClaimShared.statusCode).toBe(404);
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

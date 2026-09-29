@@ -656,6 +656,12 @@ export class Library extends Context.Service<
                       eq(libraryEntries.setId, id)
                     )
                   );
+                if (personId === "host") {
+                  yield* tx
+                    .update(sets)
+                    .set({ hostRemoved: true })
+                    .where(eq(sets.id, id));
+                }
                 const remaining = yield* tx
                   .select({ personId: libraryEntries.personId })
                   .from(libraryEntries)
@@ -674,11 +680,6 @@ export class Library extends Context.Service<
                     .limit(1);
                   if (!playlist && !queue) {
                     yield* tx.delete(sets).where(eq(sets.id, id));
-                  } else if (personId === "host") {
-                    yield* tx
-                      .update(sets)
-                      .set({ hostRemoved: true })
-                      .where(eq(sets.id, id));
                   }
                 }
               })
