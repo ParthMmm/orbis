@@ -58,6 +58,11 @@ export const seedSets = async (
         seed.downloadState ?? "ready",
         SET_SECONDS + index
       );
+      database
+        .query(
+          "INSERT INTO library_entries (person_id, set_id, saved_at, title_override, tags) VALUES ('host', ?, ?, ?, '[]')"
+        )
+        .run(seed.id, CREATED_AT, `Set ${seed.id}`);
     }
   } finally {
     database.close();

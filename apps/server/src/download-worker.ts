@@ -150,6 +150,7 @@ export class DownloadWorker extends Context.Service<
                 );
                 const stored = yield* media.storeDownloaded(set.id, tmpPath);
                 const finished = yield* library.finishDownload(set.id, stored);
+                yield* library.release(set.id);
                 yield* Effect.logInfo("audio download finished").pipe(
                   Effect.annotateLogs({
                     backend,

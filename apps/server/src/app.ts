@@ -308,7 +308,13 @@ export const createApp = (
     migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
   });
   // The Database layer is one value used by every service that writes.
-  const libraryLayer = Library.layer.pipe(Layer.provide(database));
+  const libraryOptions = {
+    ...(options.audio?.audioDir ? { audioDir: options.audio.audioDir } : {}),
+    people: () => readTrustRegistry(devicesPath).store.people,
+  };
+  const libraryLayer = Library.forPersonLayer("host", libraryOptions).pipe(
+    Layer.provide(database)
+  );
   const queueSignalsLayer = QueueSignals.layer;
   const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
@@ -455,8 +461,6 @@ export const createApp = (
           .handleRaw("audioGrant", ({ params }) =>
             Effect.gen(function* grantAudio() {
               const caller = yield* SetCaller;
-              const personal = yield* Library;
-              yield* personal.find(params.id);
               const result = yield* Effect.match(audio.audioFile(params.id), {
                 onFailure: failureResponse,
                 onSuccess: () =>
@@ -1018,6 +1022,13 @@ export const createApp = (
                 const person = yield* adminCall((storePath) =>
                   removePerson(storePath, params.id)
                 );
+                const released = yield* db
+                  .all<{ readonly id: string }>(sql`
+                  SELECT set_id AS id FROM library_entries WHERE person_id = ${params.id}
+                  UNION SELECT set_id AS id FROM queue_entries WHERE person_id = ${params.id}
+                  UNION SELECT set_id AS id FROM playlist_sets INNER JOIN playlists ON playlists.id = playlist_sets.playlist_id WHERE creator_id = ${params.id}
+                `)
+                  .pipe(Effect.orDie);
                 yield* db
                   .transaction((tx) =>
                     Effect.gen(function* deleteAdminPersonRows() {
@@ -1061,6 +1072,9 @@ export const createApp = (
                         })
                     )
                   );
+                yield* Effect.forEach(released, (set) =>
+                  library.release(set.id)
+                );
                 return person;
               })
             )
@@ -1163,7 +1177,8 @@ export const createApp = (
                     onNone: () => Effect.die("Accepted access context missing"),
                     onSome: (access) => {
                       const personalLibrary = Library.forPersonLayer(
-                        access.person.id
+                        access.person.id,
+                        libraryOptions
                       ).pipe(Layer.provide(Layer.succeed(Database, db)));
                       const personalQueue = Queue.forPersonLayer(
                         access.person.id

@@ -17,18 +17,30 @@ import {
   playbackPositions,
   playlistSets,
   playlists,
-  queueEntries,
   sets,
 } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
+import type { PersonRecord } from "./identity.js";
 import {
   MAX_PLAYLISTS_PER_SET,
   MAX_SETS_PER_PLAYLIST,
 } from "./library-limits.js";
 import { LibraryPerson } from "./library-person.js";
+import { MediaStore } from "./media-store.js";
 import type { EnrichedMetadata, SourceExtras } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
+import { resolveVisibleSet } from "./visibility.js";
 import type { SourceDetails } from "./ytdlp-metadata.js";
+
+interface LibraryOptions {
+  readonly audioDir?: string;
+  readonly people?: () => readonly PersonRecord[];
+}
+
+const LibrarySettings = Context.Reference<LibraryOptions>(
+  "@orbis/LibrarySettings",
+  { defaultValue: () => ({}) }
+);
 
 type SetRow = typeof sets.$inferSelect;
 
@@ -140,6 +152,7 @@ export class Library extends Context.Service<
       id: string,
       title: string
     ) => Effect.Effect<SavedSet, LibraryError>;
+    readonly release: (id: string) => Effect.Effect<void, LibraryError>;
     readonly remove: (id: string) => Effect.Effect<SavedSet, LibraryError>;
     readonly tags: () => Effect.Effect<string[], LibraryError>;
     readonly playlists: () => Effect.Effect<Playlist[], LibraryError>;
@@ -182,7 +195,18 @@ export class Library extends Context.Service<
     Library,
     Effect.gen(function* layer() {
       const db = yield* Database;
+      const options = yield* LibrarySettings;
       const personId = yield* LibraryPerson;
+      const resolve = (id: string) =>
+        resolveVisibleSet({
+          id,
+          personId,
+          people: options.people?.() ?? [],
+        }).pipe(Effect.provideService(Database, db));
+      const release = (id: string) =>
+        MediaStore.release(id, options).pipe(
+          Effect.provideService(Database, db)
+        );
 
       const entryFor = (setId: string) =>
         db
@@ -472,7 +496,10 @@ export class Library extends Context.Service<
                 .from(sets)
                 .innerJoin(playlistSets, eq(playlistSets.setId, sets.id))
                 .where(
-                  and(...conditions, eq(playlistSets.playlistId, playlistId))
+                  and(
+                    ...conditions.slice(1),
+                    eq(playlistSets.playlistId, playlistId)
+                  )
                 )
                 .orderBy(asc(playlistSets.position));
               return yield* Effect.forEach((row: (typeof rows)[number]) =>
@@ -548,7 +575,7 @@ export class Library extends Context.Service<
       );
 
       const find = Effect.fn("Library.find")((id: string) =>
-        execute(findSavedSet(id))
+        execute(resolve(id).pipe(Effect.flatMap((row) => hydrateSet(row))))
       );
 
       // One query for a whole Listening Queue, rather than a find per entry. The order comes from
@@ -559,17 +586,8 @@ export class Library extends Context.Service<
             if (ids.length === 0) {
               return [];
             }
-            const rows = yield* db
-              .select()
-              .from(sets)
-              .where(inArray(sets.id, [...ids]));
-            const found = new Map(rows.map((row) => [row.id, row]));
-            const ordered = ids.flatMap((id) => {
-              const row = found.get(id);
-              return row ? [row] : [];
-            });
-            return yield* Effect.forEach((row: SetRow) => hydrateSet(row))(
-              ordered
+            return yield* Effect.forEach(ids, (id) =>
+              resolve(id).pipe(Effect.flatMap((row) => hydrateSet(row)))
             );
           })
         )
@@ -582,10 +600,7 @@ export class Library extends Context.Service<
         (id: string, seconds: number) =>
           execute(
             Effect.gen(function* setPlaybackPositionEffect() {
-              const [current] = yield* findRow(id);
-              if (!current) {
-                return yield* Effect.fail(setNotFound());
-              }
+              const current = yield* resolve(id);
               const wanted = Math.max(seconds, 0);
               const bounded =
                 current.durationSeconds === null
@@ -705,38 +720,9 @@ export class Library extends Context.Service<
                     .set({ hostRemoved: true })
                     .where(eq(sets.id, id));
                 }
-                const remaining = yield* tx
-                  .select({ personId: libraryEntries.personId })
-                  .from(libraryEntries)
-                  .where(eq(libraryEntries.setId, id))
-                  .limit(1);
-                if (remaining.length === 0) {
-                  const [playlist] = yield* tx
-                    .select({ setId: playlistSets.setId })
-                    .from(playlistSets)
-                    .where(eq(playlistSets.setId, id))
-                    .limit(1);
-                  const [queue] = yield* tx
-                    .select({ setId: queueEntries.setId })
-                    .from(queueEntries)
-                    .where(eq(queueEntries.setId, id))
-                    .limit(1);
-                  const [position] = yield* tx
-                    .select({ setId: playbackPositions.setId })
-                    .from(playbackPositions)
-                    .where(eq(playbackPositions.setId, id))
-                    .limit(1);
-                  const [listen] = yield* tx
-                    .select({ setId: listens.setId })
-                    .from(listens)
-                    .where(eq(listens.setId, id))
-                    .limit(1);
-                  if (!playlist && !queue && !position && !listen) {
-                    yield* tx.delete(sets).where(eq(sets.id, id));
-                  }
-                }
               })
             );
+            yield* release(id);
             return saved;
           })
         )
@@ -1110,18 +1096,21 @@ export class Library extends Context.Service<
             if (!row) {
               return yield* Effect.fail(playlistNotFound());
             }
-            yield* db.transaction((tx) =>
+            const removed = yield* db.transaction((tx) =>
               Effect.gen(function* deletePlaylistTransaction() {
-                yield* tx
+                const removed = yield* tx
                   .delete(playlistSets)
-                  .where(eq(playlistSets.playlistId, id));
+                  .where(eq(playlistSets.playlistId, id))
+                  .returning({ setId: playlistSets.setId });
                 yield* tx
                   .delete(playlists)
                   .where(
                     and(eq(playlists.id, id), eq(playlists.creatorId, personId))
                   );
+                return removed;
               })
             );
+            yield* Effect.forEach(removed, (set) => release(set.setId));
             return row;
           })
         )
@@ -1141,8 +1130,8 @@ export class Library extends Context.Service<
               if (!owned) {
                 return yield* Effect.fail(playlistNotFound());
               }
-              yield* Effect.forEach(ensureEntry)(setIds);
-              yield* db.transaction((tx) =>
+              yield* Effect.forEach(resolve)(setIds);
+              const removed = yield* db.transaction((tx) =>
                 Effect.gen(function* setPlaylistMembersTransaction() {
                   const playlist = yield* tx
                     .select({ id: playlists.id })
@@ -1223,8 +1212,12 @@ export class Library extends Context.Service<
                       }))
                     );
                   }
+                  return currentRows.filter(
+                    (row) => !setIds.includes(row.setId)
+                  );
                 })
               );
+              yield* Effect.forEach(removed, (set) => release(set.setId));
               return yield* list({ playlistId: id });
             })
           )
@@ -1352,6 +1345,7 @@ export class Library extends Context.Service<
                 }
               })
             );
+            yield* release(setId);
             return yield* findSavedSet(setId);
           })
         )
@@ -1373,6 +1367,7 @@ export class Library extends Context.Service<
         recordDetailsFailure,
         recordEnrichment,
         recordEnrichmentFailure,
+        release,
         remove,
         renamePlaylist,
         resetStuckDownloads,
@@ -1391,9 +1386,10 @@ export class Library extends Context.Service<
     Layer.provide(Layer.succeed(LibraryPerson, "host"))
   );
 
-  static forPersonLayer(personId: string) {
+  static forPersonLayer(personId: string, options: LibraryOptions = {}) {
     return Layer.fresh(Library.scopedLayer).pipe(
-      Layer.provide(Layer.succeed(LibraryPerson, personId))
+      Layer.provide(Layer.succeed(LibraryPerson, personId)),
+      Layer.provide(Layer.succeed(LibrarySettings, options))
     );
   }
 }

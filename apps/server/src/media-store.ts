@@ -1,8 +1,11 @@
 import { mkdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
+import { eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
+import { Database } from "./db/database.js";
+import { downloadJobs, sets } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 
 export interface MediaStoreOptions {
@@ -73,6 +76,57 @@ export class MediaStore extends Context.Service<
     ) => Effect.Effect<MediaFile, LibraryError>;
   }
 >()("@orbis/MediaStore") {
+  static release(id: string, options: MediaStoreOptions = {}) {
+    return Effect.gen(function* releaseAudio() {
+      const db = yield* Database;
+      yield* db.transaction((tx) =>
+        Effect.gen(function* releaseUnreferencedAudio() {
+          const [reference] = yield* tx.all<{ readonly present: number }>(sql`
+          SELECT 1 AS present FROM library_entries WHERE set_id = ${id}
+          UNION ALL SELECT 1 AS present FROM playlist_sets WHERE set_id = ${id}
+          UNION ALL SELECT 1 AS present FROM queue_entries WHERE set_id = ${id}
+          LIMIT 1
+        `);
+          if (reference) {
+            return;
+          }
+          const directory = options.audioDir ?? path.join(".", "audio");
+          yield* Effect.tryPromise({
+            try: () =>
+              Promise.all(
+                ["ogg", "mp3", "m4a"].map((suffix) =>
+                  rm(path.join(directory, `${id}.${suffix}`), { force: true })
+                )
+              ),
+            catch: () =>
+              new LibraryError({
+                message: "Could not release audio.",
+                statusCode: 500,
+              }),
+          });
+          yield* tx
+            .update(sets)
+            .set({
+              downloadState: "none",
+              retainedAudioBytes: null,
+              retainedAudioFormat: null,
+            })
+            .where(eq(sets.id, id));
+          yield* tx.delete(downloadJobs).where(eq(downloadJobs.setId, id));
+        })
+      );
+    }).pipe(
+      Effect.mapError((error) =>
+        error instanceof LibraryError
+          ? error
+          : new LibraryError({
+              message: "Could not release audio.",
+              statusCode: 500,
+            })
+      )
+    );
+  }
+
   static layer(options: MediaStoreOptions = {}): Layer.Layer<MediaStore> {
     const audioDir = options.audioDir ?? path.join(".", "audio");
     const ffprobePath = options.ffprobePath ?? "ffprobe";
