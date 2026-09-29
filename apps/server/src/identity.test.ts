@@ -7,7 +7,7 @@ import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
 import { request } from "./test-http.js";
 
-const TAILNET_HOST = "vanta.tail01d084.ts.net";
+const TAILNET_HOST = "vanta.example.ts.net";
 
 const withTrustStore = async (
   devices: readonly { id: string; label: string; token: string }[]
@@ -225,7 +225,7 @@ test("rejects a browser origin even when it carries a paired token", async () =>
     const fromTailnet = await request(app, {
       headers: {
         authorization: "Bearer token-for-iphone",
-        origin: "https://vanta.tail01d084.ts.net",
+        origin: "https://vanta.example.ts.net",
       },
       host: TAILNET_HOST,
       method: "GET",

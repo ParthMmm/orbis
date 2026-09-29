@@ -4,7 +4,7 @@ The API runs as a systemd user service that binds loopback only. Tailscale Serve
 
 ## Why a user service and a Serve bridge
 
-The server binds `127.0.0.1` only, so nothing on the tailnet or the internet can reach it directly. `tailscale serve` terminates TLS for `vanta.tail01d084.ts.net` and proxies to a loopback port, which gives the native clients a trusted certificate without an App Transport Security exception and without publishing anything.
+The server binds `127.0.0.1` only, so nothing on the tailnet or the internet can reach it directly. `tailscale serve` terminates TLS for `vanta.example.ts.net` and proxies to a loopback port, which gives the native clients a trusted certificate without an App Transport Security exception and without publishing anything.
 
 The service runs two loopback listeners over one database and one trust store:
 
@@ -108,7 +108,7 @@ The Serve rule must read `tailnet only` and must target the device port 4311. Th
 
 **Port 443 is not available on this host.** Caddy runs as a container bound directly to the tailnet address on `443`, so `tailscale serve` cannot bind there. The failure is silent. `tailscale serve` prints `Serve started and running in the background`, and then `tailscale serve status` does not list the rule at all, because Tailscale drops a mapping it cannot bind. A client that asks for the bare hostname therefore reaches whatever Caddy is serving and gets that application's HTML, not a connection error and not a 403.
 
-Orbis stays at `https://vanta.tail01d084.ts.net:8444`. A client must be given that address with the port. Port 443 stays with Caddy. Jellyfin's Funnel stays on `8443`.
+Orbis stays at `https://vanta.example.ts.net:8444`. A client must be given that address with the port. Port 443 stays with Caddy. Jellyfin's Funnel stays on `8443`.
 
 ## Cut over Serve to the device listener
 
@@ -126,7 +126,7 @@ tailscale serve status
 
 ```sh
 curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
-  -H 'Host: localhost:4310' https://vanta.tail01d084.ts.net:8444/health
+  -H 'Host: localhost:4310' https://vanta.example.ts.net:8444/health
 ```
 
 The expected result after cutover is 403, never 200. A normal request with no token must also return 403. An invalid token must return 401. A paired device must return 200; use the existing secret-injection mechanism (`$ORBIS_DEVICE_TOKEN`) and do not echo the token, add it to shell history, or save response payloads. If no safe injection mechanism is available, stop rather than invent one.
@@ -136,11 +136,11 @@ If validation fails, disable only the Orbis Serve rule (`sudo tailscale serve --
 ## Check from another tailnet machine
 
 ```sh
-curl -s -o /dev/null -w '%{http_code}\n' https://vanta.tail01d084.ts.net:8444/health
+curl -s -o /dev/null -w '%{http_code}\n' https://vanta.example.ts.net:8444/health
 # 403, because there is no device token
 
 curl -s -H "Authorization: Bearer $ORBIS_DEVICE_TOKEN" \
-  https://vanta.tail01d084.ts.net:8444/health
+  https://vanta.example.ts.net:8444/health
 # {"status":"ok"}
 ```
 

@@ -23,11 +23,11 @@ final class OrbisFailureTests: XCTestCase {
   /// The person reading this has an address that answers with a web page, and the useful thing
   /// to say is that the port is probably missing, not that the answer was unreadable.
   func testAWebPagePointsAtThePort() {
-    let failure = OrbisError.notOrbis.failure(at: URL(string: "https://vanta.tail01d084.ts.net"))
+    let failure = OrbisError.notOrbis.failure(at: URL(string: "https://vanta.example.ts.net"))
     XCTAssertEqual(failure.title, "That address is a web page, not Orbis")
     XCTAssertTrue(failure.message.localizedCaseInsensitiveContains("port"))
     XCTAssertFalse(failure.isRetryable, "the same address will answer the same way")
-    XCTAssertEqual(failure.address, "https://vanta.tail01d084.ts.net")
+    XCTAssertEqual(failure.address, "https://vanta.example.ts.net")
   }
 
   func testAnUnreachableServiceOffersARetry() {

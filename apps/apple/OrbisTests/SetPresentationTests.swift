@@ -132,7 +132,7 @@ final class SetPresentationTests: XCTestCase {
   func testDisplayURLCarriesNoSchemeOrWWW() {
     XCTAssertEqual(SetPresentation.displayURL("https://www.youtube.com/watch?v=x"), "youtube.com/watch?v=x")
     XCTAssertEqual(SetPresentation.displayURL("http://soundcloud.com/a/b"), "soundcloud.com/a/b")
-    XCTAssertEqual(SetPresentation.displayURL("https://vanta.tail01d084.ts.net/sets"), "vanta.tail01d084.ts.net/sets")
+    XCTAssertEqual(SetPresentation.displayURL("https://vanta.example.ts.net/sets"), "vanta.example.ts.net/sets")
   }
 
   func testTagColourIsStableAndIndependentOfOtherTags() throws {
