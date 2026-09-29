@@ -1,9 +1,25 @@
 import { expect, test } from "bun:test";
 
-import { AudioStateSchema, SavedSetSchema } from "@orbis/contracts/http-api";
+import {
+  AudioStateSchema,
+  PlaylistSchema,
+  SavedSetSchema,
+} from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
 import { createApp } from "./app.js";
+
+type PlaylistRequestBody =
+  | { name: string }
+  | { setIds: string[] }
+  | { playlistIds: string[] }
+  | { title: string; url: string };
+
+const json = (method: string, body: PlaylistRequestBody): RequestInit => ({
+  body: JSON.stringify(body),
+  headers: { "content-type": "application/json" },
+  method,
+});
 
 test("the Sets contract decodes live HTTP responses", async () => {
   const app = createApp();
@@ -66,6 +82,82 @@ test("the Sets contract decodes live HTTP responses", async () => {
     expect(
       Schema.decodeUnknownSync(SavedSetSchema)(await removedResponse.json()).id
     ).toBe(saved.id);
+  } finally {
+    await app.dispose();
+  }
+});
+
+test("the Playlist contract decodes live HTTP responses", async () => {
+  const app = createApp();
+  const send = (path: string, init?: RequestInit) =>
+    app.handler(new Request(`http://localhost${path}`, init));
+  try {
+    const setResponse = await send(
+      "/sets",
+      json("POST", {
+        title: "Playlist set",
+        url: "https://youtu.be/abcdefghijk",
+      })
+    );
+    const set = Schema.decodeUnknownSync(SavedSetSchema)(
+      await setResponse.json()
+    );
+
+    const createdResponse = await send(
+      "/playlists",
+      json("POST", { name: "First" })
+    );
+    expect(createdResponse.status).toBe(201);
+    const playlist = Schema.decodeUnknownSync(PlaylistSchema)(
+      await createdResponse.json()
+    );
+
+    const listedResponse = await send("/playlists");
+    expect(listedResponse.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(
+        Schema.Struct({ playlists: Schema.Array(PlaylistSchema) })
+      )(await listedResponse.json()).playlists.map((item) => item.id)
+    ).toEqual([playlist.id]);
+
+    const membersResponse = await send(
+      `/playlists/${playlist.id}/sets`,
+      json("PUT", { setIds: [set.id] })
+    );
+    expect(membersResponse.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(
+        Schema.Struct({ sets: Schema.Array(SavedSetSchema) })
+      )(await membersResponse.json()).sets.map((item) => item.id)
+    ).toEqual([set.id]);
+
+    const membershipResponse = await send(
+      `/sets/${set.id}/playlists`,
+      json("PUT", { playlistIds: [playlist.id] })
+    );
+    expect(membershipResponse.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(SavedSetSchema)(await membershipResponse.json())
+        .playlistIds
+    ).toEqual([playlist.id]);
+
+    const renamedResponse = await send(
+      `/playlists/${playlist.id}`,
+      json("PATCH", { name: "Renamed" })
+    );
+    expect(renamedResponse.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(PlaylistSchema)(await renamedResponse.json())
+        .name
+    ).toBe("Renamed");
+
+    const removedResponse = await send(`/playlists/${playlist.id}`, {
+      method: "DELETE",
+    });
+    expect(removedResponse.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(PlaylistSchema)(await removedResponse.json()).id
+    ).toBe(playlist.id);
   } finally {
     await app.dispose();
   }
