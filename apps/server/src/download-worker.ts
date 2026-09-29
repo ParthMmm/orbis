@@ -76,6 +76,35 @@ const fetchWithFallback = (
   );
 };
 
+/** Fetches one Source Link through Cobalt into `tmpPath`. The canary runs this same path. */
+export const fetchViaCobalt = Effect.fn("fetchViaCobalt")(function* viaCobalt(
+  cobalt: typeof Cobalt.Service,
+  media: typeof MediaStore.Service,
+  url: string,
+  tmpPath: string,
+  onProgress: (received: number, total: number | null) => void,
+  signal: AbortSignal
+) {
+  const tunnelUrl = yield* cobalt.requestTunnel(url, signal);
+  const response = yield* cobalt.openTunnel(tunnelUrl, signal);
+  yield* Effect.logInfo("cobalt tunnel opened").pipe(
+    Effect.annotateLogs({
+      contentLength: response.headers.get("content-length") ?? "none",
+      status: response.status,
+    })
+  );
+  yield* media.streamResponse(response, tmpPath, onProgress, signal);
+  // Cobalt can answer a YouTube tunnel with 200 and no bytes.
+  if (Bun.file(tmpPath).size === 0) {
+    return yield* Effect.fail(
+      new LibraryError({
+        message: "Cobalt sent an empty stream.",
+        statusCode: 500,
+      })
+    );
+  }
+});
+
 export class DownloadWorker extends Context.Service<
   DownloadWorker,
   {
@@ -138,38 +167,14 @@ export class DownloadWorker extends Context.Service<
                 const onProgress = (received: number, total: number | null) => {
                   progress.set(set.id, { received, total });
                 };
-                const fetchCobalt = Effect.gen(function* viaCobalt() {
-                  const tunnelUrl = yield* cobalt.requestTunnel(
-                    set.url,
-                    abort.signal
-                  );
-                  const response = yield* cobalt.openTunnel(
-                    tunnelUrl,
-                    abort.signal
-                  );
-                  yield* Effect.logInfo("cobalt tunnel opened").pipe(
-                    Effect.annotateLogs({
-                      contentLength:
-                        response.headers.get("content-length") ?? "none",
-                      status: response.status,
-                    })
-                  );
-                  yield* media.streamResponse(
-                    response,
-                    tmpPath,
-                    onProgress,
-                    abort.signal
-                  );
-                  // Cobalt can answer a YouTube tunnel with 200 and no bytes.
-                  if (Bun.file(tmpPath).size === 0) {
-                    return yield* Effect.fail(
-                      new LibraryError({
-                        message: "Cobalt sent an empty stream.",
-                        statusCode: 500,
-                      })
-                    );
-                  }
-                });
+                const fetchCobalt = fetchViaCobalt(
+                  cobalt,
+                  media,
+                  set.url,
+                  tmpPath,
+                  onProgress,
+                  abort.signal
+                );
                 const backends = backendOrder(set.source).filter(configured);
                 const backend = yield* fetchWithFallback(
                   backends.map((name) => ({

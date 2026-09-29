@@ -1,0 +1,14 @@
+[Unit]
+Description=Orbis download canary
+After=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=%h/orbis-service/apps/server
+Environment=ORBIS_DATA_DIR=%h/orbis-service-data
+# The same provider settings as the service: Cobalt's URL and key.
+EnvironmentFile=%h/orbis/apps/server/.env.local
+Environment=ORBIS_YTDLP_BIN=%h/.local/bin/yt-dlp
+# yt-dlp needs Deno, which uv installs beside it.
+Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+ExecStart=%h/.local/share/mise/installs/bun/1.4.1/bin/bun src/canary.ts

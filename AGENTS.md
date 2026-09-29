@@ -47,3 +47,7 @@ Three tools, quietest first:
 Before driving a real build by hand, read `docs/agents/ui-verification.md`. It records the traps that cost time or produce a wrong conclusion: choosing the platform and session, ref lifetime, and the system alerts that make a screenshot unusable as evidence.
 
 - If using XcodeBuildMCP, use the installed XcodeBuildMCP skill before calling XcodeBuildMCP tools.
+
+## Diagnosing the service on Vanta
+
+Before diagnosing a failed download or a service fault on Vanta, read "Where to look when a download fails" in `deploy/orbis-server/README.md`. On Vanta the checkout is `~/Developer/orbis-service` and the data is `~/Developer/orbis-service-data`, so the nightly download canary's latest result is `~/Developer/orbis-service-data/canary/last.json`.
