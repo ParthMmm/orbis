@@ -109,8 +109,8 @@ test("migrates Host playback and keeps two People independent", async () => {
         },
       ],
       people: [
-        { id: "host", removed: false, username: "host" },
-        { id: "b", removed: false, username: "b" },
+        { id: "host", removed: false, social: true, username: "host" },
+        { id: "b", removed: false, social: true, username: "b" },
       ],
       version: 2,
     })

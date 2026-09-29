@@ -127,23 +127,30 @@ export class Queue extends Context.Service<
       // transaction, and positions stay consecutive instead of drifting into gaps that need
       // renumbering later.
       const writeQueue = (ids: readonly string[], activeSetId: string | null) =>
-        db.transaction((tx) =>
-          Effect.gen(function* writeQueueTransaction() {
-            yield* tx
-              .delete(queueEntries)
-              .where(eq(queueEntries.personId, personId));
-            if (ids.length > 0) {
-              yield* tx.insert(queueEntries).values(
-                ids.map((setId, position) => ({
-                  isActive: setId === activeSetId,
-                  personId,
-                  position,
-                  setId,
-                }))
-              );
-            }
-          })
-        );
+        Effect.gen(function* replaceEntries() {
+          const previous = yield* order();
+          yield* db.transaction((tx) =>
+            Effect.gen(function* writeQueueTransaction() {
+              yield* tx
+                .delete(queueEntries)
+                .where(eq(queueEntries.personId, personId));
+              if (ids.length > 0) {
+                yield* tx.insert(queueEntries).values(
+                  ids.map((setId, position) => ({
+                    isActive: setId === activeSetId,
+                    personId,
+                    position,
+                    setId,
+                  }))
+                );
+              }
+            })
+          );
+          yield* Effect.forEach(
+            previous.filter((row) => !ids.includes(row.setId)),
+            (row) => library.release(row.setId)
+          );
+        });
 
       // The one check that keeps an unplayable Set out of the queue. A Playlist is filtered
       // instead, because a Playlist is not wrong to play just because one member has no audio.
@@ -244,6 +251,7 @@ export class Queue extends Context.Service<
           }
           const ids = rows.map((row) => row.setId);
           const nextActive = ids[at + 1] ?? null;
+          yield* library.setPlaybackPosition(id, 0);
           yield* execute(
             writeQueue(
               ids.filter((setId) => setId !== id),
@@ -251,8 +259,6 @@ export class Queue extends Context.Service<
             )
           );
           yield* stats.recordFinish(id);
-          // A finished Set starts from the beginning next time.
-          yield* library.setPlaybackPosition(id, 0);
           // The Set that takes over was not being listened to until now, so it opens its own
           // Listen. An empty queue opens nothing, and playback stops.
           if (nextActive !== null) {

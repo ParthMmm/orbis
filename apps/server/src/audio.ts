@@ -126,9 +126,9 @@ export class Audio extends Context.Service<
         const cancelDownload = Effect.fn("Audio.cancelDownload")(
           function* cancelDownload(id: string) {
             const library = yield* Library;
+            const canceled = yield* library.cancelDownload(id);
             worker.abort(id);
             yield* media.removeFiles(id);
-            const canceled = yield* library.cancelDownload(id);
             yield* Effect.logInfo("audio download canceled").pipe(
               Effect.annotateLogs({ set: id, state: canceled.downloadState })
             );
