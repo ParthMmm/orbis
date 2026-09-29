@@ -113,8 +113,7 @@ export class Ytdlp extends Context.Service<
           signal: AbortSignal,
           cookies?: string
         ) => {
-          // yt-dlp treats a trailing `.part` as its own suffix and writes `x.part` to `x`, so
-          // it writes beside the destination and the file moves into place once it succeeds.
+          // yt-dlp strips a trailing `.part` from `-o`, so it writes here and the file moves after.
           const output = `${destination}.ytdl`;
           return Effect.tryPromise({
             catch: () =>
