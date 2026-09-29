@@ -165,7 +165,7 @@ Nothing is required for SoundCloud, which uses oEmbed. Without a key the server 
 
 ## Back up the database
 
-Retained Audio downloads again, so only the database and the trust store need a copy. A nightly user timer runs `apps/server/src/backup.ts`, which writes a consistent snapshot with `VACUUM INTO` (safe while the service writes), then `rsync`s the newest 14 snapshots to a destination the Host chooses off Vanta. Set this up before the first friend key is minted.
+Retained Audio downloads again, so only the database and the trust store need a copy. A nightly user timer runs `apps/server/src/backup.ts`, which writes a consistent snapshot with `VACUUM INTO` (safe while the service writes), then `rsync`s the newest 14 snapshots to a destination the Host chooses. Prefer a different disk or host from the data directory. Set this up before the first friend key is minted.
 
 ```sh
 cat > ~/.config/orbis-backup.env <<'CONF'
@@ -179,7 +179,9 @@ systemctl --user start orbis-backup.service   # first run now
 systemctl --user list-timers orbis-backup.timer --no-pager
 ```
 
-The destination needs a key-based SSH login for the service user. `devices.json` holds only key digests, but treat the copy as private because it lists every Person.
+The script runs from the checkout that holds it. When the checkout or the data directory is not at the default path, set `ORBIS_DATA_DIR` in `~/.config/orbis-backup.env` and edit the `ExecStart` path in the installed `orbis-backup.service`, as for `orbis-server.service`.
+
+A remote destination needs a key-based SSH login for the service user. `devices.json` holds only key digests, but treat the copy as private because it lists every Person.
 
 ### Restore
 
