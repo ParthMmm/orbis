@@ -23,6 +23,24 @@ struct LaneService {
     let title: String
   }
 
+  struct AudioState: Codable {
+    let state: String
+    let bytesReceived: Int
+    let bytesTotal: Int?
+    let format: String?
+
+    var hasProgress: Bool {
+      state == "downloading" && bytesReceived > 0 && bytesReceived < (bytesTotal ?? 0)
+    }
+  }
+
+  struct DownloadObservation: Encodable {
+    let phase: String
+    let observedAt: Date
+    let setId: String
+    let audio: AudioState
+  }
+
   struct Playlist: Decodable {
     let id: String
     let name: String
@@ -37,8 +55,27 @@ struct LaneService {
 
   func saveReadySet(title: String, url: String) throws -> Set {
     let saved = try saveSet(title: title, url: url)
+    try seed("ready-audio/\(saved.id)")
+    return saved
+  }
+
+  func saveSlowDownloadSet(title: String, url: String) throws -> Set {
+    let saved = try saveSet(title: title, url: url)
+    try seed("slow-download/\(saved.id)")
+    return saved
+  }
+
+  func finishSlowDownload(_ id: String) throws {
+    try seed("finish-download/\(id)")
+  }
+
+  func audioState(_ id: String) throws -> AudioState {
+    try send("GET", "sets/\(id)/audio/state", nil)
+  }
+
+  private func seed(_ path: String) throws {
     guard let seedAddress = ProcessInfo.processInfo.environment["ORBIS_UI_TEST_SEED_ADDRESS"],
-      let endpoint = URL(string: "\(seedAddress)/ready-audio/\(saved.id)")
+      let endpoint = URL(string: "\(seedAddress)/\(path)")
     else {
       throw URLError(.badURL)
     }
@@ -53,7 +90,6 @@ struct LaneService {
     guard done.wait(timeout: .now() + 20) == .success, status == 204 else {
       throw URLError(.badServerResponse)
     }
-    return saved
   }
 
   func createPlaylist(named name: String) throws -> Playlist {
