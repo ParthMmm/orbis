@@ -21,13 +21,20 @@ const Samples = Schema.Struct({
   me: Schema.Struct({
     autoDownload: Schema.Boolean,
     id: Schema.String,
+    social: Schema.Boolean,
     username: Schema.String,
+  }),
+  people: Schema.Struct({
+    people: Schema.Array(
+      Schema.Struct({ id: Schema.String, username: Schema.String })
+    ),
   }),
   playlist: PlaylistSchema,
   playlists: Schema.Struct({ playlists: Schema.Array(PlaylistSchema) }),
   queue: Schema.Struct({ queue: ListeningQueueSchema }),
   saveResult: SaveSetResultSchema,
   savedSet: SavedSetSchema,
+  socialFilters: Schema.Struct({ appear: Schema.Boolean, see: Schema.Boolean }),
   tags: Schema.Struct({ tags: Schema.Array(Schema.String) }),
 });
 const samples = Schema.decodeUnknownSync(Samples)(
@@ -95,6 +102,15 @@ const sampleKeyFor = (operationId: string): keyof typeof samples => {
     return "tags";
   }
   if (operationId.startsWith("people.")) {
+    if (operationId === "people.list") {
+      return "people";
+    }
+    if (operationId === "people.filters") {
+      return "socialFilters";
+    }
+    if (operationId === "people.sets") {
+      return "library";
+    }
     return "me";
   }
   if (operationId === "system.health") {
@@ -155,7 +171,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(28);
+    expect(checked).toBe(31);
   } finally {
     await app.dispose();
   }

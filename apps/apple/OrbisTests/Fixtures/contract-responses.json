@@ -42,8 +42,11 @@
   "me": {
     "autoDownload": true,
     "id": "host",
+    "social": false,
     "username": "host"
   },
+  "people": { "people": [] },
+  "socialFilters": { "appear": true, "see": true },
   "playlist": {
     "createdAt": "2026-09-29T06:59:45.382Z",
     "id": "b31eb1ab-d124-45bb-858e-8592e9ec15a3",

@@ -156,6 +156,7 @@ test("admin keys manage People and revoke all of a removed Person's data", async
     expect(await body(app, key.token, "GET", "/me")).toEqual({
       ...person,
       autoDownload: true,
+      social: false,
     });
     const keys = await body(
       app,

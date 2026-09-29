@@ -143,6 +143,12 @@ const LibraryView = ({
 }) => {
   const [sets, setSets] = useState<SavedSet[]>([]);
   const [tags, setTags] = useState<string[]>([]);
+  const [social, setSocial] = useState(false);
+  const [people, setPeople] = useState<{ id: string; username: string }[]>([]);
+  const [friend, setFriend] = useState<{
+    username: string;
+    sets: SavedSet[];
+  } | null>(null);
   const [query, setQuery] = useState("");
   const [source, setSource] = useState<"" | "youtube" | "soundcloud">("");
   const [tag, setTag] = useState("");
@@ -183,12 +189,19 @@ const LibraryView = ({
       if (tag) {
         filters.tag = [tag];
       }
-      const [library, tagResponse] = await Promise.all([
+      const [library, tagResponse, person, visiblePeople] = await Promise.all([
         api(session.key).list(filters),
         api(session.key).tags(),
+        api(session.key).me(),
+        api(session.key).people(),
       ]);
       setSets(library.sets);
       setTags([...tagResponse.tags]);
+      setSocial(person.social);
+      setPeople([...visiblePeople.people]);
+      if (!person.social) {
+        setFriend(null);
+      }
     } catch (error) {
       if (error instanceof Error) {
         handleError(error, "Orbis could not load your Library. Try again.");
@@ -264,6 +277,37 @@ const LibraryView = ({
       }
     } finally {
       setRetryingAudio(false);
+    }
+  };
+
+  const changeSocial = async (enabled: boolean) => {
+    setError("");
+    setSocial(enabled);
+    try {
+      const person = await client.updateMe(enabled);
+      setSocial(person.social);
+      if (!person.social) {
+        setFriend(null);
+      }
+      const visible = await client.people();
+      setPeople([...visible.people]);
+    } catch (error) {
+      setSocial(!enabled);
+      if (error instanceof Error) {
+        handleError(error, "Could not change your Social setting.");
+      }
+    }
+  };
+
+  const openFriend = async (person: { id: string; username: string }) => {
+    setError("");
+    try {
+      const library = await client.friendSets(person.id);
+      setFriend({ sets: library.sets, username: person.username });
+    } catch (error) {
+      if (error instanceof Error) {
+        handleError(error, "Could not open this Library.");
+      }
     }
   };
 
@@ -344,6 +388,55 @@ const LibraryView = ({
             ? "Loading…"
             : `${sets.length} ${sets.length === 1 ? "Set" : "Sets"}`}
         </p>
+        <section className="social-panel" aria-label="People">
+          <label className="social-switch">
+            <input
+              type="checkbox"
+              checked={social}
+              disabled={loading}
+              onChange={(event) => {
+                changeSocial(event.target.checked);
+              }}
+            />
+            Social
+          </label>
+          {social && (
+            <div>
+              <h2>People</h2>
+              {people.length === 0 ? (
+                <p>No visible People yet.</p>
+              ) : (
+                <ul className="people-list">
+                  {people.map((person) => (
+                    <li key={person.id}>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openFriend(person);
+                        }}
+                      >
+                        Open {person.username}'s Library
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              )}
+            </div>
+          )}
+          {friend && (
+            <div>
+              <h2>{friend.username}'s Library</h2>
+              <ul className="friend-list">
+                {friend.sets.map((set) => (
+                  <li key={set.id}>
+                    <h3>{set.title}</h3>
+                    <p>{set.creator ?? "Unknown creator"}</p>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </section>
         {message && (
           <p role="alert" className="error">
             {message}

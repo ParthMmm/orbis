@@ -20,8 +20,18 @@ const LegacyDevice = Schema.Struct({
 });
 const Person = Schema.Struct({
   autoDownload: Schema.optionalKey(Schema.Boolean),
+  filters: Schema.optionalKey(
+    Schema.Array(
+      Schema.Struct({
+        appear: Schema.Boolean,
+        personId: Schema.String,
+        see: Schema.Boolean,
+      })
+    )
+  ),
   id: Schema.String,
   removed: Schema.Boolean,
+  social: Schema.optionalKey(Schema.Boolean),
   username: Schema.String,
 });
 const Key = Schema.Struct({
@@ -297,6 +307,7 @@ export type UpdatePersonResult =
 
 export interface PersonUpdate {
   readonly autoDownload?: boolean;
+  readonly social?: boolean;
   readonly username?: string;
 }
 
@@ -308,7 +319,9 @@ export const updatePerson = (
   const name = input.username?.trim();
   if (
     (name !== undefined && (!name || name.length > 40)) ||
-    (name === undefined && input.autoDownload === undefined)
+    (name === undefined &&
+      input.autoDownload === undefined &&
+      input.social === undefined)
   ) {
     return { kind: "invalid" };
   }
@@ -340,6 +353,7 @@ export const updatePerson = (
         const updated = {
           ...person,
           autoDownload: input.autoDownload ?? person.autoDownload ?? true,
+          social: input.social ?? person.social ?? false,
           username: name ?? person.username,
         };
         return {
@@ -350,6 +364,78 @@ export const updatePerson = (
             ),
           },
           value: { kind: "updated" as const, person: updated },
+        };
+      }
+    );
+  } catch {
+    return { kind: "unavailable" };
+  }
+};
+
+type FilterUpdateResult =
+  | {
+      readonly kind: "updated";
+      readonly see: boolean;
+      readonly appear: boolean;
+    }
+  | { readonly kind: "invalid" | "missing" | "unavailable" };
+
+export const updatePersonFilters = (
+  storePath: string | undefined,
+  ownerId: string,
+  targetId: string,
+  input: { readonly see?: boolean; readonly appear?: boolean }
+): FilterUpdateResult => {
+  if (input.see === undefined && input.appear === undefined) {
+    return { kind: "invalid" };
+  }
+  if (!storePath) {
+    return { kind: "unavailable" };
+  }
+  try {
+    return mutateTrustStore<FilterUpdateResult>(
+      storePath,
+      () => readTrustStrict(storePath),
+      (store) => {
+        const owner = store.people.find(
+          (person) => person.id === ownerId && !person.removed
+        );
+        const target = store.people.find(
+          (person) => person.id === targetId && !person.removed
+        );
+        if (!owner || !target || ownerId === targetId) {
+          return { value: { kind: "missing" as const } };
+        }
+        const previous = owner.filters?.find(
+          (filter) => filter.personId === targetId
+        );
+        const filter = {
+          appear: input.appear ?? previous?.appear ?? true,
+          personId: targetId,
+          see: input.see ?? previous?.see ?? true,
+        };
+        return {
+          store: {
+            ...store,
+            people: store.people.map((person) =>
+              person.id === ownerId
+                ? {
+                    ...person,
+                    filters: [
+                      ...(person.filters ?? []).filter(
+                        (item) => item.personId !== targetId
+                      ),
+                      filter,
+                    ],
+                  }
+                : person
+            ),
+          },
+          value: {
+            appear: filter.appear,
+            kind: "updated" as const,
+            see: filter.see,
+          },
         };
       }
     );

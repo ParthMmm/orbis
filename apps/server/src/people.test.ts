@@ -55,6 +55,7 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
     expect(host.json()).toEqual({
       autoDownload: true,
       id: "host",
+      social: false,
       username: "host",
     });
 
@@ -97,6 +98,7 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
     expect(me.json()).toEqual({
       autoDownload: true,
       id: alice.id,
+      social: false,
       username: "alice",
     });
     const renamed = await request(app, {
@@ -108,6 +110,7 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
     expect(renamed.json()).toEqual({
       autoDownload: true,
       id: alice.id,
+      social: false,
       username: "alice-new",
     });
     const renamedRead = await request(app, remote(token));

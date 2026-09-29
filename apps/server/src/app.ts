@@ -16,6 +16,7 @@ import {
   SetAccess,
   SetCaller,
   SetPlaylistsPayload,
+  SocialFiltersPayload,
   TagsPayload,
   UpdateTitlePayload,
   UpdateMePayload,
@@ -51,6 +52,7 @@ import {
   migrateTrustStore,
   readTrustRegistry,
   updatePerson,
+  updatePersonFilters,
 } from "./identity.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
@@ -74,6 +76,7 @@ import {
 } from "./stream-grant.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
+import { resolveVisiblePerson } from "./visibility.js";
 
 interface RawFilters {
   creatorId?: string | null;
@@ -762,6 +765,7 @@ export const createApp = (
               return {
                 autoDownload: person.autoDownload ?? true,
                 id: person.id,
+                social: person.social ?? false,
                 username: person.username,
               };
             })
@@ -781,6 +785,7 @@ export const createApp = (
                   return HttpServerResponse.jsonUnsafe({
                     autoDownload: result.person.autoDownload ?? true,
                     id: result.person.id,
+                    social: result.person.social ?? false,
                     username: result.person.username,
                   });
                 }
@@ -794,6 +799,85 @@ export const createApp = (
                   message = "That username is already in use.";
                 }
                 return yield* new LibraryError({ message, statusCode });
+              })
+            )
+          )
+          .handleRaw("list", () =>
+            withFailureResponse(
+              Effect.gen(function* listVisiblePeople() {
+                const caller = yield* SetCaller;
+                const { people } = readTrustRegistry(devicesPath).store;
+                return {
+                  people: people.flatMap((person) => {
+                    try {
+                      const visible = resolveVisiblePerson(
+                        people,
+                        caller.person.id,
+                        person.id
+                      );
+                      return [{ id: visible.id, username: visible.username }];
+                    } catch {
+                      return [];
+                    }
+                  }),
+                };
+              })
+            )
+          )
+          .handleRaw("filters", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* setSocialFilters() {
+                const caller = yield* SetCaller;
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(SocialFiltersPayload);
+                const result = updatePersonFilters(
+                  devicesPath,
+                  caller.person.id,
+                  params.id,
+                  input
+                );
+                if (result.kind === "updated") {
+                  return { appear: result.appear, see: result.see };
+                }
+                return yield* new LibraryError({
+                  message:
+                    result.kind === "invalid"
+                      ? "Choose at least one filter."
+                      : "Person not found.",
+                  statusCode: { invalid: 400, missing: 404, unavailable: 500 }[
+                    result.kind
+                  ],
+                });
+              })
+            )
+          )
+          .handleRaw("sets", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* readFriendLibrary() {
+                const caller = yield* SetCaller;
+                const { people } = readTrustRegistry(devicesPath).store;
+                const target = yield* Effect.try({
+                  catch: (error) =>
+                    error instanceof LibraryError
+                      ? error
+                      : new LibraryError({
+                          message: "Could not read People.",
+                          statusCode: 500,
+                        }),
+                  try: () =>
+                    resolveVisiblePerson(people, caller.person.id, params.id),
+                });
+                const friendLibrary = Library.forPersonLayer(target.id).pipe(
+                  Layer.provide(Layer.succeed(Database, db))
+                );
+                const sets = yield* Effect.provide(
+                  Effect.gen(function* listFriendSets() {
+                    const personal = yield* Library;
+                    return yield* personal.list({});
+                  }),
+                  friendLibrary
+                );
+                return { sets };
               })
             )
           )
