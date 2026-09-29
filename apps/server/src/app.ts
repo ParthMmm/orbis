@@ -1,6 +1,7 @@
 import path from "node:path";
 
 import type { SavedSet } from "@orbis/contracts";
+import type { SaveSetResultSchema } from "@orbis/contracts/http-api";
 import {
   SaveSetPayload,
   OrbisApi,
@@ -37,7 +38,7 @@ import {
   markKeyUsed,
   migrateTrustStore,
   readTrustRegistry,
-  renamePerson,
+  updatePerson,
 } from "./identity.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
@@ -370,6 +371,40 @@ export const createApp = (
           Effect.flatMap(() => personal.find(set.id))
         );
       });
+      const autoDownloadSaved = Effect.fn("AutoDownload.onSave")(
+        function* autoDownloadSaved(saved: SavedSet) {
+          const { person } = yield* SetCaller;
+          const result = (
+            autoDownloadResult: (typeof SaveSetResultSchema.Type)["autoDownloadResult"],
+            set?: SavedSet
+          ) => ({ ...(set ?? saved), autoDownloadResult });
+          if (person.autoDownload === false) {
+            return result("disabled");
+          }
+          if (saved.downloadState === "ready") {
+            return result("ready");
+          }
+          if (
+            saved.downloadState === "queued" ||
+            saved.downloadState === "downloading"
+          ) {
+            return result("inProgress");
+          }
+          if (!audio.isConfigured) {
+            return result("unavailable");
+          }
+          return yield* audio.requestDownload(saved.id).pipe(
+            Effect.map(({ set, accepted }) =>
+              result(accepted ? "queued" : "inProgress", set)
+            ),
+            Effect.catchTag("LibraryError", (error) =>
+              error.statusCode === 429
+                ? Effect.succeed(result("queueFull"))
+                : Effect.fail(error)
+            )
+          );
+        }
+      );
       const setGroup = HttpApiBuilder.group(OrbisApi, "sets", (handlers) =>
         handlers
           .handleRaw("requestDownload", ({ params }) =>
@@ -469,9 +504,11 @@ export const createApp = (
                   saved.metadataState === "enriched"
                 ) {
                   yield* fillDetails(saved);
-                  return saved;
+                  return yield* autoDownloadSaved(saved);
                 }
-                return yield* enrichSavedSet(saved, personal);
+                return yield* autoDownloadSaved(
+                  yield* enrichSavedSet(saved, personal)
+                );
               })
             )
           )
@@ -710,22 +747,27 @@ export const createApp = (
           .handle("me", () =>
             Effect.gen(function* readMe() {
               const { person } = yield* SetCaller;
-              return { id: person.id, username: person.username };
+              return {
+                autoDownload: person.autoDownload ?? true,
+                id: person.id,
+                username: person.username,
+              };
             })
           )
           .handleRaw("updateMe", () =>
             withFailureResponse(
               Effect.gen(function* updateMe() {
                 const caller = yield* SetCaller;
-                const { username } =
+                const input =
                   yield* HttpServerRequest.schemaBodyJson(UpdateMePayload);
-                const result = renamePerson(
+                const result = updatePerson(
                   devicesPath,
                   caller.person.id,
-                  username
+                  input
                 );
                 if (result.kind === "updated") {
                   return HttpServerResponse.jsonUnsafe({
+                    autoDownload: result.person.autoDownload ?? true,
                     id: result.person.id,
                     username: result.person.username,
                   });

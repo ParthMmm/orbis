@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -52,6 +52,16 @@ const setUp = async (
   audioOptions: AudioOptions = {}
 ) => {
   const root = await mkdtemp(path.join(tmpdir(), "orbis-audio-"));
+  await writeFile(
+    path.join(root, "devices.json"),
+    JSON.stringify({
+      keys: [],
+      people: [
+        { autoDownload: false, id: "host", removed: false, username: "host" },
+      ],
+      version: 2,
+    })
+  );
   const app = createApp({
     audio: {
       audioDir: path.join(root, "audio"),

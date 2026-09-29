@@ -145,11 +145,25 @@ export const PositionPayload = Schema.Struct({
 });
 export const TagsPayload = Schema.Struct({ tags: Tags });
 export const MeSchema = Schema.Struct({
+  autoDownload: Schema.Boolean,
   id: Schema.String,
   username: Schema.String,
 });
 export const UpdateMePayload = Schema.Struct({
-  username: Schema.String.check(Schema.isMaxLength(40)),
+  autoDownload: Schema.optionalKey(Schema.Boolean),
+  username: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(40))),
+});
+
+export const SaveSetResultSchema = Schema.Struct({
+  ...SavedSetSchema.fields,
+  autoDownloadResult: Schema.Literals([
+    "queued",
+    "disabled",
+    "ready",
+    "inProgress",
+    "queueFull",
+    "unavailable",
+  ]),
 });
 
 export const SetsApi = HttpApi.make("orbis").add(
@@ -158,7 +172,7 @@ export const SetsApi = HttpApi.make("orbis").add(
       HttpApiEndpoint.post("save", "/sets", {
         error: [BadRequest, Conflict, InternalError],
         payload: SaveSetPayload,
-        success: SavedSetSchema.pipe(HttpApiSchema.status(201)),
+        success: SaveSetResultSchema.pipe(HttpApiSchema.status(201)),
       }),
       HttpApiEndpoint.get("list", "/sets", {
         error: [BadRequest, InternalError],

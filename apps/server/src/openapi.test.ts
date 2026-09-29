@@ -6,6 +6,7 @@ import {
   ListeningQueueSchema,
   PlaylistSchema,
   SavedSetSchema,
+  SaveSetResultSchema,
 } from "@orbis/contracts/http-api";
 import { Ajv } from "ajv";
 import { Schema } from "effect";
@@ -17,10 +18,15 @@ const Samples = Schema.Struct({
   audioState: AudioStateSchema,
   health: Schema.Struct({ status: Schema.Literal("ok") }),
   library: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
-  me: Schema.Struct({ id: Schema.String, username: Schema.String }),
+  me: Schema.Struct({
+    autoDownload: Schema.Boolean,
+    id: Schema.String,
+    username: Schema.String,
+  }),
   playlist: PlaylistSchema,
   playlists: Schema.Struct({ playlists: Schema.Array(PlaylistSchema) }),
   queue: Schema.Struct({ queue: ListeningQueueSchema }),
+  saveResult: SaveSetResultSchema,
   savedSet: SavedSetSchema,
   tags: Schema.Struct({ tags: Schema.Array(Schema.String) }),
 });
@@ -58,6 +64,9 @@ const OpenApiDocument = Schema.Struct({
 });
 
 const sampleKeyFor = (operationId: string): keyof typeof samples => {
+  if (operationId === "sets.save") {
+    return "saveResult";
+  }
   if (
     operationId === "sets.list" ||
     operationId === "playlists.replaceMembers"

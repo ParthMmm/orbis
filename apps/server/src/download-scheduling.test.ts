@@ -57,6 +57,7 @@ const fixture = async (startWorker: boolean) => {
         tokenHash: hashToken(id),
       })),
       people: ["host", "a", "b"].map((id) => ({
+        autoDownload: false,
         id,
         removed: false,
         username: id,

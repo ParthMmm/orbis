@@ -19,6 +19,7 @@ const LegacyDevice = Schema.Struct({
   tokenHash: TokenHash,
 });
 const Person = Schema.Struct({
+  autoDownload: Schema.optionalKey(Schema.Boolean),
   id: Schema.String,
   removed: Schema.Boolean,
   username: Schema.String,
@@ -290,28 +291,37 @@ export const markKeyUsed = (
   }
 };
 
-export type RenamePersonResult =
+export type UpdatePersonResult =
   | { readonly kind: "updated"; readonly person: PersonRecord }
   | { readonly kind: "invalid" | "conflict" | "unavailable" };
 
-export const renamePerson = (
+export interface PersonUpdate {
+  readonly autoDownload?: boolean;
+  readonly username?: string;
+}
+
+export const updatePerson = (
   storePath: string | undefined,
   personId: string,
-  username: string
-): RenamePersonResult => {
-  const name = username.trim();
-  if (!name || name.length > 40) {
+  input: PersonUpdate
+): UpdatePersonResult => {
+  const name = input.username?.trim();
+  if (
+    (name !== undefined && (!name || name.length > 40)) ||
+    (name === undefined && input.autoDownload === undefined)
+  ) {
     return { kind: "invalid" };
   }
   if (!storePath) {
     return { kind: "unavailable" };
   }
   try {
-    return mutateTrustStore<RenamePersonResult>(
+    return mutateTrustStore<UpdatePersonResult>(
       storePath,
       () => readTrustStrict(storePath),
       (store) => {
         if (
+          name !== undefined &&
           store.people.some(
             (person) =>
               !person.removed &&
@@ -327,7 +337,11 @@ export const renamePerson = (
         if (!person) {
           return { value: { kind: "unavailable" as const } };
         }
-        const updated = { ...person, username: name };
+        const updated = {
+          ...person,
+          autoDownload: input.autoDownload ?? person.autoDownload ?? true,
+          username: name ?? person.username,
+        };
         return {
           store: {
             ...store,

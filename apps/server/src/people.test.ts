@@ -52,7 +52,11 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
   try {
     const host = await request(app, remote(oldToken));
     expect(host.statusCode).toBe(200);
-    expect(host.json()).toEqual({ id: "host", username: "host" });
+    expect(host.json()).toEqual({
+      autoDownload: true,
+      id: "host",
+      username: "host",
+    });
 
     const local = await request(app, { method: "GET", url: "/me" });
     expect(local.json()).toEqual(host.json());
@@ -90,14 +94,22 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
     }
 
     const me = await request(app, remote(token));
-    expect(me.json()).toEqual({ id: alice.id, username: "alice" });
+    expect(me.json()).toEqual({
+      autoDownload: true,
+      id: alice.id,
+      username: "alice",
+    });
     const renamed = await request(app, {
       ...remote(token),
       method: "PATCH",
       payload: { username: "alice-new" },
     });
     expect(renamed.statusCode).toBe(200);
-    expect(renamed.json()).toEqual({ id: alice.id, username: "alice-new" });
+    expect(renamed.json()).toEqual({
+      autoDownload: true,
+      id: alice.id,
+      username: "alice-new",
+    });
     const renamedRead = await request(app, remote(token));
     expect(renamedRead.json()).toEqual(renamed.json());
 
