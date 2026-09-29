@@ -89,15 +89,6 @@ class AcceptedAccess extends Context.Service<
 >()("Orbis/AcceptedAccess") {}
 
 const funnelOrigin = "https://vanta.tail01d084.ts.net:10000";
-const requiresAdminKey = (
-  request: Request,
-  decision: AccessDecision
-): boolean =>
-  new URL(request.url).pathname.startsWith("/admin") &&
-  decision.kind === "accepted" &&
-  (decision.keyId === null ||
-    decision.scope !== "admin" ||
-    decision.person.id !== "host");
 const allowedBrowserOrigin = (
   origin: string | null,
   mode: AccessMode,
@@ -808,21 +799,35 @@ export const createApp = (
           )
       );
       const adminCall = <A>(action: (storePath: string) => A) =>
-        Effect.try({
-          catch: (error) =>
-            new LibraryError({
-              message:
-                error instanceof AdminError
-                  ? error.message
-                  : "The trust store is unavailable.",
-              statusCode: error instanceof AdminError ? error.statusCode : 500,
-            }),
-          try: () => {
-            if (!devicesPath) {
-              throw new AdminError(500, "The trust store is unavailable.");
-            }
-            return action(devicesPath);
-          },
+        Effect.gen(function* authorizedAdminAction() {
+          const caller = yield* SetCaller;
+          if (
+            caller.keyId === null ||
+            caller.scope !== "admin" ||
+            caller.person.id !== "host"
+          ) {
+            return yield* new LibraryError({
+              message: "An admin key is required.",
+              statusCode: 403,
+            });
+          }
+          return yield* Effect.try({
+            catch: (error) =>
+              new LibraryError({
+                message:
+                  error instanceof AdminError
+                    ? error.message
+                    : "The trust store is unavailable.",
+                statusCode:
+                  error instanceof AdminError ? error.statusCode : 500,
+              }),
+            try: () => {
+              if (!devicesPath) {
+                throw new AdminError(500, "The trust store is unavailable.");
+              }
+              return action(devicesPath);
+            },
+          });
         });
       const adminGroup = HttpApiBuilder.group(OrbisApi, "admin", (handlers) =>
         handlers
@@ -869,6 +874,11 @@ export const createApp = (
                       );
                       yield* tx.run(
                         sql`DELETE FROM library_entries WHERE person_id = ${params.id}`
+                      );
+                      yield* tx.run(
+                        sql`UPDATE sets SET download_state = 'none'
+                          WHERE download_state IN ('queued', 'downloading')
+                          AND id IN (SELECT set_id FROM download_jobs WHERE person_id = ${params.id})`
                       );
                       yield* tx.run(
                         sql`DELETE FROM download_jobs WHERE person_id = ${params.id}`
@@ -1083,16 +1093,6 @@ export const createApp = (
             Response.json(
               { message: decision.message },
               { status: decision.statusCode }
-            )
-          )
-        );
-      }
-      if (requiresAdminKey(request, decision)) {
-        return Promise.resolve(
-          withOrigin(
-            Response.json(
-              { message: "An admin key is required." },
-              { status: 403 }
             )
           )
         );

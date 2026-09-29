@@ -64,7 +64,7 @@ test("admin keys manage People and revoke all of a removed Person's data", async
   if (!daily) {
     throw new Error("Missing daily token");
   }
-  const app = createApp({ databasePath, devicesPath });
+  let app = createApp({ databasePath, devicesPath });
   try {
     const denied = await Promise.all([
       status(app, daily, "GET", "/admin/people"),
@@ -83,6 +83,31 @@ test("admin keys manage People and revoke all of a removed Person's data", async
       url: "/admin/people",
     });
     expect(localAdmin.statusCode).toBe(403);
+    const beforeBypass = await body(app, admin, "GET", "/admin/people");
+    const variantAttempts = await Promise.all(
+      ["/%61dmin", "//admin", "/ADMIN"].map((prefix) =>
+        Promise.all([
+          status(app, daily, "GET", `${prefix}/people`),
+          status(app, daily, "POST", `${prefix}/people`, {
+            username: `blocked-${prefix.length}`,
+          }),
+          status(app, daily, "DELETE", `${prefix}/people/host`),
+          status(app, daily, "GET", `${prefix}/keys`),
+          status(app, daily, "GET", `${prefix}/people/host/keys`),
+          status(app, daily, "POST", `${prefix}/people/host/keys`, {
+            label: "bypass",
+            scope: "admin",
+          }),
+          status(app, daily, "DELETE", `${prefix}/keys/missing`),
+        ])
+      )
+    );
+    for (const attempts of variantAttempts) {
+      expect(attempts).toEqual([403, 403, 403, 403, 403, 403, 403]);
+    }
+    expect(await body(app, admin, "GET", "/admin/people")).toEqual(
+      beforeBypass
+    );
     const added = await call(app, admin, "POST", "/admin/people", {
       username: "alice",
     });
@@ -165,6 +190,26 @@ test("admin keys manage People and revoke all of a removed Person's data", async
     const seeded = new Database(databasePath);
     try {
       seeded
+        .query("UPDATE sets SET download_state = 'queued' WHERE id = ?")
+        .run(setId);
+      seeded
+        .query(
+          "INSERT OR IGNORE INTO download_requesters (person_id) VALUES (?)"
+        )
+        .run(person.id);
+      seeded
+        .query(
+          "INSERT OR IGNORE INTO download_jobs (person_id, set_id) VALUES (?, ?)"
+        )
+        .run(person.id, setId);
+      expect(
+        seeded
+          .query(
+            "SELECT person_id AS personId FROM download_jobs WHERE set_id = ?"
+          )
+          .get(setId)
+      ).toMatchObject({ personId: person.id });
+      seeded
         .query(
           "INSERT INTO queue_entries (person_id, set_id, position, is_active) VALUES (?, ?, 0, 0)"
         )
@@ -181,6 +226,24 @@ test("admin keys manage People and revoke all of a removed Person's data", async
       await status(app, admin, "DELETE", `/admin/people/${person.id}`)
     ).toBe(200);
     expect(await status(app, secondToken, "GET", "/me")).toBe(401);
+    await app.dispose();
+    app = createApp({ databasePath, devicesPath });
+    expect(await status(app, admin, "GET", "/me")).toBe(200);
+    const afterRestart = new Database(databasePath);
+    try {
+      expect(
+        afterRestart
+          .query("SELECT download_state AS state FROM sets WHERE id = ?")
+          .get(setId)
+      ).toMatchObject({ state: "none" });
+      expect(
+        afterRestart
+          .query("SELECT count(*) AS count FROM download_jobs WHERE set_id = ?")
+          .get(setId)
+      ).toMatchObject({ count: 0 });
+    } finally {
+      afterRestart.close();
+    }
     const rotated = await call(app, admin, "POST", "/admin/people/host/keys", {
       label: "new recovery",
       scope: "admin",

@@ -384,7 +384,7 @@ export const OrbisApi = PlaylistApi.add(
           success: AdminPerson.pipe(HttpApiSchema.status(201)),
         }),
         HttpApiEndpoint.delete("removePerson", "/admin/people/:id", {
-          error: [NotFound, InternalError],
+          error: [BadRequest, NotFound, InternalError],
           params: SetId,
           success: AdminPerson,
         }),
