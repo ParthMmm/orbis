@@ -1,0 +1,88 @@
+{
+  "audioState": {
+    "bytesReceived": 0,
+    "bytesTotal": null,
+    "format": null,
+    "state": "none"
+  },
+  "health": {
+    "status": "ok"
+  },
+  "library": {
+    "sets": [
+      {
+        "artworkLargeUrl": null,
+        "artworkUrl": null,
+        "createdAt": "2026-09-29T05:35:04.038Z",
+        "creator": null,
+        "creatorId": null,
+        "downloadState": "none",
+        "durationSeconds": null,
+        "finishCount": 0,
+        "id": "7f58f12f-ad7c-4052-bbc6-d19612a4b7ed",
+        "lastListenedAt": null,
+        "listenCount": 0,
+        "metadataState": "pending",
+        "playbackPositionSeconds": 0,
+        "playlistIds": [],
+        "releasedAt": null,
+        "retainedAudioBytes": null,
+        "retainedAudioFormat": null,
+        "source": "youtube",
+        "tags": ["house"],
+        "title": "Contract sample",
+        "titleEditedByUser": true,
+        "url": "https://www.youtube.com/watch?v=abcdefghijk"
+      }
+    ]
+  },
+  "playlist": {
+    "createdAt": "2026-09-29T05:35:04.045Z",
+    "id": "4ce3f353-7c66-4b9b-b500-0137d6f36ea6",
+    "name": "Contract playlist",
+    "setCount": 0
+  },
+  "playlists": {
+    "playlists": [
+      {
+        "createdAt": "2026-09-29T05:35:04.045Z",
+        "id": "4ce3f353-7c66-4b9b-b500-0137d6f36ea6",
+        "name": "Contract playlist",
+        "setCount": 0
+      }
+    ]
+  },
+  "queue": {
+    "queue": {
+      "activeSetId": null,
+      "entries": []
+    }
+  },
+  "savedSet": {
+    "artworkLargeUrl": null,
+    "artworkUrl": null,
+    "createdAt": "2026-09-29T05:35:04.038Z",
+    "creator": null,
+    "creatorId": null,
+    "downloadState": "none",
+    "durationSeconds": null,
+    "finishCount": 0,
+    "id": "7f58f12f-ad7c-4052-bbc6-d19612a4b7ed",
+    "lastListenedAt": null,
+    "listenCount": 0,
+    "metadataState": "pending",
+    "playbackPositionSeconds": 0,
+    "playlistIds": [],
+    "releasedAt": null,
+    "retainedAudioBytes": null,
+    "retainedAudioFormat": null,
+    "source": "youtube",
+    "tags": ["house"],
+    "title": "Contract sample",
+    "titleEditedByUser": true,
+    "url": "https://www.youtube.com/watch?v=abcdefghijk"
+  },
+  "tags": {
+    "tags": ["house"]
+  }
+}

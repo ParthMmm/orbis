@@ -38,4 +38,32 @@ export const mockFetch = (handler: FetchHandler) => {
 };
 
 export const httpStatus = (status: number): Response =>
-  new Response(null, { status });
+  status === 201
+    ? Response.json(
+        {
+          artworkLargeUrl: null,
+          artworkUrl: null,
+          createdAt: "2026-01-01T00:00:00.000Z",
+          creator: null,
+          creatorId: null,
+          downloadState: "none",
+          durationSeconds: null,
+          finishCount: 0,
+          id: "saved-set",
+          lastListenedAt: null,
+          listenCount: 0,
+          metadataState: "pending",
+          playbackPositionSeconds: 0,
+          playlistIds: [],
+          releasedAt: null,
+          retainedAudioBytes: null,
+          retainedAudioFormat: null,
+          source: "youtube",
+          tags: [],
+          title: "Saved set",
+          titleEditedByUser: false,
+          url: "https://www.youtube.com/watch?v=abcdefghijk",
+        },
+        { status }
+      )
+    : new Response(null, { status });
