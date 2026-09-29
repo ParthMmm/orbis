@@ -6,15 +6,11 @@ import XCTest
 final class ContractResponseTests: XCTestCase {
   private struct Samples: Decodable {
     struct Tags: Decodable { let tags: [String] }
-    struct Person: Decodable {
-      let id: String
-      let username: String
-    }
 
     let audioState: AudioState
     let health: HealthResponse
     let library: LibraryResponse
-    let me: Person
+    let me: PersonPreferences
     let playlist: Playlist
     let playlists: PlaylistsResponse
     let queue: QueueResponse
@@ -35,5 +31,6 @@ final class ContractResponseTests: XCTestCase {
     XCTAssertEqual(samples.tags.tags, samples.savedSet.tags)
     XCTAssertEqual(samples.health.status, "ok")
     XCTAssertEqual(samples.me.id, "host")
+    XCTAssertTrue(samples.me.autoDownload)
   }
 }

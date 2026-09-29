@@ -177,6 +177,57 @@ try {
     throw new Error("the enrolment command printed no token");
   }
 
+  const preferences = await fetch(`${address}/me`, {
+    body: JSON.stringify({ autoDownload: false }),
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json",
+    },
+    method: "PATCH",
+  });
+  if (!preferences.ok) {
+    throw new Error(
+      "could not disable automatic downloads for manual-download journeys"
+    );
+  }
+  const person = run(
+    [
+      "bun",
+      "apps/server/src/trust.ts",
+      "person",
+      "add",
+      "--username",
+      "lane-settings",
+      "--devices",
+      devicesPath,
+    ],
+    { cwd: root }
+  );
+  const personId = /Added Person (?<id>\S+)/u.exec(person)?.groups?.id;
+  if (!personId) {
+    throw new Error("could not create the settings journey Person");
+  }
+  const settingsEnrolment = run(
+    [
+      "bun",
+      "apps/server/src/trust.ts",
+      "key",
+      "add",
+      "--person",
+      personId,
+      "--label",
+      "settings-journey",
+      "--devices",
+      devicesPath,
+    ],
+    { cwd: root }
+  );
+  const settingsToken = /shown once: (?<token>\S+)/u.exec(settingsEnrolment)
+    ?.groups?.token;
+  if (!settingsToken) {
+    throw new Error("could not enrol the settings journey Person");
+  }
+
   // Seed one Set through the service's own HTTP path so a journey has something to find.
   const seeded = await fetch(`${address}/sets`, {
     body: JSON.stringify({
@@ -247,6 +298,7 @@ try {
         ...process.env,
         ORBIS_UI_TEST_ADDRESS: address,
         ORBIS_UI_TEST_SEED_ADDRESS: seedAddress,
+        ORBIS_UI_TEST_SETTINGS_TOKEN: settingsToken,
         ORBIS_UI_TEST_TOKEN: token,
       },
       maxBuffer: 32 * 1024 * 1024,

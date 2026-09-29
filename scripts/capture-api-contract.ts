@@ -47,6 +47,7 @@ try {
     playlist,
     playlists: await send("/playlists"),
     queue: await send("/queue"),
+    saveResult: savedSet,
     savedSet: taggedSet,
     tags: await send("/tags"),
   };

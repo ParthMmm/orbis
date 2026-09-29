@@ -4,12 +4,17 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { SavedSetSchema } from "@orbis/contracts/http-api";
+import { Schema } from "effect";
+
 import { createApp } from "./app.js";
 import {
   MAX_PLAYLISTS_PER_SET,
   MAX_SETS_PER_PLAYLIST,
 } from "./library-limits.js";
 import { request } from "./test-http.js";
+
+const savedSet = Schema.decodeUnknownSync(SavedSetSchema);
 
 const SEEDED_CREATED_AT = "2026-04-01T00:00:00.000Z";
 
@@ -445,7 +450,7 @@ test("saves a set with tags and reads it after the server restarts", async () =>
     app = createApp({ databasePath });
     const library = await request(app, { method: "GET", url: "/sets" });
     expect(library.statusCode).toBe(200);
-    expect(library.json()).toEqual({ sets: [saved.json()] });
+    expect(library.json()).toEqual({ sets: [savedSet(saved.json())] });
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });
@@ -543,7 +548,7 @@ test("duplicate source URLs do not overwrite an existing set", async () => {
       "This set is already in your library."
     );
     const library = await request(app, { method: "GET", url: "/sets" });
-    expect(library.json()).toEqual({ sets: [first.json()] });
+    expect(library.json()).toEqual({ sets: [savedSet(first.json())] });
   } finally {
     await app.dispose();
   }
@@ -618,7 +623,7 @@ test("edits and clears tags while retaining the set and updating tag suggestions
       },
       url: "/sets",
     });
-    const original = saved.json();
+    const original = savedSet(saved.json());
     const updated = await request(app, {
       method: "PATCH",
       payload: { tags: [" Ambient ", "ambient", "live"] },
@@ -675,7 +680,7 @@ test("removes a Library Entry while keeping its playlist membership", async () =
       },
       url: "/sets",
     });
-    const set = saved.json();
+    const set = savedSet(saved.json());
     const created = await request(app, {
       method: "POST",
       payload: { name: "Keep this playlist" },
@@ -766,7 +771,7 @@ test("keeps ordered playlists independent of each other and the saved library", 
       },
       url: "/sets",
     });
-    const first = savedFirst.json();
+    const first = savedSet(savedFirst.json());
     const savedSecond = await request(app, {
       method: "POST",
       payload: {
@@ -776,7 +781,7 @@ test("keeps ordered playlists independent of each other and the saved library", 
       },
       url: "/sets",
     });
-    const second = savedSecond.json();
+    const second = savedSet(savedSecond.json());
     const create = await request(app, {
       method: "POST",
       payload: { name: "Evenings" },
@@ -891,7 +896,7 @@ test("states a Set's Playlists in one request and lets it leave them", async () 
       },
       url: "/sets",
     });
-    const set = created.json();
+    const set = savedSet(created.json());
     const evenResponse = await request(app, {
       method: "POST",
       payload: { name: "Evenings" },

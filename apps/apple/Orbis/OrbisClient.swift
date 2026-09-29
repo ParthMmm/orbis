@@ -123,6 +123,16 @@ extension OrbisError {
   }
 }
 
+struct PersonPreferences: Codable, Equatable, Sendable {
+  let autoDownload: Bool
+  let id: String
+  let username: String
+}
+
+private struct AutoDownloadUpdate: Encodable {
+  let autoDownload: Bool
+}
+
 /// Talks to the Orbis service. Every request carries the device token, and the same
 /// failure mapping is used everywhere, so a view only has to render `message`.
 struct OrbisClient: Sendable {
@@ -158,6 +168,17 @@ struct OrbisClient: Sendable {
   /// Shared by every call, so one coder's configuration is the whole app's.
   private static let decoder = JSONDecoder()
   private static let encoder = JSONEncoder()
+
+  func preferences() async throws -> PersonPreferences {
+    let response = try await send(path: "me", method: "GET", body: nil)
+    return try Self.decode(PersonPreferences.self, from: response)
+  }
+
+  func updateAutoDownload(_ enabled: Bool) async throws -> PersonPreferences {
+    let body = try Self.encoder.encode(AutoDownloadUpdate(autoDownload: enabled))
+    let response = try await send(path: "me", method: "PATCH", body: body)
+    return try Self.decode(PersonPreferences.self, from: response)
+  }
 
   func health() async throws -> String {
     let response = try await send(path: "health", method: "GET", body: nil)

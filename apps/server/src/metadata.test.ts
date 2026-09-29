@@ -4,7 +4,8 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Effect } from "effect";
+import { SavedSetSchema } from "@orbis/contracts/http-api";
+import { Effect, Schema } from "effect";
 
 import { createApp } from "./app.js";
 import { MetadataError } from "./metadata-error.js";
@@ -73,6 +74,7 @@ test("fills title, creator, artwork, and duration from the provider when the sav
     expect(saved.json()).toEqual({
       artworkLargeUrl: "https://example.test/artwork.jpg",
       artworkUrl: "https://example.test/artwork.jpg",
+      autoDownloadResult: "unavailable",
       createdAt: expect.any(String),
       creator: "Ada Lovelace",
       creatorId: null,
@@ -142,7 +144,9 @@ test("records unknown creator, artwork, and duration after a failed enrichment",
     });
 
     const library = await request(server.app, { method: "GET", url: "/sets" });
-    expect(library.json()).toEqual({ sets: [saved.json()] });
+    expect(library.json()).toEqual({
+      sets: [Schema.decodeUnknownSync(SavedSetSchema)(saved.json())],
+    });
   } finally {
     await server.dispose();
   }
@@ -166,7 +170,7 @@ test("retry replaces the temporary title that no user edited", async () => {
     });
     expect(retried.statusCode).toBe(200);
     expect(retried.json()).toEqual({
-      ...saved.json(),
+      ...Schema.decodeUnknownSync(SavedSetSchema)(saved.json()),
       artworkLargeUrl: "https://example.test/artwork.jpg",
       artworkUrl: "https://example.test/artwork.jpg",
       creator: "Ada Lovelace",
@@ -238,7 +242,9 @@ test("finds a set by creator through the existing text search", async () => {
       method: "GET",
       url: "/sets?q=lovelace",
     });
-    expect(byCreator.json().sets).toEqual([youtube.json()]);
+    expect(byCreator.json().sets).toEqual([
+      Schema.decodeUnknownSync(SavedSetSchema)(youtube.json()),
+    ]);
     const caseInsensitive = await request(server.app, {
       method: "GET",
       url: "/sets?q=HOPPER&source=soundcloud",

@@ -6,6 +6,7 @@ export class SetCaller extends Context.Service<
     readonly kind: "accepted";
     readonly keyId: string | null;
     readonly person: {
+      readonly autoDownload?: boolean;
       readonly id: string;
       readonly removed: boolean;
       readonly username: string;

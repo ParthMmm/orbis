@@ -7,15 +7,28 @@ struct LaneService {
   let address: String
   let token: String
 
-  init() throws {
+  init(tokenOverride: String? = nil) throws {
     let environment = ProcessInfo.processInfo.environment
     guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
-      let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
+      let token = tokenOverride ?? environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
     else {
       throw XCTSkip("the lane must supply ORBIS_UI_TEST_ADDRESS and ORBIS_UI_TEST_TOKEN")
     }
     self.address = address
     self.token = token
+  }
+
+  struct Preferences: Decodable { let autoDownload: Bool }
+
+  func autoDownload(becomes expected: Bool) throws -> Bool {
+    let deadline = Date().addingTimeInterval(10)
+    repeat {
+      let preferences: Preferences = try send("GET", "me", nil)
+      if preferences.autoDownload == expected { return expected }
+      usleep(100_000)
+    } while Date() < deadline
+    let preferences: Preferences = try send("GET", "me", nil)
+    return preferences.autoDownload
   }
 
   struct Set: Decodable {
