@@ -8,7 +8,7 @@ import {
   HttpApiSecurity,
 } from "effect/unstable/httpapi";
 
-import type { AudioState, SavedSet } from "./index.js";
+import type { AudioState, Playlist, SavedSet } from "./index.js";
 import type { SetCaller } from "./set-caller.js";
 
 export { SetCaller } from "./set-caller.js";
@@ -102,6 +102,33 @@ export type AudioStateContractCheck = Assert<
   SameContract<typeof AudioStateSchema.Type, AudioState>
 >;
 
+export const MAX_SETS_PER_PLAYLIST = 500;
+export const MAX_PLAYLISTS_PER_SET = 100;
+
+export const PlaylistSchema = Schema.Struct({
+  createdAt: Schema.String,
+  id: Schema.String,
+  name: Schema.String,
+  setCount: Schema.Number,
+});
+export type PlaylistContractCheck = Assert<
+  SameContract<typeof PlaylistSchema.Type, Playlist>
+>;
+
+const PlaylistName = Schema.String.check(Schema.isMaxLength(100));
+const MembershipId = Schema.String.check(Schema.isMaxLength(100));
+export const PlaylistNamePayload = Schema.Struct({ name: PlaylistName });
+export const PlaylistMembersPayload = Schema.Struct({
+  setIds: Schema.Array(MembershipId).check(
+    Schema.isMaxLength(MAX_SETS_PER_PLAYLIST)
+  ),
+});
+export const SetPlaylistsPayload = Schema.Struct({
+  playlistIds: Schema.Array(MembershipId).check(
+    Schema.isMaxLength(MAX_PLAYLISTS_PER_SET)
+  ),
+});
+
 export const SetsApi = HttpApi.make("orbis").add(
   HttpApiGroup.make("sets")
     .add(
@@ -165,6 +192,45 @@ export const SetsApi = HttpApi.make("orbis").add(
             HttpApiSchema.status(206)
           ),
         ],
+      })
+    )
+    .middleware(SetAccess)
+);
+
+export const OrbisApi = SetsApi.add(
+  HttpApiGroup.make("playlists")
+    .add(
+      HttpApiEndpoint.get("list", "/playlists", {
+        error: InternalError,
+        success: Schema.Struct({ playlists: Schema.Array(PlaylistSchema) }),
+      }),
+      HttpApiEndpoint.post("create", "/playlists", {
+        error: [BadRequest, Conflict, InternalError],
+        payload: PlaylistNamePayload,
+        success: PlaylistSchema.pipe(HttpApiSchema.status(201)),
+      }),
+      HttpApiEndpoint.patch("rename", "/playlists/:id", {
+        error: [BadRequest, NotFound, Conflict, InternalError],
+        params: SetId,
+        payload: PlaylistNamePayload,
+        success: PlaylistSchema,
+      }),
+      HttpApiEndpoint.delete("remove", "/playlists/:id", {
+        error: [NotFound, InternalError],
+        params: SetId,
+        success: PlaylistSchema,
+      }),
+      HttpApiEndpoint.put("replaceMembers", "/playlists/:id/sets", {
+        error: [BadRequest, NotFound, InternalError],
+        params: SetId,
+        payload: PlaylistMembersPayload,
+        success: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
+      }),
+      HttpApiEndpoint.put("replaceSetPlaylists", "/sets/:id/playlists", {
+        error: [BadRequest, NotFound, InternalError],
+        params: SetId,
+        payload: SetPlaylistsPayload,
+        success: SavedSetSchema,
       })
     )
     .middleware(SetAccess)

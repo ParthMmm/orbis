@@ -3,9 +3,12 @@ import path from "node:path";
 import type { SavedSet } from "@orbis/contracts";
 import {
   SaveSetPayload,
-  SetsApi,
+  OrbisApi,
+  PlaylistMembersPayload,
+  PlaylistNamePayload,
   SetAccess,
   SetCaller,
+  SetPlaylistsPayload,
   UpdateTitlePayload,
 } from "@orbis/contracts/http-api";
 import { Context, Effect, Layer, Option, Schema, Scope } from "effect";
@@ -24,10 +27,6 @@ import { layer as databaseLayer } from "./db/database.js";
 import { LibraryError } from "./errors.js";
 import type { AccessDecision, AccessMode } from "./identity.js";
 import { decideAccess, readDeviceRegistry } from "./identity.js";
-import {
-  MAX_PLAYLISTS_PER_SET,
-  MAX_SETS_PER_PLAYLIST,
-} from "./library-limits.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
 import {
@@ -299,7 +298,7 @@ export const createApp = (
           )
         );
       });
-      const setGroup = HttpApiBuilder.group(SetsApi, "sets", (handlers) =>
+      const setGroup = HttpApiBuilder.group(OrbisApi, "sets", (handlers) =>
         handlers
           .handleRaw("requestDownload", ({ params }) =>
             Effect.match(
@@ -409,99 +408,77 @@ export const createApp = (
             )
           )
       );
+      const playlistGroup = HttpApiBuilder.group(
+        OrbisApi,
+        "playlists",
+        (handlers) =>
+          handlers
+            .handle("list", () =>
+              withFailureResponse(
+                library
+                  .playlists()
+                  .pipe(Effect.map((playlists) => ({ playlists })))
+              )
+            )
+            .handleRaw("create", () =>
+              withFailureResponse(
+                Effect.gen(function* createPlaylist() {
+                  const input =
+                    yield* HttpServerRequest.schemaBodyJson(
+                      PlaylistNamePayload
+                    );
+                  return yield* library.createPlaylist(input.name);
+                })
+              )
+            )
+            .handleRaw("rename", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* renamePlaylist() {
+                  const input =
+                    yield* HttpServerRequest.schemaBodyJson(
+                      PlaylistNamePayload
+                    );
+                  return yield* library.renamePlaylist(params.id, input.name);
+                })
+              )
+            )
+            .handle("remove", ({ params }) =>
+              withFailureResponse(library.deletePlaylist(params.id))
+            )
+            .handleRaw("replaceMembers", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* replacePlaylistMembers() {
+                  const input = yield* HttpServerRequest.schemaBodyJson(
+                    PlaylistMembersPayload
+                  );
+                  return {
+                    sets: yield* library.setPlaylistMembers(
+                      params.id,
+                      input.setIds
+                    ),
+                  };
+                })
+              )
+            )
+            .handleRaw("replaceSetPlaylists", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* replaceSetPlaylists() {
+                  const input =
+                    yield* HttpServerRequest.schemaBodyJson(
+                      SetPlaylistsPayload
+                    );
+                  return yield* library.setPlaylistMemberships(
+                    params.id,
+                    input.playlistIds
+                  );
+                })
+              )
+            )
+      );
       yield* router.add(
         "GET",
         "/health",
         HttpServerResponse.jsonUnsafe({ status: "ok" })
-      );
-      yield* router.add(
-        "GET",
-        "/playlists",
-        respond(
-          library.playlists().pipe(Effect.map((playlists) => ({ playlists })))
-        )
-      );
-      yield* router.add(
-        "POST",
-        "/playlists",
-        respond(
-          Effect.gen(function* createPlaylist() {
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({
-                name: Schema.String.check(Schema.isMaxLength(100)),
-              })
-            );
-            return yield* library.createPlaylist(input.name);
-          }),
-          201
-        )
-      );
-      yield* router.add(
-        "PATCH",
-        "/playlists/:id",
-        respond(
-          Effect.gen(function* renamePlaylist() {
-            const { params } = yield* HttpRouter.RouteContext;
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({
-                name: Schema.String.check(Schema.isMaxLength(100)),
-              })
-            );
-            return yield* library.renamePlaylist(params.id ?? "", input.name);
-          })
-        )
-      );
-      yield* router.add(
-        "DELETE",
-        "/playlists/:id",
-        respond(
-          Effect.gen(function* deletePlaylist() {
-            const { params } = yield* HttpRouter.RouteContext;
-            return yield* library.deletePlaylist(params.id ?? "");
-          })
-        )
-      );
-      yield* router.add(
-        "PUT",
-        "/playlists/:id/sets",
-        respond(
-          Effect.gen(function* replacePlaylistMembers() {
-            const { params } = yield* HttpRouter.RouteContext;
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({
-                setIds: Schema.Array(
-                  Schema.String.check(Schema.isMaxLength(100))
-                ).check(Schema.isMaxLength(MAX_SETS_PER_PLAYLIST)),
-              })
-            );
-            return {
-              sets: yield* library.setPlaylistMembers(
-                params.id ?? "",
-                input.setIds
-              ),
-            };
-          })
-        )
-      );
-      yield* router.add(
-        "PUT",
-        "/sets/:id/playlists",
-        respond(
-          Effect.gen(function* replaceSetPlaylists() {
-            const { params } = yield* HttpRouter.RouteContext;
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({
-                playlistIds: Schema.Array(
-                  Schema.String.check(Schema.isMaxLength(100))
-                ).check(Schema.isMaxLength(MAX_PLAYLISTS_PER_SET)),
-              })
-            );
-            return yield* library.setPlaylistMemberships(
-              params.id ?? "",
-              input.playlistIds
-            );
-          })
-        )
       );
       yield* router.add(
         "GET",
@@ -607,8 +584,9 @@ export const createApp = (
         )
       );
       yield* Layer.buildWithScope(
-        HttpApiBuilder.layer(SetsApi, { openapiPath: "/openapi.json" }).pipe(
+        HttpApiBuilder.layer(OrbisApi, { openapiPath: "/openapi.json" }).pipe(
           Layer.provide(setGroup),
+          Layer.provide(playlistGroup),
           Layer.provide(
             Layer.succeed(SetAccess, {
               bearer: (effect) =>
