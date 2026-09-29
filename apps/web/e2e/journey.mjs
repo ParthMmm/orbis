@@ -219,7 +219,12 @@ try {
       } else if (url.pathname.endsWith("/queue/entries")) {
         body = { queue: { activeSetId: null, entries: [set] } };
       } else if (url.pathname.endsWith("/queue/playlist")) {
-        body = { queue: { activeSetId: "set-a", entries: [set] } };
+        body = {
+          queue: {
+            activeSetId: members[0] ?? null,
+            entries: members.map((id) => (id === "set-a" ? set : saved)),
+          },
+        };
       } else if (url.pathname.endsWith("/tags")) {
         body = { tags: ["house"] };
       } else if (url.pathname.endsWith("/audio/grant")) {
@@ -333,6 +338,8 @@ try {
 
     await page.getByLabel("Playlist name").fill("Evening");
     await page.getByRole("button", { name: "Create Playlist" }).click();
+    await page.getByRole("button", { name: "Play Evening" }).click();
+    await page.locator("audio").waitFor({ state: "detached" });
     await page.getByRole("button", { name: "Add Long set to Evening" }).click();
     await page
       .getByRole("button", { name: "Add Provider title to Evening" })

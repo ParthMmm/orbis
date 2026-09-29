@@ -710,6 +710,8 @@ const LibraryView = ({
                             set: active,
                             src: streamUrl(active.id, grant.url),
                           });
+                        } else {
+                          setPlaying(null);
                         }
                       } catch (error) {
                         if (error instanceof Error) {
