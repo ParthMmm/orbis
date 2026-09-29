@@ -35,10 +35,18 @@ const makeClient = (apiUrl: string, key: string) =>
   });
 type OrbisClient = Success<ReturnType<typeof makeClient>>;
 
-/** Runs one typed call with a Person's key. It resolves; a failure is a value. */
-const call = async <A, E>(
-  apiUrl: string,
-  key: string,
+/** The API address and key every call from a signed-in page carries. */
+export interface Credentials {
+  readonly apiUrl: string;
+  readonly key: string;
+}
+
+/**
+ * Runs one typed call with a Person's key. It resolves; a failure is a value. Feature
+ * modules wrap it, for example `callOrbis(session, (api) => api.sets.list())`.
+ */
+export const callOrbis = async <A, E>(
+  { apiUrl, key }: Credentials,
   operation: (client: OrbisClient) => EffectType<A, E>
 ): Promise<ApiResult<A>> => {
   let status: number | undefined;
@@ -69,6 +77,20 @@ const call = async <A, E>(
   }
 };
 
-export const orbis = (apiUrl: string, key: string) => ({
-  me: () => call(apiUrl, key, (client) => client.people.me()),
-});
+export const fetchMe = (credentials: Credentials) =>
+  callOrbis(credentials, (client) => client.people.me());
+
+export type Person = Extract<
+  Awaited<ReturnType<typeof fetchMe>>,
+  { ok: true }
+>["value"];
+
+/** What the page says for each failure. */
+export const FAILURE_MESSAGES: Readonly<Record<ApiFailure, string>> = {
+  failed: "Orbis could not complete the request. Try again.",
+  rejected: "That API key does not work.",
+  // No response at all; on a tailnet device this is often Chrome blocking the
+  // call until the Person allows local network access.
+  unreachable:
+    "Orbis could not be reached. If your browser asks to access devices on your local network, allow it and try again.",
+};

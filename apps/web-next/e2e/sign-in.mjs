@@ -117,8 +117,9 @@ try {
 
     await page.goto(webUrl);
     await page.getByRole("heading", { name: "Sign in to Orbis" }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/sign-in");
     await page.screenshot({ path: path.join(artifacts, "signed-out.png") });
-    step("signed out shows the form");
+    step("a signed-out visit to / goes to the sign-in form");
 
     await page.getByRole("button", { name: "Sign in" }).click();
     await page.getByRole("alert").getByText("Paste the API key").waitFor();
@@ -134,13 +135,17 @@ try {
     step("a wrong key is refused and not stored");
 
     await signIn(key);
-    await page.getByRole("heading", { name: "Signed in as host" }).waitFor();
+    await page.getByRole("heading", { name: "Library" }).waitFor();
     assert.equal(await storedKey(), key);
     await page.screenshot({ path: path.join(artifacts, "signed-in.png") });
-    step("the enrolled key signs in as host and is stored");
+    await page.getByText("Signed in as host").waitFor();
+    assert.equal(new URL(page.url()).pathname, "/");
+    step(
+      "the enrolled key signs in as host, lands on the Library, and is stored"
+    );
 
     await page.reload();
-    await page.getByRole("heading", { name: "Signed in as host" }).waitFor();
+    await page.getByRole("heading", { name: "Library" }).waitFor();
     step("a reload stays signed in");
 
     await page.evaluate(() => localStorage.setItem("orbis.apiKey", "revoked"));
@@ -159,7 +164,7 @@ try {
     step("sign out clears the key");
 
     await signIn(key);
-    await page.getByRole("heading", { name: "Signed in as host" }).waitFor();
+    await page.getByRole("heading", { name: "Library" }).waitFor();
     api.kill("SIGTERM");
     await setTimeout(500);
     await page.reload();
@@ -173,9 +178,9 @@ try {
 
     api = startApi();
     await waitFor(`http://127.0.0.1:${apiPort}/health`);
-    await page.reload();
-    await page.getByRole("heading", { name: "Signed in as host" }).waitFor();
-    step("the same key works once the API is back");
+    await page.getByRole("button", { name: "Try again" }).click();
+    await page.getByRole("heading", { name: "Library" }).waitFor();
+    step("Try again signs back in once the API is back");
 
     assert.deepEqual(violations, []);
     step("no Content Security Policy violations");
