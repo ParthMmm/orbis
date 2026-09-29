@@ -13,14 +13,14 @@ test("visibility resolves only People allowed by both switches and directional f
             for (const bRemoved of bools) {
               const people = [
                 {
-                  filters: [{ personId: "b", see: seeB, appear: true }],
+                  filters: [{ appear: true, personId: "b", see: seeB }],
                   id: "a",
                   removed: aRemoved,
                   social: aSocial,
                   username: "A",
                 },
                 {
-                  filters: [{ personId: "a", see: true, appear: appearToA }],
+                  filters: [{ appear: appearToA, personId: "a", see: true }],
                   id: "b",
                   removed: bRemoved,
                   social: bSocial,

@@ -137,7 +137,8 @@ try {
       let body = set;
       if (url.pathname.endsWith("/me")) {
         if (request.method() === "PATCH") {
-          social = request.postDataJSON().social;
+          const { social: requestedSocial } = request.postDataJSON();
+          social = requestedSocial;
         }
         body = { autoDownload: true, id: "person-a", social, username: "A" };
       } else if (url.pathname.endsWith("/people")) {

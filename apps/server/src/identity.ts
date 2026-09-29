@@ -372,18 +372,20 @@ export const updatePerson = (
   }
 };
 
-export const updatePersonFilters = (
-  storePath: string | undefined,
-  ownerId: string,
-  targetId: string,
-  input: { readonly see?: boolean; readonly appear?: boolean }
-):
+type FilterUpdateResult =
   | {
       readonly kind: "updated";
       readonly see: boolean;
       readonly appear: boolean;
     }
-  | { readonly kind: "invalid" | "missing" | "unavailable" } => {
+  | { readonly kind: "invalid" | "missing" | "unavailable" };
+
+export const updatePersonFilters = (
+  storePath: string | undefined,
+  ownerId: string,
+  targetId: string,
+  input: { readonly see?: boolean; readonly appear?: boolean }
+): FilterUpdateResult => {
   if (input.see === undefined && input.appear === undefined) {
     return { kind: "invalid" };
   }
@@ -391,7 +393,7 @@ export const updatePersonFilters = (
     return { kind: "unavailable" };
   }
   try {
-    return mutateTrustStore(
+    return mutateTrustStore<FilterUpdateResult>(
       storePath,
       () => readTrustStrict(storePath),
       (store) => {

@@ -277,8 +277,12 @@ const LibraryView = ({
       }
     } finally {
       setRetryingAudio(false);
+    }
+  };
+
   const changeSocial = async (enabled: boolean) => {
     setError("");
+    setSocial(enabled);
     try {
       const person = await client.updateMe(enabled);
       setSocial(person.social);
@@ -288,6 +292,7 @@ const LibraryView = ({
       const visible = await client.people();
       setPeople([...visible.people]);
     } catch (error) {
+      setSocial(!enabled);
       if (error instanceof Error) {
         handleError(error, "Could not change your Social setting.");
       }
@@ -388,6 +393,7 @@ const LibraryView = ({
             <input
               type="checkbox"
               checked={social}
+              disabled={loading}
               onChange={(event) => {
                 changeSocial(event.target.checked);
               }}

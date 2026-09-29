@@ -9,6 +9,7 @@ export class SetCaller extends Context.Service<
       readonly autoDownload?: boolean;
       readonly id: string;
       readonly removed: boolean;
+      readonly social?: boolean;
       readonly username: string;
     };
     readonly scope: "daily" | "admin";

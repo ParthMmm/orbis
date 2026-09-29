@@ -171,7 +171,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(28);
+    expect(checked).toBe(31);
   } finally {
     await app.dispose();
   }

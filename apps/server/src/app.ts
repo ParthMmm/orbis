@@ -806,7 +806,7 @@ export const createApp = (
             withFailureResponse(
               Effect.gen(function* listVisiblePeople() {
                 const caller = yield* SetCaller;
-                const {people} = readTrustRegistry(devicesPath).store;
+                const { people } = readTrustRegistry(devicesPath).store;
                 return {
                   people: people.flatMap((person) => {
                     try {
@@ -844,12 +844,9 @@ export const createApp = (
                     result.kind === "invalid"
                       ? "Choose at least one filter."
                       : "Person not found.",
-                  statusCode:
-                    result.kind === "invalid"
-                      ? 400
-                      : result.kind === "missing"
-                        ? 404
-                        : 500,
+                  statusCode: { invalid: 400, missing: 404, unavailable: 500 }[
+                    result.kind
+                  ],
                 });
               })
             )
@@ -858,7 +855,7 @@ export const createApp = (
             withFailureResponse(
               Effect.gen(function* readFriendLibrary() {
                 const caller = yield* SetCaller;
-                const {people} = readTrustRegistry(devicesPath).store;
+                const { people } = readTrustRegistry(devicesPath).store;
                 const target = yield* Effect.try({
                   catch: (error) =>
                     error instanceof LibraryError
