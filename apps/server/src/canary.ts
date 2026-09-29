@@ -4,8 +4,8 @@ import path from "node:path";
 import { Effect, Exit, Layer } from "effect";
 
 import { Cobalt } from "./cobalt.js";
-import { fetchViaCobalt } from "./download-worker.js";
-import type { BackendName } from "./download-worker.js";
+import { DownloadBackends } from "./download-backends.js";
+import type { BackendName } from "./download-backends.js";
 import { configureLogging, withWideEvent } from "./logging.js";
 import { MediaStore } from "./media-store.js";
 import { Ytdlp } from "./ytdlp.js";
@@ -64,24 +64,19 @@ const check = Effect.fn("Canary.check")(function* check(
   backend: BackendName,
   fixture: Fixture
 ) {
-  const cobalt = yield* Cobalt;
+  const backends = yield* DownloadBackends;
   const media = yield* MediaStore;
-  const ytdlp = yield* Ytdlp;
   const id = `${fixture.name}-${backend}`;
   const tmpPath = media.partialPath(id);
   const { signal } = new AbortController();
   const started = Date.now();
-  const fetched =
-    backend === "ytdlp"
-      ? ytdlp.download(fixture.url, tmpPath, ignoreProgress, signal)
-      : fetchViaCobalt(
-          cobalt,
-          media,
-          fixture.url,
-          tmpPath,
-          ignoreProgress,
-          signal
-        );
+  const fetched = backends.fetch(
+    backend,
+    fixture.url,
+    tmpPath,
+    ignoreProgress,
+    signal
+  );
   const result: CheckResult = yield* fetched.pipe(
     Effect.andThen(media.storeDownloaded(id, tmpPath)),
     Effect.match({
@@ -133,11 +128,9 @@ const options = {
 };
 
 const program = Effect.gen(function* runCanary() {
-  const cobalt = yield* Cobalt;
-  const ytdlp = yield* Ytdlp;
-  const backends = (["ytdlp", "cobalt"] as const).filter((name) =>
-    name === "ytdlp" ? ytdlp.isConfigured : cobalt.isConfigured
-  );
+  const available = yield* DownloadBackends;
+  // Each backend is checked on every fixture, not only where it comes first.
+  const backends = available.forSource("youtube");
   const results = yield* Effect.forEach(
     FIXTURES.flatMap((fixture) =>
       backends.map((backend) => ({ backend, fixture }))
@@ -175,10 +168,10 @@ const program = Effect.gen(function* runCanary() {
 const exit = await Effect.runPromiseExit(
   program.pipe(
     Effect.provide(
-      Layer.mergeAll(
-        Cobalt.layer(options),
-        MediaStore.layer(options),
-        Ytdlp.layer(options)
+      DownloadBackends.layer.pipe(
+        Layer.provideMerge(MediaStore.layer(options)),
+        Layer.provide(Cobalt.layer(options)),
+        Layer.provide(Ytdlp.layer(options))
       )
     )
   )

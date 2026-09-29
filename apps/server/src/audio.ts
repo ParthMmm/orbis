@@ -3,6 +3,7 @@ import { Context, Effect, Layer } from "effect";
 
 import { Cobalt } from "./cobalt.js";
 import type { CobaltOptions } from "./cobalt.js";
+import { DownloadBackends } from "./download-backends.js";
 import { DownloadWorker } from "./download-worker.js";
 import type { DownloadWorkerOptions } from "./download-worker.js";
 import { LibraryError } from "./errors.js";
@@ -54,19 +55,23 @@ export class Audio extends Context.Service<
     const cobaltLayer = Cobalt.layer(options);
     const ytdlpLayer = Ytdlp.layer(options);
     const mediaLayer = MediaStore.layer(options);
-    const workerLayer = DownloadWorker.layer(options).pipe(
+    const backendsLayer = DownloadBackends.layer.pipe(
       Layer.provide(cobaltLayer),
       Layer.provide(ytdlpLayer),
+      Layer.provide(mediaLayer)
+    );
+    const workerLayer = DownloadWorker.layer(options).pipe(
+      Layer.provide(backendsLayer),
       Layer.provide(mediaLayer)
     );
     return Layer.effect(
       Audio,
       Effect.gen(function* buildAudio() {
-        const cobalt = yield* Cobalt;
-        const ytdlp = yield* Ytdlp;
+        const backends = yield* DownloadBackends;
         const media = yield* MediaStore;
         const worker = yield* DownloadWorker;
-        const configured = cobalt.isConfigured || ytdlp.isConfigured;
+        // Every backend serves every source, so any configured one is enough.
+        const configured = backends.forSource("youtube").length > 0;
         yield* media.ensureDirectory();
         const requestDownload = Effect.fn("Audio.requestDownload")(
           function* requestDownload(id: string) {
@@ -146,8 +151,7 @@ export class Audio extends Context.Service<
       })
     ).pipe(
       Layer.provide(workerLayer),
-      Layer.provideMerge(cobaltLayer),
-      Layer.provideMerge(ytdlpLayer),
+      Layer.provideMerge(backendsLayer),
       Layer.provideMerge(mediaLayer)
     );
   }
