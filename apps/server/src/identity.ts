@@ -1,31 +1,71 @@
-import { createHash, timingSafeEqual } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { dlopen, FFIType } from "bun:ffi";
+import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
+import {
+  closeSync,
+  existsSync,
+  openSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} from "node:fs";
 
 import { Schema } from "effect";
 
-/**
- * A paired device. The host stores only the digest of the device token, so a copy of
- * the trust store cannot be used to authenticate against the library.
- */
-const Device = Schema.Struct({
+const TokenHash = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
+const LegacyDevice = Schema.Struct({
   addedAt: Schema.String,
   id: Schema.String,
   label: Schema.String,
-  tokenHash: Schema.String,
+  tokenHash: TokenHash,
+});
+const Person = Schema.Struct({
+  id: Schema.String,
+  removed: Schema.Boolean,
+  username: Schema.String,
+});
+const Key = Schema.Struct({
+  addedAt: Schema.String,
+  id: Schema.String,
+  label: Schema.String,
+  lastUsedAt: Schema.NullOr(Schema.String),
+  personId: Schema.String,
+  scope: Schema.Literals(["daily", "admin"]),
+  tokenHash: TokenHash,
+});
+const LegacyTrustFile = Schema.Struct({
+  devices: Schema.Array(LegacyDevice),
+  version: Schema.Literal(1),
+});
+const TrustFile = Schema.Struct({
+  keys: Schema.Array(Key),
+  people: Schema.Array(Person),
+  version: Schema.Literal(2),
 });
 
-export type DeviceRecord = typeof Device.Type;
-
+export type PersonRecord = typeof Person.Type;
+export type KeyRecord = typeof Key.Type;
+export type TrustStore = typeof TrustFile.Type;
 export type AccessMode = "local" | "device";
 
-const TrustFile = Schema.Struct({
-  devices: Schema.Array(Device),
-  version: Schema.Number,
+export const HOST_PERSON_ID = "host";
+const HOST_PERSON: PersonRecord = {
+  id: HOST_PERSON_ID,
+  removed: false,
+  username: "host",
+};
+export const emptyTrustStore = (): TrustStore => ({
+  keys: [],
+  people: [HOST_PERSON],
+  version: 2,
 });
 
 export type AccessDecision =
-  | { readonly kind: "local" }
-  | { readonly kind: "device"; readonly deviceId: string }
+  | {
+      readonly kind: "accepted";
+      readonly keyId: string | null;
+      readonly person: PersonRecord;
+      readonly scope: "daily" | "admin";
+    }
   | {
       readonly kind: "rejected";
       readonly message: string;
@@ -36,52 +76,128 @@ const LOCAL_ONLY = "Only local app requests are allowed.";
 const NOT_PAIRED = "This device is not paired with your library.";
 const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost)(?::\d+)?$/u;
 const BEARER = /^Bearer[ \t]+(?<token>.+)$/iu;
+const USAGE_INTERVAL_MS = 60 * 60 * 1000;
 
 export const hashToken = (token: string): string =>
   createHash("sha256").update(token, "utf-8").digest("hex");
 
-/**
- * Reads the trust store and fails loudly. Used by the enrolment tool, which must never
- * overwrite a store it could not parse.
- */
-export const readDevicesStrict = (
-  devicesPath: string
-): readonly DeviceRecord[] => {
-  const raw: unknown = JSON.parse(readFileSync(devicesPath, "utf-8"));
-  return Schema.decodeUnknownSync(TrustFile)(raw).devices;
+const fromLegacy = (legacy: typeof LegacyTrustFile.Type): TrustStore => ({
+  keys: legacy.devices.map((device) => ({
+    ...device,
+    lastUsedAt: null,
+    personId: HOST_PERSON_ID,
+    scope: "daily" as const,
+  })),
+  people: [HOST_PERSON],
+  version: 2,
+});
+
+export const readTrustStrict = (storePath: string): TrustStore => {
+  const raw: unknown = JSON.parse(readFileSync(storePath, "utf-8"));
+  const parsed = Schema.decodeUnknownSync(
+    Schema.Union([LegacyTrustFile, TrustFile])
+  )(raw);
+  return parsed.version === 1 ? fromLegacy(parsed) : parsed;
 };
 
-/**
- * The device registry as the request path sees it. `storeError` is set instead of
- * throwing, so a caller can tell "no paired devices" from "no readable store".
- */
-export interface DeviceRegistry {
-  readonly devices: readonly DeviceRecord[];
-  readonly storeError?: "unreadable";
-}
+const writeTrustStore = (storePath: string, store: TrustStore): void => {
+  const temporary = `${storePath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
+  writeFileSync(temporary, `${JSON.stringify(store, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  renameSync(temporary, storePath);
+};
 
-/** A file that was never created is not a damaged store, so it stays quiet. */
 const isMissingFile = (error: Error): boolean =>
   "code" in error && error.code === "ENOENT";
 
-/**
- * Reads the trust store for the request path. A missing store is an empty registry, and a
- * store that exists but cannot be parsed is an empty registry with `storeError` set, so a
- * damaged store refuses remote clients, leaves local access alone, and says why.
- */
-export const readDeviceRegistry = (
-  devicesPath: string | undefined
-): DeviceRegistry => {
-  if (!devicesPath) {
-    return { devices: [] };
+const LOCK_EXCLUSIVE_NONBLOCKING = 6;
+const LOCK_WAIT_MS = 10;
+const LOCK_TIMEOUT_MS = 5000;
+const lockWaiter = new Int32Array(new SharedArrayBuffer(4));
+const libc = dlopen(
+  process.platform === "darwin" ? "libSystem.B.dylib" : "libc.so.6",
+  {
+    flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+  }
+);
+
+const withTrustStoreLock = <T>(storePath: string, action: () => T): T => {
+  const lockPath = `${storePath}.lock`;
+  const fd = openSync(lockPath, "a", 0o600);
+  try {
+    const deadline = Date.now() + LOCK_TIMEOUT_MS;
+    while (libc.symbols.flock(fd, LOCK_EXCLUSIVE_NONBLOCKING) !== 0) {
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for trust store lock: ${lockPath}`);
+      }
+      Atomics.wait(lockWaiter, 0, 0, LOCK_WAIT_MS);
+    }
+    return action();
+  } finally {
+    closeSync(fd);
+  }
+};
+
+export const mutateTrustStore = <T>(
+  storePath: string,
+  read: () => TrustStore,
+  change: (store: TrustStore) => {
+    readonly store?: TrustStore;
+    readonly value: T;
+  }
+): T =>
+  withTrustStoreLock(storePath, () => {
+    const { store, value } = change(read());
+    if (store) {
+      writeTrustStore(storePath, store);
+    }
+    return value;
+  });
+
+export const migrateTrustStore = (storePath: string): void => {
+  if (!existsSync(storePath)) {
+    return;
+  }
+  withTrustStoreLock(storePath, () => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(readFileSync(storePath, "utf-8"));
+    } catch {
+      return;
+    }
+    let parsed: typeof LegacyTrustFile.Type | typeof TrustFile.Type;
+    try {
+      parsed = Schema.decodeUnknownSync(
+        Schema.Union([LegacyTrustFile, TrustFile])
+      )(raw);
+    } catch {
+      return;
+    }
+    if (parsed.version === 1) {
+      writeTrustStore(storePath, fromLegacy(parsed));
+    }
+  });
+};
+
+export interface TrustRegistry {
+  readonly store: TrustStore;
+  readonly storeError?: "unreadable";
+}
+
+export const readTrustRegistry = (
+  storePath: string | undefined
+): TrustRegistry => {
+  if (!storePath) {
+    return { store: emptyTrustStore() };
   }
   try {
-    return { devices: readDevicesStrict(devicesPath) };
+    return { store: readTrustStrict(storePath) };
   } catch (error) {
     if (error instanceof Error && isMissingFile(error)) {
-      return { devices: [] };
+      return { store: emptyTrustStore() };
     }
-    return { devices: [], storeError: "unreadable" };
+    return { store: emptyTrustStore(), storeError: "unreadable" };
   }
 };
 
@@ -97,34 +213,133 @@ const rejected = (message: string, statusCode: number): AccessDecision => ({
   statusCode,
 });
 
-/**
- * The single access decision. Order matters. A browser is refused first, a claimed device
- * token is judged second, and the loopback rule the desktop client relies on is the
- * fallback, so a request from the Electron main process behaves exactly as before.
- */
 export const decideAccess = (input: {
   readonly authorization: string | null;
-  readonly devices: readonly DeviceRecord[];
   readonly hasOrigin: boolean;
   readonly host: string;
   readonly mode: AccessMode;
+  readonly store: TrustStore;
 }): AccessDecision => {
   if (input.hasOrigin) {
     return rejected(LOCAL_ONLY, 403);
   }
   if (input.authorization !== null) {
     const token = BEARER.exec(input.authorization)?.groups?.token;
-    const device = token
-      ? input.devices.find((candidate) =>
+    const key = token
+      ? input.store.keys.find((candidate) =>
           matchesTokenHash(candidate.tokenHash, token)
         )
       : undefined;
-    return device
-      ? { deviceId: device.id, kind: "device" }
+    const person = input.store.people.find(
+      (candidate) => candidate.id === key?.personId && !candidate.removed
+    );
+    return key && person
+      ? { keyId: key.id, kind: "accepted", person, scope: key.scope }
       : rejected(NOT_PAIRED, 401);
   }
   if (input.mode === "local" && LOOPBACK_HOST.test(input.host)) {
-    return { kind: "local" };
+    const person = input.store.people.find(
+      (candidate) => candidate.id === HOST_PERSON_ID && !candidate.removed
+    );
+    return {
+      keyId: null,
+      kind: "accepted",
+      person: person ?? HOST_PERSON,
+      scope: "admin",
+    };
   }
   return rejected(LOCAL_ONLY, 403);
+};
+
+export const markKeyUsed = (
+  storePath: string | undefined,
+  keyId: string | null
+): void => {
+  if (!storePath || !keyId) {
+    return;
+  }
+  try {
+    mutateTrustStore(
+      storePath,
+      () => readTrustStrict(storePath),
+      (store) => {
+        const key = store.keys.find((record) => record.id === keyId);
+        const now = Date.now();
+        if (
+          !key ||
+          (key.lastUsedAt &&
+            now - Date.parse(key.lastUsedAt) < USAGE_INTERVAL_MS)
+        ) {
+          return { value: undefined };
+        }
+        return {
+          store: {
+            ...store,
+            keys: store.keys.map((record) =>
+              record.id === keyId
+                ? { ...record, lastUsedAt: new Date(now).toISOString() }
+                : record
+            ),
+          },
+          value: undefined,
+        };
+      }
+    );
+  } catch {
+    // Usage time is advisory; authentication already checked the current store.
+  }
+};
+
+export type RenamePersonResult =
+  | { readonly kind: "updated"; readonly person: PersonRecord }
+  | { readonly kind: "invalid" | "conflict" | "unavailable" };
+
+export const renamePerson = (
+  storePath: string | undefined,
+  personId: string,
+  username: string
+): RenamePersonResult => {
+  const name = username.trim();
+  if (!name || name.length > 40) {
+    return { kind: "invalid" };
+  }
+  if (!storePath) {
+    return { kind: "unavailable" };
+  }
+  try {
+    return mutateTrustStore<RenamePersonResult>(
+      storePath,
+      () => readTrustStrict(storePath),
+      (store) => {
+        if (
+          store.people.some(
+            (person) =>
+              !person.removed &&
+              person.id !== personId &&
+              person.username.toLowerCase() === name.toLowerCase()
+          )
+        ) {
+          return { value: { kind: "conflict" as const } };
+        }
+        const person = store.people.find(
+          (record) => record.id === personId && !record.removed
+        );
+        if (!person) {
+          return { value: { kind: "unavailable" as const } };
+        }
+        const updated = { ...person, username: name };
+        return {
+          store: {
+            ...store,
+            people: store.people.map((record) =>
+              record.id === personId ? updated : record
+            ),
+          },
+          value: { kind: "updated" as const, person: updated },
+        };
+      }
+    );
+  } catch {
+    return { kind: "unavailable" };
+  }
 };

@@ -42,6 +42,7 @@ try {
     audioState: await send(`/sets/${savedSet.id}/audio/state`),
     health: await send("/health"),
     library: await send("/sets"),
+    me: await send("/me"),
     playlist,
     playlists: await send("/playlists"),
     queue: await send("/queue"),

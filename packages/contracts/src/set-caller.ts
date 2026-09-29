@@ -2,6 +2,14 @@ import { Context } from "effect";
 
 export class SetCaller extends Context.Service<
   SetCaller,
-  | { readonly kind: "local" }
-  | { readonly kind: "device"; readonly deviceId: string }
+  {
+    readonly kind: "accepted";
+    readonly keyId: string | null;
+    readonly person: {
+      readonly id: string;
+      readonly removed: boolean;
+      readonly username: string;
+    };
+    readonly scope: "daily" | "admin";
+  }
 >()("Orbis/SetCaller") {}

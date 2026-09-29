@@ -1,38 +1,50 @@
 import { randomBytes } from "node:crypto";
-import { renameSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
-import { hashToken, readDevicesStrict } from "./identity.js";
-import type { DeviceRecord } from "./identity.js";
+import {
+  emptyTrustStore,
+  hashToken,
+  HOST_PERSON_ID,
+  mutateTrustStore,
+  readTrustStrict,
+} from "./identity.js";
+import type { KeyRecord, TrustStore } from "./identity.js";
 
 const usage = `Usage:
-  bun src/trust.ts add --label "<name>" [--devices <path>]
-  bun src/trust.ts list [--devices <path>]
-  bun src/trust.ts remove --id <id> [--devices <path>]
+  bun src/trust.ts person add --username <name> [--devices <path>]
+  bun src/trust.ts person list [--devices <path>]
+  bun src/trust.ts person remove --id <id> [--devices <path>]
+  bun src/trust.ts key add --person <id> --label <name> [--scope daily|admin] [--devices <path>]
+  bun src/trust.ts key list [--devices <path>]
+  bun src/trust.ts key revoke --id <id> [--devices <path>]
 
-The default store is devices.json beside the library database, so ORBIS_DATA_DIR
-sets it for the server and this tool at once. Adding prints the device token once.`;
+The default store is devices.json beside the library database. ORBIS_DATA_DIR
+sets its directory for the server and this tool. Key tokens print once.`;
 
 const option = (name: string): string | undefined => {
   const index = process.argv.indexOf(`--${name}`);
   return index === -1 ? undefined : process.argv[index + 1];
 };
 
-const devicesPath = (): string =>
-  path.resolve(
-    option("devices") ??
-      path.join(process.env.ORBIS_DATA_DIR ?? "data", "devices.json")
-  );
+const required = (name: string): string => {
+  const value = option(name)?.trim();
+  if (!value) {
+    throw new Error(`--${name} is required.`);
+  }
+  return value;
+};
 
-const isMissingFile = (error: Error): boolean =>
-  "code" in error && error.code === "ENOENT";
+const target = path.resolve(
+  option("devices") ??
+    path.join(process.env.ORBIS_DATA_DIR ?? "data", "devices.json")
+);
 
-const readStore = (target: string): readonly DeviceRecord[] => {
+const readStore = (): TrustStore => {
   try {
-    return readDevicesStrict(target);
+    return readTrustStrict(target);
   } catch (error) {
-    if (error instanceof Error && isMissingFile(error)) {
-      return [];
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+      return emptyTrustStore();
     }
     throw new Error(
       `${target} could not be read as a trust store, so it was left untouched.`,
@@ -41,69 +53,158 @@ const readStore = (target: string): readonly DeviceRecord[] => {
   }
 };
 
-const write = (target: string, devices: readonly DeviceRecord[]) => {
-  const temporary = `${target}.tmp`;
-  writeFileSync(
-    temporary,
-    `${JSON.stringify({ devices, version: 1 }, null, 2)}\n`,
-    { mode: 0o600 }
-  );
-  // A rename is atomic, so a running server never reads a half-written store.
-  renameSync(temporary, target);
+const mutateStore = <T>(
+  change: (store: TrustStore) => {
+    readonly store: TrustStore;
+    readonly value: T;
+  }
+): T => mutateTrustStore(target, readStore, change);
+
+const username = (): string => {
+  const value = required("username");
+  if (value.length > 40) {
+    throw new Error("Username must have at most 40 characters.");
+  }
+  return value;
 };
 
-const add = (target: string) => {
-  const label = option("label")?.trim();
-  if (!label) {
-    throw new Error("--label is required.");
+const personAdd = () => {
+  const name = username();
+  const person = mutateStore((store) => {
+    if (
+      store.people.some(
+        (candidate) =>
+          !candidate.removed &&
+          candidate.username.toLowerCase() === name.toLowerCase()
+      )
+    ) {
+      throw new Error("That username is already in use.");
+    }
+    const added = {
+      id: randomBytes(8).toString("hex"),
+      removed: false,
+      username: name,
+    };
+    return {
+      store: { ...store, people: [...store.people, added] },
+      value: added,
+    };
+  });
+  console.log(`Added Person ${person.id} (${name}).`);
+};
+
+const personList = () => {
+  for (const person of readStore().people) {
+    console.log(
+      `${person.id}\t${person.username}\t${person.removed ? "removed" : "active"}`
+    );
   }
+};
+
+const personRemove = () => {
+  const id = required("id");
+  if (id === HOST_PERSON_ID) {
+    throw new Error("Host cannot be removed.");
+  }
+  mutateStore((store) => {
+    if (!store.people.some((person) => person.id === id && !person.removed)) {
+      throw new Error(`No active Person with id ${id}.`);
+    }
+    return {
+      store: {
+        ...store,
+        keys: store.keys.filter((key) => key.personId !== id),
+        people: store.people.map((person) =>
+          person.id === id ? { ...person, removed: true } : person
+        ),
+      },
+      value: undefined,
+    };
+  });
+  console.log(
+    `Removed Person ${id}. Their keys stop working on the next request.`
+  );
+};
+
+const keyAdd = (legacy = false) => {
+  const personId = legacy ? HOST_PERSON_ID : required("person");
+  const scope = option("scope") ?? "daily";
+  if (scope !== "daily" && scope !== "admin") {
+    throw new Error("--scope must be daily or admin.");
+  }
+  if (scope === "admin" && personId !== HOST_PERSON_ID) {
+    throw new Error("Only Host can have an admin key.");
+  }
+  const label = required("label");
   const token = randomBytes(32).toString("base64url");
-  const device: DeviceRecord = {
+  const key: KeyRecord = {
     addedAt: new Date().toISOString(),
     id: randomBytes(6).toString("hex"),
     label,
+    lastUsedAt: null,
+    personId,
+    scope,
     tokenHash: hashToken(token),
   };
-  write(target, [...readStore(target), device]);
-  console.log(`Enrolled ${device.id} (${label}) in ${target}.`);
-  console.log(`Device token, shown once: ${token}`);
+  mutateStore((store) => {
+    if (
+      !store.people.some((person) => person.id === personId && !person.removed)
+    ) {
+      throw new Error(`No active Person with id ${personId}.`);
+    }
+    return {
+      store: { ...store, keys: [...store.keys, key] },
+      value: undefined,
+    };
+  });
+  console.log(`Enrolled ${key.id} (${label}) in ${target}.`);
+  console.log(`${legacy ? "Device" : "Key"} token, shown once: ${token}`);
 };
 
-const list = (target: string) => {
-  const devices = readStore(target);
-  if (devices.length === 0) {
+const keyList = () => {
+  const { keys } = readStore();
+  if (keys.length === 0) {
     console.log(`No paired devices in ${target}.`);
-    return;
   }
-  for (const device of devices) {
-    console.log(`${device.id}\t${device.label}\t${device.addedAt}`);
+  for (const key of keys) {
+    console.log(
+      `${key.id}\t${key.label}\t${key.personId}\t${key.scope}\t${key.lastUsedAt ?? "never"}`
+    );
   }
 };
 
-const remove = (target: string) => {
-  const id = option("id");
-  if (!id) {
-    throw new Error("--id is required.");
-  }
-  const devices = readStore(target);
-  const remaining = devices.filter((device) => device.id !== id);
-  if (remaining.length === devices.length) {
-    throw new Error(`No paired device with id ${id}.`);
-  }
-  write(target, remaining);
+const keyRevoke = () => {
+  const id = required("id");
+  mutateStore((store) => {
+    const keys = store.keys.filter((key) => key.id !== id);
+    if (keys.length === store.keys.length) {
+      throw new Error(`No paired key with id ${id}.`);
+    }
+    return { store: { ...store, keys }, value: undefined };
+  });
   console.log(`Removed ${id}. It stops working on the next request.`);
 };
 
-const [command] = process.argv.slice(2);
-const target = devicesPath();
-
+const [group, action] = process.argv.slice(2);
 try {
-  if (command === "add") {
-    add(target);
-  } else if (command === "list") {
-    list(target);
-  } else if (command === "remove") {
-    remove(target);
+  if (group === "person" && action === "add") {
+    personAdd();
+  } else if (group === "person" && action === "list") {
+    personList();
+  } else if (group === "person" && action === "remove") {
+    personRemove();
+  } else if (group === "key" && action === "add") {
+    keyAdd();
+  } else if (group === "key" && action === "list") {
+    keyList();
+  } else if (group === "key" && action === "revoke") {
+    keyRevoke();
+  } else if (group === "add") {
+    keyAdd(true);
+  } else if (group === "list") {
+    keyList();
+  } else if (group === "remove") {
+    keyRevoke();
   } else {
     console.log(usage);
     process.exitCode = 2;

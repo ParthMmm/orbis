@@ -143,6 +143,13 @@ export const PositionPayload = Schema.Struct({
   ),
 });
 export const TagsPayload = Schema.Struct({ tags: Tags });
+export const MeSchema = Schema.Struct({
+  id: Schema.String,
+  username: Schema.String,
+});
+export const UpdateMePayload = Schema.Struct({
+  username: Schema.String.check(Schema.isMaxLength(40)),
+});
 
 export const SetsApi = HttpApi.make("orbis").add(
   HttpApiGroup.make("sets")
@@ -299,6 +306,18 @@ export const OrbisApi = PlaylistApi.add(
           params: SetId,
           payload: TagsPayload,
           success: SavedSetSchema,
+        })
+      )
+      .middleware(SetAccess)
+  )
+  .add(
+    HttpApiGroup.make("people")
+      .add(
+        HttpApiEndpoint.get("me", "/me", { success: MeSchema }),
+        HttpApiEndpoint.patch("updateMe", "/me", {
+          error: [BadRequest, Conflict, InternalError],
+          payload: UpdateMePayload,
+          success: MeSchema,
         })
       )
       .middleware(SetAccess)

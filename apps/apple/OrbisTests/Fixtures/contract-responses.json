@@ -84,5 +84,9 @@
   },
   "tags": {
     "tags": ["house"]
+  },
+  "me": {
+    "id": "host",
+    "username": "host"
   }
 }
