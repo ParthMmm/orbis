@@ -23,6 +23,6 @@
     "diagnostics": "effect-tsgo diagnostics --project tsconfig.json --format text"
   },
   "dependencies": {
-    "effect": "4.0.0-rc.113"
+    "effect": "4.0.0-rc.117"
   }
 }

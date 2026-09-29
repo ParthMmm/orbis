@@ -27,7 +27,7 @@
         "@orbis/contracts": "workspace:*",
         "class-variance-authority": "^0.7.1",
         "cn": "^0.2.6",
-        "effect": "4.0.0-rc.113",
+        "effect": "4.0.0-rc.117",
         "lucide-react": "^1.41.0",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
@@ -52,7 +52,7 @@
       "dependencies": {
         "@orbis/contracts": "workspace:*",
         "@raycast/api": "2.2.1",
-        "effect": "4.0.0-rc.113",
+        "effect": "4.0.0-rc.117",
       },
       "devDependencies": {
         "@types/bun": "^1.3.0",
@@ -62,11 +62,11 @@
       "name": "@orbis/server",
       "version": "0.0.0",
       "dependencies": {
-        "@effect/ai-openrouter": "4.0.0-rc.113",
-        "@effect/sql-sqlite-bun": "4.0.0-rc.113",
+        "@effect/ai-openrouter": "4.0.0-rc.117",
+        "@effect/sql-sqlite-bun": "4.0.0-rc.117",
         "@orbis/contracts": "workspace:*",
         "drizzle-orm": "1.0.0-rc.5-5935859",
-        "effect": "4.0.0-rc.113",
+        "effect": "4.0.0-rc.117",
         "evlog": "2.28.1",
       },
       "devDependencies": {
@@ -81,7 +81,7 @@
       "dependencies": {
         "@fontsource-variable/inter": "^5.3.0",
         "@orbis/contracts": "workspace:*",
-        "effect": "4.0.0-rc.113",
+        "effect": "4.0.0-rc.117",
         "react": "^19.1.0",
         "react-dom": "^19.1.0",
       },
@@ -95,7 +95,7 @@
       "name": "@orbis/contracts",
       "version": "0.0.0",
       "dependencies": {
-        "effect": "4.0.0-rc.113",
+        "effect": "4.0.0-rc.117",
       },
     },
   },
@@ -174,9 +174,9 @@
 
     "@drizzle-team/brocli": ["@drizzle-team/brocli@0.12.1", "", {}, "sha512-yHwomvolVafvUXhy5TdiJVkuNCxXn+bKOs2aWiWEQh/5YaV97Oa/abJz3dmx7lxgIUsUlS1Jl4mEfvJPo3YsVw=="],
 
-    "@effect/ai-openrouter": ["@effect/ai-openrouter@4.0.0-rc.113", "", { "peerDependencies": { "effect": "^4.0.0-rc.113" } }, "sha512-3p9ND+yfJoSc8fYLBdPvKQlbWuKv+kznKyrxb+j31jo18AGBATyohOrsY5m7vZzoTDo8pqvKjghQ1U8xbrURPA=="],
+    "@effect/ai-openrouter": ["@effect/ai-openrouter@4.0.0-rc.117", "", { "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-CNfMPZSsYQmg3vt6/H9lYr2Sov9e+EoviMTKoRGtVgl8EVoj+Hd00kgh1MrhGnNanR7ZNUNOOqTzN1ENV1LMlw=="],
 
-    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.0-rc.113", "", { "peerDependencies": { "effect": "^4.0.0-rc.113" } }, "sha512-gh3k27MMq/MDqPqpQYoNw1BgXgPIxZtQQsF9W321Ml20lbIzEBdOA6LgEEbA1sX7wy8/710bDBgXvDcm27ioAA=="],
+    "@effect/sql-sqlite-bun": ["@effect/sql-sqlite-bun@4.0.0-rc.117", "", { "peerDependencies": { "effect": "^4.0.0-rc.117" } }, "sha512-UjgkEmR+s5Rc870sDsDzu/8AA5KQqcBeq5qgH6AFe5OYfv3GCMfoQTkIvnl+Q3M5KaZosYgwwEy9uij/J2HOJw=="],
 
     "@effect/tsgo": ["@effect/tsgo@0.41.0", "", { "optionalDependencies": { "@effect/tsgo-darwin-arm64": "0.41.0", "@effect/tsgo-darwin-x64": "0.41.0", "@effect/tsgo-linux-arm": "0.41.0", "@effect/tsgo-linux-arm64": "0.41.0", "@effect/tsgo-linux-x64": "0.41.0", "@effect/tsgo-win32-arm64": "0.41.0", "@effect/tsgo-win32-x64": "0.41.0" }, "bin": { "effect-tsgo": "dist/effect-tsgo.cjs" } }, "sha512-C/U7lFM0AXsfpqRilDOgwu+llBhAo8bcdIlzgbRWf1LWlU4KZKB2UsUvBPL3qPnm+wmbCvQLeTQc4BjV9oJrcg=="],
 
@@ -942,7 +942,7 @@
 
     "ee-first": ["ee-first@1.1.1", "", {}, "sha512-WMwm9LhRUo+WUaRN+vRuETqG89IgZphVSNkdFgeb6sS/E4OrDIN7t48CAewSHXc6C8lefD8KKfr5vY61brQlow=="],
 
-    "effect": ["effect@4.0.0-rc.113", "", {}, "sha512-uZ4Bh7KSlw2sdVdNDHPLSNjLGH+MWap7cheIHZoB/1T/ZJ3pvI4KiN3kUp50MpFKXhygOMmReJJOwWMQPwpPAg=="],
+    "effect": ["effect@4.0.0-rc.117", "", {}, "sha512-UUyi9QiOW4nySFIBM3KnYbNMd9EZliOdKfBcyLD0mPMPheO2fkuXS5y0opjWc9oqzlJxPQICEGm8gGw3kh9j/w=="],
 
     "ejs": ["ejs@6.0.1", "", { "bin": { "ejs": "bin/cli.js" } }, "sha512-UaaM14yby8U3k02ihS1Bmj5Kz2d7CCQM1scxpgs4Mhkq8F1wR2gl3+Ts4h5Ne4Mnt7M9m4Dw7jsuMr3+xO4vZA=="],
 
