@@ -307,7 +307,11 @@ const LibraryView = ({
   }, [selectedPlaylist, session.key, handleError]);
 
   useEffect(() => {
-    const pending = sets.filter(
+    const pending = [
+      ...new Map(
+        [...sets, ...(friend?.sets ?? [])].map((set) => [set.id, set])
+      ).values(),
+    ].filter(
       (set) =>
         set.downloadState === "queued" ||
         set.downloadState === "downloading" ||
@@ -324,6 +328,18 @@ const LibraryView = ({
           )
         );
         setAudioStates(Object.fromEntries(states));
+        const updated = new Map(states);
+        setFriend((current) =>
+          current
+            ? {
+                ...current,
+                sets: current.sets.map((set) => {
+                  const state = updated.get(set.id);
+                  return state ? { ...set, downloadState: state.state } : set;
+                }),
+              }
+            : null
+        );
         if (
           pending.some((set) => set.metadataState === "pending") ||
           states.some(
@@ -339,7 +355,7 @@ const LibraryView = ({
       }
     }, 1500);
     return () => window.clearInterval(timer);
-  }, [sets, session.key, load, handleError]);
+  }, [sets, friend, session.key, load, handleError]);
 
   const saveSet = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -363,12 +379,47 @@ const LibraryView = ({
 
   const download = async (set: SavedSet) => {
     try {
-      await client.download(set.id);
+      const downloaded = await client.download(set.id);
+      setFriend((current) =>
+        current
+          ? {
+              ...current,
+              sets: current.sets.map((item) =>
+                item.id === set.id
+                  ? { ...item, downloadState: downloaded.downloadState }
+                  : item
+              ),
+            }
+          : null
+      );
       await load();
     } catch (error) {
       if (error instanceof Error) {
         handleError(error, "Could not start Download.");
       }
+    }
+  };
+
+  const saveFriend = async (set: SavedSet) => {
+    setSaving(true);
+    setError("");
+    try {
+      const result = await client.save(set.url);
+      await load();
+      if (result.autoDownloadResult === "queueFull") {
+        setError("Set saved. Download queue is full; try Download later.");
+      }
+    } catch (error) {
+      if (error instanceof Error) {
+        handleError(
+          error,
+          error instanceof ApiFailureError && error.status === 409
+            ? "This Set is already in your Library."
+            : "Could not save Set."
+        );
+      }
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -461,10 +512,17 @@ const LibraryView = ({
     try {
       const response = await client.play(set.id);
       setQueue(response.queue);
-      const grant = await client.grant(set.id);
+      const active = response.queue.entries.find(
+        (entry) => entry.id === response.queue.activeSetId
+      );
+      if (!active) {
+        setPlaying(null);
+        return;
+      }
+      const grant = await client.grant(active.id);
       setPlaying({
         attempt: (playing?.attempt ?? 0) + 1,
-        set,
+        set: active,
         src: streamUrl(set.id, grant.url),
       });
       lastReport.current = 0;
@@ -914,6 +972,38 @@ const LibraryView = ({
                   <li key={set.id}>
                     <h3>{set.title}</h3>
                     <p>{set.creator ?? "Unknown creator"}</p>
+                    <button
+                      type="button"
+                      disabled={
+                        saving || sets.some((mine) => mine.id === set.id)
+                      }
+                      onClick={() => saveFriend(set)}
+                    >
+                      {sets.some((mine) => mine.id === set.id)
+                        ? "Saved"
+                        : `Save ${set.title}`}
+                    </button>
+                    {set.downloadState === "ready" ? (
+                      <button type="button" onClick={() => play(set)}>
+                        Play {set.title}
+                      </button>
+                    ) : null}
+                    {(set.downloadState === "queued" ||
+                      set.downloadState === "downloading") && (
+                      <p role="status">
+                        Download{" "}
+                        {set.downloadState === "queued"
+                          ? "queued"
+                          : "in progress"}
+                      </p>
+                    )}
+                    {["none", "failed", "canceled"].includes(
+                      set.downloadState
+                    ) && (
+                      <button type="button" onClick={() => download(set)}>
+                        Download {set.title}
+                      </button>
+                    )}
                   </li>
                 ))}
               </ul>

@@ -200,8 +200,8 @@ export class Library extends Context.Service<
       const resolve = (id: string) =>
         resolveVisibleSet({
           id,
-          personId,
           people: options.people?.() ?? [],
+          personId,
         }).pipe(Effect.provideService(Database, db));
       const release = (id: string) =>
         MediaStore.release(id, options).pipe(
@@ -496,10 +496,7 @@ export class Library extends Context.Service<
                 .from(sets)
                 .innerJoin(playlistSets, eq(playlistSets.setId, sets.id))
                 .where(
-                  and(
-                    ...conditions.slice(1),
-                    eq(playlistSets.playlistId, playlistId)
-                  )
+                  and(...conditions, eq(playlistSets.playlistId, playlistId))
                 )
                 .orderBy(asc(playlistSets.position));
               return yield* Effect.forEach((row: (typeof rows)[number]) =>
@@ -578,17 +575,16 @@ export class Library extends Context.Service<
         execute(resolve(id).pipe(Effect.flatMap((row) => hydrateSet(row))))
       );
 
-      // One query for a whole Listening Queue, rather than a find per entry. The order comes from
-      // the caller, because that order is the queue's, not the database's.
+      // Queue order comes from the caller; each Set must resolve for this Person.
       const byIds = Effect.fn("Library.byIds")((ids: readonly string[]) =>
         execute(
           Effect.gen(function* byIdsEffect() {
             if (ids.length === 0) {
               return [];
             }
-            return yield* Effect.forEach(ids, (id) =>
+            return yield* Effect.forEach((id: string) =>
               resolve(id).pipe(Effect.flatMap((row) => hydrateSet(row)))
-            );
+            )(ids);
           })
         )
       );
@@ -895,7 +891,7 @@ export class Library extends Context.Service<
             if (canceled) {
               return yield* hydrateSet(canceled);
             }
-            yield* findSavedSet(id);
+            yield* resolve(id);
             return yield* Effect.fail(
               new LibraryError({
                 message: "This set is already downloaded.",
@@ -1098,7 +1094,7 @@ export class Library extends Context.Service<
             }
             const removed = yield* db.transaction((tx) =>
               Effect.gen(function* deletePlaylistTransaction() {
-                const removed = yield* tx
+                const deleted = yield* tx
                   .delete(playlistSets)
                   .where(eq(playlistSets.playlistId, id))
                   .returning({ setId: playlistSets.setId });
@@ -1107,10 +1103,12 @@ export class Library extends Context.Service<
                   .where(
                     and(eq(playlists.id, id), eq(playlists.creatorId, personId))
                   );
-                return removed;
+                return deleted;
               })
             );
-            yield* Effect.forEach(removed, (set) => release(set.setId));
+            yield* Effect.forEach((set: { readonly setId: string }) =>
+              release(set.setId)
+            )(removed);
             return row;
           })
         )
@@ -1217,7 +1215,9 @@ export class Library extends Context.Service<
                   );
                 })
               );
-              yield* Effect.forEach(removed, (set) => release(set.setId));
+              yield* Effect.forEach((set: { readonly setId: string }) =>
+                release(set.setId)
+              )(removed);
               return yield* list({ playlistId: id });
             })
           )

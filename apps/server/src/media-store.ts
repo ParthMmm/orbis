@@ -8,6 +8,14 @@ import { Database } from "./db/database.js";
 import { downloadJobs, sets } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 
+const releaseError = <E>(error: E) =>
+  error instanceof LibraryError
+    ? error
+    : new LibraryError({
+        message: "Could not release audio.",
+        statusCode: 500,
+      });
+
 export interface MediaStoreOptions {
   readonly audioDir?: string;
   readonly ffprobePath?: string;
@@ -92,17 +100,17 @@ export class MediaStore extends Context.Service<
           }
           const directory = options.audioDir ?? path.join(".", "audio");
           yield* Effect.tryPromise({
+            catch: () =>
+              new LibraryError({
+                message: "Could not release audio.",
+                statusCode: 500,
+              }),
             try: () =>
               Promise.all(
                 ["ogg", "mp3", "m4a"].map((suffix) =>
                   rm(path.join(directory, `${id}.${suffix}`), { force: true })
                 )
               ),
-            catch: () =>
-              new LibraryError({
-                message: "Could not release audio.",
-                statusCode: 500,
-              }),
           });
           yield* tx
             .update(sets)
@@ -115,16 +123,7 @@ export class MediaStore extends Context.Service<
           yield* tx.delete(downloadJobs).where(eq(downloadJobs.setId, id));
         })
       );
-    }).pipe(
-      Effect.mapError((error) =>
-        error instanceof LibraryError
-          ? error
-          : new LibraryError({
-              message: "Could not release audio.",
-              statusCode: 500,
-            })
-      )
-    );
+    }).pipe(Effect.mapError(releaseError));
   }
 
   static layer(options: MediaStoreOptions = {}): Layer.Layer<MediaStore> {

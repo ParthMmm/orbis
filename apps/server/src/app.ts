@@ -309,7 +309,7 @@ export const createApp = (
   });
   // The Database layer is one value used by every service that writes.
   const libraryOptions = {
-    ...(options.audio?.audioDir ? { audioDir: options.audio.audioDir } : {}),
+    audioDir: options.audio?.audioDir ?? path.join(".", "audio"),
     people: () => readTrustRegistry(devicesPath).store.people,
   };
   const libraryLayer = Library.forPersonLayer("host", libraryOptions).pipe(
@@ -1072,9 +1072,9 @@ export const createApp = (
                         })
                     )
                   );
-                yield* Effect.forEach(released, (set) =>
+                yield* Effect.forEach((set: { readonly id: string }) =>
                   library.release(set.id)
-                );
+                )(released);
                 return person;
               })
             )

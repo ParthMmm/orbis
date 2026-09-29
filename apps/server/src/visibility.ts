@@ -34,6 +34,9 @@ export const resolveVisiblePerson = (
   return target;
 };
 
+const notFound = () =>
+  new LibraryError({ message: "Set not found.", statusCode: 404 });
+
 /** Resolves a Set through an owned reference or another visible Person's Library. */
 export const resolveVisibleSet = (input: {
   readonly id: string;
@@ -43,8 +46,6 @@ export const resolveVisibleSet = (input: {
   Effect.gen(function* resolveSet() {
     const db = yield* Database;
     const [row] = yield* db.select().from(sets).where(eq(sets.id, input.id));
-    const notFound = () =>
-      new LibraryError({ message: "Set not found.", statusCode: 404 });
     if (!row) {
       return yield* Effect.fail(notFound());
     }
@@ -70,9 +71,9 @@ export const resolveVisibleSet = (input: {
     }
     for (const entry of entries) {
       const visible = yield* Effect.try({
+        catch: () => notFound(),
         try: () =>
           resolveVisiblePerson(input.people, input.personId, entry.personId),
-        catch: () => notFound(),
       }).pipe(Effect.option);
       if (Option.isSome(visible)) {
         return row;

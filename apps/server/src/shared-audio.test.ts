@@ -12,6 +12,14 @@ import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
 import { startListeners } from "./listeners.js";
 
+type Payload =
+  | { url: string; title?: string; tags?: string[] }
+  | { setId: string }
+  | { setIds: string[] }
+  | { seconds: number }
+  | { name: string }
+  | { playlistId: string };
+
 const Id = Schema.Struct({ id: Schema.String });
 const Audio = Schema.Struct({ state: Schema.String });
 const failures = [
@@ -31,29 +39,27 @@ test("visible Sets share audio and storage releases only the last reference over
   await writeFile(
     path.join(root, "devices.json"),
     JSON.stringify({
-      version: 2,
-      people: ["host", "a", "b", "hidden"].map((id) => ({
-        id,
-        username: id,
-        removed: false,
-        autoDownload: false,
-        social: id !== "hidden",
-      })),
       keys: ["a", "b", "hidden"].map((id) => ({
+        addedAt: new Date().toISOString(),
         id,
         label: id,
+        lastUsedAt: null,
         personId: id,
         scope: "daily",
-        addedAt: new Date().toISOString(),
-        lastUsedAt: null,
         tokenHash: hashToken(id),
       })),
+      people: ["host", "a", "b", "hidden"].map((id) => ({
+        autoDownload: false,
+        id,
+        removed: false,
+        social: id !== "hidden",
+        username: id,
+      })),
+      version: 2,
     })
   );
   let jobs = 0;
   const backend = Bun.serve({
-    hostname: "127.0.0.1",
-    port: 0,
     fetch(request) {
       if (new URL(request.url).pathname === "/audio") {
         return new Response(
@@ -71,16 +77,18 @@ test("visible Sets share audio and storage releases only the last reference over
         url: new URL("/audio", request.url).href,
       });
     },
+    hostname: "127.0.0.1",
+    port: 0,
   });
   const listeners = await startListeners(
     createApp({
-      databasePath,
       audio: {
         audioDir,
         cobaltApiKey: "test",
         cobaltUrl: backend.url.href,
         startWorker: true,
       },
+      databasePath,
       logging: { silent: true },
     }),
     { devicePort: 0, localPort: 0 }
@@ -90,25 +98,32 @@ test("visible Sets share audio and storage releases only the last reference over
     key: string,
     route: string,
     method = "GET",
-    payload?: unknown
+    payload?: Payload
   ) => {
     if (!listeners.device) {
       throw new Error("Missing device listener");
     }
-    return fetch(new URL(route, listeners.device.url), {
-      method,
+    const init: RequestInit = {
       headers: {
         authorization: `Bearer ${key}`,
         "content-type": "application/json",
       },
-      ...(payload === undefined ? {} : { body: JSON.stringify(payload) }),
-    });
+      method,
+    };
+    if (payload !== undefined) {
+      init.body = JSON.stringify(payload);
+    }
+    return fetch(new URL(route, listeners.device.url), init);
+  };
+  const status = async (...args: Parameters<typeof send>) => {
+    const response = await send(...args);
+    return response.status;
   };
   const save = async (key: string, suffix: string) => {
     const response = await send(key, "/sets", "POST", {
-      url: `https://www.youtube.com/watch?v=${suffix}`,
-      title: "B's private title",
       tags: ["private"],
+      title: "B's private title",
+      url: `https://www.youtube.com/watch?v=${suffix}`,
     });
     expect(response.status).toBe(201);
     const body: unknown = await response.json();
@@ -119,9 +134,7 @@ test("visible Sets share audio and storage releases only the last reference over
     return set;
   };
   const download = async (key: string, id: string) => {
-    expect((await send(key, `/sets/${id}/audio/download`, "POST")).status).toBe(
-      202
-    );
+    expect(await status(key, `/sets/${id}/audio/download`, "POST")).toBe(202);
     const deadline = Date.now() + 10_000;
     while (Date.now() < deadline) {
       const response = await send(key, `/sets/${id}/audio/state`);
@@ -146,20 +159,23 @@ test("visible Sets share audio and storage releases only the last reference over
     const set = await save("b", "shared00001");
     await download("a", set.id);
     expect(jobs).toBe(1);
+    expect(await status("b", `/sets/${set.id}/audio/download`, "DELETE")).toBe(
+      400
+    );
     for (const key of ["a", "b"]) {
       const audio = await send(key, `/sets/${set.id}/audio`);
       expect(audio.status).toBe(200);
-      expect((await audio.arrayBuffer()).byteLength).toBeGreaterThan(1000);
+      const bytes = await audio.arrayBuffer();
+      expect(bytes.byteLength).toBeGreaterThan(1000);
     }
-    expect(
-      (await send("a", "/queue/active", "PUT", { setId: set.id })).status
-    ).toBe(200);
+    expect(await status("a", "/queue/active", "PUT", { setId: set.id })).toBe(
+      200
+    );
     expect(
       db.query("SELECT set_id FROM library_entries WHERE person_id = 'a'").all()
     ).toEqual([]);
     expect(
-      (await send("a", `/sets/${set.id}/position`, "PUT", { seconds: 5 }))
-        .status
+      await status("a", `/sets/${set.id}/position`, "PUT", { seconds: 5 })
     ).toBe(200);
     evidence.push(
       "A downloads and plays B's visible Set without a Library Entry; B plays the same bytes"
@@ -180,25 +196,24 @@ test("visible Sets share audio and storage releases only the last reference over
       [`/sets/${hidden.id}/audio/grant`, "POST", undefined],
       [`/sets/${hidden.id}/audio/download`, "POST", undefined],
       ["/queue/active", "PUT", { setId: hidden.id }],
-    ] satisfies [string, string, unknown][]) {
-      expect((await send("a", route, method, payload)).status).toBe(404);
+    ] satisfies [string, string, Payload | undefined][]) {
+      expect(await status("a", route, method, payload)).toBe(404);
     }
     evidence.push(
       "hidden audio, grant, download and Queue activation all return 404"
     );
     const list = await playlist("Retained");
     expect(
-      (await send("a", `/playlists/${list}/sets`, "PUT", { setIds: [set.id] }))
-        .status
+      await status("a", `/playlists/${list}/sets`, "PUT", { setIds: [set.id] })
     ).toBe(200);
-    expect((await send("b", `/sets/${set.id}`, "DELETE")).status).toBe(200);
+    expect(await status("b", `/sets/${set.id}`, "DELETE")).toBe(200);
     expect(await retained(set.id)).toBe(true);
-    expect((await send("a", `/sets/${set.id}`, "DELETE")).status).toBe(200);
+    expect(await status("a", `/sets/${set.id}`, "DELETE")).toBe(200);
     expect(await retained(set.id)).toBe(true);
-    expect((await send("a", `/playlists/${list}`, "DELETE")).status).toBe(200);
+    expect(await status("a", `/playlists/${list}`, "DELETE")).toBe(200);
     expect(await retained(set.id)).toBe(true);
     expect(
-      (await send("a", "/queue/completion", "POST", { setId: set.id })).status
+      await status("a", "/queue/completion", "POST", { setId: set.id })
     ).toBe(200);
     expect(await retained(set.id)).toBe(false);
     evidence.push(
@@ -212,23 +227,19 @@ test("visible Sets share audio and storage releases only the last reference over
       await download("a", other.id);
       const id = await playlist(mode);
       expect(
-        (
-          await send("a", `/playlists/${id}/sets`, "PUT", {
-            setIds: [other.id],
-          })
-        ).status
+        await status("a", `/playlists/${id}/sets`, "PUT", {
+          setIds: [other.id],
+        })
       ).toBe(200);
-      expect((await send("b", `/sets/${other.id}`, "DELETE")).status).toBe(200);
+      expect(await status("b", `/sets/${other.id}`, "DELETE")).toBe(200);
       expect(await retained(other.id)).toBe(true);
       expect(
-        (
-          await send(
-            "a",
-            `/playlists/${id}${mode === "replace" ? "/sets" : ""}`,
-            mode === "replace" ? "PUT" : "DELETE",
-            mode === "replace" ? { setIds: [] } : undefined
-          )
-        ).status
+        await status(
+          "a",
+          `/playlists/${id}${mode === "replace" ? "/sets" : ""}`,
+          mode === "replace" ? "PUT" : "DELETE",
+          mode === "replace" ? { setIds: [] } : undefined
+        )
       ).toBe(200);
       expect(await retained(other.id)).toBe(false);
     }
@@ -237,9 +248,22 @@ test("visible Sets share audio and storage releases only the last reference over
     );
     const last = await save("b", "shared00004");
     await download("b", last.id);
-    expect((await send("b", `/sets/${last.id}`, "DELETE")).status).toBe(200);
+    expect(await status("b", `/sets/${last.id}`, "DELETE")).toBe(200);
     expect(await retained(last.id)).toBe(false);
     evidence.push("last Library Entry releases bytes");
+    const queued = await save("b", "shared00005");
+    await download("a", queued.id);
+    expect(
+      await status("a", "/queue/active", "PUT", { setId: queued.id })
+    ).toBe(200);
+    expect(await status("b", `/sets/${queued.id}`, "DELETE")).toBe(200);
+    expect(await retained(queued.id)).toBe(true);
+    const empty = await playlist("Empty");
+    expect(
+      await status("a", "/queue/playlist", "PUT", { playlistId: empty })
+    ).toBe(200);
+    expect(await retained(queued.id)).toBe(false);
+    evidence.push("replacing the final Queue reference releases bytes");
     const output = path.resolve(
       import.meta.dir,
       "../../../.cache/shared-audio"
@@ -247,12 +271,12 @@ test("visible Sets share audio and storage releases only the last reference over
     await mkdir(output, { recursive: true });
     await writeFile(
       path.join(output, "http.json"),
-      JSON.stringify({ failures, evidence, jobs }, null, 2)
+      JSON.stringify({ evidence, failures, jobs }, null, 2)
     );
   } finally {
     db.close();
     await listeners.stop();
     backend.stop(true);
-    await rm(root, { recursive: true, force: true });
+    await rm(root, { force: true, recursive: true });
   }
 }, 30_000);
