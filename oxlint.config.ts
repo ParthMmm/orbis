@@ -4,5 +4,9 @@ import core from "ultracite/oxlint/core";
 
 export default defineConfig({
   extends: [core, antiSlop],
-  ignorePatterns: core.ignorePatterns,
+  ignorePatterns: [
+    ...core.ignorePatterns,
+    // shadcn generates these; `shadcn add` overwrites any hand edits.
+    "apps/web-next/src/components/ui/**",
+  ],
 });
