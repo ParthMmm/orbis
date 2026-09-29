@@ -57,3 +57,18 @@ bun run native:lanes --unit   # unit tests only
 A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Copy the xcodegen output path from `apps/apple/DerivedData` when opening the project in Xcode.
 
 Every lane runs `bun run native:format` first, which checks every tracked Swift file with the Xcode toolchain's swift-format against `apps/apple/.swift-format`. swift-format ships with Xcode, so the native style gate needs no install. The check writes nothing; to fix drift, run `xcrun swift-format format --in-place` on the changed files.
+
+## Releases
+
+A release is a version tag with generated notes. It has no binaries: signing, notarization, and installers are not set up.
+
+1. Merge the changes to `main` and wait for CI to pass.
+2. Tag the commit and push the tag. Use `vMAJOR.MINOR.PATCH`; a suffix such as `-rc.1` marks a pre-release.
+
+```sh
+git switch main && git pull
+git tag v0.1.0
+git push origin v0.1.0
+```
+
+The `Release` workflow refuses a tag that is not on `main`, then creates the GitHub Release with notes built from the merged pull requests. Delete a wrong tag with `git push origin :refs/tags/<tag>` and `gh release delete <tag>`.
