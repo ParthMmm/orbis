@@ -35,7 +35,7 @@ final class ConnectionUITests: XCTestCase {
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
     XCTAssertEqual(toggle.value as? String, "1")
     capture("auto-download-default-on")
-    toggle.tap()
+    toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
     XCTAssertEqual(
       XCTWaiter.wait(
         for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: toggle)], timeout: 10),
@@ -50,7 +50,7 @@ final class ConnectionUITests: XCTestCase {
     let reopenedOff = toggle.value as? String == "0"
     XCTAssertTrue(reopenedOff)
     capture("auto-download-off-reopened")
-    toggle.tap()
+    toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
     let on = try service.autoDownload(becomes: true)
     XCTAssertTrue(on)
     capture("auto-download-restored-on")
