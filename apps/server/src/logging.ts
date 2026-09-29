@@ -70,6 +70,11 @@ export interface LoggingOptions {
    * without parsing console output.
    */
   readonly onEvent?: (event: WideEvent) => void;
+  /**
+   * Pretty output for a person at a terminal, or one JSON object per line for the
+   * journal and the agents that read it. Defaults to whether stdout is a terminal.
+   */
+  readonly pretty?: boolean;
   /** Suppress evlog's own console output. Used by tests. */
   readonly silent?: boolean;
 }
@@ -80,6 +85,9 @@ export interface RequestCompletion {
   readonly outcome: RequestOutcome;
   readonly status?: number;
 }
+
+/** Writes Effect logs that fall outside a wide event; `configureLogging` picks it. */
+let plainLogger: Logger.Logger<unknown, void> = Logger.defaultLogger;
 
 /** Absorbs events in silent mode: evlog warns when silent output has no drain. */
 const discardEvent = (context: DrainContext): void => {
@@ -97,13 +105,15 @@ export const configureLogging = (options: LoggingOptions = {}): void => {
     service: "orbis",
   };
   const redact = { paths: REDACTED_PATHS };
+  const pretty = options.pretty ?? process.stdout.isTTY === true;
+  plainLogger = pretty ? Logger.defaultLogger : Logger.consoleJson;
   // Bun runs tests with NODE_ENV=test, so an unconfigured suite stays quiet.
   const silent = options.silent ?? process.env.NODE_ENV === "test";
   if (silent) {
-    initLogger({ drain: discardEvent, env, redact, silent: true });
+    initLogger({ drain: discardEvent, env, pretty, redact, silent: true });
     return;
   }
-  initLogger({ env, redact });
+  initLogger({ env, pretty, redact });
 };
 
 /** The path only: a query string can carry a token or a source link. */
@@ -330,7 +340,7 @@ export const effectLogBridge: Logger.Logger<unknown, void> = Logger.make(
   (options: Logger.Options<unknown>) => {
     const requestLog = options.fiber.getRef(CurrentWideEvent);
     if (requestLog === null) {
-      Logger.defaultLogger.log(options);
+      plainLogger.log(options);
       return;
     }
     const seen = lineCounts.get(requestLog) ?? 0;
@@ -375,6 +385,12 @@ export const effectLogBridge: Logger.Logger<unknown, void> = Logger.make(
 const requestLoggers: ReadonlySet<Logger.Logger<unknown, void>> = new Set([
   effectLogBridge,
 ]);
+
+/**
+ * Installs the bridge for a whole program, so work outside any wide event, such as
+ * startup and the download worker's own lines, logs in the format `configureLogging` chose.
+ */
+export const loggingLayer = Logger.layer([effectLogBridge]);
 
 /**
  * Wraps the router so every routed request gets exactly one wide event. The

@@ -193,17 +193,26 @@ It downloads about 400 MB a night and keeps none of it.
 
 ## Where to look when a download fails
 
-Each record below is written for an agent to read without extra setup.
+Each record below is written for an agent to read without extra setup. The service and the canary log one JSON object per line when stdout is not a terminal, as under systemd.
 
-| Question | Command |
-| --- | --- |
-| Did last night's canary pass? | `cat ~/orbis-service-data/canary/last.json` |
-| When did it start failing? | `jq -c '{at, ok}' ~/orbis-service-data/canary/history.jsonl \| tail` |
-| Is any unit failing? | `systemctl --user --failed` |
-| Why did one download fail? | `journalctl --user -u orbis-server --since today -o cat \| grep -B1 -A6 'job:.*audio-download'` |
-| What did the canary see? | `journalctl --user -u orbis-canary --since today -o cat \| grep -B1 -A6 'job:.*download-canary'` |
+```sh
+# Did last night's canary pass, and when did it start failing?
+cat ~/orbis-service-data/canary/last.json
+jq -c '{at, ok}' ~/orbis-service-data/canary/history.jsonl | tail
 
-A download's wide event (`job: audio-download`) lists every backend attempt: bytes received, yt-dlp's exit code and the end of its error output, Cobalt's tunnel status and content length, and ffprobe's error output. The canary's event (`job: download-canary`) holds the same evidence for each check. The startup line `youtube downloads use cobalt only` means `ORBIS_YTDLP_BIN` is missing; see [Give the service yt-dlp](#give-the-service-yt-dlp).
+# Is any unit failing?
+systemctl --user --failed
+
+# Why did a download fail? One wide event per download.
+journalctl --user -u orbis-server --since today -o cat |
+  jq -cR 'fromjson? | select(.job == "audio-download" and .outcome != "success")'
+
+# What did the canary see?
+journalctl --user -u orbis-canary --since today -o cat |
+  jq -cR 'fromjson? | select(.job == "download-canary")'
+```
+
+A download's wide event (`job: audio-download`) lists every backend attempt in `logs`: bytes received, yt-dlp's exit code and the end of its error output, Cobalt's tunnel status and content length, and ffprobe's error output. The canary's event (`job: download-canary`) holds the same evidence for each check. The startup line `youtube downloads use cobalt only` means `ORBIS_YTDLP_BIN` is missing; see [Give the service yt-dlp](#give-the-service-yt-dlp).
 
 ## Back up the database
 
