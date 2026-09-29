@@ -506,10 +506,9 @@ test("looks up playlist ids through the membership index", async () => {
 test("applies the extended columns once and keeps them on a later open", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-migration-"));
   const databasePath = path.join(directory, "library.sqlite");
+  writeLegacyDatabase(databasePath);
   let app = createApp({ databasePath });
   try {
-    writeLegacyDatabase(databasePath);
-
     const saved = await request(app, {
       method: "POST",
       payload: {
