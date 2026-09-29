@@ -257,6 +257,7 @@ const audioFileResponse = (file: AudioFile, range: AudioRange | null) => {
 
 export const createApp = (
   options: {
+    allowDevelopmentOrigins?: boolean;
     audio?: AudioOptions;
     databasePath?: string;
     devicesPath?: string;
@@ -274,9 +275,7 @@ export const createApp = (
     (databasePath === ":memory:"
       ? undefined
       : path.join(path.dirname(databasePath), "devices.json"));
-  const development =
-    (options.logging?.environment ?? process.env.NODE_ENV ?? "development") ===
-    "development";
+  const development = options.allowDevelopmentOrigins === true;
   const streamSecret = grantSecret(
     databasePath === ":memory:"
       ? undefined

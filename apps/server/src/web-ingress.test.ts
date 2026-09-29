@@ -162,7 +162,7 @@ test("device listener grants one Set's audio and rejects invalid browser credent
 });
 
 test("local development Origin is accepted only on the development device listener", async () => {
-  const app = createApp({ logging: { environment: "development" } });
+  const app = createApp({ allowDevelopmentOrigins: true });
   const listeners = await startListeners(app, { devicePort: 0, localPort: 0 });
   try {
     const { device } = listeners;
@@ -187,6 +187,25 @@ test("local development Origin is accepted only on the development device listen
     expect(
       await statusOf(new URL("/sets", device.url), {
         headers: { origin: "http://evil.example:5173" },
+        method: "OPTIONS",
+      })
+    ).toBe(403);
+  } finally {
+    await listeners.stop();
+  }
+});
+
+test("the default device listener refuses localhost browser Origins", async () => {
+  const app = createApp();
+  const listeners = await startListeners(app, { devicePort: 0, localPort: 0 });
+  try {
+    const { device } = listeners;
+    if (!device) {
+      throw new Error("Missing device listener");
+    }
+    expect(
+      await statusOf(new URL("/sets", device.url), {
+        headers: { origin: "http://localhost:5173" },
         method: "OPTIONS",
       })
     ).toBe(403);
