@@ -168,6 +168,7 @@ export const SaveSetResultSchema = Schema.Struct({
 export const AdminPersonPayload = UpdateMePayload;
 export const AdminKeyPayload = Schema.Struct({
   label: Schema.String.check(Schema.isMaxLength(100)),
+  scope: Schema.optionalKey(Schema.Literals(["daily", "admin"])),
 });
 const AdminPerson = Schema.Struct({
   id: Schema.String,

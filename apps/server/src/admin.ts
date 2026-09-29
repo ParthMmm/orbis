@@ -76,10 +76,18 @@ export const addPerson = (path: string, input: string) => {
   );
 };
 
-export const addKey = (path: string, personId: string, input: string) => {
-  const label = input.trim();
+export const addKey = (
+  path: string,
+  personId: string,
+  input: { readonly label: string; readonly scope?: "daily" | "admin" }
+) => {
+  const label = input.label.trim();
   if (!label || label.length > 100) {
     throw new AdminError(400, "Choose a label with 1 to 100 characters.");
+  }
+  const scope = input.scope ?? "daily";
+  if (scope === "admin" && personId !== HOST_PERSON_ID) {
+    throw new AdminError(400, "Only Host can have an admin key.");
   }
   const token = randomBytes(32).toString("base64url");
   return mutateTrustStore(
@@ -93,7 +101,7 @@ export const addKey = (path: string, personId: string, input: string) => {
         label,
         lastUsedAt: null,
         personId,
-        scope: "daily",
+        scope,
         tokenHash: hashToken(token),
       };
       const { tokenHash: _hash, ...publicKey } = key;

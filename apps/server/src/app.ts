@@ -913,7 +913,7 @@ export const createApp = (
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(AdminKeyPayload);
                 const key = yield* adminCall((storePath) =>
-                  addKey(storePath, params.id, input.label)
+                  addKey(storePath, params.id, input)
                 );
                 return HttpServerResponse.jsonUnsafe(key, { status: 201 });
               })

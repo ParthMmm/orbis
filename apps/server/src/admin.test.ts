@@ -92,6 +92,12 @@ test("admin keys manage People and revoke all of a removed Person's data", async
     expect(await body(app, admin, "GET", "/admin/people")).toMatchObject({
       people: [{ id: "host" }, { id: person.id, username: "alice" }],
     });
+    expect(
+      await status(app, admin, "POST", `/admin/people/${person.id}/keys`, {
+        label: "invalid admin",
+        scope: "admin",
+      })
+    ).toBe(400);
     const minted = await call(
       app,
       admin,
@@ -175,6 +181,34 @@ test("admin keys manage People and revoke all of a removed Person's data", async
       await status(app, admin, "DELETE", `/admin/people/${person.id}`)
     ).toBe(200);
     expect(await status(app, secondToken, "GET", "/me")).toBe(401);
+    const rotated = await call(app, admin, "POST", "/admin/people/host/keys", {
+      label: "new recovery",
+      scope: "admin",
+    });
+    expect(rotated.statusCode).toBe(201);
+    const rotatedKey = rotated.json();
+    expect(rotatedKey.scope).toBe("admin");
+    const allKeys = await body(app, rotatedKey.token, "GET", "/admin/keys");
+    expect(
+      allKeys.keys.some(
+        (candidate: { id: string }) => candidate.id === rotatedKey.id
+      )
+    ).toBe(true);
+    const oldAdmin = allKeys.keys.find(
+      (candidate: { label: string }) => candidate.label === "recovery"
+    );
+    expect(
+      await status(
+        app,
+        rotatedKey.token,
+        "DELETE",
+        `/admin/keys/${oldAdmin.id}`
+      )
+    ).toBe(200);
+    expect(await status(app, admin, "GET", "/admin/people")).toBe(401);
+    expect(await status(app, rotatedKey.token, "GET", "/admin/people")).toBe(
+      200
+    );
     const db = new Database(databasePath);
     try {
       for (const table of [
