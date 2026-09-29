@@ -13,7 +13,14 @@
 // --macos runs the unit tests on the macOS destination instead of the simulator.
 
 import { spawn, spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -96,16 +103,20 @@ process.on("SIGINT", () => {
 });
 
 try {
-  // swift-format ships with the Xcode toolchain, so the native style gate needs no install.
-  run(["bun", "run", "native:format"], { cwd: root });
+  // A journeys-only run is for UI journeys, so the style gate and the design package are left
+  // to the unit run and CI.
+  if (!journeysOnly && !onlyTest) {
+    // swift-format ships with the Xcode toolchain, so the native style gate needs no install.
+    run(["bun", "run", "native:format"], { cwd: root });
 
-  // The design system is a package the app links, so its own rules are verified in the same run
-  // as the app's tests rather than by a separate command someone has to remember.
-  const design = run(["swift", "test"], {
-    cwd: path.join(native, "OrbisDesign"),
-  });
-  const designSummary = /Test run with [^\n]*passed[^\n]*/u.exec(design);
-  console.log(`design package: ${designSummary?.[0] ?? "tests passed"}`);
+    // The design system is a package the app links, so its own rules are verified in the same
+    // run as the app's tests rather than by a separate command someone has to remember.
+    const design = run(["swift", "test"], {
+      cwd: path.join(native, "OrbisDesign"),
+    });
+    const designSummary = /Test run with [^\n]*passed[^\n]*/u.exec(design);
+    console.log(`design package: ${designSummary?.[0] ?? "tests passed"}`);
+  }
 
   // A real service on a real port with its own database and trust store, so a lane never
   // touches a developer's library.
@@ -210,6 +221,21 @@ try {
     ],
     { cwd: native }
   );
+  // The export names files by UUID. Each is renamed to the name its journey gave it, so a run's
+  // record reads the same as the last one and can be compared file by file.
+  const manifest = JSON.parse(
+    readFileSync(path.join(shots, "manifest.json"), "utf-8")
+  );
+  for (const attachment of manifest.flatMap((test) => test.attachments)) {
+    const named = attachment.suggestedHumanReadableName.replace(
+      /_\d+_[0-9A-F-]{36}(?=\.\w+$)/u,
+      ""
+    );
+    renameSync(
+      path.join(shots, attachment.exportedFileName),
+      path.join(shots, named)
+    );
+  }
   writeFileSync(
     path.join(shots, "lane.txt"),
     `service=${address}\nsimulator=${simulator}\n`
