@@ -88,6 +88,8 @@ const dataDirectory = mkdtempSync(path.join(tmpdir(), "orbis-lane-"));
 const devicesPath = path.join(dataDirectory, "devices.json");
 const port = 43_000 + Math.floor(Math.random() * 2000);
 const address = `http://127.0.0.1:${port}`;
+const seedPort = port + 2000;
+const seedAddress = `http://127.0.0.1:${seedPort}`;
 const resultBundle = path.join(native, "DerivedData", "result.xcresult");
 let server;
 let seedServer;
@@ -128,8 +130,8 @@ try {
     cwd: root,
     env: {
       ...process.env,
-      ORBIS_COBALT_API_KEY: "",
-      ORBIS_COBALT_URL: "",
+      ORBIS_COBALT_API_KEY: "lane",
+      ORBIS_COBALT_URL: `${seedAddress}/cobalt`,
       ORBIS_DATA_DIR: dataDirectory,
       ORBIS_OPENROUTER_API_KEY: "",
       ORBIS_PORT: String(port),
@@ -175,8 +177,6 @@ try {
     throw new Error(`seeding the lane library failed with ${seeded.status}`);
   }
 
-  const seedPort = port + 2000;
-  const seedAddress = `http://127.0.0.1:${seedPort}`;
   seedServer = spawn(
     "bun",
     [
