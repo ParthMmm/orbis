@@ -1476,7 +1476,9 @@ export const createApp = (
   );
   const app = HttpRouter.toWebHandler(
     routes.pipe(
-      Layer.provide(Audio.layer(options.audio ?? {})),
+      Layer.provide(
+        Audio.layer({ ...options.audio, logging: options.logging })
+      ),
       Layer.provide(libraryLayer),
       Layer.provide(queueSignalsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),

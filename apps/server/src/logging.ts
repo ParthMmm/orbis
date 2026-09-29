@@ -10,7 +10,7 @@ import {
 } from "effect";
 import type { LogLevel } from "effect";
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
-import { createRequestLogger, initLogger } from "evlog";
+import { createLogger, createRequestLogger, initLogger } from "evlog";
 import type { DrainContext, RequestLogger, WideEvent } from "evlog";
 
 /**
@@ -200,8 +200,8 @@ const describeExit = (
   return { outcome: outcomeForStatus(failureStatus), status: failureStatus };
 };
 
-const CurrentRequestLog = Context.Reference<RequestLogger | null>(
-  "orbis/CurrentRequestLog",
+const CurrentWideEvent = Context.Reference<RequestLogger | null>(
+  "orbis/CurrentWideEvent",
   { defaultValue: () => null }
 );
 
@@ -328,7 +328,7 @@ const sanitizedMessage = (
  */
 export const effectLogBridge: Logger.Logger<unknown, void> = Logger.make(
   (options: Logger.Options<unknown>) => {
-    const requestLog = options.fiber.getRef(CurrentRequestLog);
+    const requestLog = options.fiber.getRef(CurrentWideEvent);
     if (requestLog === null) {
       Logger.defaultLogger.log(options);
       return;
@@ -400,7 +400,7 @@ export const makeRequestLogMiddleware =
         requestId,
       });
       return yield* httpEffect.pipe(
-        Effect.provideService(CurrentRequestLog, logger),
+        Effect.provideService(CurrentWideEvent, logger),
         Effect.provideService(References.CurrentLoggers, requestLoggers),
         Effect.annotateLogs({ method: request.method, path, requestId }),
         Effect.onExit((exit) =>
@@ -410,3 +410,44 @@ export const makeRequestLogMiddleware =
         )
       );
     });
+
+/**
+ * Wraps background work, such as one audio download, in one wide event the way the
+ * middleware wraps a request: Effect logs inside fold into it, with the same bounds
+ * and redaction, and it emits once when the work settles.
+ */
+export const withWideEvent =
+  (context: Readonly<Record<string, string>>, options: LoggingOptions = {}) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
+    Effect.suspend(() => {
+      const logger = createLogger({ ...context });
+      return effect.pipe(
+        Effect.provideService(CurrentWideEvent, logger),
+        Effect.provideService(References.CurrentLoggers, requestLoggers),
+        Effect.onExit((exit) =>
+          Effect.sync(() => {
+            if (Exit.isSuccess(exit)) {
+              finishRequestLog(logger, { outcome: "success" }, options);
+              return;
+            }
+            if (Cause.hasInterruptsOnly(exit.cause)) {
+              finishRequestLog(logger, { outcome: "cancelled" }, options);
+              return;
+            }
+            const reason = Cause.squash(exit.cause);
+            logger.set({
+              reason: reason instanceof Error ? reason.message : "unknown",
+            });
+            finishRequestLog(logger, { outcome: "failure" }, options);
+          })
+        )
+      );
+    });
+
+/** The end of a tool's error output, where the cause usually is, within the value bound. */
+export const outputTail = (text: string): string => {
+  const trimmed = text.trim();
+  return trimmed.length > MAX_LOGGED_VALUE_CHARACTERS
+    ? `…${trimmed.slice(-(MAX_LOGGED_VALUE_CHARACTERS - 1))}`
+    : trimmed;
+};

@@ -3,9 +3,11 @@ import { rename, rm } from "node:fs/promises";
 import { Context, Effect, Exit, Layer } from "effect";
 
 import { LibraryError } from "./errors.js";
+import { outputTail } from "./logging.js";
 
 export interface YtdlpRunResult {
   readonly code: number;
+  readonly stderr?: string;
   readonly stdout: string;
 }
 
@@ -32,15 +34,16 @@ const downloadFailed = (reason: string) =>
 const spawnRunner: YtdlpRunner = async (argv, signal) => {
   const proc = Bun.spawn([...argv], {
     signal: AbortSignal.any([signal, AbortSignal.timeout(YTDLP_TIMEOUT_MS)]),
-    stderr: "ignore",
+    stderr: "pipe",
     stdin: "ignore",
     stdout: "pipe",
   });
-  const [stdout, code] = await Promise.all([
+  const [stdout, stderr, code] = await Promise.all([
     new Response(proc.stdout).text(),
+    new Response(proc.stderr).text(),
     proc.exited,
   ]);
-  return { code, stdout };
+  return { code, stderr, stdout };
 };
 
 // Fixed argument list. The URL is data after `--`, so it can never read as a flag.
@@ -142,8 +145,18 @@ export class Ytdlp extends Context.Service<
             Effect.flatMap((ran) =>
               ran.code === 0 && Bun.file(output).size > 0
                 ? Effect.promise(() => rename(output, destination))
-                : Effect.fail(
-                    downloadFailed("yt-dlp could not fetch this audio.")
+                : Effect.logWarning("yt-dlp run failed").pipe(
+                    Effect.annotateLogs({
+                      bytes: Bun.file(output).size,
+                      exitCode: ran.code,
+                      signedIn: cookies !== undefined,
+                      stderr: outputTail(ran.stderr ?? ""),
+                    }),
+                    Effect.andThen(
+                      Effect.fail(
+                        downloadFailed("yt-dlp could not fetch this audio.")
+                      )
+                    )
                   )
             )
           );
