@@ -308,6 +308,52 @@ test("legacy Host entry migrates and two People keep separate Library state", as
     } finally {
       retained.close();
     }
+    const bOnly = await request(
+      app,
+      remote("POST", "/sets", {
+        url: "https://www.youtube.com/watch?v=bcdefghijkl",
+      })
+    );
+    expect(bOnly.statusCode).toBe(201);
+    const bOnlyId: string = bOnly.json().id;
+    const queued = new Database(databasePath);
+    try {
+      queued
+        .query(
+          "INSERT INTO queue_entries (set_id, position, is_active) VALUES (?, 0, 0)"
+        )
+        .run(bOnlyId);
+    } finally {
+      queued.close();
+    }
+    const bOnlyRemoved = await request(
+      app,
+      remote("DELETE", `/sets/${bOnlyId}`)
+    );
+    expect(bOnlyRemoved.statusCode).toBe(200);
+    const hostAfterBRemove = await request(app, {
+      method: "GET",
+      url: "/sets",
+    });
+    expect(
+      hostAfterBRemove.json().sets.map((set: { id: string }) => set.id)
+    ).not.toContain(bOnlyId);
+    const hostCannotEditBOnly = await request(app, {
+      method: "PATCH",
+      payload: { title: "Host claim" },
+      url: `/sets/${bOnlyId}/title`,
+    });
+    expect(hostCannotEditBOnly.statusCode).toBe(404);
+    const stillQueued = new Database(databasePath);
+    try {
+      expect(
+        stillQueued
+          .query("SELECT set_id FROM queue_entries WHERE set_id = ?")
+          .get(bOnlyId)
+      ).toEqual({ set_id: bOnlyId });
+    } finally {
+      stillQueued.close();
+    }
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

@@ -303,6 +303,7 @@ export class Library extends Context.Service<
                     .insert(sets)
                     .values({
                       createdAt: new Date().toISOString(),
+                      hostRemoved: personId !== "host",
                       id: crypto.randomUUID(),
                       source,
                       tags: "[]",
