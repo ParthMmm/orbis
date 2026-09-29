@@ -151,16 +151,15 @@ const LibraryView = ({
   const [playing, setPlaying] = useState<{ set: SavedSet; src: string } | null>(
     null
   );
-  const audioRef = useRef<HTMLAudioElement>(null);
   const lastReport = useRef(0);
   const client = api(session.key);
 
   const handleError = useCallback(
-    (failure: Error) => {
+    (failure: Error, fallback: string) => {
       if (failure instanceof ApiFailureError && failure.status === 401) {
         onRevoked();
       } else {
-        setError("Orbis could not load your Library. Try again.");
+        setError(fallback);
       }
     },
     [onRevoked]
@@ -188,7 +187,7 @@ const LibraryView = ({
       setTags([...tagResponse.tags]);
     } catch (error) {
       if (error instanceof Error) {
-        handleError(error);
+        handleError(error, "Orbis could not load your Library. Try again.");
       } else {
         setError("Orbis could not load your Library. Try again.");
       }
@@ -212,7 +211,7 @@ const LibraryView = ({
       );
     } catch (error) {
       if (error instanceof Error) {
-        handleError(error);
+        handleError(error, "Could not report playback position.");
       } else {
         setError("Could not report playback position.");
       }
@@ -228,7 +227,7 @@ const LibraryView = ({
       lastReport.current = 0;
     } catch (error) {
       if (error instanceof Error) {
-        handleError(error);
+        handleError(error, "Could not start playback.");
       } else {
         setError("Could not start playback.");
       }
@@ -362,7 +361,6 @@ const LibraryView = ({
             <span>{playing.set.creator}</span>
           </div>
           <audio
-            ref={audioRef}
             controls
             autoPlay
             src={playing.src}
@@ -389,7 +387,7 @@ const LibraryView = ({
                 await client.complete(playing.set.id);
               } catch (error) {
                 if (error instanceof Error) {
-                  handleError(error);
+                  handleError(error, "Could not finish playback.");
                 } else {
                   setError("Could not finish playback.");
                 }
