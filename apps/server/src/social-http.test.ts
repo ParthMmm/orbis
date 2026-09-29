@@ -1,3 +1,4 @@
+import { Database as SqliteDatabase } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -66,8 +67,54 @@ test("People see a friend's full Library only while both sides allow it", async 
     });
     expect(first.statusCode).toBe(201);
     expect(second.statusCode).toBe(201);
+    const playlist = await call("b", "POST", "/playlists", {
+      name: "Late night",
+    });
+    expect(playlist.statusCode).toBe(201);
+    const playlistId = playlist.json().id;
+    const members = await request(app, {
+      accessMode: "device",
+      headers: { authorization: `Bearer ${tokens.b}` },
+      host: "vanta.example.ts.net",
+      method: "PUT",
+      payload: { setIds: [second.json().id, first.json().id] },
+      url: `/playlists/${playlistId}/sets`,
+    });
+    expect(members.statusCode).toBe(200);
+    const outside = await call("a", "POST", "/sets", {
+      url: "https://www.youtube.com/watch?v=zyxwvutsrqp",
+    });
+    expect(outside.statusCode).toBe(201);
+    const sqlite = new SqliteDatabase(path.join(directory, "library.sqlite"));
+    sqlite
+      .query("UPDATE sets SET download_state = 'ready' WHERE id IN (?, ?)")
+      .run(first.json().id, second.json().id);
+    sqlite
+      .query(
+        "INSERT INTO playlist_sets (playlist_id, set_id, position) VALUES (?, ?, 2)"
+      )
+      .run(playlistId, outside.json().id);
+    sqlite
+      .query(
+        "INSERT INTO listens (person_id, set_id, started_at, finished_at) VALUES ('b', ?, '2026-09-30T00:00:00.000Z', NULL)"
+      )
+      .run(outside.json().id);
+    sqlite.close();
+    expect(
+      await status("b", "PUT", "/queue/active", { setId: first.json().id })
+    ).toBe(200);
+    expect(
+      await status("b", "POST", "/queue/completion", { setId: first.json().id })
+    ).toBe(200);
+    expect(
+      await status("b", "PUT", "/queue/active", { setId: second.json().id })
+    ).toBe(200);
     const friend = "/people/b/sets";
+    const friendPlaylists = "/people/b/playlists";
+    const friendListens = "/people/b/listens";
     expect(await status("a", "GET", friend)).toBe(404);
+    expect(await status("a", "GET", friendPlaylists)).toBe(404);
+    expect(await status("a", "GET", friendListens)).toBe(404);
     expect(await body("a", "GET", "/people")).toEqual({ people: [] });
 
     expect(await status("a", "PATCH", "/me", { social: true })).toBe(200);
@@ -78,6 +125,26 @@ test("People see a friend's full Library only while both sides allow it", async 
     expect(visibleIds).toHaveLength(2);
     expect(visibleIds).toContain(first.json().id);
     expect(visibleIds).toContain(second.json().id);
+    const visiblePlaylists = await body("a", "GET", friendPlaylists);
+    expect(visiblePlaylists.playlists).toMatchObject([
+      { id: playlistId, name: "Late night" },
+    ]);
+    expect(
+      visiblePlaylists.playlists[0].sets.map((set: { id: string }) => set.id)
+    ).toEqual([second.json().id, first.json().id, outside.json().id]);
+    const visibleListens = await body("a", "GET", friendListens);
+    expect(
+      visibleListens.listens.map(
+        (listen: { set: { id: string }; finishedAt: string | null }) => [
+          listen.set.id,
+          listen.finishedAt !== null,
+        ]
+      )
+    ).toEqual([
+      [outside.json().id, false],
+      [second.json().id, false],
+      [first.json().id, true],
+    ]);
     expect(await body("a", "GET", "/people")).toMatchObject({
       people: [{ id: "b", username: "bob" }],
     });
@@ -86,6 +153,8 @@ test("People see a friend's full Library only while both sides allow it", async 
       200
     );
     expect(await status("a", "GET", friend)).toBe(404);
+    expect(await status("a", "GET", friendPlaylists)).toBe(404);
+    expect(await status("a", "GET", friendListens)).toBe(404);
     expect(await body("a", "GET", "/people")).toEqual({ people: [] });
     expect(await status("a", "PUT", "/people/b/filters", { see: true })).toBe(
       200
@@ -94,12 +163,16 @@ test("People see a friend's full Library only while both sides allow it", async 
       await status("b", "PUT", "/people/a/filters", { appear: false })
     ).toBe(200);
     expect(await status("a", "GET", friend)).toBe(404);
+    expect(await status("a", "GET", friendPlaylists)).toBe(404);
+    expect(await status("a", "GET", friendListens)).toBe(404);
     expect(
       await status("b", "PUT", "/people/a/filters", { appear: true })
     ).toBe(200);
     expect(await status("a", "GET", friend)).toBe(200);
     expect(await status("b", "PATCH", "/me", { social: false })).toBe(200);
     expect(await status("a", "GET", friend)).toBe(404);
+    expect(await status("a", "GET", friendPlaylists)).toBe(404);
+    expect(await status("a", "GET", friendListens)).toBe(404);
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

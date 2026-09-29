@@ -165,6 +165,12 @@ const LibraryView = ({
   const [social, setSocial] = useState(false);
   const [people, setPeople] = useState<{ id: string; username: string }[]>([]);
   const [friend, setFriend] = useState<{
+    listens: Awaited<
+      ReturnType<ReturnType<typeof api>["friendListens"]>
+    >["listens"];
+    playlists: Awaited<
+      ReturnType<ReturnType<typeof api>["friendPlaylists"]>
+    >["playlists"];
     username: string;
     sets: SavedSet[];
   } | null>(null);
@@ -486,11 +492,26 @@ const LibraryView = ({
   const openFriend = async (person: { id: string; username: string }) => {
     setError("");
     try {
-      const library = await client.friendSets(person.id);
-      setFriend({ sets: library.sets, username: person.username });
+      const [library, friendPlaylists, listens] = await Promise.all([
+        client.friendSets(person.id),
+        client.friendPlaylists(person.id),
+        client.friendListens(person.id),
+      ]);
+      setFriend({
+        listens: listens.listens,
+        playlists: friendPlaylists.playlists,
+        sets: library.sets,
+        username: person.username,
+      });
     } catch (error) {
+      setFriend(null);
       if (error instanceof Error) {
-        handleError(error, "Could not open this Library.");
+        handleError(
+          error,
+          error instanceof ApiFailureError && error.status === 404
+            ? "This Person is no longer visible to you."
+            : "Could not open this profile."
+        );
       }
     }
   };
@@ -852,6 +873,7 @@ const LibraryView = ({
           )}
           {friend && (
             <div>
+              <h2>{friend.username}'s profile</h2>
               <h2>{friend.username}'s Library</h2>
               <ul className="friend-list">
                 {friend.sets.map((set) => (
@@ -861,6 +883,39 @@ const LibraryView = ({
                   </li>
                 ))}
               </ul>
+              <h2>Playlists</h2>
+              {friend.playlists.length === 0 ? (
+                <p>No Playlists yet.</p>
+              ) : (
+                friend.playlists.map((playlist) => (
+                  <section key={playlist.id} aria-label={playlist.name}>
+                    <h3>{playlist.name}</h3>
+                    <ol>
+                      {playlist.sets.map((set) => (
+                        <li key={set.id}>{set.title}</li>
+                      ))}
+                    </ol>
+                  </section>
+                ))
+              )}
+              <h2>Listen History</h2>
+              {friend.listens.length === 0 ? (
+                <p>No Listens yet.</p>
+              ) : (
+                <ol className="friend-list">
+                  {friend.listens.map((listen, index) => (
+                    <li key={`${listen.startedAt}-${listen.set.id}-${index}`}>
+                      <span>
+                        {listen.finishedAt ? "Finished" : "Listened to"}{" "}
+                        {listen.set.title}
+                      </span>
+                      <time dateTime={listen.startedAt}>
+                        {new Date(listen.startedAt).toLocaleString()}
+                      </time>
+                    </li>
+                  ))}
+                </ol>
+              )}
             </div>
           )}
         </section>

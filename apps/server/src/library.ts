@@ -396,8 +396,11 @@ export class Library extends Context.Service<
       const list = Effect.fn("Library.list")((filters: LibraryFilters) =>
         execute(
           Effect.gen(function* listSetsEffect() {
-            const conditions = [
-              sql`(EXISTS (
+            const { playlistId } = filters;
+            const conditions = playlistId
+              ? []
+              : [
+                  sql`(EXISTS (
                 SELECT 1 FROM ${libraryEntries}
                 WHERE ${libraryEntries.setId} = ${sets.id}
                   AND ${libraryEntries.personId} = ${personId}
@@ -405,7 +408,7 @@ export class Library extends Context.Service<
                 SELECT 1 FROM ${libraryEntries}
                 WHERE ${libraryEntries.setId} = ${sets.id}
               )))`,
-            ];
+                ];
             const entryTitle = sql`coalesce((
               SELECT ${libraryEntries.titleOverride} FROM ${libraryEntries}
               WHERE ${libraryEntries.setId} = ${sets.id}
@@ -441,7 +444,6 @@ export class Library extends Context.Service<
               );
             }
 
-            const { playlistId } = filters;
             const playlistIds = sql<string>`(
               SELECT COALESCE(
                 json_group_array(${playlistSets.playlistId} ORDER BY ${playlistSets.playlistId}),

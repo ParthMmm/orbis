@@ -21,7 +21,7 @@ import {
   UpdateTitlePayload,
   UpdateMePayload,
 } from "@orbis/contracts/http-api";
-import { sql } from "drizzle-orm";
+import { desc, eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema, Scope } from "effect";
 import {
   Headers,
@@ -44,6 +44,7 @@ import {
 import { Audio } from "./audio.js";
 import type { AudioFile, AudioOptions } from "./audio.js";
 import { Database, layer as databaseLayer } from "./db/database.js";
+import { listens } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
 import {
@@ -757,6 +758,25 @@ export const createApp = (
               )
             )
       );
+      const visibleFriend = (id: string) =>
+        Effect.gen(function* resolveFriend() {
+          const caller = yield* SetCaller;
+          const { people } = readTrustRegistry(devicesPath).store;
+          return yield* Effect.try({
+            catch: (error) =>
+              error instanceof LibraryError
+                ? error
+                : new LibraryError({
+                    message: "Could not read People.",
+                    statusCode: 500,
+                  }),
+            try: () => resolveVisiblePerson(people, caller.person.id, id),
+          });
+        });
+      const friendLibraryLayer = (personId: string) =>
+        Library.forPersonLayer(personId).pipe(
+          Layer.provide(Layer.succeed(Database, db))
+        );
       const peopleGroup = HttpApiBuilder.group(OrbisApi, "people", (handlers) =>
         handlers
           .handle("me", () =>
@@ -854,30 +874,80 @@ export const createApp = (
           .handleRaw("sets", ({ params }) =>
             withFailureResponse(
               Effect.gen(function* readFriendLibrary() {
-                const caller = yield* SetCaller;
-                const { people } = readTrustRegistry(devicesPath).store;
-                const target = yield* Effect.try({
-                  catch: (error) =>
-                    error instanceof LibraryError
-                      ? error
-                      : new LibraryError({
-                          message: "Could not read People.",
-                          statusCode: 500,
-                        }),
-                  try: () =>
-                    resolveVisiblePerson(people, caller.person.id, params.id),
-                });
-                const friendLibrary = Library.forPersonLayer(target.id).pipe(
-                  Layer.provide(Layer.succeed(Database, db))
-                );
+                const target = yield* visibleFriend(params.id);
                 const sets = yield* Effect.provide(
                   Effect.gen(function* listFriendSets() {
                     const personal = yield* Library;
                     return yield* personal.list({});
                   }),
-                  friendLibrary
+                  friendLibraryLayer(target.id)
                 );
                 return { sets };
+              })
+            )
+          )
+          .handleRaw("friendPlaylists", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* readFriendPlaylists() {
+                const target = yield* visibleFriend(params.id);
+                const playlists = yield* Effect.provide(
+                  Effect.gen(function* listFriendPlaylists() {
+                    const personal = yield* Library;
+                    const owned = yield* personal.playlists();
+                    // eslint-disable-next-line unicorn/no-array-method-this-argument -- Effect.forEach is not Array.forEach.
+                    return yield* Effect.forEach(owned, (playlist) =>
+                      Effect.map(
+                        personal.list({ playlistId: playlist.id }),
+                        (sets) => ({
+                          ...playlist,
+                          sets,
+                        })
+                      )
+                    );
+                  }),
+                  friendLibraryLayer(target.id)
+                );
+                return { playlists };
+              })
+            )
+          )
+          .handleRaw("friendListens", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* readFriendListens() {
+                const target = yield* visibleFriend(params.id);
+                const rows = yield* db
+                  .select({
+                    finishedAt: listens.finishedAt,
+                    id: listens.id,
+                    setId: listens.setId,
+                    startedAt: listens.startedAt,
+                  })
+                  .from(listens)
+                  .where(eq(listens.personId, target.id))
+                  .orderBy(desc(listens.startedAt), desc(listens.id));
+                const history = yield* Effect.provide(
+                  Effect.gen(function* hydrateFriendListens() {
+                    const personal = yield* Library;
+                    const sets = yield* personal.byIds(
+                      rows.map((row) => row.setId)
+                    );
+                    const byId = new Map(sets.map((set) => [set.id, set]));
+                    return rows.flatMap((row) => {
+                      const set = byId.get(row.setId);
+                      return set
+                        ? [
+                            {
+                              finishedAt: row.finishedAt,
+                              set,
+                              startedAt: row.startedAt,
+                            },
+                          ]
+                        : [];
+                    });
+                  }),
+                  friendLibraryLayer(target.id)
+                );
+                return { listens: history };
               })
             )
           )

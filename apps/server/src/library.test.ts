@@ -709,7 +709,17 @@ test("removes a Library Entry while keeping its playlist membership", async () =
       method: "GET",
       url: `/sets?playlistId=${playlist.id}`,
     });
-    expect(playlistSets.json()).toEqual({ sets: [] });
+    expect(playlistSets.json()).toMatchObject({
+      sets: [
+        {
+          id: set.id,
+          playlistIds: [playlist.id],
+          tags: [],
+          title: "SoundCloud track",
+          titleEditedByUser: false,
+        },
+      ],
+    });
     const playlists = await request(app, {
       method: "GET",
       url: "/playlists",
