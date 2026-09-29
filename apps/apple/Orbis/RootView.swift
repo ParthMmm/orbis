@@ -522,8 +522,6 @@ struct DestinationView: View {
         libraryToolbar
       }
       .sheet(isPresented: $isFilingSheetShown) { filingSheet }
-      // A filing that arrives from the share sheet or the clipboard card opens the naming
-      // step the same way one from the field does.
       .onChange(of: model.reveal != nil) { _, hasReveal in
         if hasReveal { isFilingSheetShown = true }
       }
