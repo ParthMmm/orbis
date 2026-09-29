@@ -15,6 +15,7 @@ import {
   SetPlaylistsPayload,
   TagsPayload,
   UpdateTitlePayload,
+  UpdateMePayload,
 } from "@orbis/contracts/http-api";
 import { Context, Effect, Layer, Option, Schema, Scope } from "effect";
 import {
@@ -31,7 +32,13 @@ import type { AudioFile, AudioOptions } from "./audio.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { LibraryError } from "./errors.js";
 import type { AccessDecision, AccessMode } from "./identity.js";
-import { decideAccess, readDeviceRegistry } from "./identity.js";
+import {
+  decideAccess,
+  markKeyUsed,
+  migrateTrustStore,
+  readTrustRegistry,
+  renamePerson,
+} from "./identity.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
 import {
@@ -190,6 +197,9 @@ export const createApp = (
     (databasePath === ":memory:"
       ? undefined
       : path.join(path.dirname(databasePath), "devices.json"));
+  if (devicesPath) {
+    migrateTrustStore(devicesPath);
+  }
   const database = databaseLayer({
     databasePath,
     migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
@@ -544,6 +554,45 @@ export const createApp = (
               )
             )
       );
+      const peopleGroup = HttpApiBuilder.group(OrbisApi, "people", (handlers) =>
+        handlers
+          .handle("me", () =>
+            Effect.gen(function* readMe() {
+              const { person } = yield* SetCaller;
+              return { id: person.id, username: person.username };
+            })
+          )
+          .handleRaw("updateMe", () =>
+            withFailureResponse(
+              Effect.gen(function* updateMe() {
+                const caller = yield* SetCaller;
+                const { username } =
+                  yield* HttpServerRequest.schemaBodyJson(UpdateMePayload);
+                const result = renamePerson(
+                  devicesPath,
+                  caller.person.id,
+                  username
+                );
+                if (result.kind === "updated") {
+                  return HttpServerResponse.jsonUnsafe({
+                    id: result.person.id,
+                    username: result.person.username,
+                  });
+                }
+                let statusCode = 500;
+                let message = "The trust store is unavailable.";
+                if (result.kind === "invalid") {
+                  statusCode = 400;
+                  message = "Choose a username with 1 to 40 characters.";
+                } else if (result.kind === "conflict") {
+                  statusCode = 409;
+                  message = "That username is already in use.";
+                }
+                return yield* new LibraryError({ message, statusCode });
+              })
+            )
+          )
+      );
       const systemGroup = HttpApiBuilder.group(OrbisApi, "system", (handlers) =>
         handlers.handle("health", () =>
           Effect.succeed({ status: "ok" as const })
@@ -556,6 +605,7 @@ export const createApp = (
           Layer.provide(queueGroup),
           Layer.provide(libraryGroup),
           Layer.provide(systemGroup),
+          Layer.provide(peopleGroup),
           Layer.provide(
             Layer.succeed(SetAccess, {
               bearer: (effect) =>
@@ -599,16 +649,13 @@ export const createApp = (
     ): Promise<Response> => {
       const host = request.headers.get("host") ?? new URL(request.url).host;
       const authorization = request.headers.get("authorization");
-      // Only a claimed token needs the trust store, so local requests never read it.
-      const registry = readDeviceRegistry(
-        authorization ? devicesPath : undefined
-      );
+      const registry = readTrustRegistry(devicesPath);
       const decision = decideAccess({
         authorization,
-        devices: registry.devices,
         hasOrigin: request.headers.has("origin"),
         host,
         mode,
+        store: registry.store,
       });
       if (decision.kind === "rejected") {
         const logger = startRequestLog({
@@ -633,7 +680,11 @@ export const createApp = (
           )
         );
       }
-      return app.handler(request, Context.make(AcceptedAccess, decision));
+      markKeyUsed(devicesPath, decision.keyId);
+      return app.handler(
+        request,
+        Context.add(Context.make(SetCaller, decision), AcceptedAccess, decision)
+      );
     },
   };
 };

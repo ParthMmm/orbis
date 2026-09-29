@@ -16,6 +16,7 @@ const Samples = Schema.Struct({
   audioState: AudioStateSchema,
   health: Schema.Struct({ status: Schema.Literal("ok") }),
   library: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
+  me: Schema.Struct({ id: Schema.String, username: Schema.String }),
   playlist: PlaylistSchema,
   playlists: Schema.Struct({ playlists: Schema.Array(PlaylistSchema) }),
   queue: Schema.Struct({ queue: ListeningQueueSchema }),
@@ -80,6 +81,9 @@ const sampleKeyFor = (operationId: string): keyof typeof samples => {
   if (operationId === "library.tags") {
     return "tags";
   }
+  if (operationId.startsWith("people.")) {
+    return "me";
+  }
   if (operationId === "system.health") {
     return "health";
   }
@@ -135,7 +139,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(25);
+    expect(checked).toBe(27);
   } finally {
     await app.dispose();
   }
