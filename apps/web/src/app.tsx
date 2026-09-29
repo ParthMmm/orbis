@@ -148,9 +148,13 @@ const LibraryView = ({
   const [tag, setTag] = useState("");
   const [message, setError] = useState("");
   const [loading, setLoading] = useState(true);
-  const [playing, setPlaying] = useState<{ set: SavedSet; src: string } | null>(
-    null
-  );
+  const [playing, setPlaying] = useState<{
+    attempt: number;
+    set: SavedSet;
+    src: string;
+  } | null>(null);
+  const [playerError, setPlayerError] = useState("");
+  const [retryingAudio, setRetryingAudio] = useState(false);
   const lastReport = useRef(0);
   const client = api(session.key);
 
@@ -220,10 +224,15 @@ const LibraryView = ({
 
   const play = async (set: SavedSet) => {
     setError("");
+    setPlayerError("");
     try {
       await client.play(set.id);
       const grant = await client.grant(set.id);
-      setPlaying({ set, src: streamUrl(set.id, grant.url) });
+      setPlaying({
+        attempt: (playing?.attempt ?? 0) + 1,
+        set,
+        src: streamUrl(set.id, grant.url),
+      });
       lastReport.current = 0;
     } catch (error) {
       if (error instanceof Error) {
@@ -231,6 +240,30 @@ const LibraryView = ({
       } else {
         setError("Could not start playback.");
       }
+    }
+  };
+
+  const retryAudio = async () => {
+    if (!playing) {
+      return;
+    }
+    setRetryingAudio(true);
+    try {
+      const grant = await client.grant(playing.set.id);
+      setPlaying({
+        ...playing,
+        attempt: playing.attempt + 1,
+        src: streamUrl(playing.set.id, grant.url),
+      });
+      setPlayerError("");
+    } catch (error) {
+      if (error instanceof ApiFailureError && error.status === 401) {
+        onRevoked();
+      } else {
+        setPlayerError("Could not get a new audio link. Try again.");
+      }
+    } finally {
+      setRetryingAudio(false);
     }
   };
 
@@ -360,10 +393,26 @@ const LibraryView = ({
             <strong>{playing.set.title}</strong>
             <span>{playing.set.creator}</span>
           </div>
+          {playerError && (
+            <div className="player-notice">
+              <p role="alert">{playerError}</p>
+              <button
+                type="button"
+                onClick={() => {
+                  retryAudio();
+                }}
+                disabled={retryingAudio}
+              >
+                {retryingAudio ? "Trying…" : "Retry audio"}
+              </button>
+            </div>
+          )}
           <audio
+            key={playing.attempt}
             controls
             autoPlay
             src={playing.src}
+            onError={() => setPlayerError("Audio could not load. Try again.")}
             onLoadedMetadata={(event) => {
               event.currentTarget.currentTime =
                 playing.set.playbackPositionSeconds;

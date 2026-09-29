@@ -67,7 +67,34 @@ try {
     );
     const page = await browser.newPage();
     let revoked = false;
+    let grantCount = 0;
     const requests = [];
+    const fulfillAudio = async (route, request, grant) => {
+      if (grant === "grant-2") {
+        await route.fulfill({ body: "Audio unavailable", status: 503 });
+        return;
+      }
+      const range = /^bytes=(?<start>\d+)-(?<end>\d*)$/u.exec(
+        request.headers().range ?? ""
+      );
+      const start = range?.groups ? Number(range.groups.start) : 0;
+      const end = range?.groups?.end
+        ? Math.min(Number(range.groups.end), audioBytes.length - 1)
+        : audioBytes.length - 1;
+      const headers = {
+        "accept-ranges": "bytes",
+        "content-length": String(end - start + 1),
+      };
+      if (range) {
+        headers["content-range"] = `bytes ${start}-${end}/${audioBytes.length}`;
+      }
+      await route.fulfill({
+        body: audioBytes.subarray(start, end + 1),
+        contentType: "audio/mp4",
+        headers,
+        status: range ? 206 : 200,
+      });
+    };
     await page.route("**/api/**", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
@@ -80,29 +107,9 @@ try {
       });
       if (
         url.pathname.endsWith("/sets/set-a/audio") &&
-        url.searchParams.get("grant") === "grant-value"
+        url.searchParams.get("grant")?.startsWith("grant-")
       ) {
-        const range = /^bytes=(?<start>\d+)-(?<end>\d*)$/u.exec(
-          request.headers().range ?? ""
-        );
-        const start = range?.groups ? Number(range.groups.start) : 0;
-        const end = range?.groups?.end
-          ? Math.min(Number(range.groups.end), audioBytes.length - 1)
-          : audioBytes.length - 1;
-        const headers = {
-          "accept-ranges": "bytes",
-          "content-length": String(end - start + 1),
-        };
-        if (range) {
-          headers["content-range"] =
-            `bytes ${start}-${end}/${audioBytes.length}`;
-        }
-        await route.fulfill({
-          body: audioBytes.subarray(start, end + 1),
-          contentType: "audio/mp4",
-          headers,
-          status: range ? 206 : 200,
-        });
+        await fulfillAudio(route, request, url.searchParams.get("grant"));
         return;
       }
       const authorized =
@@ -123,7 +130,8 @@ try {
       } else if (url.pathname.endsWith("/tags")) {
         body = { tags: ["house"] };
       } else if (url.pathname.endsWith("/audio/grant")) {
-        body = { url: "/sets/set-a/audio?grant=grant-value" };
+        grantCount += 1;
+        body = { url: `/sets/set-a/audio?grant=grant-${grantCount}` };
       } else if (url.pathname.endsWith("/queue/active")) {
         body = { queue: { activeSetId: "set-a", entries: [set] } };
       }
@@ -151,7 +159,7 @@ try {
     await page.getByLabel("Search library").fill("long");
     await page.getByLabel("Tag").selectOption("house");
     await page.getByRole("button", { name: "Play Long set" }).click();
-    await page.locator("audio[src*='grant=grant-value']").waitFor();
+    await page.locator("audio[src*='grant=grant-1']").waitFor();
     await page.waitForFunction(
       () => document.querySelector("audio")?.paused === false
     );
@@ -190,6 +198,18 @@ try {
       )
     );
     results.push("seek reports playback position");
+
+    await page.getByRole("button", { name: "Play Long set" }).click();
+    await page
+      .getByText("Audio could not load. Try again.")
+      .waitFor({ timeout: 3000 });
+    await page.getByRole("button", { name: "Retry audio" }).click();
+    await page.locator("audio[src*='grant=grant-3']").waitFor();
+    await page.waitForFunction(
+      () => document.querySelector("audio")?.paused === false
+    );
+    assert.equal(grantCount, 3);
+    results.push("failed audio shows retry and gets a fresh grant");
 
     revoked = true;
     await page.getByRole("button", { name: "Refresh library" }).click();
