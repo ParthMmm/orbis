@@ -8,7 +8,12 @@ import {
   HttpApiSecurity,
 } from "effect/unstable/httpapi";
 
-import type { AudioState, Playlist, SavedSet } from "./index.js";
+import type {
+  AudioState,
+  ListeningQueue,
+  Playlist,
+  SavedSet,
+} from "./index.js";
 import type { SetCaller } from "./set-caller.js";
 
 export { SetCaller } from "./set-caller.js";
@@ -129,6 +134,29 @@ export const SetPlaylistsPayload = Schema.Struct({
   ),
 });
 
+export const ListeningQueueSchema = Schema.Struct({
+  activeSetId: Schema.NullOr(Schema.String),
+  entries: Schema.Array(SavedSetSchema).pipe(Schema.mutable),
+});
+export type ListeningQueueContractCheck = Assert<
+  SameContract<typeof ListeningQueueSchema.Type, ListeningQueue>
+>;
+const QueueResponse = Schema.Struct({ queue: ListeningQueueSchema });
+const QueueSetId = Schema.String.check(Schema.isMaxLength(100));
+export const QueueSetPayload = Schema.Struct({ setId: QueueSetId });
+export const QueueEntryPayload = Schema.Struct({
+  placement: Schema.Literals(["next", "end"]),
+  setId: QueueSetId,
+});
+export const QueuePlaylistPayload = Schema.Struct({ playlistId: QueueSetId });
+export const PositionPayload = Schema.Struct({
+  seconds: Schema.Number.check(
+    Schema.isGreaterThanOrEqualTo(0),
+    Schema.isLessThanOrEqualTo(604_800)
+  ),
+});
+export const TagsPayload = Schema.Struct({ tags: Tags });
+
 export const SetsApi = HttpApi.make("orbis").add(
   HttpApiGroup.make("sets")
     .add(
@@ -197,7 +225,7 @@ export const SetsApi = HttpApi.make("orbis").add(
     .middleware(SetAccess)
 );
 
-export const OrbisApi = SetsApi.add(
+const PlaylistApi = SetsApi.add(
   HttpApiGroup.make("playlists")
     .add(
       HttpApiEndpoint.get("list", "/playlists", {
@@ -235,3 +263,63 @@ export const OrbisApi = SetsApi.add(
     )
     .middleware(SetAccess)
 );
+
+export const OrbisApi = PlaylistApi.add(
+  HttpApiGroup.make("queue")
+    .add(
+      HttpApiEndpoint.get("read", "/queue", {
+        error: InternalError,
+        success: QueueResponse,
+      }),
+      HttpApiEndpoint.put("play", "/queue/active", {
+        error: [BadRequest, NotFound, InternalError],
+        payload: QueueSetPayload,
+        success: QueueResponse,
+      }),
+      HttpApiEndpoint.post("insert", "/queue/entries", {
+        error: [BadRequest, NotFound, InternalError],
+        payload: QueueEntryPayload,
+        success: QueueResponse.pipe(HttpApiSchema.status(201)),
+      }),
+      HttpApiEndpoint.put("replaceWithPlaylist", "/queue/playlist", {
+        error: [BadRequest, NotFound, InternalError],
+        payload: QueuePlaylistPayload,
+        success: QueueResponse,
+      }),
+      HttpApiEndpoint.post("complete", "/queue/completion", {
+        error: [BadRequest, NotFound, InternalError],
+        payload: QueueSetPayload,
+        success: QueueResponse,
+      })
+    )
+    .middleware(SetAccess)
+)
+  .add(
+    HttpApiGroup.make("library")
+      .add(
+        HttpApiEndpoint.put("setPosition", "/sets/:id/position", {
+          error: [BadRequest, NotFound, InternalError],
+          params: SetId,
+          payload: PositionPayload,
+          success: SavedSetSchema,
+        }),
+        HttpApiEndpoint.get("tags", "/tags", {
+          error: InternalError,
+          success: Schema.Struct({ tags: Schema.Array(Schema.String) }),
+        }),
+        HttpApiEndpoint.patch("updateTags", "/sets/:id/tags", {
+          error: [BadRequest, NotFound, InternalError],
+          params: SetId,
+          payload: TagsPayload,
+          success: SavedSetSchema,
+        })
+      )
+      .middleware(SetAccess)
+  )
+  .add(
+    HttpApiGroup.make("system").add(
+      HttpApiEndpoint.get("health", "/health", {
+        success: Schema.Struct({ status: Schema.Literal("ok") }),
+      })
+    )
+  );
