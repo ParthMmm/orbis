@@ -153,8 +153,17 @@ export const PositionPayload = Schema.Struct({
   ),
 });
 export const TagsPayload = Schema.Struct({ tags: Tags });
+export const PresenceSchema = Schema.Struct({
+  personId: Schema.String,
+  set: SavedSetSchema,
+  username: Schema.String,
+});
 export const QueueEventSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("queue"), queue: ListeningQueueSchema }),
+  Schema.Struct({
+    kind: Schema.Literal("presence"),
+    presence: Schema.Array(PresenceSchema),
+  }),
   Schema.Struct({ kind: Schema.Literal("heartbeat") }),
 ]);
 

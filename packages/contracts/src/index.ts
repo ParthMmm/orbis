@@ -5,6 +5,7 @@ import type {
   LibraryResponseSchema,
   ListeningQueueSchema,
   PlaylistSchema,
+  PresenceSchema,
   QueueEntryPayload,
   SaveSetPayload,
   SavedSetSchema,
@@ -33,6 +34,7 @@ export type LibraryFilters = {
 export type LibraryResponse = typeof LibraryResponseSchema.Type;
 
 export type Playlist = typeof PlaylistSchema.Type;
+export type Presence = typeof PresenceSchema.Type;
 export type ListeningQueue = typeof ListeningQueueSchema.Type;
 
 /** Where a queued Set goes. `next` starts after the active Set; `end` goes last. */

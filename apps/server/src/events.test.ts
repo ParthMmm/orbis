@@ -13,9 +13,14 @@ import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
 import { startListeners } from "./listeners.js";
 
+// Presence has its own test; these frames are about the Queue.
 const Event = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("queue"), queue: ListeningQueueSchema }),
   Schema.Struct({ kind: Schema.Literal("heartbeat") }),
+  Schema.Struct({
+    kind: Schema.Literal("presence"),
+    presence: Schema.Array(Schema.Unknown),
+  }),
 ]);
 const frames = (response: Response) => {
   const reader = response.body?.getReader();
@@ -24,25 +29,33 @@ const frames = (response: Response) => {
   }
   const decoder = new TextDecoder();
   let pending = "";
+  const nextFrame = async () => {
+    while (!pending.includes("\n\n")) {
+      const chunk = await reader.read();
+      if (chunk.done) {
+        throw new Error("The event stream closed");
+      }
+      pending += decoder.decode(chunk.value, { stream: true });
+    }
+    const boundary = pending.indexOf("\n\n");
+    const frame = pending.slice(0, boundary);
+    pending = pending.slice(boundary + 2);
+    const data = frame
+      .split("\n")
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    return Schema.decodeUnknownSync(Schema.fromJsonString(Event))(data);
+  };
   return {
     close: () => reader.cancel(),
     next: async () => {
-      while (!pending.includes("\n\n")) {
-        const chunk = await reader.read();
-        if (chunk.done) {
-          throw new Error("The event stream closed");
+      for (;;) {
+        const event = await nextFrame();
+        if (event.kind !== "presence") {
+          return event;
         }
-        pending += decoder.decode(chunk.value, { stream: true });
       }
-      const boundary = pending.indexOf("\n\n");
-      const frame = pending.slice(0, boundary);
-      pending = pending.slice(boundary + 2);
-      const data = frame
-        .split("\n")
-        .filter((line) => line.startsWith("data:"))
-        .map((line) => line.slice(5).trimStart())
-        .join("\n");
-      return Schema.decodeUnknownSync(Schema.fromJsonString(Event))(data);
     },
   };
 };

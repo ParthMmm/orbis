@@ -21,7 +21,7 @@ import {
   UpdateTitlePayload,
   UpdateMePayload,
 } from "@orbis/contracts/http-api";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema, Scope, Stream } from "effect";
 import {
   Headers,
@@ -44,7 +44,7 @@ import {
 import { Audio } from "./audio.js";
 import type { AudioFile, AudioOptions } from "./audio.js";
 import { Database, layer as databaseLayer } from "./db/database.js";
-import { listens } from "./db/schema.js";
+import { listens, queueEntries } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
 import {
@@ -165,6 +165,7 @@ const grantAccess = (
     : { kind: "rejected", message: "Invalid stream grant.", statusCode: 401 };
 };
 
+const PRESENCE_WINDOW_MS = 30_000;
 const Tags = TagsPayload.fields.tags;
 const Filters = Schema.Struct({
   creatorId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
@@ -281,6 +282,8 @@ export const createApp = (
     devicesPath?: string;
     logging?: LoggingOptions;
     metadata?: Layer.Layer<Metadata>;
+    /** How long after a Playback Position report a Person still counts as listening. */
+    presenceWindowMs?: number;
     /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
     shortLinkFetch?: (url: string, signal: AbortSignal) => Promise<Response>;
     titleReviser?: Layer.Layer<TitleReviser>;
@@ -731,6 +734,11 @@ export const createApp = (
             )
           )
       );
+      // Presence is ephemeral: a report older than the window means the player stopped.
+      const presenceReports = new Map<
+        string,
+        { readonly at: number; readonly setId: string }
+      >();
       const libraryGroup = HttpApiBuilder.group(
         OrbisApi,
         "library",
@@ -741,11 +749,17 @@ export const createApp = (
                 Effect.gen(function* setPlaybackPosition() {
                   const input =
                     yield* HttpServerRequest.schemaBodyJson(PositionPayload);
+                  const caller = yield* SetCaller;
                   const personal = yield* Library;
-                  return yield* personal.setPlaybackPosition(
+                  const saved = yield* personal.setPlaybackPosition(
                     params.id,
                     input.seconds
                   );
+                  presenceReports.set(caller.person.id, {
+                    at: Date.now(),
+                    setId: params.id,
+                  });
+                  return saved;
                 })
               )
             )
@@ -787,6 +801,54 @@ export const createApp = (
         Library.forPersonLayer(personId).pipe(
           Layer.provide(Layer.succeed(Database, db))
         );
+      const presenceFor = (viewerId: string) =>
+        Effect.gen(function* readPresence() {
+          const { people } = readTrustRegistry(devicesPath).store;
+          const found = [];
+          for (const person of people) {
+            let target;
+            try {
+              target = resolveVisiblePerson(people, viewerId, person.id);
+            } catch {
+              continue;
+            }
+            const report = presenceReports.get(target.id);
+            if (
+              !report ||
+              Date.now() - report.at >
+                (options.presenceWindowMs ?? PRESENCE_WINDOW_MS)
+            ) {
+              continue;
+            }
+            const [active] = yield* db
+              .select({ setId: queueEntries.setId })
+              .from(queueEntries)
+              .where(
+                and(
+                  eq(queueEntries.personId, target.id),
+                  eq(queueEntries.isActive, true)
+                )
+              );
+            if (active?.setId !== report.setId) {
+              continue;
+            }
+            const [set] = yield* Effect.provide(
+              Effect.gen(function* hydratePresence() {
+                const personal = yield* Library;
+                return yield* personal.byIds([report.setId]);
+              }),
+              friendLibraryLayer(target.id)
+            ).pipe(Effect.orElseSucceed(() => []));
+            if (set) {
+              found.push({
+                personId: target.id,
+                set,
+                username: target.username,
+              });
+            }
+          }
+          return found;
+        });
       const peopleGroup = HttpApiBuilder.group(OrbisApi, "people", (handlers) =>
         handlers
           .handle("me", () =>
@@ -1141,12 +1203,23 @@ export const createApp = (
                 queue: snapshot,
               }))
             );
+            const presence = Stream.tick("2 seconds").pipe(
+              Stream.mapEffect(() => presenceFor(caller.person.id)),
+              Stream.changesWith(
+                (left, right) => JSON.stringify(left) === JSON.stringify(right)
+              ),
+              Stream.map((found) => ({
+                kind: "presence" as const,
+                presence: found,
+              }))
+            );
+            const heartbeats = Stream.tick("30 seconds").pipe(
+              Stream.drop(1),
+              Stream.map(() => ({ kind: "heartbeat" as const }))
+            );
             return Stream.merge(
-              snapshots,
-              Stream.tick("30 seconds").pipe(
-                Stream.drop(1),
-                Stream.map(() => ({ kind: "heartbeat" as const }))
-              )
+              Stream.merge(snapshots, presence),
+              heartbeats
             ).pipe(Stream.takeWhile(authorized), Stream.orDie);
           })
         )
