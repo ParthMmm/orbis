@@ -33,14 +33,20 @@ export class Audio extends Context.Service<
     readonly isConfigured: boolean;
     readonly requestDownload: (
       id: string
-    ) => Effect.Effect<{ set: SavedSet; accepted: boolean }, LibraryError>;
+    ) => Effect.Effect<
+      { set: SavedSet; accepted: boolean },
+      LibraryError,
+      Library
+    >;
     readonly audioState: (
       id: string
-    ) => Effect.Effect<AudioState, LibraryError>;
-    readonly audioFile: (id: string) => Effect.Effect<AudioFile, LibraryError>;
+    ) => Effect.Effect<AudioState, LibraryError, Library>;
+    readonly audioFile: (
+      id: string
+    ) => Effect.Effect<AudioFile, LibraryError, Library>;
     readonly cancelDownload: (
       id: string
-    ) => Effect.Effect<SavedSet, LibraryError>;
+    ) => Effect.Effect<SavedSet, LibraryError, Library>;
     readonly processNext: () => Effect.Effect<boolean, never>;
   }
 >()("@orbis/Audio") {
@@ -56,7 +62,6 @@ export class Audio extends Context.Service<
     return Layer.effect(
       Audio,
       Effect.gen(function* buildAudio() {
-        const library = yield* Library;
         const cobalt = yield* Cobalt;
         const ytdlp = yield* Ytdlp;
         const media = yield* MediaStore;
@@ -65,6 +70,7 @@ export class Audio extends Context.Service<
         yield* media.ensureDirectory();
         const requestDownload = Effect.fn("Audio.requestDownload")(
           function* requestDownload(id: string) {
+            const library = yield* Library;
             if (!configured) {
               return yield* Effect.fail(unconfigured());
             }
@@ -92,6 +98,7 @@ export class Audio extends Context.Service<
         const audioState = Effect.fn("Audio.audioState")(function* audioState(
           id: string
         ) {
+          const library = yield* Library;
           const set = yield* library.find(id);
           const live = worker.progressFor(id);
           return {
@@ -104,6 +111,7 @@ export class Audio extends Context.Service<
         const audioFile = Effect.fn("Audio.audioFile")(function* audioFile(
           id: string
         ) {
+          const library = yield* Library;
           const set = yield* library.find(id);
           if (set.downloadState !== "ready" || !set.retainedAudioFormat) {
             return yield* Effect.fail(
@@ -117,6 +125,7 @@ export class Audio extends Context.Service<
         });
         const cancelDownload = Effect.fn("Audio.cancelDownload")(
           function* cancelDownload(id: string) {
+            const library = yield* Library;
             worker.abort(id);
             yield* media.removeFiles(id);
             const canceled = yield* library.cancelDownload(id);

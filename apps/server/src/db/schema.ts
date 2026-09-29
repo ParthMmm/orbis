@@ -82,6 +82,21 @@ export const libraryEntries = sqliteTable(
     index("library_entries_by_set").on(table.setId),
   ]
 );
+export const downloadRequesters = sqliteTable("download_requesters", {
+  lastServed: integer("last_served").notNull().default(0),
+  personId: text("person_id").primaryKey(),
+});
+
+export const downloadJobs = sqliteTable("download_jobs", {
+  personId: text("person_id")
+    .notNull()
+    .references(() => downloadRequesters.personId),
+  sequence: integer("sequence").primaryKey({ autoIncrement: true }),
+  setId: text("set_id")
+    .notNull()
+    .unique()
+    .references(() => sets.id, { onDelete: "cascade" }),
+});
 
 export const playlists = sqliteTable(
   "playlists",
@@ -139,6 +154,8 @@ export const queueEntries = sqliteTable(
 );
 
 export const schema = {
+  downloadJobs,
+  downloadRequesters,
   libraryEntries,
   playlistSets,
   playlists,
