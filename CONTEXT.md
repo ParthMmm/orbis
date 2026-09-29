@@ -74,6 +74,14 @@ _Avoid_: Team, org, server
 The Person who runs the deployment and can mint and revoke keys and remove People.
 _Avoid_: Admin
 
+**Invite**:
+A one-time link the Host sends that signs in a Person's first device, or a returning Person's new one, by minting that device's key.
+_Avoid_: Signup link, magic link
+
+**Device Link**:
+Signing in a new device by approving its short code on a device the Person already uses.
+_Avoid_: Pairing code, QR login
+
 **Social**:
 A Person's switch, off by default. Off hides them from others and others from them.
 _Avoid_: Sharing mode, public mode
