@@ -112,6 +112,34 @@ final class PlaylistUITests: XCTestCase {
     tapAtCentre(of: row, in: app)
   }
 
+  func testNoPlaylistsInvitesCreation() throws {
+    let service = try LaneService()
+    for playlist in try service.playlists() {
+      try service.deletePlaylist(playlist.id)
+    }
+
+    let app = try launch(paired: true)
+    openPlaylists(in: app)
+    let empty = app.descendants(matching: .any)["playlists-empty"]
+    XCTAssertTrue(empty.waitForExistence(timeout: 30), "the empty list must keep its identifier")
+    XCTAssertTrue(app.staticTexts["No playlists yet"].exists)
+    XCTAssertTrue(app.staticTexts["Create a playlist to organize your Sets."].exists)
+    let create = empty.buttons["New playlist"]
+    XCTAssertTrue(create.exists, "the empty state must name the create action")
+    capture("playlists-empty")
+
+    create.tap()
+    XCTAssertTrue(app.textFields["playlist-name"].waitForExistence(timeout: 15))
+    app.textFields["playlist-name"].tap()
+    app.textFields["playlist-name"].typeText(unique("Empty"))
+    app.buttons["playlist-create-save"].tap()
+    XCTAssertTrue(
+      app.staticTexts["This Playlist is empty"].waitForExistence(timeout: 30),
+      "a playlist without Sets must keep its own empty state"
+    )
+    capture("playlist-empty-after-create")
+  }
+
   /// Reordering and removal both rewrite the whole member list, so a one-member playlist cannot
   /// show a wrong order or a wrong Set removed. Three members can.
   func testReordersAndRemovesMembersOfAPlaylist() throws {
