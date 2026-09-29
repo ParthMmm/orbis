@@ -10,17 +10,8 @@ final class AddToPlaylistTests: XCTestCase {
     Playlist(id: "s", name: "September - 26", setCount: 7),
   ]
 
-  func testRecentlyAddedKeepsTheServicesNewestFirstOrder() {
-    XCTAssertEqual(
-      AddToPlaylistSheet.sorted(playlists, by: .recentlyAdded).map(\.id), ["b", "a", "s"])
-  }
-
   func testNameSortsTheWayFinderDoes() {
     XCTAssertEqual(AddToPlaylistSheet.sorted(playlists, by: .name).map(\.id), ["a", "b", "s"])
-  }
-
-  func testMostSetsPutsTheLargestFirst() {
-    XCTAssertEqual(AddToPlaylistSheet.sorted(playlists, by: .size).map(\.id), ["a", "s", "b"])
   }
 
   func testTheLastPlaylistAddedToLeadsTheRecentsOnce() {

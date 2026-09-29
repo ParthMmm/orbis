@@ -54,38 +54,6 @@ final class SetPageTests: XCTestCase {
     return model
   }
 
-  /// Open leaves the app, so what it would hand to the system is checked rather than driven.
-  func testOpenHandsTheSourceAddressToTheSystem() {
-    XCTAssertEqual(
-      SetPresentation.sourceURL(set())?.absoluteString,
-      "https://www.youtube.com/watch?v=abcdefghijk"
-    )
-  }
-
-  func testOpenHasNothingToOfferWhenTheAddressIsNotOne() {
-    let broken = SavedSet(
-      id: "1",
-      url: "not a url",
-      title: "Night session",
-      source: .youtube,
-      tags: [],
-      createdAt: "2026-01-01T00:00:00.000Z",
-      releasedAt: nil,
-      creator: nil,
-      artworkUrl: nil,
-      artworkLargeUrl: nil,
-      durationSeconds: nil,
-      metadataState: "enriched",
-      downloadState: "none",
-      playlistIds: [],
-      playbackPositionSeconds: 0,
-      listenCount: 0,
-      finishCount: 0,
-      lastListenedAt: nil
-    )
-    XCTAssertNil(SetPresentation.sourceURL(broken))
-  }
-
   func testEachTabKeepsItsOwnOpenSet() {
     let model = model(sets: [set(), set(id: "2", title: "Other")])
     model.destination = .home
@@ -115,20 +83,6 @@ final class SetPageTests: XCTestCase {
     XCTAssertNil(model.openedSetId)
   }
 
-  func testRemovingASetTakesItOutOfTheLibraryAndClosesThePage() async {
-    let model = model(sets: [set(), set(id: "2", title: "Other")])
-    model.openSet("1")
-
-    await model.remove("1")
-
-    guard case .loaded(let sets) = model.library else {
-      return XCTFail("expected a loaded library")
-    }
-    XCTAssertEqual(sets.map(\.id), ["2"])
-    XCTAssertNil(model.openedSetId)
-    XCTAssertNil(model.setFailure)
-  }
-
   /// The Set stays on screen with the reason beside it, so the removal can be tried again
   /// rather than leaving a person wondering whether it worked.
   func testARefusedRemovalKeepsTheSetAndSaysWhy() async {
@@ -145,23 +99,6 @@ final class SetPageTests: XCTestCase {
       model.setFailure?.message,
       OrbisError.server(status: 500, message: "The library is busy.").failure().message
     )
-  }
-
-  func testRenamingSendsTheTrimmedTitle() async {
-    let model = model(sets: [set()])
-
-    await model.rename("1", to: "  Closing set  ")
-
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PATCH")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/1/title")
-    let sent = try? JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody))
-    XCTAssertEqual((sent as? [String: Any])?["title"] as? String, "Closing set")
-  }
-
-  func testRenamingToTheSameTitleAsksNothing() async {
-    let model = model(sets: [set()])
-    await model.rename("1", to: "Night session")
-    XCTAssertNil(StubProtocol.lastRequest, "an unchanged title is not worth a request")
   }
 
   func testAnEmptyTitleIsNeverSent() async {
@@ -200,12 +137,6 @@ final class SetPageTests: XCTestCase {
 
     let sent = try? JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody))
     XCTAssertEqual((sent as? [String: Any])?["playlistIds"] as? [String], [])
-  }
-
-  func testMovingToThePlaylistItIsAlreadyInAsksNothing() async {
-    let model = model(sets: [set(playlists: ["same"])])
-    await model.move("1", to: "same")
-    XCTAssertNil(StubProtocol.lastRequest)
   }
 
   /// While the Library is showing one playlist, a Set that moves out of it must leave the

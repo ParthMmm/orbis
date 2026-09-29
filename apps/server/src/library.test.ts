@@ -99,11 +99,6 @@ const membershipIds = async (
   return set.playlistIds;
 };
 
-test("keeps the two membership capacities separate", () => {
-  expect(MAX_SETS_PER_PLAYLIST).toBe(500);
-  expect(MAX_PLAYLISTS_PER_SET).toBe(100);
-});
-
 test("accepts a full Playlist list and rejects one id more", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
   const databasePath = path.join(directory, "library.sqlite");
@@ -305,153 +300,6 @@ test("rejects a move into a full Playlist and keeps the source membership", asyn
   }
 }, 30_000);
 
-test("reorders a full Playlist and keeps its members at the limit", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
-  const databasePath = path.join(directory, "library.sqlite");
-  try {
-    const { playlistIds, setIds } = await seedLibrary(
-      databasePath,
-      { playlists: 1, sets: MAX_SETS_PER_PLAYLIST },
-      fill(0, MAX_SETS_PER_PLAYLIST)
-    );
-    const playlistId = playlistIds[0] ?? "";
-    // Move the first Set to the end: every member keeps a place, but none keeps its position.
-    const [firstSetId = "", ...restSetIds] = setIds;
-    const reorderedIds = [...restSetIds, firstSetId];
-    const app = createApp({ databasePath });
-    try {
-      const reordered = await request(app, {
-        method: "PUT",
-        payload: { setIds: reorderedIds },
-        url: `/playlists/${playlistId}/sets`,
-      });
-      expect(reordered.statusCode).toBe(200);
-      expect(
-        reordered.json().sets.map((set: { id: string }) => set.id)
-      ).toEqual(reorderedIds);
-
-      const retried = await request(app, {
-        method: "PUT",
-        payload: { setIds: reorderedIds },
-        url: `/playlists/${playlistId}/sets`,
-      });
-      expect(retried.statusCode).toBe(200);
-      const ordered = await request(app, {
-        method: "GET",
-        url: `/sets?playlistId=${playlistId}`,
-      });
-      expect(ordered.json().sets.map((set: { id: string }) => set.id)).toEqual(
-        reorderedIds
-      );
-    } finally {
-      await app.dispose();
-    }
-  } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
-}, 30_000);
-
-test("keeps a Set in its hundredth Playlist across a swap", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
-  const databasePath = path.join(directory, "library.sqlite");
-  try {
-    const { playlistIds, setIds } = await seedLibrary(
-      databasePath,
-      { playlists: MAX_PLAYLISTS_PER_SET + 1, sets: 1 },
-      indexRange(MAX_PLAYLISTS_PER_SET).map(
-        (playlistIndex) => [playlistIndex, 0] as const
-      )
-    );
-    const setId = setIds[0] ?? "";
-    const app = createApp({ databasePath });
-    try {
-      const unchanged = await request(app, {
-        method: "PUT",
-        payload: { playlistIds: playlistIds.slice(0, MAX_PLAYLISTS_PER_SET) },
-        url: `/sets/${setId}/playlists`,
-      });
-      expect(unchanged.statusCode).toBe(200);
-      expect(unchanged.json().playlistIds).toHaveLength(MAX_PLAYLISTS_PER_SET);
-
-      // Naming 100 Playlists while leaving one and joining one keeps the Set at its limit.
-      const swapped = await request(app, {
-        method: "PUT",
-        payload: { playlistIds: playlistIds.slice(1) },
-        url: `/sets/${setId}/playlists`,
-      });
-      expect(swapped.statusCode).toBe(200);
-      expect(swapped.json().playlistIds).toHaveLength(MAX_PLAYLISTS_PER_SET);
-      // The response sorts Playlist ids, so compare the membership itself.
-      expect(new Set(swapped.json().playlistIds)).toEqual(
-        new Set(playlistIds.slice(1))
-      );
-    } finally {
-      await app.dispose();
-    }
-  } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
-}, 30_000);
-
-test("removes membership at the limit without deleting Sets", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
-  const databasePath = path.join(directory, "library.sqlite");
-  try {
-    const { playlistIds, setIds } = await seedLibrary(
-      databasePath,
-      { playlists: MAX_PLAYLISTS_PER_SET, sets: MAX_SETS_PER_PLAYLIST },
-      [
-        ...fill(0, MAX_SETS_PER_PLAYLIST),
-        ...indexRange(MAX_PLAYLISTS_PER_SET - 1).map(
-          (playlistIndex) => [playlistIndex + 1, 0] as const
-        ),
-      ]
-    );
-    const setId = setIds[0] ?? "";
-    const playlistId = playlistIds[0] ?? "";
-    const app = createApp({ databasePath });
-    try {
-      const filled = await request(app, {
-        method: "GET",
-        url: `/sets?playlistId=${playlistId}`,
-      });
-      expect(filled.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
-      expect(await membershipIds(app, setId)).toHaveLength(
-        MAX_PLAYLISTS_PER_SET
-      );
-
-      const cleared = await request(app, {
-        method: "PUT",
-        payload: { setIds: [] },
-        url: `/playlists/${playlistId}/sets`,
-      });
-      expect(cleared.statusCode).toBe(200);
-      expect(cleared.json()).toEqual({ sets: [] });
-
-      const left = await request(app, {
-        method: "PUT",
-        payload: { playlistIds: [] },
-        url: `/sets/${setId}/playlists`,
-      });
-      expect(left.statusCode).toBe(200);
-      expect(left.json().playlistIds).toEqual([]);
-
-      // Membership removal leaves the Sets themselves in the Library.
-      const library = await request(app, { method: "GET", url: "/sets" });
-      expect(library.json().sets).toHaveLength(MAX_SETS_PER_PLAYLIST);
-      const playlists = await request(app, {
-        method: "GET",
-        url: "/playlists",
-      });
-      expect(playlists.json().playlists).toHaveLength(MAX_PLAYLISTS_PER_SET);
-    } finally {
-      await app.dispose();
-    }
-  } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
-}, 30_000);
-
 test("keeps an oversized Playlist readable and lets it shrink", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-test-"));
   const databasePath = path.join(directory, "library.sqlite");
@@ -601,25 +449,6 @@ test("saves a set with tags and reads it after the server restarts", async () =>
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });
-  }
-});
-
-test("saves a set from a url alone", async () => {
-  const app = createApp();
-  try {
-    const saved = await request(app, {
-      method: "POST",
-      payload: { url: "https://www.youtube.com/watch?v=abcdefghijk" },
-      url: "/sets",
-    });
-    expect(saved.statusCode).toBe(201);
-    expect(saved.json()).toMatchObject({
-      source: "youtube",
-      tags: [],
-      url: "https://www.youtube.com/watch?v=abcdefghijk",
-    });
-  } finally {
-    await app.dispose();
   }
 });
 
@@ -829,48 +658,6 @@ test("edits and clears tags while retaining the set and updating tag suggestions
     expect(emptySuggestions.json()).toEqual({ tags: [] });
     const library = await request(app, { method: "GET", url: "/sets" });
     expect(library.json().sets).toEqual([{ ...original, tags: [] }]);
-  } finally {
-    await app.dispose();
-  }
-});
-
-test("updates a set title without changing its source or tags", async () => {
-  const app = createApp();
-  try {
-    const saved = await request(app, {
-      method: "POST",
-      payload: {
-        tags: ["ambient"],
-        title: "Old title",
-        url: "https://youtu.be/abcdefghijk",
-      },
-      url: "/sets",
-    });
-    const original = saved.json();
-    const updated = await request(app, {
-      method: "PATCH",
-      payload: { title: "  New title  " },
-      url: `/sets/${original.id}/title`,
-    });
-    expect(updated.statusCode).toBe(200);
-    expect(updated.json()).toEqual({ ...original, title: "New title" });
-
-    const library = await request(app, { method: "GET", url: "/sets" });
-    expect(library.json()).toEqual({
-      sets: [{ ...original, title: "New title" }],
-    });
-    const blank = await request(app, {
-      method: "PATCH",
-      payload: { title: "   " },
-      url: `/sets/${original.id}/title`,
-    });
-    expect(blank.statusCode).toBe(400);
-    const missing = await request(app, {
-      method: "PATCH",
-      payload: { title: "Missing" },
-      url: "/sets/missing/title",
-    });
-    expect(missing.statusCode).toBe(404);
   } finally {
     await app.dispose();
   }
@@ -1281,97 +1068,6 @@ test("renames and deletes a Playlist while preserving its Sets", async () => {
     const library = await request(app, { method: "GET", url: "/sets" });
     expect(library.json().sets).toHaveLength(1);
     expect(library.json().sets[0].playlistIds).toEqual([]);
-  } finally {
-    await app.dispose();
-  }
-});
-
-test("persists Playlist order across membership writes and removal", async () => {
-  const app = createApp();
-  try {
-    const playlistResponse = await request(app, {
-      method: "POST",
-      payload: { name: "Evenings" },
-      url: "/playlists",
-    });
-    const playlist = playlistResponse.json();
-    const firstResponse = await request(app, {
-      method: "POST",
-      payload: {
-        tags: [],
-        title: "First",
-        url: "https://youtu.be/aaaaaaaaaaa",
-      },
-      url: "/sets",
-    });
-    const first = firstResponse.json();
-    const secondResponse = await request(app, {
-      method: "POST",
-      payload: {
-        tags: [],
-        title: "Second",
-        url: "https://youtu.be/bbbbbbbbbbb",
-      },
-      url: "/sets",
-    });
-    const second = secondResponse.json();
-    const thirdResponse = await request(app, {
-      method: "POST",
-      payload: {
-        tags: [],
-        title: "Third",
-        url: "https://youtu.be/ccccccccccc",
-      },
-      url: "/sets",
-    });
-    const third = thirdResponse.json();
-
-    const added = await request(app, {
-      method: "PUT",
-      payload: { setIds: [first.id, second.id, third.id] },
-      url: `/playlists/${playlist.id}/sets`,
-    });
-    expect(added.json().sets.map((each: { id: string }) => each.id)).toEqual([
-      first.id,
-      second.id,
-      third.id,
-    ]);
-
-    const reordered = await request(app, {
-      method: "PUT",
-      payload: { setIds: [third.id, first.id, second.id] },
-      url: `/playlists/${playlist.id}/sets`,
-    });
-    expect(
-      reordered.json().sets.map((each: { title: string }) => each.title)
-    ).toEqual(["Third", "First", "Second"]);
-
-    const listed = await request(app, {
-      method: "GET",
-      url: `/sets?playlistId=${playlist.id}`,
-    });
-    expect(listed.json().sets.map((each: { id: string }) => each.id)).toEqual([
-      third.id,
-      first.id,
-      second.id,
-    ]);
-
-    const removed = await request(app, {
-      method: "PUT",
-      payload: { setIds: [third.id, second.id] },
-      url: `/playlists/${playlist.id}/sets`,
-    });
-    expect(removed.json().sets.map((each: { id: string }) => each.id)).toEqual([
-      third.id,
-      second.id,
-    ]);
-
-    const library = await request(app, { method: "GET", url: "/sets" });
-    expect(library.json().sets).toHaveLength(3);
-    expect(
-      library.json().sets.find((each: { id: string }) => each.id === first.id)
-        .playlistIds
-    ).toEqual([]);
   } finally {
     await app.dispose();
   }

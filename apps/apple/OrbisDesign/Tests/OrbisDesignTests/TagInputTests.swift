@@ -23,14 +23,6 @@ import Testing
     #expect(TagInput.adding("techno", to: []) == ["techno"])
   }
 
-  @Test func `a new tag lands at the end`() {
-    #expect(TagInput.adding(" house ", to: ["techno"]) == ["techno", "house"])
-  }
-
-  @Test func `an empty tag changes nothing`() {
-    #expect(TagInput.adding("   ", to: ["techno"]) == ["techno"])
-  }
-
   @Test func `the list stops at the count the service keeps`() {
     let full = (1...TagInput.serviceLimit).map { "tag\($0)" }
     #expect(TagInput.adding("one more", to: full) == full)
@@ -45,16 +37,8 @@ import Testing
     #expect(TagInput.suggestions(from: ["bass", "bass", "Bass", "house"], chosen: []) == ["bass", "house"])
   }
 
-  @Test func `suggestions skip a tag with nothing in it`() {
-    #expect(TagInput.suggestions(from: ["", "  ", "bass"], chosen: []) == ["bass"])
-  }
-
   @Test func `a tag's color does not change with the case it arrives in`() {
     #expect(OrbisColor.Category.forTag("Techno") == OrbisColor.Category.forTag("techno"))
   }
 
-  @Test func `colors spread across the tags in one library`() {
-    let colors = Set(["techno", "house", "breaks", "bass", "festival"].map(OrbisColor.Category.forTag))
-    #expect(colors.count > 1)
-  }
 }

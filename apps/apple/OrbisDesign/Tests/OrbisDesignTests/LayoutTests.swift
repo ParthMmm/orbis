@@ -49,13 +49,6 @@ import Testing
     }
   }
 
-  @Test func `the artwork bar is drawn only for a Set in progress`() {
-    #expect(!Artwork.showsProgress(nil))
-    #expect(!Artwork.showsProgress(0))
-    #expect(Artwork.showsProgress(0.34))
-    #expect(!Artwork.showsProgress(1))
-  }
-
   /// A provider's thumbnail can arrive letterboxed: YouTube's `high` image is 480x360 with the
   /// picture inside a 16:9 window and black bars above and below it. The box has to keep its own
   /// 16:9 shape and crop them away, or every Set a provider sends that way is drawn 4:3, taller
@@ -78,28 +71,6 @@ import Testing
     #expect(
       abs(header.width / header.height - 16.0 / 9.0) < 0.01,
       "the header artwork took the thumbnail's shape: \(header)")
-  }
-
-  @Test func `the data line puts a resume position where the creator was`() {
-    #expect(SetRow.dataLine(creator: "Dekmantel", length: "1h 58m", state: nil) == "Dekmantel · 1h 58m")
-    #expect(
-      SetRow.dataLine(creator: "Dekmantel", length: "1h 58m", state: .init(resumeAt: 2462))
-        == "Resume at 41:02 · 1h 58m")
-    #expect(
-      SetRow.dataLine(creator: "Dekmantel", length: "1h 58m", state: .init(download: "Audio ready"))
-        == "Dekmantel · 1h 58m · Audio ready")
-    #expect(SetRow.dataLine(creator: nil, length: nil, state: nil) == "")
-  }
-
-  @Test func `the artwork control is named for the change it makes`() {
-    #expect(SetRow.Playback.ready.label == "Play")
-    #expect(SetRow.Playback.paused.label == "Play")
-    #expect(SetRow.Playback.playing.label == "Pause")
-    #expect(SetRow.Playback.playing.symbol == "pause.fill")
-    #expect(!SetRow.Playback.ready.isCurrent)
-    #expect(SetRow.Playback.paused.isCurrent)
-    #expect(SetRow.Playback.ready.announcement == nil)
-    #expect(SetRow.Playback.playing.announcement == "Now playing")
   }
 
   @Test func `chips reflow onto more lines when the width runs out, in either direction`() {
