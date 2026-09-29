@@ -67,6 +67,7 @@ try {
     );
     const page = await browser.newPage();
     let revoked = false;
+    let revokeOnNextLibrary = false;
     let grantCount = 0;
     const requests = [];
     const fulfillAudio = async (route, request, grant) => {
@@ -105,6 +106,16 @@ try {
         query: url.search,
         range: request.headers().range ?? "",
       });
+      if (url.pathname.endsWith("/sets") && revokeOnNextLibrary) {
+        revokeOnNextLibrary = false;
+        revoked = true;
+        await route.fulfill({
+          body: JSON.stringify({ message: "Invalid key" }),
+          contentType: "application/json",
+          status: 401,
+        });
+        return;
+      }
       if (
         url.pathname.endsWith("/sets/set-a/audio") &&
         url.searchParams.get("grant")?.startsWith("grant-")
@@ -211,7 +222,7 @@ try {
     assert.equal(grantCount, 3);
     results.push("failed audio shows retry and gets a fresh grant");
 
-    revoked = true;
+    revokeOnNextLibrary = true;
     await page.getByRole("button", { name: "Refresh library" }).click();
     await page.getByText("Your key was revoked. Enter a new key.").waitFor();
     assert.equal(
