@@ -51,12 +51,12 @@ export class DownloadBackends extends Context.Service<
         backendOrder(source).filter(configured);
       // A source with one backend has no safety net, so say so before a download fails.
       for (const source of ["youtube", "soundcloud"] as const) {
-        const available = forSource(source);
-        if (available.length < 2) {
+        const [only, second] = forSource(source);
+        if (second === undefined) {
           yield* Effect.logWarning(
-            available.length === 0
+            only === undefined
               ? `${source} downloads have no backend`
-              : `${source} downloads use ${available.join("")} only`
+              : `${source} downloads use ${only} only`
           ).pipe(
             Effect.annotateLogs({
               fix: ytdlp.isConfigured

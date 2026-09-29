@@ -6,7 +6,7 @@ import { Effect, Exit, Layer } from "effect";
 import { Cobalt } from "./cobalt.js";
 import { DownloadBackends } from "./download-backends.js";
 import type { BackendName } from "./download-backends.js";
-import { configureLogging, withWideEvent } from "./logging.js";
+import { configureLogging, loggingLayer, withWideEvent } from "./logging.js";
 import { MediaStore } from "./media-store.js";
 import { Ytdlp } from "./ytdlp.js";
 
@@ -70,44 +70,39 @@ const check = Effect.fn("Canary.check")(function* check(
   const tmpPath = media.partialPath(id);
   const { signal } = new AbortController();
   const started = Date.now();
-  const fetched = backends.fetch(
-    backend,
-    fixture.url,
-    tmpPath,
-    ignoreProgress,
-    signal
-  );
-  const result: CheckResult = yield* fetched.pipe(
-    Effect.andThen(media.storeDownloaded(id, tmpPath)),
-    Effect.match({
-      onFailure: (error) => ({
-        backend,
-        bytes: null,
-        durationSeconds: null,
-        elapsedMs: Date.now() - started,
-        fixture: fixture.name,
-        ok: false,
-        reason: error.message,
-      }),
-      onSuccess: (stored) => {
-        const off =
-          Math.abs(stored.durationSeconds - fixture.durationSeconds) /
-          fixture.durationSeconds;
-        return {
+  const result: CheckResult = yield* backends
+    .fetch(backend, fixture.url, tmpPath, ignoreProgress, signal)
+    .pipe(
+      Effect.andThen(media.storeDownloaded(id, tmpPath)),
+      Effect.match({
+        onFailure: (error) => ({
           backend,
-          bytes: stored.bytes,
-          durationSeconds: Math.round(stored.durationSeconds),
+          bytes: null,
+          durationSeconds: null,
           elapsedMs: Date.now() - started,
           fixture: fixture.name,
-          ok: off <= DURATION_TOLERANCE,
-          reason:
-            off <= DURATION_TOLERANCE
+          ok: false,
+          reason: error.message,
+        }),
+        onSuccess: (stored) => {
+          const seconds = Math.round(stored.durationSeconds);
+          const ok =
+            Math.abs(stored.durationSeconds - fixture.durationSeconds) <=
+            fixture.durationSeconds * DURATION_TOLERANCE;
+          return {
+            backend,
+            bytes: stored.bytes,
+            durationSeconds: seconds,
+            elapsedMs: Date.now() - started,
+            fixture: fixture.name,
+            ok,
+            reason: ok
               ? null
-              : `Stored ${Math.round(stored.durationSeconds)}s, expected ${fixture.durationSeconds}s.`,
-        };
-      },
-    })
-  );
+              : `Stored ${seconds}s, expected ${fixture.durationSeconds}s.`,
+          };
+        },
+      })
+    );
   yield* (result.ok ? Effect.logInfo : Effect.logWarning)("canary check").pipe(
     Effect.annotateLogs({ ...result })
   );
@@ -128,9 +123,9 @@ const options = {
 };
 
 const program = Effect.gen(function* runCanary() {
-  const available = yield* DownloadBackends;
+  const downloads = yield* DownloadBackends;
   // Each backend is checked on every fixture, not only where it comes first.
-  const backends = available.forSource("youtube");
+  const backends = downloads.forSource("youtube");
   const results = yield* Effect.forEach(
     FIXTURES.flatMap((fixture) =>
       backends.map((backend) => ({ backend, fixture }))
@@ -173,7 +168,8 @@ const exit = await Effect.runPromiseExit(
         Layer.provide(Cobalt.layer(options)),
         Layer.provide(Ytdlp.layer(options))
       )
-    )
+    ),
+    Effect.provide(loggingLayer)
   )
 );
 await rm(workDirectory, { force: true, recursive: true });

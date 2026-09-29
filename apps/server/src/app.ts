@@ -67,6 +67,7 @@ import type { LoggingOptions } from "./logging.js";
 import {
   configureLogging,
   finishRequestLog,
+  loggingLayer,
   makeRequestLogMiddleware,
   safeRequestPath,
   startRequestLog,
@@ -1483,7 +1484,8 @@ export const createApp = (
       Layer.provide(queueSignalsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
       Layer.provide(options.titleReviser ?? TitleReviser.unconfigured()),
-      Layer.provide(database)
+      Layer.provide(database),
+      Layer.provide(loggingLayer)
     ),
     {
       disableLogger: true,
