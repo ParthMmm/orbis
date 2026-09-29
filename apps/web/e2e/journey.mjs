@@ -70,6 +70,11 @@ try {
     let revokeOnNextLibrary = false;
     let grantCount = 0;
     let social = false;
+    let autoDownload = true;
+    let saved = null;
+    let downloadState = "none";
+    let playlist = null;
+    let members = [];
     const requests = [];
     const fulfillAudio = async (route, request, grant) => {
       if (grant === "grant-2") {
@@ -97,6 +102,7 @@ try {
         status: range ? 206 : 200,
       });
     };
+    // eslint-disable-next-line complexity -- The fixture covers each API route in one browser journey.
     await page.route("**/api/**", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
@@ -137,16 +143,88 @@ try {
       let body = set;
       if (url.pathname.endsWith("/me")) {
         if (request.method() === "PATCH") {
-          const { social: requestedSocial } = request.postDataJSON();
-          social = requestedSocial;
+          const payload = request.postDataJSON();
+          if ("social" in payload) {
+            ({ social } = payload);
+          }
+          if ("autoDownload" in payload) {
+            ({ autoDownload } = payload);
+          }
         }
-        body = { autoDownload: true, id: "person-a", social, username: "A" };
+        body = { autoDownload, id: "person-a", social, username: "A" };
       } else if (url.pathname.endsWith("/people")) {
         body = { people: social ? [{ id: "person-b", username: "Bob" }] : [] };
       } else if (url.pathname.endsWith("/people/person-b/sets")) {
         body = { sets: [{ ...set, id: "friend-set", title: "Bob's set" }] };
-      } else if (url.pathname.endsWith("/sets")) {
-        body = { sets: [set] };
+      } else if (url.pathname === "/api/sets") {
+        if (request.method() === "POST") {
+          saved = {
+            ...set,
+            downloadState: "none",
+            id: "set-b",
+            title: "Provider title",
+            url: request.postDataJSON().url,
+          };
+          body = {
+            ...saved,
+            autoDownloadResult: autoDownload ? "queued" : "disabled",
+          };
+        } else {
+          const allSets = saved ? [set, { ...saved, downloadState }] : [set];
+          body = {
+            sets: url.searchParams.has("playlistId")
+              ? members.map((id) => allSets.find((item) => item.id === id))
+              : allSets,
+          };
+        }
+      } else if (url.pathname.endsWith("/sets/set-b/audio/download")) {
+        downloadState = "downloading";
+        body = { ...saved, downloadState };
+      } else if (url.pathname.endsWith("/sets/set-b/audio/state")) {
+        body = {
+          bytesReceived: 500,
+          bytesTotal: 1000,
+          format: null,
+          state: downloadState,
+        };
+      } else if (url.pathname.endsWith("/playlists")) {
+        if (request.method() === "POST") {
+          playlist = {
+            createdAt: "2026-01-01T00:00:00.000Z",
+            id: "playlist-a",
+            name: request.postDataJSON().name,
+            setCount: 0,
+          };
+          body = playlist;
+        } else {
+          body = { playlists: playlist ? [playlist] : [] };
+        }
+      } else if (url.pathname.endsWith("/playlists/playlist-a")) {
+        if (request.method() === "PATCH") {
+          playlist = { ...playlist, name: request.postDataJSON().name };
+        } else if (request.method() === "DELETE") {
+          const removed = playlist;
+          playlist = null;
+          body = removed;
+        }
+        if (playlist) {
+          body = playlist;
+        }
+      } else if (url.pathname.endsWith("/playlists/playlist-a/sets")) {
+        members = request.postDataJSON().setIds;
+        playlist = { ...playlist, setCount: members.length };
+        body = { sets: members.map((id) => (id === "set-a" ? set : saved)) };
+      } else if (url.pathname.endsWith("/queue")) {
+        body = { queue: { activeSetId: null, entries: [] } };
+      } else if (url.pathname.endsWith("/queue/entries")) {
+        body = { queue: { activeSetId: null, entries: [set] } };
+      } else if (url.pathname.endsWith("/queue/playlist")) {
+        body = {
+          queue: {
+            activeSetId: members[0] ?? null,
+            entries: members.map((id) => (id === "set-a" ? set : saved)),
+          },
+        };
       } else if (url.pathname.endsWith("/tags")) {
         body = { tags: ["house"] };
       } else if (url.pathname.endsWith("/audio/grant")) {
@@ -158,7 +236,13 @@ try {
       await route.fulfill({
         body: JSON.stringify(body),
         contentType: "application/json",
-        status: 200,
+        status:
+          request.method() === "POST" &&
+          (url.pathname.endsWith("/sets") ||
+            url.pathname.endsWith("/playlists") ||
+            url.pathname.endsWith("/queue/entries"))
+            ? 201
+            : 200,
       });
     });
 
@@ -235,6 +319,45 @@ try {
     );
     assert.equal(grantCount, 3);
     results.push("failed audio shows retry and gets a fresh grant");
+
+    await page.getByRole("checkbox", { name: "Auto Download" }).uncheck();
+    await page.getByLabel("Search library").fill("");
+    await page.getByLabel("Tag").selectOption("");
+    await page
+      .getByLabel("Source Link")
+      .fill("https://www.youtube.com/watch?v=12345678901");
+    await page.getByRole("button", { name: "Save Set" }).click();
+    await page.getByRole("heading", { name: "Provider title" }).waitFor();
+    await page.getByRole("button", { name: "Download Provider title" }).click();
+    await page.getByText("50%", { exact: false }).waitFor();
+    downloadState = "ready";
+    await page.getByRole("button", { name: "Play Provider title" }).waitFor();
+    results.push(
+      "save uses provider title, download progress and playable state"
+    );
+
+    await page.getByLabel("Playlist name").fill("Evening");
+    await page.getByRole("button", { name: "Create Playlist" }).click();
+    await page.getByRole("button", { name: "Play Evening" }).click();
+    await page.locator("audio").waitFor({ state: "detached" });
+    await page.getByRole("button", { name: "Add Long set to Evening" }).click();
+    await page
+      .getByRole("button", { name: "Add Provider title to Evening" })
+      .click();
+    await page.getByRole("button", { name: "Move Provider title up" }).click();
+    assert.deepEqual(members, ["set-b", "set-a"]);
+    await page.getByLabel("Rename Evening").fill("Night");
+    await page.getByRole("button", { name: "Save playlist name" }).click();
+    await page.getByRole("button", { name: "Play Night" }).click();
+    assert.ok(
+      requests.some(
+        (item) =>
+          item.path.endsWith("/queue/playlist") &&
+          item.payload?.playlistId === "playlist-a"
+      )
+    );
+    await page.getByRole("button", { name: "Delete Night" }).click();
+    results.push("playlist create, order, rename, play, delete");
 
     revokeOnNextLibrary = true;
     await page.getByRole("button", { name: "Refresh library" }).click();

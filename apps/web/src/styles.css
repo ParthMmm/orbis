@@ -276,6 +276,80 @@ p {
 .page-title h1 {
   margin-bottom: 0;
 }
+.workspace-panels {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin-top: 2rem;
+}
+.workspace-panel {
+  min-width: 0;
+  padding: 1.2rem;
+  border: 1px solid #d5ded6;
+  border-radius: 14px;
+  background: #fff;
+}
+.workspace-panel h2 {
+  margin-bottom: 1rem;
+}
+.workspace-panel ol,
+.workspace-panel ul {
+  padding-left: 1.3rem;
+}
+.workspace-panel li {
+  margin: 0.5rem 0;
+}
+.workspace-panel li button {
+  min-height: 34px;
+  margin-left: 0.3rem;
+}
+.inline-form {
+  display: grid;
+  gap: 0.5rem;
+}
+.inline-form input {
+  min-width: 0;
+  width: 100%;
+}
+.inline-form button {
+  justify-self: start;
+}
+.toggle {
+  display: flex;
+  align-items: center;
+  margin-top: 1rem;
+}
+.toggle input {
+  width: 18px;
+  min-height: 18px;
+  accent-color: #1d6646;
+}
+.playlist-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-top: 1rem;
+}
+.playlist-list button[aria-pressed="true"] {
+  color: #fff;
+  background: #183f2c;
+}
+.playlist-editor {
+  display: grid;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  border-top: 1px solid #d5ded6;
+  padding-top: 1rem;
+}
+.playlist-editor > button {
+  justify-self: start;
+}
+.download-status p {
+  margin: 0.5rem 0 0;
+}
+.set-copy > button {
+  margin-right: 0.35rem;
+}
 .filter-row {
   display: grid;
   grid-template-columns: minmax(12rem, 2fr) repeat(2, minmax(9rem, 1fr));
@@ -387,6 +461,9 @@ p {
   .form-inline {
     align-items: stretch;
     flex-direction: column;
+  }
+  .workspace-panels {
+    grid-template-columns: 1fr;
   }
   .filter-row {
     grid-template-columns: 1fr 1fr;
