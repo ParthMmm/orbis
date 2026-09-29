@@ -152,6 +152,9 @@ try {
     await page.getByLabel("Tag").selectOption("house");
     await page.getByRole("button", { name: "Play Long set" }).click();
     await page.locator("audio[src*='grant=grant-value']").waitFor();
+    await page.waitForFunction(
+      () => document.querySelector("audio")?.paused === false
+    );
     await mkdir(path.join(root, ".cache/web-journey"), { recursive: true });
     await page.screenshot({
       path: path.join(root, ".cache/web-journey/library-and-player.png"),
