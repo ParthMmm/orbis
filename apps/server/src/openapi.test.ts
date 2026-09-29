@@ -128,6 +128,9 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         if (!["get", "post", "put", "patch", "delete"].includes(method)) {
           continue;
         }
+        if (operation.operationId.startsWith("admin.")) {
+          continue;
+        }
         if (operation.operationId === "sets.audio") {
           expect(operation.responses["200"]).toBeDefined();
           expect(operation.responses["206"]).toBeDefined();

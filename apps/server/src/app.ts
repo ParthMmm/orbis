@@ -3,6 +3,8 @@ import path from "node:path";
 import type { SavedSet } from "@orbis/contracts";
 import type { SaveSetResultSchema } from "@orbis/contracts/http-api";
 import {
+  AdminKeyPayload,
+  AdminPersonPayload,
   SaveSetPayload,
   OrbisApi,
   PlaylistMembersPayload,
@@ -18,6 +20,7 @@ import {
   UpdateTitlePayload,
   UpdateMePayload,
 } from "@orbis/contracts/http-api";
+import { sql } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema, Scope } from "effect";
 import {
   Headers,
@@ -28,6 +31,15 @@ import {
 } from "effect/unstable/http";
 import { HttpApiBuilder } from "effect/unstable/httpapi";
 
+import {
+  addKey,
+  addPerson,
+  AdminError,
+  listKeys,
+  listPeople,
+  removePerson,
+  revokeKey,
+} from "./admin.js";
 import { Audio } from "./audio.js";
 import type { AudioFile, AudioOptions } from "./audio.js";
 import { Database, layer as databaseLayer } from "./db/database.js";
@@ -786,6 +798,148 @@ export const createApp = (
             )
           )
       );
+      const requireAdminScope = Effect.gen(function* verifyAdminScope() {
+        const caller = yield* SetCaller;
+        if (
+          caller.keyId === null ||
+          caller.scope !== "admin" ||
+          caller.person.id !== "host"
+        ) {
+          return yield* new LibraryError({
+            message: "An admin key is required.",
+            statusCode: 403,
+          });
+        }
+      });
+      const adminCall = <A>(action: (storePath: string) => A) =>
+        Effect.gen(function* authorizedAdminAction() {
+          yield* requireAdminScope;
+          return yield* Effect.try({
+            catch: (error) =>
+              new LibraryError({
+                message:
+                  error instanceof AdminError
+                    ? error.message
+                    : "The trust store is unavailable.",
+                statusCode:
+                  error instanceof AdminError ? error.statusCode : 500,
+              }),
+            try: () => {
+              if (!devicesPath) {
+                throw new AdminError(500, "The trust store is unavailable.");
+              }
+              return action(devicesPath);
+            },
+          });
+        });
+      const adminGroup = HttpApiBuilder.group(OrbisApi, "admin", (handlers) =>
+        handlers
+          .handleRaw("people", () =>
+            withFailureResponse(
+              Effect.map(adminCall(listPeople), (people) => ({ people }))
+            )
+          )
+          .handleRaw("addPerson", () =>
+            withFailureResponse(
+              Effect.gen(function* addAdminPerson() {
+                yield* requireAdminScope;
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(AdminPersonPayload);
+                const person = yield* adminCall((storePath) =>
+                  addPerson(storePath, input.username)
+                );
+                return HttpServerResponse.jsonUnsafe(person, { status: 201 });
+              })
+            )
+          )
+          .handleRaw("removePerson", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* removeAdminPerson() {
+                const person = yield* adminCall((storePath) =>
+                  removePerson(storePath, params.id)
+                );
+                yield* db
+                  .transaction((tx) =>
+                    Effect.gen(function* deleteAdminPersonRows() {
+                      yield* tx.run(
+                        sql`DELETE FROM playlist_sets WHERE playlist_id IN (SELECT id FROM playlists WHERE creator_id = ${params.id})`
+                      );
+                      yield* tx.run(
+                        sql`DELETE FROM playlists WHERE creator_id = ${params.id}`
+                      );
+                      yield* tx.run(
+                        sql`DELETE FROM queue_entries WHERE person_id = ${params.id}`
+                      );
+                      yield* tx.run(
+                        sql`DELETE FROM playback_positions WHERE person_id = ${params.id}`
+                      );
+                      yield* tx.run(
+                        sql`DELETE FROM listens WHERE person_id = ${params.id}`
+                      );
+                      yield* tx.run(
+                        sql`DELETE FROM library_entries WHERE person_id = ${params.id}`
+                      );
+                      yield* tx.run(
+                        sql`UPDATE sets SET download_state = 'none'
+                          WHERE download_state IN ('queued', 'downloading')
+                          AND id IN (SELECT set_id FROM download_jobs WHERE person_id = ${params.id})`
+                      );
+                      yield* tx.run(
+                        sql`DELETE FROM download_jobs WHERE person_id = ${params.id}`
+                      );
+                      yield* tx.run(
+                        sql`DELETE FROM download_requesters WHERE person_id = ${params.id}`
+                      );
+                    })
+                  )
+                  .pipe(
+                    Effect.mapError(
+                      () =>
+                        new LibraryError({
+                          message: "Could not remove the Person's data.",
+                          statusCode: 500,
+                        })
+                    )
+                  );
+                return person;
+              })
+            )
+          )
+          .handleRaw("keys", () =>
+            withFailureResponse(
+              Effect.map(
+                adminCall((storePath) => listKeys(storePath)),
+                (keys) => ({ keys })
+              )
+            )
+          )
+          .handleRaw("personKeys", ({ params }) =>
+            withFailureResponse(
+              Effect.map(
+                adminCall((storePath) => listKeys(storePath, params.id)),
+                (keys) => ({ keys })
+              )
+            )
+          )
+          .handleRaw("addKey", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* addAdminKey() {
+                yield* requireAdminScope;
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(AdminKeyPayload);
+                const key = yield* adminCall((storePath) =>
+                  addKey(storePath, params.id, input)
+                );
+                return HttpServerResponse.jsonUnsafe(key, { status: 201 });
+              })
+            )
+          )
+          .handleRaw("revokeKey", ({ params }) =>
+            withFailureResponse(
+              adminCall((storePath) => revokeKey(storePath, params.id))
+            )
+          )
+      );
       const systemGroup = HttpApiBuilder.group(OrbisApi, "system", (handlers) =>
         handlers.handle("health", () =>
           Effect.succeed({ status: "ok" as const })
@@ -799,6 +953,7 @@ export const createApp = (
           Layer.provide(libraryGroup),
           Layer.provide(systemGroup),
           Layer.provide(peopleGroup),
+          Layer.provide(adminGroup),
           Layer.provide(
             Layer.succeed(SetAccess, {
               bearer: (effect) =>
