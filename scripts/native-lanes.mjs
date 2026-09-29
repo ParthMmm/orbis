@@ -196,7 +196,7 @@ try {
 
   const derived = path.join(native, "DerivedData");
   rmSync(resultBundle, { force: true, recursive: true });
-  run(
+  const testOutput = run(
     [
       "xcodebuild",
       "-project",
@@ -235,14 +235,27 @@ try {
         ORBIS_UI_TEST_SEED_ADDRESS: seedAddress,
         ORBIS_UI_TEST_TOKEN: token,
       },
-      stdio: "inherit",
+      maxBuffer: 32 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "inherit"],
     }
   );
+  process.stdout.write(testOutput);
+
+  const testWorkers = new Map();
+  for (const match of testOutput.matchAll(
+    /^Test suite '(?<suite>[^']+)' started on '(?<worker>Clone (?<number>\d+) of .+?) - .+'$/gmu
+  )) {
+    testWorkers.set(match.groups.suite, {
+      directory: `worker-${match.groups.number}`,
+      name: match.groups.worker,
+    });
+  }
 
   // The export refuses to write into a directory that already holds a manifest, so a second
   // run would fail after the tests passed.
   rmSync(shots, { force: true, recursive: true });
   mkdirSync(shots, { recursive: true });
+  writeFileSync(path.join(shots, "xcodebuild.log"), testOutput);
   run(
     [
       "xcrun",
@@ -262,15 +275,15 @@ try {
   const workers = new Map();
   for (const test of manifest) {
     for (const attachment of test.attachments) {
-      let worker = workers.get(attachment.deviceId);
-      if (!worker) {
-        worker = {
-          deviceId: attachment.deviceId,
-          deviceName: attachment.deviceName,
-          directory: `worker-${workers.size + 1}`,
-        };
-        workers.set(attachment.deviceId, worker);
+      const assignment = testWorkers.get(test.testIdentifier.split("/")[0]);
+      if (parallelJourneys && !assignment) {
+        throw new Error(`no simulator worker found for ${test.testIdentifier}`);
       }
+      const worker = assignment ?? {
+        directory: "worker-1",
+        name: attachment.deviceName,
+      };
+      workers.set(worker.name, worker);
       const named = attachment.suggestedHumanReadableName.replace(
         /_(?<iteration>\d+)_[0-9A-F-]{36}(?=\.\w+$)/u,
         (_suffix, iteration) => (iteration === "0" ? "" : `-${iteration}`)
