@@ -1,6 +1,6 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
@@ -54,12 +54,29 @@ const writePreviousDatabase = (databasePath: string) => {
     database.exec("PRAGMA user_version = 2");
     const insertSet = database.query(`
       INSERT INTO sets (id, url, title, source, tags, created_at,
-        download_state, retained_audio_format, playback_position_seconds)
+        download_state, retained_audio_format, playback_position_seconds,
+        listen_count, finish_count, last_listened_at)
       VALUES (?, ?, ?, 'youtube', '[]', '2026-01-01T00:00:00.000Z',
-        'ready', 'm4a', ?)
+        'ready', 'm4a', ?, ?, ?, ?)
     `);
-    insertSet.run("a", "https://www.youtube.com/watch?v=abcdefghijk", "A", 37);
-    insertSet.run("b", "https://www.youtube.com/watch?v=bcdefghijkl", "B", 8);
+    insertSet.run(
+      "a",
+      "https://www.youtube.com/watch?v=abcdefghijk",
+      "A",
+      37,
+      3,
+      1,
+      "2026-01-02T00:00:00.000Z"
+    );
+    insertSet.run(
+      "b",
+      "https://www.youtube.com/watch?v=bcdefghijkl",
+      "B",
+      8,
+      0,
+      0,
+      null
+    );
     database.exec(`
       INSERT INTO library_entries (person_id, set_id, saved_at, tags)
       VALUES ('host', 'a', '2026-01-01T00:00:00.000Z', '[]'),
@@ -106,6 +123,11 @@ test("migrates Host playback and keeps two People independent", async () => {
       hostQueue.json().queue.entries.map((set: { id: string }) => set.id)
     ).toEqual(["a", "b"]);
     expect(hostQueue.json().queue.entries[0].playbackPositionSeconds).toBe(37);
+    expect(hostQueue.json().queue.entries[0]).toMatchObject({
+      finishCount: 1,
+      lastListenedAt: "2026-01-02T00:00:00.000Z",
+      listenCount: 3,
+    });
     const emptyB = await request(app, asB("GET", "/queue"));
     expect(emptyB.json().queue).toEqual({ activeSetId: null, entries: [] });
 
@@ -115,6 +137,12 @@ test("migrates Host playback and keeps two People independent", async () => {
     );
     expect(bPlay.statusCode).toBe(200);
     expect(bPlay.json().queue.activeSetId).toBe("b");
+    expect(bPlay.json().queue.entries[0].listenCount).toBe(1);
+    const bResume = await request(
+      app,
+      asB("PUT", "/queue/active", { setId: "b" })
+    );
+    expect(bResume.json().queue.entries[0].listenCount).toBe(1);
     const bPosition = await request(
       app,
       asB("PUT", "/sets/a/position", { seconds: 91 })
@@ -131,6 +159,8 @@ test("migrates Host playback and keeps two People independent", async () => {
     const hostAfterB = await request(app, { method: "GET", url: "/queue" });
     expect(hostAfterB.json().queue.activeSetId).toBe("a");
     expect(hostAfterB.json().queue.entries[0].playbackPositionSeconds).toBe(37);
+    expect(hostAfterB.json().queue.entries[0].listenCount).toBe(3);
+    expect(hostAfterB.json().queue.entries[1].listenCount).toBe(0);
     expect(
       hostAfterB.json().queue.entries.map((set: { id: string }) => set.id)
     ).toEqual(["a", "b"]);
@@ -155,11 +185,52 @@ test("migrates Host playback and keeps two People independent", async () => {
     );
     expect(bCompleted.statusCode).toBe(200);
     expect(bCompleted.json().queue.activeSetId).toBe("a");
+    expect(bCompleted.json().queue.entries[0].listenCount).toBe(1);
+    const bReplayCompletion = await request(
+      app,
+      asB("POST", "/queue/completion", { setId: "b" })
+    );
+    expect(bReplayCompletion.json().queue.entries[0].listenCount).toBe(1);
+    const bFinished = await request(
+      app,
+      asB("PUT", "/sets/b/position", { seconds: 0 })
+    );
+    expect(bFinished.json().finishCount).toBe(1);
     const hostAfterBCompletion = await request(app, {
       method: "GET",
       url: "/queue",
     });
     expect(hostAfterBCompletion.json().queue.activeSetId).toBe("a");
+    expect(hostAfterBCompletion.json().queue.entries[0]).toMatchObject({
+      finishCount: 1,
+      listenCount: 3,
+    });
+    const history = new Database(databasePath);
+    try {
+      const rows = history
+        .query(
+          "SELECT person_id, set_id, finished_at IS NOT NULL AS finished FROM listens ORDER BY person_id, id"
+        )
+        .all();
+      expect(rows).toEqual([
+        { finished: 1, person_id: "b", set_id: "b" },
+        { finished: 0, person_id: "b", set_id: "a" },
+        { finished: 1, person_id: "host", set_id: "a" },
+        { finished: 0, person_id: "host", set_id: "a" },
+        { finished: 0, person_id: "host", set_id: "a" },
+      ]);
+      const artifactDirectory = path.resolve(
+        import.meta.dir,
+        "../../../.cache/person-listens"
+      );
+      await mkdir(artifactDirectory, { recursive: true });
+      await writeFile(
+        path.join(artifactDirectory, "migration-and-two-people.json"),
+        JSON.stringify(rows, null, 2)
+      );
+    } finally {
+      history.close();
+    }
     expect(
       hostAfterBCompletion.json().queue.entries[1].playbackPositionSeconds
     ).toBe(8);

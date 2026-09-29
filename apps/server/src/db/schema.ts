@@ -176,10 +176,31 @@ export const playbackPositions = sqliteTable(
   ]
 );
 
+export const listens = sqliteTable(
+  "listens",
+  {
+    finishedAt: text("finished_at"),
+    id: integer("id").primaryKey({ autoIncrement: true }),
+    personId: text("person_id").notNull(),
+    setId: text("set_id")
+      .notNull()
+      .references(() => sets.id),
+    startKnown: integer("start_known", { mode: "boolean" })
+      .notNull()
+      .default(true),
+    startedAt: text("started_at").notNull(),
+  },
+  (table) => [
+    index("listens_by_person_set").on(table.personId, table.setId, table.id),
+    index("listens_by_set").on(table.setId),
+  ]
+);
+
 export const schema = {
   downloadJobs,
   downloadRequesters,
   libraryEntries,
+  listens,
   playbackPositions,
   playlistSets,
   playlists,

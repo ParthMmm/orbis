@@ -280,7 +280,7 @@ test("a legacy backlog of thirty jobs stays fair and keeps its order", async () 
     db.run("DROP TABLE download_jobs");
     db.run("DROP TABLE download_requesters");
     db.run(
-      "DELETE FROM __drizzle_migrations WHERE created_at = (SELECT MAX(created_at) FROM __drizzle_migrations)"
+      "DELETE FROM __drizzle_migrations WHERE name = '20260929140000_fair_downloads'"
     );
     db.close();
     await lane.restart(false);

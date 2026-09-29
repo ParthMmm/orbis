@@ -291,7 +291,6 @@ export const createApp = (
   });
   // The Database layer is one value used by every service that writes.
   const libraryLayer = Library.layer.pipe(Layer.provide(database));
-  const statsLayer = Stats.layer.pipe(Layer.provide(database));
   const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
@@ -299,7 +298,6 @@ export const createApp = (
       const audio = yield* Audio;
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
-      const stats = yield* Stats;
       const scope = yield* Scope.Scope;
       const reviseTitle = Effect.fn("reviseSavedSetTitle")((
         set: SavedSet,
@@ -779,7 +777,9 @@ export const createApp = (
                           Layer.mergeAll(
                             Layer.succeed(Database, db),
                             personalLibrary,
-                            Layer.succeed(Stats, stats)
+                            Stats.forPersonLayer(access.person.id).pipe(
+                              Layer.provide(Layer.succeed(Database, db))
+                            )
                           )
                         )
                       );
@@ -802,7 +802,6 @@ export const createApp = (
     routes.pipe(
       Layer.provide(Audio.layer(options.audio ?? {})),
       Layer.provide(libraryLayer),
-      Layer.provide(statsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
       Layer.provide(options.titleReviser ?? TitleReviser.unconfigured()),
       Layer.provide(database)
