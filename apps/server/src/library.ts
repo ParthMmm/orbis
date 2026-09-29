@@ -10,9 +10,10 @@ import { Context, Effect, Layer, Schema } from "effect";
 
 import { Database } from "./db/database.js";
 import {
-  libraryEntries,
   downloadJobs,
   downloadRequesters,
+  libraryEntries,
+  listens,
   playbackPositions,
   playlistSets,
   playlists,
@@ -226,6 +227,18 @@ export class Library extends Context.Service<
                 )
               )
               .limit(1);
+            const [stats] = yield* db
+              .select({
+                finishCount: sql<number>`COUNT(${listens.finishedAt})`,
+                lastListenedAt: sql<
+                  string | null
+                >`MAX(CASE WHEN ${listens.startKnown} = 1 THEN ${listens.startedAt} END)`,
+                listenCount: sql<number>`COUNT(*)`,
+              })
+              .from(listens)
+              .where(
+                and(eq(listens.personId, personId), eq(listens.setId, row.id))
+              );
             const tags = yield* decodeJsonArray(
               entry?.tags ?? (personId === "host" ? row.tags : "[]")
             );
@@ -243,6 +256,9 @@ export class Library extends Context.Service<
             return {
               ...visible,
               createdAt: entry?.savedAt ?? row.createdAt,
+              finishCount: stats?.finishCount ?? 0,
+              lastListenedAt: stats?.lastListenedAt ?? null,
+              listenCount: stats?.listenCount ?? 0,
               playbackPositionSeconds: position?.seconds ?? 0,
               playlistIds: yield* playlistIds,
               tags,
@@ -708,7 +724,12 @@ export class Library extends Context.Service<
                     .from(playbackPositions)
                     .where(eq(playbackPositions.setId, id))
                     .limit(1);
-                  if (!playlist && !queue && !position) {
+                  const [listen] = yield* tx
+                    .select({ setId: listens.setId })
+                    .from(listens)
+                    .where(eq(listens.setId, id))
+                    .limit(1);
+                  if (!playlist && !queue && !position && !listen) {
                     yield* tx.delete(sets).where(eq(sets.id, id));
                   }
                 }

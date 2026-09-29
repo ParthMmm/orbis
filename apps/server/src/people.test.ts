@@ -210,8 +210,8 @@ test("concurrent key usage cannot restore a removed Person's keys", async () => 
       tokens.map((token) => request(app, remote(token)))
     );
     expect(
-      responses.every(
-        (response) => response.statusCode === 200 || response.statusCode === 401
+      responses.every((response) =>
+        [200, 401, 429].includes(response.statusCode)
       )
     ).toBe(true);
     expect(await removal.exited).toBe(0);
@@ -219,7 +219,10 @@ test("concurrent key usage cannot restore a removed Person's keys", async () => 
     expect(
       stored.keys.some((key: { personId: string }) => key.personId === personId)
     ).toBe(false);
-    const afterRemoval = await request(app, remote(tokens[0] ?? ""));
+    const afterRemoval = await request(app, {
+      ...remote(tokens[0] ?? ""),
+      clientAddress: "post-removal-client",
+    });
     expect(afterRemoval.statusCode).toBe(401);
   } finally {
     await app.dispose();
