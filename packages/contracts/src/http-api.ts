@@ -8,12 +8,6 @@ import {
   HttpApiSecurity,
 } from "effect/unstable/httpapi";
 
-import type {
-  AudioState,
-  ListeningQueue,
-  Playlist,
-  SavedSet,
-} from "./index.js";
 import type { SetCaller } from "./set-caller.js";
 
 export { SetCaller } from "./set-caller.js";
@@ -61,6 +55,19 @@ export const SavedSetSchema = Schema.Struct({
   titleEditedByUser: Schema.Boolean,
   url: Schema.String,
 });
+export const LibraryResponseSchema = Schema.Struct({
+  sets: Schema.Array(SavedSetSchema).pipe(Schema.mutable),
+});
+export const HealthResponseSchema = Schema.Struct({
+  status: Schema.Literal("ok"),
+});
+export const LibraryFiltersSchema = Schema.Struct({
+  creatorId: Schema.optionalKey(Schema.String),
+  playlistId: Schema.optionalKey(Schema.String),
+  q: Schema.optionalKey(Schema.String),
+  source: Schema.optionalKey(Schema.Literals(["youtube", "soundcloud"])),
+  tags: Schema.optionalKey(Schema.Array(Schema.String).pipe(Schema.mutable)),
+});
 
 const SetId = { id: Schema.String };
 const BadRequest = ErrorBody.pipe(HttpApiSchema.status(400));
@@ -94,19 +101,6 @@ export const AudioStateSchema = Schema.Struct({
   ]),
 });
 
-type Assert<T extends true> = T;
-type SameContract<A, B> = [A] extends [B]
-  ? [B] extends [A]
-    ? true
-    : false
-  : false;
-export type SavedSetContractCheck = Assert<
-  SameContract<typeof SavedSetSchema.Type, SavedSet>
->;
-export type AudioStateContractCheck = Assert<
-  SameContract<typeof AudioStateSchema.Type, AudioState>
->;
-
 export const MAX_SETS_PER_PLAYLIST = 500;
 export const MAX_PLAYLISTS_PER_SET = 100;
 
@@ -116,10 +110,6 @@ export const PlaylistSchema = Schema.Struct({
   name: Schema.String,
   setCount: Schema.Number,
 });
-export type PlaylistContractCheck = Assert<
-  SameContract<typeof PlaylistSchema.Type, Playlist>
->;
-
 const PlaylistName = Schema.String.check(Schema.isMaxLength(100));
 const MembershipId = Schema.String.check(Schema.isMaxLength(100));
 export const PlaylistNamePayload = Schema.Struct({ name: PlaylistName });
@@ -138,9 +128,6 @@ export const ListeningQueueSchema = Schema.Struct({
   activeSetId: Schema.NullOr(Schema.String),
   entries: Schema.Array(SavedSetSchema).pipe(Schema.mutable),
 });
-export type ListeningQueueContractCheck = Assert<
-  SameContract<typeof ListeningQueueSchema.Type, ListeningQueue>
->;
 const QueueResponse = Schema.Struct({ queue: ListeningQueueSchema });
 const QueueSetId = Schema.String.check(Schema.isMaxLength(100));
 export const QueueSetPayload = Schema.Struct({ setId: QueueSetId });
@@ -174,7 +161,7 @@ export const SetsApi = HttpApi.make("orbis").add(
           source: Schema.optionalKey(SearchValue),
           tag: Schema.optionalKey(Schema.Array(Schema.String)),
         },
-        success: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
+        success: LibraryResponseSchema,
       }),
       HttpApiEndpoint.post("retryMetadata", "/sets/:id/metadata", {
         error: [NotFound, InternalError],
@@ -252,7 +239,7 @@ const PlaylistApi = SetsApi.add(
         error: [BadRequest, NotFound, InternalError],
         params: SetId,
         payload: PlaylistMembersPayload,
-        success: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
+        success: LibraryResponseSchema,
       }),
       HttpApiEndpoint.put("replaceSetPlaylists", "/sets/:id/playlists", {
         error: [BadRequest, NotFound, InternalError],
@@ -319,7 +306,7 @@ export const OrbisApi = PlaylistApi.add(
   .add(
     HttpApiGroup.make("system").add(
       HttpApiEndpoint.get("health", "/health", {
-        success: Schema.Struct({ status: Schema.Literal("ok") }),
+        success: HealthResponseSchema,
       })
     )
   );

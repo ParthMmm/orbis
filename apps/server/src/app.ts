@@ -202,7 +202,7 @@ export const createApp = (
   const queueLayer = Queue.layer.pipe(
     Layer.provide(Layer.mergeAll(database, libraryLayer, statsLayer))
   );
-  const routes = HttpRouter.use(() =>
+  const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
       const audio = yield* Audio;

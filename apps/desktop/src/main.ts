@@ -1,81 +1,57 @@
 import path from "node:path";
 
-import type {
-  LibraryFilters,
-  SaveSetInput,
-  UpdateSetTitleInput,
-} from "@orbis/contracts";
-import { Schema } from "effect";
+import type { LibraryFilters, SaveSetInput } from "@orbis/contracts";
+import { OrbisApi } from "@orbis/contracts/http-api";
+import { Effect, Result, Schema } from "effect";
+import { FetchHttpClient } from "effect/unstable/http";
+import { HttpApiClient } from "effect/unstable/httpapi";
 import { app, BrowserWindow, ipcMain, shell } from "electron";
 import type { IpcMainInvokeEvent } from "electron";
 
-import type { ApiResult } from "./api";
+import type { ApiResult, OrbisClient } from "./api";
 
 const serverPort = Number(process.env.ORBIS_PORT ?? 4310);
 if (!Number.isInteger(serverPort) || serverPort < 1 || serverPort > 65_535) {
   throw new Error("ORBIS_PORT must be an integer between 1 and 65535.");
 }
 
-const SavedSet = Schema.Struct({
-  createdAt: Schema.String,
-  id: Schema.String,
-  source: Schema.Literals(["youtube", "soundcloud"]),
-  tags: Schema.mutable(Schema.Array(Schema.String)),
-  title: Schema.String,
-  url: Schema.String,
-});
-const Playlist = Schema.Struct({
-  createdAt: Schema.String,
-  id: Schema.String,
-  name: Schema.String,
-});
-const LibraryResponse = Schema.Struct({
-  sets: Schema.mutable(Schema.Array(SavedSet)),
-});
-const TagsResponse = Schema.Struct({
-  tags: Schema.mutable(Schema.Array(Schema.String)),
-});
-const PlaylistsResponse = Schema.Struct({
-  playlists: Schema.mutable(Schema.Array(Playlist)),
-});
 const ErrorResponse = Schema.Struct({ message: Schema.String });
-type RequestBody =
-  | SaveSetInput
-  | UpdateSetTitleInput
-  | { name: string }
-  | { setIds: string[] }
-  | { tags: string[] };
+const api = Effect.runPromise(
+  HttpApiClient.make(OrbisApi, {
+    baseUrl: `http://127.0.0.1:${serverPort}`,
+  }).pipe(Effect.provide(FetchHttpClient.layer))
+);
 
-const request = async <T>(
-  pathname: string,
-  schema: Schema.Codec<T>,
-  method = "GET",
-  body?: RequestBody
+type Client = HttpApiClient.ForApi<typeof OrbisApi>;
+type SetListQuery = {
+  -readonly [
+    Key in keyof Parameters<Client["sets"]["list"]>[0]["query"]
+  ]: Parameters<Client["sets"]["list"]>[0]["query"][Key];
+};
+const request = async <T, E>(
+  send: (client: Client) => Effect.Effect<T, E>
 ): Promise<ApiResult<T>> => {
   try {
-    const init: RequestInit = {
-      headers: { "content-type": "application/json" },
-      method,
-      redirect: "error",
-      signal: AbortSignal.timeout(10_000),
-    };
-    if (body !== undefined) {
-      init.body = JSON.stringify(body);
-    }
-    const response = await fetch(
-      `http://127.0.0.1:${serverPort}${pathname}`,
-      init
+    const client = await api;
+    const result = await Effect.runPromise(
+      Effect.result(
+        send(client).pipe(
+          Effect.timeout("10 seconds"),
+          Effect.provideService(FetchHttpClient.RequestInit, {
+            redirect: "error",
+          })
+        )
+      )
     );
-    const data: unknown = await response.json();
-    if (!response.ok) {
-      return {
-        message: Schema.is(ErrorResponse)(data)
-          ? data.message
-          : "The server could not complete this request.",
-        ok: false,
-      };
+    if (Result.isSuccess(result)) {
+      return { data: result.success, ok: true };
     }
-    return { data: Schema.decodeUnknownSync(schema)(data), ok: true };
+    return {
+      message: Schema.is(ErrorResponse)(result.failure)
+        ? result.failure.message
+        : "Cannot reach your library. Start the Orbis server on this computer, then retry.",
+      ok: false,
+    };
   } catch {
     return {
       message:
@@ -104,49 +80,70 @@ const registerApi = () => {
       return action(...args);
     });
   };
-  handle("orbis:list", (filters: LibraryFilters) => {
-    const params = new URLSearchParams();
+  handle("orbis:list", ((filters: LibraryFilters) => {
+    const query: SetListQuery = {};
+    if (filters.creatorId) {
+      query.creatorId = filters.creatorId;
+    }
     if (filters.playlistId) {
-      params.set("playlistId", filters.playlistId);
+      query.playlistId = filters.playlistId;
     }
     if (filters.q) {
-      params.set("q", filters.q);
+      query.q = filters.q;
     }
     if (filters.source) {
-      params.set("source", filters.source);
+      query.source = filters.source;
     }
-    for (const tag of filters.tags ?? []) {
-      params.append("tag", tag);
+    if (filters.tags?.length) {
+      query.tag = filters.tags;
     }
-    return request(`/sets?${params}`, LibraryResponse);
-  });
-  handle("orbis:tags", () => request("/tags", TagsResponse));
-  handle("orbis:playlists", () => request("/playlists", PlaylistsResponse));
-  handle("orbis:create-playlist", (name: string) =>
-    request("/playlists", Playlist, "POST", { name })
-  );
-  handle("orbis:playlist-members", (id: string, setIds: string[]) =>
-    request(
-      `/playlists/${encodeURIComponent(id)}/sets`,
-      LibraryResponse,
-      "PUT",
-      { setIds }
-    )
-  );
-  handle("orbis:save", (input: SaveSetInput) =>
-    request("/sets", SavedSet, "POST", input)
-  );
-  handle("orbis:update-tags", (id: string, tags: string[]) =>
-    request(`/sets/${encodeURIComponent(id)}/tags`, SavedSet, "PATCH", { tags })
-  );
-  handle("orbis:update-title", (id: string, title: string) =>
-    request(`/sets/${encodeURIComponent(id)}/title`, SavedSet, "PATCH", {
-      title,
-    })
-  );
-  handle("orbis:delete-set", (id: string) =>
-    request(`/sets/${encodeURIComponent(id)}`, SavedSet, "DELETE")
-  );
+    return request((client) =>
+      client.sets
+        .list({ query })
+        .pipe(Effect.map(({ sets }) => ({ sets: [...sets] })))
+    );
+  }) satisfies OrbisClient["list"]);
+  handle("orbis:tags", (() =>
+    request((client) =>
+      client.library
+        .tags({})
+        .pipe(Effect.map(({ tags }) => ({ tags: [...tags] })))
+    )) satisfies OrbisClient["tags"]);
+  handle("orbis:playlists", (() =>
+    request((client) =>
+      client.playlists
+        .list({})
+        .pipe(Effect.map(({ playlists }) => ({ playlists: [...playlists] })))
+    )) satisfies OrbisClient["playlists"]);
+  handle("orbis:create-playlist", ((name: string) =>
+    request((client) =>
+      client.playlists.create({ payload: { name } })
+    )) satisfies OrbisClient["createPlaylist"]);
+  handle("orbis:playlist-members", ((id: string, setIds: string[]) =>
+    request((client) =>
+      client.playlists
+        .replaceMembers({
+          params: { id },
+          payload: { setIds },
+        })
+        .pipe(Effect.map(({ sets }) => ({ sets: [...sets] })))
+    )) satisfies OrbisClient["setPlaylistMembers"]);
+  handle("orbis:save", ((input: SaveSetInput) =>
+    request((client) =>
+      client.sets.save({ payload: input })
+    )) satisfies OrbisClient["save"]);
+  handle("orbis:update-tags", ((id: string, tags: string[]) =>
+    request((client) =>
+      client.library.updateTags({ params: { id }, payload: { tags } })
+    )) satisfies OrbisClient["updateTags"]);
+  handle("orbis:update-title", ((id: string, title: string) =>
+    request((client) =>
+      client.sets.updateTitle({ params: { id }, payload: { title } })
+    )) satisfies OrbisClient["updateTitle"]);
+  handle("orbis:delete-set", ((id: string) =>
+    request((client) =>
+      client.sets.remove({ params: { id } })
+    )) satisfies OrbisClient["deleteSet"]);
   handle("orbis:open-source", async (value: string) => {
     try {
       const url = new URL(value);

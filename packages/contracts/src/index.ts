@@ -1,106 +1,42 @@
-export interface HealthResponse {
-  readonly status: "ok";
-}
+import type {
+  AudioStateSchema,
+  HealthResponseSchema,
+  LibraryFiltersSchema,
+  LibraryResponseSchema,
+  ListeningQueueSchema,
+  PlaylistSchema,
+  QueueEntryPayload,
+  SaveSetPayload,
+  SavedSetSchema,
+  UpdateTitlePayload,
+} from "./http-api.js";
 
-export type SetSource = "youtube" | "soundcloud";
+export type HealthResponse = typeof HealthResponseSchema.Type;
+export type AudioState = typeof AudioStateSchema.Type;
+export type SavedSet = typeof SavedSetSchema.Type;
+export type SetSource = SavedSet["source"];
+export type MetadataState = SavedSet["metadataState"];
+export type DownloadState = SavedSet["downloadState"];
 
-export type MetadataState = "pending" | "enriched" | "failed";
-
-export type DownloadState =
-  | "none"
-  | "queued"
-  | "downloading"
-  | "ready"
-  | "failed"
-  | "canceled";
-
-export interface AudioState {
-  state: DownloadState;
-  bytesReceived: number;
-  bytesTotal: number | null;
-  format: string | null;
-}
-
-export interface SavedSet {
-  id: string;
-  url: string;
-  title: string;
-  source: SetSource;
+export type SaveSetInput = Omit<typeof SaveSetPayload.Type, "tags"> & {
   tags: string[];
-  createdAt: string;
-  /**
-   * When the source published the Set. Null until enrichment, and absent from a service that
-   * predates it.
-   */
-  releasedAt: string | null;
-  creator: string | null;
-  /**
-   * The provider's stable id for the creator, the key that groups a creator's Sets. Null until
-   * details are read, and absent from a service that predates it.
-   */
-  creatorId: string | null;
-  /** The provider's image, sized for a listing row. */
-  artworkUrl: string | null;
-  /**
-   * The same image at the largest size the provider offers, which only a Set's own page draws.
-   * Null when the provider offers nothing larger, and absent from a service that predates it.
-   */
-  artworkLargeUrl: string | null;
-  durationSeconds: number | null;
-  metadataState: MetadataState;
-  titleEditedByUser: boolean;
-  playlistIds: string[];
-  downloadState: DownloadState;
-  retainedAudioBytes: number | null;
-  retainedAudioFormat: string | null;
-  playbackPositionSeconds: number;
-  listenCount: number;
-  finishCount: number;
-  lastListenedAt: string | null;
-}
+};
 
-export interface SaveSetInput {
-  url: string;
-  /** Absent or blank asks the server to take the title from the source metadata. */
-  title?: string;
-  tags: string[];
-}
+export type UpdateSetTitleInput = typeof UpdateTitlePayload.Type;
 
-export interface UpdateSetTitleInput {
-  title: string;
-}
+export type LibraryFilters = {
+  -readonly [
+    Key in keyof typeof LibraryFiltersSchema.Type
+  ]: (typeof LibraryFiltersSchema.Type)[Key];
+};
 
-export interface LibraryFilters {
-  creatorId?: string;
-  playlistId?: string;
-  q?: string;
-  source?: SetSource;
-  tags?: string[];
-}
+export type LibraryResponse = typeof LibraryResponseSchema.Type;
 
-export interface LibraryResponse {
-  sets: SavedSet[];
-}
-
-export interface Playlist {
-  id: string;
-  name: string;
-  createdAt: string;
-  /** How many Sets the playlist holds, so a sidebar can show the number without a request each. */
-  setCount: number;
-}
-
-/**
- * The one Listening Queue. Entries are in play order, and at most one of them is the active
- * Set: the Set whose Listen is open and whose Playback Position is being kept.
- */
-export interface ListeningQueue {
-  activeSetId: string | null;
-  entries: SavedSet[];
-}
+export type Playlist = typeof PlaylistSchema.Type;
+export type ListeningQueue = typeof ListeningQueueSchema.Type;
 
 /** Where a queued Set goes. `next` starts after the active Set; `end` goes last. */
-export type QueuePlacement = "next" | "end";
+export type QueuePlacement = (typeof QueueEntryPayload.Type)["placement"];
 
 export {
   normalizeSourceUrl,

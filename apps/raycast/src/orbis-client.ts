@@ -2,7 +2,16 @@ import {
   normalizeSourceUrl,
   UnsupportedSourceUrlError,
 } from "@orbis/contracts";
+import type { SavedSet } from "@orbis/contracts";
+import { OrbisApi } from "@orbis/contracts/http-api";
 import { getPreferenceValues, showToast, Toast } from "@raycast/api";
+import { Effect } from "effect";
+import {
+  FetchHttpClient,
+  HttpClient,
+  HttpClientRequest,
+} from "effect/unstable/http";
+import { HttpApiClient } from "effect/unstable/httpapi";
 
 /** The part of fetch this client uses, so a test can stand in for it. */
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
@@ -79,39 +88,69 @@ export const saveSourceUrl = async (
       message: "Set the Orbis Service URL to your https:// address.",
     };
   }
-  let response: Response;
+  let status: number | undefined;
+  let timedOut = false;
+  const fetchWithStatus = Object.assign(
+    async (input: string | URL | Request, init?: RequestInit) => {
+      try {
+        const response = await send(String(input), init ?? {});
+        const { status: responseStatus } = response;
+        status = responseStatus;
+        return response;
+      } catch (error) {
+        timedOut = error instanceof Error && error.name === "TimeoutError";
+        throw error;
+      }
+    },
+    { preconnect: fetch.preconnect }
+  );
   try {
-    response = await send(`${service}/sets`, {
-      body: JSON.stringify({ tags: [], url }),
-      headers: {
-        authorization: `Bearer ${preferences.deviceToken}`,
-        "content-type": "application/json",
-      },
-      method: "POST",
-      signal: AbortSignal.timeout(options.timeoutMs ?? SAVE_TIMEOUT_MS),
-    });
+    const saved: SavedSet = await Effect.runPromise(
+      Effect.gen(function* save() {
+        const client = yield* HttpApiClient.make(OrbisApi, {
+          baseUrl: service,
+          transformClient: HttpClient.mapRequest(
+            HttpClientRequest.setHeader(
+              "authorization",
+              `Bearer ${preferences.deviceToken}`
+            )
+          ),
+        });
+        return yield* client.sets.save({ payload: { tags: [], url } });
+      }).pipe(
+        Effect.timeout(`${options.timeoutMs ?? SAVE_TIMEOUT_MS} millis`),
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, fetchWithStatus)
+      )
+    );
+    return saved.id
+      ? { kind: "saved" }
+      : { kind: "failed", message: "Orbis returned a Set without an id." };
   } catch (error) {
-    if (error instanceof Error && error.name === "TimeoutError") {
+    if (
+      timedOut ||
+      (error instanceof Error &&
+        (error.name === "TimeoutError" || error.name === "TimeoutException"))
+    ) {
       return {
         kind: "failed",
         message: "Orbis didn't answer in time. Try again.",
       };
     }
-    return { kind: "failed", message: `Couldn't reach Orbis at ${service}.` };
+    if (status === undefined) {
+      return { kind: "failed", message: `Couldn't reach Orbis at ${service}.` };
+    }
+    if (status === 409) {
+      return { kind: "duplicate" };
+    }
+    if (status === 401 || status === 403) {
+      return {
+        kind: "failed",
+        message: "Orbis rejected the device token. Pair this device again.",
+      };
+    }
+    return { kind: "failed", message: `Orbis returned HTTP ${status}.` };
   }
-  if (response.status === 201) {
-    return { kind: "saved" };
-  }
-  if (response.status === 409) {
-    return { kind: "duplicate" };
-  }
-  if (response.status === 401 || response.status === 403) {
-    return {
-      kind: "failed",
-      message: "Orbis rejected the device token. Pair this device again.",
-    };
-  }
-  return { kind: "failed", message: `Orbis returned HTTP ${response.status}.` };
 };
 
 export const startProgressToast = (): Promise<Toast> =>

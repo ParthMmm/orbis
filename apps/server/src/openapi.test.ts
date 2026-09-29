@@ -1,0 +1,142 @@
+import { expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+
+import {
+  AudioStateSchema,
+  ListeningQueueSchema,
+  PlaylistSchema,
+  SavedSetSchema,
+} from "@orbis/contracts/http-api";
+import { Ajv } from "ajv";
+import { Schema } from "effect";
+
+import { createApp } from "./app.js";
+
+const Samples = Schema.Struct({
+  audioState: AudioStateSchema,
+  health: Schema.Struct({ status: Schema.Literal("ok") }),
+  library: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
+  playlist: PlaylistSchema,
+  playlists: Schema.Struct({ playlists: Schema.Array(PlaylistSchema) }),
+  queue: Schema.Struct({ queue: ListeningQueueSchema }),
+  savedSet: SavedSetSchema,
+  tags: Schema.Struct({ tags: Schema.Array(Schema.String) }),
+});
+const samples = Schema.decodeUnknownSync(Samples)(
+  JSON.parse(
+    readFileSync(
+      new URL(
+        "../../apple/OrbisTests/Fixtures/contract-responses.json",
+        import.meta.url
+      ),
+      "utf-8"
+    )
+  )
+);
+const OpenApiResponse = Schema.Struct({
+  content: Schema.optionalKey(
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({ schema: Schema.Record(Schema.String, Schema.Unknown) })
+    )
+  ),
+});
+const OpenApiDocument = Schema.Struct({
+  openapi: Schema.String,
+  paths: Schema.Record(
+    Schema.String,
+    Schema.Record(
+      Schema.String,
+      Schema.Struct({
+        operationId: Schema.String,
+        responses: Schema.Record(Schema.String, OpenApiResponse),
+      })
+    )
+  ),
+});
+
+const sampleKeyFor = (operationId: string): keyof typeof samples => {
+  if (
+    operationId === "sets.list" ||
+    operationId === "playlists.replaceMembers"
+  ) {
+    return "library";
+  }
+  if (operationId === "sets.audioState") {
+    return "audioState";
+  }
+  if (operationId === "playlists.list") {
+    return "playlists";
+  }
+  if (
+    operationId.startsWith("playlists.") &&
+    operationId !== "playlists.replaceSetPlaylists"
+  ) {
+    return "playlist";
+  }
+  if (operationId.startsWith("queue.")) {
+    return "queue";
+  }
+  if (operationId === "library.tags") {
+    return "tags";
+  }
+  if (operationId === "system.health") {
+    return "health";
+  }
+  if (
+    operationId.startsWith("sets.") ||
+    operationId.startsWith("library.") ||
+    operationId === "playlists.replaceSetPlaylists"
+  ) {
+    return "savedSet";
+  }
+  throw new Error(`No Swift sample for ${operationId}`);
+};
+
+test("the served OpenAPI document accepts the Swift response samples", async () => {
+  const app = createApp();
+  try {
+    const response = await app.handler(
+      new Request("http://localhost/openapi.json")
+    );
+    expect(response.status).toBe(200);
+    const document = Schema.decodeUnknownSync(OpenApiDocument)(
+      await response.json()
+    );
+    expect(document.openapi).toBe("3.1.0");
+    const ajv = new Ajv({ strict: false, validateFormats: false });
+    let checked = 0;
+    for (const operations of Object.values(document.paths)) {
+      for (const [method, operation] of Object.entries(operations)) {
+        if (!["get", "post", "put", "patch", "delete"].includes(method)) {
+          continue;
+        }
+        if (operation.operationId === "sets.audio") {
+          expect(operation.responses["200"]).toBeDefined();
+          expect(operation.responses["206"]).toBeDefined();
+          checked += 1;
+          continue;
+        }
+        const sample = samples[sampleKeyFor(operation.operationId)];
+        for (const [status, declared] of Object.entries(operation.responses)) {
+          if (Number(status) < 200 || Number(status) >= 300) {
+            continue;
+          }
+          const schema = declared.content?.["application/json"]?.schema;
+          expect(schema).toBeDefined();
+          if (schema === undefined) {
+            throw new Error(
+              `${operation.operationId} ${status} has no JSON schema`
+            );
+          }
+          const valid = ajv.compile(schema);
+          expect(valid(sample)).toBe(true);
+          checked += 1;
+        }
+      }
+    }
+    expect(checked).toBe(25);
+  } finally {
+    await app.dispose();
+  }
+});
