@@ -165,6 +165,19 @@ export const SaveSetResultSchema = Schema.Struct({
     "unavailable",
   ]),
 });
+export const AdminPersonPayload = UpdateMePayload;
+export const AdminKeyPayload = Schema.Struct({
+  label: Schema.String.check(Schema.isMaxLength(100)),
+});
+const AdminPerson = Schema.Struct({ id: Schema.String, username: Schema.String });
+const AdminKey = Schema.Struct({
+  addedAt: Schema.String,
+  id: Schema.String,
+  label: Schema.String,
+  lastUsedAt: Schema.NullOr(Schema.String),
+  personId: Schema.String,
+  scope: Schema.Literals(["daily", "admin"]),
+});
 
 export const SetsApi = HttpApi.make("orbis").add(
   HttpApiGroup.make("sets")
@@ -354,4 +367,42 @@ export const OrbisApi = PlaylistApi.add(
         success: HealthResponseSchema,
       })
     )
+  )
+  .add(
+    HttpApiGroup.make("admin")
+      .add(
+        HttpApiEndpoint.get("people", "/admin/people", {
+          success: Schema.Struct({ people: Schema.Array(AdminPerson) }),
+        }),
+        HttpApiEndpoint.post("addPerson", "/admin/people", {
+          error: [BadRequest, Conflict, InternalError],
+          payload: AdminPersonPayload,
+          success: AdminPerson.pipe(HttpApiSchema.status(201)),
+        }),
+        HttpApiEndpoint.delete("removePerson", "/admin/people/:id", {
+          error: [NotFound, InternalError],
+          params: SetId,
+          success: AdminPerson,
+        }),
+        HttpApiEndpoint.get("keys", "/admin/keys", {
+          success: Schema.Struct({ keys: Schema.Array(AdminKey) }),
+        }),
+        HttpApiEndpoint.get("personKeys", "/admin/people/:id/keys", {
+          error: NotFound,
+          params: SetId,
+          success: Schema.Struct({ keys: Schema.Array(AdminKey) }),
+        }),
+        HttpApiEndpoint.post("addKey", "/admin/people/:id/keys", {
+          error: [BadRequest, NotFound, InternalError],
+          params: SetId,
+          payload: AdminKeyPayload,
+          success: Schema.Struct({ ...AdminKey.fields, token: Schema.String }).pipe(HttpApiSchema.status(201)),
+        }),
+        HttpApiEndpoint.delete("revokeKey", "/admin/keys/:id", {
+          error: [NotFound, InternalError],
+          params: SetId,
+          success: AdminKey,
+        })
+      )
+      .middleware(SetAccess)
   );
