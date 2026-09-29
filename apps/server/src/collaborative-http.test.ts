@@ -35,11 +35,20 @@ test("a creator grants and revokes collaborative Playlist editing through Social
     databasePath: path.join(directory, "library.sqlite"),
     devicesPath,
   });
+  type Payload =
+    | { name: string }
+    | { url: string }
+    | { social: boolean }
+    | { appear: boolean }
+    | { see: boolean }
+    | { collaborative: boolean }
+    | { editorIds: string[] }
+    | { setIds: string[] };
   const call = (
     who: "a" | "b",
     method: string,
     url: string,
-    payload?: unknown
+    payload?: Payload
   ) =>
     request(app, {
       accessMode: "device",
@@ -49,6 +58,10 @@ test("a creator grants and revokes collaborative Playlist editing through Social
       payload,
       url,
     });
+  const status = async (...args: Parameters<typeof call>) => {
+    const response = await call(...args);
+    return response.statusCode;
+  };
   try {
     const created = await call("a", "POST", "/playlists", { name: "Together" });
     expect(created.statusCode).toBe(201);
@@ -65,15 +78,9 @@ test("a creator grants and revokes collaborative Playlist editing through Social
     expect(setOne.statusCode).toBe(201);
     expect(setTwo.statusCode).toBe(201);
 
-    expect(
-      (await call("a", "PUT", editors, { editorIds: ["b"] })).statusCode
-    ).toBe(404);
-    expect((await call("a", "PATCH", "/me", { social: true })).statusCode).toBe(
-      200
-    );
-    expect((await call("b", "PATCH", "/me", { social: true })).statusCode).toBe(
-      200
-    );
+    expect(await status("a", "PUT", editors, { editorIds: ["b"] })).toBe(404);
+    expect(await status("a", "PATCH", "/me", { social: true })).toBe(200);
+    expect(await status("b", "PATCH", "/me", { social: true })).toBe(200);
     const enabled = await call("a", "PUT", collaboration, {
       collaborative: true,
     });
@@ -89,7 +96,8 @@ test("a creator grants and revokes collaborative Playlist editing through Social
       setTwo.json().id,
       setOne.json().id,
     ]);
-    expect((await call("a", "GET", "/sets")).json().sets).toEqual([]);
+    const creatorLibrary = await call("a", "GET", "/sets");
+    expect(creatorLibrary.json().sets).toEqual([]);
     const reordered = await call("b", "PUT", members, {
       setIds: [setOne.json().id, setTwo.json().id],
     });
@@ -104,51 +112,46 @@ test("a creator grants and revokes collaborative Playlist editing through Social
       setOne.json().id,
     ]);
     expect(
-      (
-        await call("b", "PATCH", `/playlists/${playlistId}`, {
-          name: "Changed",
-        })
-      ).statusCode
+      await status("b", "PATCH", `/playlists/${playlistId}`, {
+        name: "Changed",
+      })
     ).toBe(404);
+    expect(await status("b", "DELETE", `/playlists/${playlistId}`)).toBe(404);
+    expect(await status("b", "PUT", editors, { editorIds: [] })).toBe(404);
     expect(
-      (await call("b", "DELETE", `/playlists/${playlistId}`)).statusCode
-    ).toBe(404);
-    expect(
-      (await call("b", "PUT", editors, { editorIds: [] })).statusCode
-    ).toBe(404);
-    expect(
-      (await call("b", "PUT", collaboration, { collaborative: false }))
-        .statusCode
+      await status("b", "PUT", collaboration, { collaborative: false })
     ).toBe(404);
 
     expect(
-      (await call("a", "PUT", "/people/b/filters", { appear: false }))
-        .statusCode
+      await status("a", "PUT", "/people/b/filters", { appear: false })
     ).toBe(200);
     expect(
-      (
-        await call("b", "PUT", members, {
-          setIds: [setOne.json().id, setTwo.json().id],
-        })
-      ).statusCode
+      await status("b", "PUT", members, {
+        setIds: [setOne.json().id, setTwo.json().id],
+      })
     ).toBe(404);
     expect(
-      (await call("a", "PUT", "/people/b/filters", { appear: true })).statusCode
+      await status("a", "PUT", "/people/b/filters", { appear: true })
     ).toBe(200);
     expect(
-      (
-        await call("b", "PUT", members, {
-          setIds: [setOne.json().id, setTwo.json().id],
-        })
-      ).statusCode
+      await status("b", "PUT", members, {
+        setIds: [setOne.json().id, setTwo.json().id],
+      })
     ).toBe(200);
-    expect(
-      (await call("a", "PUT", collaboration, { collaborative: false }))
-        .statusCode
-    ).toBe(200);
-    expect((await call("b", "PUT", members, { setIds: [] })).statusCode).toBe(
-      404
+    expect(await status("a", "PUT", "/people/b/filters", { see: false })).toBe(
+      200
     );
+    expect(await status("b", "PUT", members, { setIds: [] })).toBe(404);
+    expect(await status("a", "PUT", "/people/b/filters", { see: true })).toBe(
+      200
+    );
+    expect(
+      await status("b", "PUT", members, { setIds: [setOne.json().id] })
+    ).toBe(200);
+    expect(
+      await status("a", "PUT", collaboration, { collaborative: false })
+    ).toBe(200);
+    expect(await status("b", "PUT", members, { setIds: [] })).toBe(404);
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

@@ -209,6 +209,9 @@ const failureResponse = <E>(error: E) => {
   );
 };
 
+const missingPlaylist = () =>
+  new LibraryError({ message: "Playlist not found.", statusCode: 404 });
+
 const withFailureResponse = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.match(effect.pipe(Effect.tapError(logLibraryFailure)), {
     onFailure: failureResponse,
@@ -595,8 +598,34 @@ export const createApp = (
             )
           )
       );
-      const missingPlaylist = () =>
-        new LibraryError({ message: "Playlist not found.", statusCode: 404 });
+      const visibleFriend = (id: string) =>
+        Effect.gen(function* resolveFriend() {
+          const caller = yield* SetCaller;
+          const { people } = readTrustRegistry(devicesPath).store;
+          return yield* Effect.try({
+            catch: (error) =>
+              error instanceof LibraryError
+                ? error
+                : new LibraryError({
+                    message: "Could not read People.",
+                    statusCode: 500,
+                  }),
+            try: () => resolveVisiblePerson(people, caller.person.id, id),
+          });
+        });
+      const mutuallyVisibleFriend = (id: string) =>
+        Effect.gen(function* resolveMutualVisibility() {
+          const caller = yield* SetCaller;
+          const target = yield* visibleFriend(id);
+          const { people } = readTrustRegistry(devicesPath).store;
+          yield* Effect.try({
+            catch: (error) =>
+              error instanceof LibraryError ? error : missingPlaylist(),
+            try: () =>
+              resolveVisiblePerson(people, target.id, caller.person.id),
+          });
+          return target;
+        });
       const ownedPlaylist = (id: string, personId: string) =>
         Effect.gen(function* findOwnedPlaylist() {
           const [row] = yield* db
@@ -607,7 +636,9 @@ export const createApp = (
             .from(playlists)
             .where(and(eq(playlists.id, id), eq(playlists.creatorId, personId)))
             .limit(1);
-          if (!row) return yield* Effect.fail(missingPlaylist());
+          if (!row) {
+            return yield* Effect.fail(missingPlaylist());
+          }
           return row;
         });
       const collaborationFor = (id: string, personId: string) =>
@@ -629,7 +660,9 @@ export const createApp = (
             .from(playlists)
             .where(and(eq(playlists.id, id), eq(playlists.creatorId, personId)))
             .limit(1);
-          if (owned) return personId;
+          if (owned) {
+            return personId;
+          }
           const [editor] = yield* db
             .select({ creatorId: playlistEditors.creatorId })
             .from(playlistEditors)
@@ -640,8 +673,10 @@ export const createApp = (
               )
             )
             .limit(1);
-          if (!editor) return yield* Effect.fail(missingPlaylist());
-          yield* visibleFriend(editor.creatorId);
+          if (!editor) {
+            return yield* Effect.fail(missingPlaylist());
+          }
+          yield* mutuallyVisibleFriend(editor.creatorId);
           const [playlist] = yield* db
             .select({ collaborative: playlists.collaborative })
             .from(playlists)
@@ -652,8 +687,9 @@ export const createApp = (
               )
             )
             .limit(1);
-          if (!playlist?.collaborative)
+          if (!playlist?.collaborative) {
             return yield* Effect.fail(missingPlaylist());
+          }
           return editor.creatorId;
         });
       const playlistGroup = HttpApiBuilder.group(
@@ -723,9 +759,10 @@ export const createApp = (
                         })
                       );
                     }
-                    const ownerLayer = Library.forPersonLayer(ownerId).pipe(
-                      Layer.provide(Layer.succeed(Database, db))
-                    );
+                    const ownerLayer = Library.forPersonLayer(
+                      ownerId,
+                      libraryOptions
+                    ).pipe(Layer.provide(Layer.succeed(Database, db)));
                     return {
                       sets: yield* Effect.provide(
                         Effect.gen(function* updateSharedPlaylist() {
@@ -797,7 +834,7 @@ export const createApp = (
                     );
                   }
                   for (const editorId of input.editorIds) {
-                    yield* visibleFriend(editorId);
+                    yield* mutuallyVisibleFriend(editorId);
                   }
                   yield* db.transaction((tx) =>
                     Effect.gen(function* replaceEditors() {
@@ -805,15 +842,13 @@ export const createApp = (
                         .delete(playlistEditors)
                         .where(eq(playlistEditors.playlistId, params.id));
                       if (input.editorIds.length > 0) {
-                        yield* tx
-                          .insert(playlistEditors)
-                          .values(
-                            input.editorIds.map((editorId) => ({
-                              creatorId: caller.person.id,
-                              editorId,
-                              playlistId: params.id,
-                            }))
-                          );
+                        yield* tx.insert(playlistEditors).values(
+                          input.editorIds.map((editorId) => ({
+                            creatorId: caller.person.id,
+                            editorId,
+                            playlistId: params.id,
+                          }))
+                        );
                       }
                     })
                   );
@@ -935,21 +970,6 @@ export const createApp = (
               )
             )
       );
-      const visibleFriend = (id: string) =>
-        Effect.gen(function* resolveFriend() {
-          const caller = yield* SetCaller;
-          const { people } = readTrustRegistry(devicesPath).store;
-          return yield* Effect.try({
-            catch: (error) =>
-              error instanceof LibraryError
-                ? error
-                : new LibraryError({
-                    message: "Could not read People.",
-                    statusCode: 500,
-                  }),
-            try: () => resolveVisiblePerson(people, caller.person.id, id),
-          });
-        });
       const friendLibraryLayer = (personId: string) =>
         Library.forPersonLayer(personId).pipe(
           Layer.provide(Layer.succeed(Database, db))
@@ -1067,7 +1087,7 @@ export const createApp = (
             withFailureResponse(
               Effect.gen(function* readFriendPlaylists() {
                 const target = yield* visibleFriend(params.id);
-                const playlists = yield* Effect.provide(
+                const friendPlaylists = yield* Effect.provide(
                   Effect.gen(function* listFriendPlaylists() {
                     const personal = yield* Library;
                     const owned = yield* personal.playlists();
@@ -1084,7 +1104,7 @@ export const createApp = (
                   }),
                   friendLibraryLayer(target.id)
                 );
-                return { playlists };
+                return { playlists: friendPlaylists };
               })
             )
           )

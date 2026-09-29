@@ -312,16 +312,23 @@ const LibraryView = ({
   }, [selectedPlaylist, session.key, handleError]);
 
   useEffect(() => {
-    if (!selectedPlaylist) return;
+    if (!selectedPlaylist) {
+      return;
+    }
     let live = true;
-    api(session.key)
-      .collaboration(selectedPlaylist)
-      .then((response) => {
-        if (live) setCollaboration(response);
-      })
-      .catch((error: Error) => {
-        if (live) handleError(error, "Could not load Playlist editors.");
-      });
+    const loadCollaboration = async () => {
+      try {
+        const response = await api(session.key).collaboration(selectedPlaylist);
+        if (live) {
+          setCollaboration(response);
+        }
+      } catch (error) {
+        if (live && error instanceof Error) {
+          handleError(error, "Could not load Playlist editors.");
+        }
+      }
+    };
+    loadCollaboration();
     return () => {
       live = false;
     };
@@ -761,7 +768,9 @@ const LibraryView = ({
                         checked={collaboration?.collaborative ?? false}
                         disabled={!collaboration}
                         onChange={async (event) => {
-                          if (!selectedPlaylist || !collaboration) return;
+                          if (!selectedPlaylist || !collaboration) {
+                            return;
+                          }
                           const next = event.target.checked;
                           setCollaboration({
                             ...collaboration,
@@ -776,11 +785,12 @@ const LibraryView = ({
                             );
                           } catch (error) {
                             setCollaboration(collaboration);
-                            if (error instanceof Error)
+                            if (error instanceof Error) {
                               handleError(
                                 error,
                                 "Could not change Collaborative setting."
                               );
+                            }
                           }
                         }}
                       />
@@ -813,7 +823,9 @@ const LibraryView = ({
                         type="button"
                         disabled={!editorInput || !collaboration}
                         onClick={async () => {
-                          if (!selectedPlaylist || !collaboration) return;
+                          if (!selectedPlaylist || !collaboration) {
+                            return;
+                          }
                           try {
                             setCollaboration(
                               await client.setEditors(selectedPlaylist, [
@@ -823,8 +835,9 @@ const LibraryView = ({
                             );
                             setEditorInput("");
                           } catch (error) {
-                            if (error instanceof Error)
+                            if (error instanceof Error) {
                               handleError(error, "Could not add editor.");
+                            }
                           }
                         }}
                       >
@@ -840,7 +853,9 @@ const LibraryView = ({
                             type="button"
                             aria-label={`Remove editor ${people.find((person) => person.id === id)?.username ?? id}`}
                             onClick={async () => {
-                              if (!selectedPlaylist || !collaboration) return;
+                              if (!selectedPlaylist || !collaboration) {
+                                return;
+                              }
                               try {
                                 setCollaboration(
                                   await client.setEditors(
@@ -851,11 +866,12 @@ const LibraryView = ({
                                   )
                                 );
                               } catch (error) {
-                                if (error instanceof Error)
+                                if (error instanceof Error) {
                                   handleError(
                                     error,
                                     "Could not remove editor."
                                   );
+                                }
                               }
                             }}
                           >

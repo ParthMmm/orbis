@@ -244,11 +244,12 @@ try {
         playlist = { ...playlist, setCount: members.length };
         body = { sets: members.map((id) => (id === "set-a" ? set : saved)) };
       } else if (url.pathname.endsWith("/playlists/playlist-a/collaboration")) {
-        if (request.method() === "PUT")
-          collaborative = request.postDataJSON().collaborative;
+        if (request.method() === "PUT") {
+          ({ collaborative } = request.postDataJSON());
+        }
         body = { collaborative, editorIds };
       } else if (url.pathname.endsWith("/playlists/playlist-a/editors")) {
-        editorIds = request.postDataJSON().editorIds;
+        ({ editorIds } = request.postDataJSON());
         body = { collaborative, editorIds };
       } else if (url.pathname.endsWith("/queue")) {
         body = { queue: { activeSetId: null, entries: [] } };

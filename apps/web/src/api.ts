@@ -60,10 +60,10 @@ const call = <A, E>(
 export const api = (key: string) => ({
   audioState: (id: string) =>
     call(key, (client) => client.sets.audioState({ params: { id } })),
-  complete: (setId: string) =>
-    call(key, (client) => client.queue.complete({ payload: { setId } })),
   collaboration: (id: string) =>
     call(key, (client) => client.playlists.collaboration({ params: { id } })),
+  complete: (setId: string) =>
+    call(key, (client) => client.queue.complete({ payload: { setId } })),
   createPlaylist: (name: string) =>
     call(key, (client) => client.playlists.create({ payload: { name } })),
   deletePlaylist: (id: string) =>
@@ -130,6 +130,8 @@ export const api = (key: string) => ({
     call(key, (client) =>
       client.playlists.replaceMembers({ params: { id }, payload: { setIds } })
     ),
+  save: (url: string) =>
+    call(key, (client) => client.sets.save({ payload: { url } })),
   setCollaboration: (id: string, collaborative: boolean) =>
     call(key, (client) =>
       client.playlists.setCollaboration({
@@ -141,8 +143,6 @@ export const api = (key: string) => ({
     call(key, (client) =>
       client.playlists.setEditors({ params: { id }, payload: { editorIds } })
     ),
-  save: (url: string) =>
-    call(key, (client) => client.sets.save({ payload: { url } })),
   tags: () => call(key, (client) => client.library.tags()),
   updateAutoDownload: (autoDownload: boolean) =>
     call(key, (client) =>
