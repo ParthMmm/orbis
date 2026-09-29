@@ -29,6 +29,7 @@ struct LaneService {
   }
 
   private struct Sets: Decodable { let sets: [Set] }
+  private struct Playlists: Decodable { let playlists: [Playlist] }
 
   func saveSet(title: String, url: String) throws -> Set {
     try send("POST", "sets", ["title": title, "url": url, "tags": []])
@@ -36,6 +37,15 @@ struct LaneService {
 
   func createPlaylist(named name: String) throws -> Playlist {
     try send("POST", "playlists", ["name": name])
+  }
+
+  func playlists() throws -> [Playlist] {
+    let response: Playlists = try send("GET", "playlists", nil)
+    return response.playlists
+  }
+
+  func deletePlaylist(_ id: String) throws {
+    let _: Playlist = try send("DELETE", "playlists/\(id)", nil)
   }
 
   @discardableResult
