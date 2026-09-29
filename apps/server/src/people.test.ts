@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -222,6 +223,86 @@ test("concurrent key usage cannot restore a removed Person's keys", async () => 
     expect(afterRemoval.statusCode).toBe(401);
   } finally {
     await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+const waitForFile = async (file: string, attempts = 100): Promise<boolean> => {
+  if (existsSync(file)) {
+    return true;
+  }
+  if (attempts === 0) {
+    return false;
+  }
+  await Bun.sleep(10);
+  return waitForFile(file, attempts - 1);
+};
+
+test("a live lock blocks mutation and a killed owner releases it", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-trust-lock-"));
+  const devicesPath = path.join(directory, "devices.json");
+  const marker = path.join(directory, "locked");
+  const holderCode = `
+    import { dlopen, FFIType } from "bun:ffi";
+    import { openSync, writeFileSync } from "node:fs";
+    const libc = dlopen(process.platform === "darwin" ? "libSystem.B.dylib" : "libc.so.6", {
+      flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+    });
+    const fd = openSync(process.env.LOCK_PATH, "a", 0o600);
+    if (libc.symbols.flock(fd, 2) !== 0) process.exit(1);
+    writeFileSync(process.env.MARKER_PATH, "locked");
+    await Bun.sleep(30_000);
+  `;
+  const holder = Bun.spawn([process.execPath, "-e", holderCode], {
+    env: {
+      ...process.env,
+      LOCK_PATH: `${devicesPath}.lock`,
+      MARKER_PATH: marker,
+    },
+    stderr: "pipe",
+    stdout: "pipe",
+  });
+  let mutation: ReturnType<typeof Bun.spawn> | undefined;
+  try {
+    expect(await waitForFile(marker)).toBe(true);
+    mutation = Bun.spawn(
+      [
+        process.execPath,
+        "src/trust.ts",
+        "person",
+        "add",
+        "--username",
+        "recovered",
+        "--devices",
+        devicesPath,
+      ],
+      {
+        cwd: path.resolve(import.meta.dir, ".."),
+        stderr: "pipe",
+        stdout: "pipe",
+      }
+    );
+    const state = await Promise.race([
+      mutation.exited.then(() => "finished"),
+      Bun.sleep(150).then(() => "waiting"),
+    ]);
+    expect(state).toBe("waiting");
+    holder.kill(9);
+    await holder.exited;
+    expect(existsSync(`${devicesPath}.lock`)).toBe(true);
+    expect(await mutation.exited).toBe(0);
+    const stored = JSON.parse(await readFile(devicesPath, "utf-8"));
+    expect(
+      stored.people.some(
+        (person: { username: string }) => person.username === "recovered"
+      )
+    ).toBe(true);
+    expect(
+      trust(devicesPath, "person", "add", "--username", "again").status
+    ).toBe(0);
+  } finally {
+    holder.kill(9);
+    mutation?.kill(9);
     await rm(directory, { force: true, recursive: true });
   }
 });

@@ -1,10 +1,11 @@
+import { dlopen, FFIType } from "bun:ffi";
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
 import {
+  closeSync,
   existsSync,
-  mkdirSync,
+  openSync,
   readFileSync,
   renameSync,
-  rmdirSync,
   writeFileSync,
 } from "node:fs";
 
@@ -110,37 +111,31 @@ const writeTrustStore = (storePath: string, store: TrustStore): void => {
 const isMissingFile = (error: Error): boolean =>
   "code" in error && error.code === "ENOENT";
 
+const LOCK_EXCLUSIVE_NONBLOCKING = 6;
 const LOCK_WAIT_MS = 10;
 const LOCK_TIMEOUT_MS = 5000;
 const lockWaiter = new Int32Array(new SharedArrayBuffer(4));
+const libc = dlopen(
+  process.platform === "darwin" ? "libSystem.B.dylib" : "libc.so.6",
+  {
+    flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
+  }
+);
 
 const withTrustStoreLock = <T>(storePath: string, action: () => T): T => {
   const lockPath = `${storePath}.lock`;
-  const deadline = Date.now() + LOCK_TIMEOUT_MS;
-  for (;;) {
-    try {
-      mkdirSync(lockPath, { mode: 0o700 });
-      break;
-    } catch (error) {
-      if (
-        !(error instanceof Error) ||
-        !("code" in error) ||
-        error.code !== "EEXIST"
-      ) {
-        throw error;
-      }
+  const fd = openSync(lockPath, "a", 0o600);
+  try {
+    const deadline = Date.now() + LOCK_TIMEOUT_MS;
+    while (libc.symbols.flock(fd, LOCK_EXCLUSIVE_NONBLOCKING) !== 0) {
       if (Date.now() >= deadline) {
-        throw new Error(`Timed out waiting for trust store lock: ${lockPath}`, {
-          cause: error,
-        });
+        throw new Error(`Timed out waiting for trust store lock: ${lockPath}`);
       }
       Atomics.wait(lockWaiter, 0, 0, LOCK_WAIT_MS);
     }
-  }
-  try {
     return action();
   } finally {
-    rmdirSync(lockPath);
+    closeSync(fd);
   }
 };
 
