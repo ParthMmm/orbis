@@ -229,3 +229,22 @@ testFfmpeg(
     }
   }
 );
+
+test("the download lands at the destination although yt-dlp strips a .part name", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "orbis-ytdlp-"));
+  const destination = path.join(root, "a.part");
+  // Real yt-dlp writes `-o x.part` to `x`: it treats `.part` as its own suffix.
+  const run: YtdlpRunner = async (argv) => {
+    if (argv.includes("--version")) {
+      return { code: 0, stdout: "2026.08.19\n" };
+    }
+    await Bun.write(outputOf(argv).replace(/\.part$/u, ""), "audio bytes");
+    return { code: 0, stdout: "" };
+  };
+  try {
+    await download(run, destination);
+    expect(await Bun.file(destination).text()).toBe("audio bytes");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});

@@ -161,6 +161,21 @@ systemctl --user daemon-reload && systemctl --user restart orbis-server
 
 Nothing is required for SoundCloud, which uses oEmbed. Without a key the server still saves a Set and records a failed metadata state, which the client offers to retry, so a missing key degrades rather than breaks.
 
+## Give the service yt-dlp
+
+YouTube downloads try yt-dlp first and fall back to Cobalt. Without `ORBIS_YTDLP_BIN`, every YouTube download goes to Cobalt, whose tunnel returned zero bytes for long videos on 2026-09-29. yt-dlp needs Deno, and the service's default PATH does not include `~/.local/bin`, where `uv tool install` puts both.
+
+```sh
+cat > ~/.config/systemd/user/orbis-server.service.d/ytdlp.conf <<'CONF'
+[Service]
+Environment=ORBIS_YTDLP_BIN=%h/.local/bin/yt-dlp
+Environment=PATH=%h/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin
+CONF
+systemctl --user daemon-reload && systemctl --user restart orbis-server
+```
+
+The worker logs `ytdlp: true` at startup when the binary is configured.
+
 `systemctl --user show -p Environment` will not show this value, because systemd reads the file at exec time. Check it by saving a Source Link with no title and reading `metadataState` in the response.
 
 ## Back up the database

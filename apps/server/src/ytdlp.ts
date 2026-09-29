@@ -1,4 +1,4 @@
-import { rm } from "node:fs/promises";
+import { rename, rm } from "node:fs/promises";
 
 import { Context, Effect, Exit, Layer } from "effect";
 
@@ -112,8 +112,10 @@ export class Ytdlp extends Context.Service<
           onProgress: (received: number, total: number | null) => void,
           signal: AbortSignal,
           cookies?: string
-        ) =>
-          Effect.tryPromise({
+        ) => {
+          // yt-dlp strips a trailing `.part` from `-o`, so it writes here and the file moves after.
+          const output = `${destination}.ytdl`;
+          return Effect.tryPromise({
             catch: () =>
               downloadFailed(
                 signal.aborted
@@ -122,14 +124,14 @@ export class Ytdlp extends Context.Service<
               ),
             try: async () => {
               const timer = setInterval(() => {
-                const { size } = Bun.file(destination);
+                const { size } = Bun.file(output);
                 if (size > 0) {
                   onProgress(size, null);
                 }
               }, PROGRESS_POLL_MS);
               try {
                 return await run(
-                  ytdlpArgs(bin, destination, sourceUrl, cookies),
+                  ytdlpArgs(bin, output, sourceUrl, cookies),
                   signal
                 );
               } finally {
@@ -138,13 +140,14 @@ export class Ytdlp extends Context.Service<
             },
           }).pipe(
             Effect.flatMap((ran) =>
-              ran.code === 0 && Bun.file(destination).size > 0
-                ? Effect.void
+              ran.code === 0 && Bun.file(output).size > 0
+                ? Effect.promise(() => rename(output, destination))
                 : Effect.fail(
                     downloadFailed("yt-dlp could not fetch this audio.")
                   )
             )
           );
+        };
         return Ytdlp.of({
           download: Effect.fn("Ytdlp.download")(function* download(
             sourceUrl: string,
