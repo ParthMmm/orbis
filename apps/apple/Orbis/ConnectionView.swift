@@ -69,10 +69,13 @@ struct ConnectionView: View {
           case .idle, .loading:
             ProgressView("Loading preferences")
           case .loaded(let person):
-            Toggle("Auto Download", isOn: Binding(
-              get: { person.autoDownload },
-              set: { enabled in Task { await updateAutoDownload(enabled) } }
-            ))
+            Toggle(
+              "Auto Download",
+              isOn: Binding(
+                get: { person.autoDownload },
+                set: { enabled in Task { await updateAutoDownload(enabled) } }
+              )
+            )
             .disabled(isSavingPreferences || model.isTestingConnection)
             .accessibilityIdentifier("auto-download")
             if isSavingPreferences { ProgressView("Saving preference") }
@@ -118,18 +121,18 @@ struct ConnectionView: View {
   private func loadPreferences() async {
     guard let client = model.client else { return }
     preferences = .loading
-    do { preferences = .loaded(try await client.preferences()) }
-    catch let error as OrbisError { preferences = .failed(error.failure(at: client.address)) }
-    catch { preferences = .failed(OrbisError.unreachable.failure(at: client.address)) }
+    do { preferences = .loaded(try await client.preferences()) } catch let error as OrbisError {
+      preferences = .failed(error.failure(at: client.address))
+    } catch { preferences = .failed(OrbisError.unreachable.failure(at: client.address)) }
   }
 
   private func updateAutoDownload(_ enabled: Bool) async {
     guard let client = model.client, !isSavingPreferences else { return }
     isSavingPreferences = true
     defer { isSavingPreferences = false }
-    do { preferences = .loaded(try await client.updateAutoDownload(enabled)) }
-    catch let error as OrbisError { preferences = .failed(error.failure(at: client.address)) }
-    catch { preferences = .failed(OrbisError.unreachable.failure(at: client.address)) }
+    do { preferences = .loaded(try await client.updateAutoDownload(enabled)) } catch let error as OrbisError {
+      preferences = .failed(error.failure(at: client.address))
+    } catch { preferences = .failed(OrbisError.unreachable.failure(at: client.address)) }
   }
 
 }

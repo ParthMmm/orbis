@@ -36,7 +36,10 @@ final class ConnectionUITests: XCTestCase {
     XCTAssertEqual(toggle.value as? String, "1")
     capture("auto-download-default-on")
     toggle.tap()
-    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: toggle)], timeout: 10), .completed)
+    XCTAssertEqual(
+      XCTWaiter.wait(
+        for: [XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == '0'"), object: toggle)], timeout: 10),
+      .completed)
     let off = try service.autoDownload(becomes: false)
     XCTAssertFalse(off)
     capture("auto-download-off")
@@ -51,7 +54,9 @@ final class ConnectionUITests: XCTestCase {
     let on = try service.autoDownload(becomes: true)
     XCTAssertTrue(on)
     capture("auto-download-restored-on")
-    let data = try JSONSerialization.data(withJSONObject: ["afterOff": off, "afterOn": on, "offAfterRelaunch": reopenedOff], options: [.prettyPrinted, .sortedKeys])
+    let data = try JSONSerialization.data(
+      withJSONObject: ["afterOff": off, "afterOn": on, "offAfterRelaunch": reopenedOff],
+      options: [.prettyPrinted, .sortedKeys])
     let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
     attachment.name = "auto-download-settings.json"
     attachment.lifetime = .keepAlways
