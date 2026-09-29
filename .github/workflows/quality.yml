@@ -56,6 +56,9 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Install audio probe for HTTP download tests
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
       - name: Save Bun downloads
         if: steps.bun-cache.outputs.cache-hit != 'true'
         uses: actions/cache/save@v4
