@@ -269,12 +269,6 @@ struct OrbisClient: Sendable {
     return try decodedSet(response)
   }
 
-  /// The streaming address for a Set whose audio is ready. The token travels as a
-  /// header on the asset, never in this URL.
-  func audioFileURL(_ id: String) -> URL {
-    address.appending(path: "sets/\(id)/audio")
-  }
-
   // MARK: - The Listening Queue
 
   /// The one Listening Queue, in play order.
