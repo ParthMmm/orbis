@@ -74,7 +74,7 @@ struct PlaylistsDestination: View {
         .accessibilityIdentifier("playlists-error")
       case .loaded(let items):
         if items.isEmpty {
-          EmptyPlaylistState {
+          NoPlaylistsState {
             beginCreate()
           }
           .accessibilityIdentifier("playlists-empty")

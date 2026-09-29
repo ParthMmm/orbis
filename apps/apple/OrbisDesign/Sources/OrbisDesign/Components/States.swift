@@ -57,6 +57,27 @@ public struct EmptyLibraryState: View {
   }
 }
 
+/// The Playlists tab before the first playlist is created.
+public struct NoPlaylistsState: View {
+  public static let title = "No playlists yet"
+  public static let message = "Create a playlist to organize your Sets."
+  public static let symbol = "rectangle.stack.badge.plus"
+  public static let recoveryLabel = "New playlist"
+
+  private let recover: () -> Void
+
+  public init(recover: @escaping () -> Void) {
+    self.recover = recover
+  }
+
+  public var body: some View {
+    StateMessage(
+      title: Self.title, message: Self.message, symbol: Self.symbol,
+      recoveryLabel: Self.recoveryLabel, prominent: true, recover: recover
+    )
+  }
+}
+
 /// A Playlist with no Sets in it. An empty Playlist is not an empty Library: the Sets exist,
 /// they are somewhere else, and the way out is to add one.
 public struct EmptyPlaylistState: View {
@@ -195,6 +216,17 @@ public struct LoadingState: View {
     .background(Color.orbis.paper)
 }
 
+#Preview("No Playlists") {
+  NoPlaylistsState(recover: {})
+    .background(Color.orbis.paper)
+}
+
+#Preview("No Playlists, dark") {
+  NoPlaylistsState(recover: {})
+    .background(Color.orbis.paper)
+    .preferredColorScheme(.dark)
+}
+
 #Preview("Empty Playlist, dark") {
   EmptyPlaylistState(recover: {})
     .background(Color.orbis.paper)
@@ -261,6 +293,8 @@ private struct StatesSample: View {
     ScrollView {
       VStack(spacing: 24) {
         EmptyLibraryState(recover: {})
+        Divider()
+        NoPlaylistsState(recover: {})
         Divider()
         EmptyPlaylistState(recover: {})
         Divider()
