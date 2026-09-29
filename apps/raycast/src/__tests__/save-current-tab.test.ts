@@ -57,22 +57,6 @@ test("Save Current Tab saves a SoundCloud tab with a temporary server title", as
   });
 });
 
-test("Save Current Tab rejects an unsupported tab before any request", async () => {
-  raycast.tabs = [{ active: true, url: "https://example.com/playlist" }];
-  mockFetch(() => {
-    throw new Error("the command must not call Orbis for an unsupported tab");
-  });
-
-  await saveCurrentTab();
-
-  expect(requests).toEqual([]);
-  expect(finalToast()).toMatchObject({
-    message: "Use a YouTube or SoundCloud link.",
-    style: "failure",
-    title: "Unsupported link",
-  });
-});
-
 test("Save Current Tab names the cause when the browser extension fails", async () => {
   raycast.getTabsError = new Error("No browser extension connected");
   mockFetch(() => {

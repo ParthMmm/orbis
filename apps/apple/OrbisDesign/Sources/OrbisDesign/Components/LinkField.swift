@@ -150,7 +150,7 @@ public struct LinkField: View {
       }
       if let message = state.message {
         Label(message, systemImage: state.symbol)
-          .font(.orbis.mono)
+          .font(.orbis.detail)
           .foregroundStyle(.secondary)
       }
     }

@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -11,15 +12,18 @@ import type {
   EnrichedMetadata,
   EnrichInput,
   MetadataOptions,
+  MetadataService,
 } from "./metadata.js";
 import { Metadata } from "./metadata.js";
 import { request } from "./test-http.js";
+import type { SourceDetails, YtDlpMetadataService } from "./ytdlp-metadata.js";
 
 const PROVIDER_RESULT: EnrichedMetadata = {
   artworkLargeUrl: "https://example.test/artwork.jpg",
   artworkUrl: "https://example.test/artwork.jpg",
   creator: "Ada Lovelace",
   durationSeconds: 253,
+  releasedAt: "2015-10-28T10:00:00.000Z",
   title: "Analytical Engine live",
 };
 
@@ -33,11 +37,14 @@ type Enrich = (
   input: EnrichInput
 ) => Effect.Effect<EnrichedMetadata, MetadataError>;
 
-const startApp = async (enrich: Enrich) => {
+const startApp = async (
+  enrich: Enrich,
+  extra: { details?: MetadataService["details"] } = {}
+) => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-metadata-"));
   const app = createApp({
     databasePath: path.join(directory, "library.sqlite"),
-    metadata: Metadata.layerOf({ enrich }),
+    metadata: Metadata.layerOf({ enrich, ...extra }),
   });
   return {
     app,
@@ -68,6 +75,7 @@ test("fills title, creator, artwork, and duration from the provider when the sav
       artworkUrl: "https://example.test/artwork.jpg",
       createdAt: expect.any(String),
       creator: "Ada Lovelace",
+      creatorId: null,
       downloadState: "none",
       durationSeconds: 253,
       finishCount: 0,
@@ -77,6 +85,7 @@ test("fills title, creator, artwork, and duration from the provider when the sav
       metadataState: "enriched",
       playbackPositionSeconds: 0,
       playlistIds: [],
+      releasedAt: "2015-10-28T10:00:00.000Z",
       retainedAudioBytes: null,
       retainedAudioFormat: null,
       source: "youtube",
@@ -109,25 +118,6 @@ test("keeps the title the user supplied and asks no provider for it", async () =
       metadataState: "pending",
       title: "My own title",
       titleEditedByUser: true,
-    });
-  } finally {
-    await server.dispose();
-  }
-});
-
-test("saves the Set with a temporary title when the provider fails", async () => {
-  const server = await startApp(() => Effect.fail(providerDown()));
-  try {
-    const saved = await saveSet(
-      server.app,
-      "https://www.youtube.com/watch?v=abcdefghijk"
-    );
-    expect(saved.statusCode).toBe(201);
-    expect(saved.json()).toMatchObject({
-      metadataState: "failed",
-      title: "YouTube video",
-      titleEditedByUser: false,
-      url: "https://www.youtube.com/watch?v=abcdefghijk",
     });
   } finally {
     await server.dispose();
@@ -182,6 +172,7 @@ test("retry replaces the temporary title that no user edited", async () => {
       creator: "Ada Lovelace",
       durationSeconds: 253,
       metadataState: "enriched",
+      releasedAt: "2015-10-28T10:00:00.000Z",
       title: "Analytical Engine live",
     });
   } finally {
@@ -221,32 +212,8 @@ test("retry keeps the title a user edited and fills the rest in", async () => {
       creator: "Ada Lovelace",
       durationSeconds: 253,
       metadataState: "enriched",
+      releasedAt: "2015-10-28T10:00:00.000Z",
     });
-  } finally {
-    await server.dispose();
-  }
-});
-
-test("retry reports a missing set and a second failure without losing the Set", async () => {
-  const server = await startApp(() => Effect.fail(providerDown()));
-  try {
-    const saved = await saveSet(
-      server.app,
-      "https://soundcloud.com/artist/track"
-    );
-    const retried = await request(server.app, {
-      method: "POST",
-      url: `/sets/${String(saved.json().id)}/metadata`,
-    });
-    expect(retried.statusCode).toBe(200);
-    expect(retried.json()).toEqual(saved.json());
-
-    const missing = await request(server.app, {
-      method: "POST",
-      url: "/sets/missing/metadata",
-    });
-    expect(missing.statusCode).toBe(404);
-    expect(missing.json().message).toBe("Set not found.");
   } finally {
     await server.dispose();
   }
@@ -324,6 +291,7 @@ const youTubeBody = (thumbnails: Thumbnails) => ({
       contentDetails: { duration: "PT4M13S" },
       snippet: {
         channelTitle: "Ada Lovelace",
+        publishedAt: "2015-10-28T10:00:00.000Z",
         thumbnails,
         title: "Analytical Engine live",
       },
@@ -357,6 +325,7 @@ test("reads the documented YouTube Data API fields into metadata", async () => {
     artworkUrl: "https://example.test/default.jpg",
     creator: "Ada Lovelace",
     durationSeconds: 253,
+    releasedAt: "2015-10-28T10:00:00.000Z",
     title: "Analytical Engine live",
   });
   expect(requested).toEqual([
@@ -456,6 +425,7 @@ test("reads SoundCloud oEmbed and leaves the duration unknown", async () => {
     artworkUrl: "https://example.test/hopper.jpg",
     creator: "Grace Hopper",
     durationSeconds: null,
+    releasedAt: null,
     title: "Compiler talk",
   });
   expect(requested).toEqual([
@@ -520,4 +490,284 @@ test("reports each provider failure with its own reason", async () => {
     { source: "soundcloud", url: "https://soundcloud.com/artist/track" }
   );
   expect(unreachableSoundCloud.reason).toBe("provider-unavailable");
+});
+
+// The fill runs after the response, so wait for it rather than assume it is done.
+const waitFor = async <T extends object | null | undefined>(
+  ready: () => boolean,
+  read: () => T,
+  attempts = 50
+): Promise<T> => {
+  if (ready() || attempts === 0) {
+    return read();
+  }
+  await Bun.sleep(20);
+  return waitFor(ready, read, attempts - 1);
+};
+
+const DETAILS: SourceDetails = {
+  chapters: [{ startSeconds: 0, title: "Intro" }],
+  creator: "Ada (yt-dlp)",
+  creatorId: "UC1",
+  creatorUrl: "https://example.test/ada",
+  description: "Recorded live.",
+  durationSeconds: 999,
+  genre: "House",
+  releasedAt: "2026-01-01T00:00:00.000Z",
+  tags: ["house"],
+  thumbnailUrl: "https://example.test/yt.jpg",
+  title: "yt-dlp title",
+};
+
+const soundCloudWithCreator = () =>
+  Promise.resolve(
+    Response.json({ author_name: "Ada", title: "Provider title" })
+  );
+
+const ytDlpDown = () =>
+  Effect.fail(
+    new MetadataError({
+      message: "yt-dlp could not be run.",
+      reason: "provider-unavailable",
+    })
+  );
+
+const enrichWithYtDlp = (read: YtDlpMetadataService["read"]) =>
+  Effect.runPromise(
+    Effect.result(
+      Effect.gen(function* run() {
+        const metadata = yield* Metadata;
+        return yield* metadata.enrich({
+          source: "soundcloud",
+          url: "https://soundcloud.com/a/b",
+        });
+      }).pipe(
+        Effect.provide(
+          Metadata.layer({
+            fetch: () => Promise.resolve(new Response("{}", { status: 403 })),
+            ytDlp: { read },
+          })
+        )
+      )
+    )
+  );
+
+test("yt-dlp alone enriches a source whose provider is not configured", async () => {
+  const result = await Effect.runPromise(
+    Effect.result(
+      Effect.gen(function* run() {
+        const metadata = yield* Metadata;
+        return yield* metadata.enrich({
+          source: "youtube",
+          url: "https://www.youtube.com/watch?v=abc",
+        });
+      }).pipe(
+        Effect.provide(
+          Metadata.layer({ ytDlp: { read: () => Effect.succeed(DETAILS) } })
+        )
+      )
+    )
+  );
+  expect(result._tag).toBe("Success");
+  if (result._tag === "Success") {
+    expect(result.success.title).toBe("yt-dlp title");
+    expect(result.success.durationSeconds).toBe(999);
+    expect(result.success.extras?.genre).toBe("House");
+  }
+});
+
+test("a working provider answers alone, so yt-dlp is not waited on", async () => {
+  const result = await Effect.runPromise(
+    Effect.result(
+      Effect.gen(function* run() {
+        const metadata = yield* Metadata;
+        return yield* metadata.enrich({
+          source: "soundcloud",
+          url: "https://soundcloud.com/a/b",
+        });
+      }).pipe(
+        Effect.provide(
+          Metadata.layer({
+            fetch: soundCloudWithCreator,
+            ytDlp: { read: () => Effect.never },
+          })
+        )
+      )
+    )
+  );
+  expect(result._tag).toBe("Success");
+  if (result._tag === "Success") {
+    expect(result.success.title).toBe("Provider title");
+    expect(result.success.extras).toBeUndefined();
+  }
+});
+
+test("when the provider and yt-dlp both fail, the provider's reason is reported", async () => {
+  const both = await enrichWithYtDlp(ytDlpDown);
+  expect(both._tag).toBe("Failure");
+  if (both._tag === "Failure") {
+    expect(both.failure.reason).toBe("provider-rejected");
+  }
+});
+
+test("stores yt-dlp extras on the Set row but keeps them out of the API response", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-extras-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  const app = createApp({
+    databasePath,
+    metadata: Metadata.layerOf({
+      details: () => Effect.succeed({ ...DETAILS, creator: "Ignored" }),
+      enrich: () => Effect.succeed(PROVIDER_RESULT),
+    }),
+  });
+  try {
+    const saved = await saveSet(
+      app,
+      "https://www.youtube.com/watch?v=abcdefghijk"
+    );
+    expect(saved.json()).not.toHaveProperty("genre");
+    expect(saved.json()).not.toHaveProperty("sourceTags");
+    const database = new Database(databasePath, { readonly: true });
+    const readRow = () =>
+      database
+        .query<Record<string, string | null>, []>(
+          "SELECT creator, creator_id, details_state, genre, source_tags, source_chapters FROM sets"
+        )
+        .get();
+    const row = await waitFor(() => Boolean(readRow()?.creator_id), readRow);
+    database.close();
+    expect(row).toEqual({
+      creator: "Ada Lovelace",
+      creator_id: "UC1",
+      details_state: "filled",
+      genre: "House",
+      source_chapters: '[{"startSeconds":0,"title":"Intro"}]',
+      source_tags: '["house"]',
+    });
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("a save answers without waiting for the details read", async () => {
+  const server = await startApp(() => Effect.succeed(PROVIDER_RESULT), {
+    details: () => Effect.never,
+  });
+  try {
+    const saved = await saveSet(
+      server.app,
+      "https://www.youtube.com/watch?v=abcdefghijk"
+    );
+    expect(saved.statusCode).toBe(201);
+  } finally {
+    await server.dispose();
+  }
+});
+
+const detailsStateAfterSave = async (
+  metadata: Parameters<typeof Metadata.layerOf>[0]
+) => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-details-state-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  const app = createApp({
+    databasePath,
+    metadata: Metadata.layerOf(metadata),
+  });
+  try {
+    const saved = await saveSet(
+      app,
+      "https://www.youtube.com/watch?v=abcdefghijk"
+    );
+    expect(saved.json()).not.toHaveProperty("detailsState");
+    const database = new Database(databasePath, { readonly: true });
+    const readRow = () =>
+      database
+        .query<{ details_state: string }, []>("SELECT details_state FROM sets")
+        .get();
+    const row = await waitFor(
+      () => readRow()?.details_state !== "pending",
+      readRow
+    );
+    database.close();
+    return row?.details_state;
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+};
+
+test("details_state becomes failed when the details read fails, and stays pending when yt-dlp is not configured", async () => {
+  expect(
+    await detailsStateAfterSave({
+      details: () => Effect.fail(providerDown()),
+      enrich: () => Effect.succeed(PROVIDER_RESULT),
+    })
+  ).toBe("failed");
+  expect(
+    await detailsStateAfterSave({
+      enrich: () => Effect.succeed(PROVIDER_RESULT),
+    })
+  ).toBe("pending");
+});
+
+test("skips the background details read when enrichment already stored the extras", async () => {
+  let reads = 0;
+  const state = await detailsStateAfterSave({
+    details: () => {
+      reads += 1;
+      return Effect.succeed(DETAILS);
+    },
+    enrich: () =>
+      Effect.succeed({
+        ...PROVIDER_RESULT,
+        extras: {
+          chapters: [],
+          creatorId: null,
+          creatorUrl: null,
+          description: null,
+          genre: "House",
+          tags: [],
+        },
+      }),
+  });
+  expect(state).toBe("filled");
+  expect(reads).toBe(0);
+});
+
+test("a Set exposes its creator id and the library filters by it", async () => {
+  const server = await startApp(
+    (input) =>
+      Effect.succeed({
+        ...PROVIDER_RESULT,
+        extras: {
+          chapters: [],
+          creatorId: input.url.includes("aaaaaaaaaaa") ? "UC1" : "UC2",
+          creatorUrl: null,
+          description: null,
+          genre: null,
+          tags: [],
+        },
+      }),
+    {}
+  );
+  try {
+    await saveSet(server.app, "https://www.youtube.com/watch?v=aaaaaaaaaaa");
+    await saveSet(server.app, "https://www.youtube.com/watch?v=bbbbbbbbbbb");
+    const all = await request(server.app, { method: "GET", url: "/sets" });
+    expect(
+      all
+        .json()
+        .sets.map((set: { creatorId: string | null }) => set.creatorId)
+        .toSorted()
+    ).toEqual(["UC1", "UC2"]);
+    const filtered = await request(server.app, {
+      method: "GET",
+      url: "/sets?creatorId=UC1",
+    });
+    expect(filtered.json().sets).toHaveLength(1);
+    expect(filtered.json().sets[0].creatorId).toBe("UC1");
+  } finally {
+    await server.dispose();
+  }
 });

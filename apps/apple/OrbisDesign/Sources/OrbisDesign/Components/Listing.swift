@@ -2,11 +2,7 @@ import SwiftUI
 
 /// The vocabulary of a listing: the Library, the Queue, a Set's rows.
 ///
-/// A listing is dense and flat. Labels are small, uppercase and monospaced; rows are parted by
-/// hairlines; a heavier rule opens the list under its title. Nothing in a listing is raised.
 
-/// A label in a listing: a day, a field name, a count. Uppercase and tracked so it reads as a
-/// label and never as a value.
 public struct ListingLabel: View {
   public let text: String
   public let tint: Color?
@@ -19,8 +15,6 @@ public struct ListingLabel: View {
   public var body: some View {
     Text(text)
       .font(.orbis.label)
-      .textCase(.uppercase)
-      .tracking(1)
       .foregroundStyle(tint.map(AnyShapeStyle.init) ?? AnyShapeStyle(.secondary))
       .accessibilityLabel(text)
   }
@@ -43,21 +37,15 @@ public struct ListingHeader: View {
   }
 }
 
-/// The rule that opens a listing under its title. Heavier than a hairline, in the tint: the
-/// one line of the corona on a page, so the palette shows where a list begins.
 public struct ListingRule: View {
   public init() {}
 
   public var body: some View {
-    Rectangle()
-      .fill(Color.orbis.tint)
-      .frame(height: 2)
+    Divider()
       .accessibilityHidden(true)
   }
 }
 
-/// A Tag as a listing writes it: `#techno`, monospaced, in the Tag's colour. `active` marks
-/// the Tag the listing is filtered by with an underline, which survives any colour setting.
 public struct TagWord: View {
   public let name: String
   public let category: OrbisColor.Category
@@ -70,12 +58,20 @@ public struct TagWord: View {
   }
 
   public var body: some View {
-    Text("#\(name)")
-      .font(.orbis.mono)
-      .fontWeight(active ? .medium : .regular)
-      .underline(active)
-      .foregroundStyle(category.text)
-      .accessibilityLabel(active ? "\(name), active filter" : name)
+    HStack(spacing: 3) {
+      if active {
+        Image(systemName: "checkmark")
+          .imageScale(.small)
+      }
+      Text(name)
+    }
+    .font(.orbis.detail.weight(.semibold))
+    .foregroundStyle(category.text)
+    .padding(.horizontal, 8)
+    .padding(.vertical, 3)
+    .background(category.dot.opacity(active ? 0.34 : 0.18), in: .capsule)
+    .accessibilityElement(children: .ignore)
+    .accessibilityLabel(active ? "\(name), active filter" : name)
   }
 }
 
@@ -87,18 +83,21 @@ public struct ListingRow<Value: View>: View {
   public var value: String?
   public let action: (() -> Void)?
   public let identifier: String?
+  public let divided: Bool
   @ViewBuilder public let content: () -> Value
 
   @Environment(\.dynamicTypeSize) private var typeSize
 
   public init(
     _ label: String, value: String? = nil, action: (() -> Void)? = nil,
-    identifier: String? = nil, @ViewBuilder content: @escaping () -> Value
+    identifier: String? = nil, divided: Bool = true,
+    @ViewBuilder content: @escaping () -> Value
   ) {
     self.label = label
     self.value = value
     self.action = action
     self.identifier = identifier
+    self.divided = divided
     self.content = content
   }
 
@@ -113,7 +112,9 @@ public struct ListingRow<Value: View>: View {
     }
     .orbisRowHeight()
     .padding(.vertical, 12)
-    .overlay(alignment: .bottom) { Divider() }
+    .overlay(alignment: .bottom) {
+      if divided { Divider() }
+    }
     .accessibilityIdentifier(identifier)
   }
 
@@ -121,7 +122,7 @@ public struct ListingRow<Value: View>: View {
     if typeSize.isAccessibilitySize {
       VStack(alignment: .leading, spacing: 6) {
         HStack(spacing: 8) {
-          ListingLabel(label)
+          fieldName
           Spacer()
           disclosure
         }
@@ -130,7 +131,7 @@ public struct ListingRow<Value: View>: View {
       }
     } else {
       HStack(spacing: 8) {
-        ListingLabel(label)
+        fieldName
         Spacer()
         valueText.lineLimit(1)
         content()
@@ -139,10 +140,15 @@ public struct ListingRow<Value: View>: View {
     }
   }
 
+  private var fieldName: some View {
+    Text(label)
+      .font(.orbis.body)
+  }
+
   @ViewBuilder private var valueText: some View {
     if let value {
       Text(value)
-        .font(.orbis.mono)
+        .font(.orbis.body)
         .foregroundStyle(.secondary)
     }
   }
@@ -173,9 +179,11 @@ extension View {
 extension ListingRow where Value == EmptyView {
   public init(
     _ label: String, value: String? = nil, action: (() -> Void)? = nil,
-    identifier: String? = nil
+    identifier: String? = nil, divided: Bool = true
   ) {
-    self.init(label, value: value, action: action, identifier: identifier) { EmptyView() }
+    self.init(label, value: value, action: action, identifier: identifier, divided: divided) {
+      EmptyView()
+    }
   }
 }
 

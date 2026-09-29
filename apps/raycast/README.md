@@ -12,7 +12,7 @@ Both commands validate the link with the same canonical rule the server uses, so
 1. From the repository root, run `bun install`, then `bun run --filter './apps/raycast' dev`. Raycast builds and registers the local extension.
 2. [Enroll a device on your Orbis server](../../deploy/orbis-server/README.md#enrol-a-device). Use a separate token for Raycast and keep it out of the repository.
 3. Run **Save Current Tab** or **Save Clipboard** in Raycast and enter the extension preferences when asked:
-   - **Orbis Service URL**: `https://vanta.tail01d084.ts.net:8444` for the current Vanta deployment. Tailscale must be connected. Include the port and no trailing punctuation.
+   - **Orbis Service URL**: `https://vanta.example.ts.net:8444`. Tailscale must be connected. Include the port and no trailing punctuation.
    - **Device Token**: the token from step 2. The extension only sends it over HTTPS.
 4. Install the [Raycast Browser Extension](https://www.raycast.com/browser-extension) in the browser you want **Save Current Tab** to read. **Save Clipboard** does not need it.
 

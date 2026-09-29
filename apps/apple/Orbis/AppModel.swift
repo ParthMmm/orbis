@@ -55,11 +55,20 @@ final class AppModel {
     didSet { refreshDerivedState() }
   }
 
+  /// The creator the Library is filtered by, set from a Set's page. It matches on the provider's
+  /// creator id when both sides have one, because names change and collide, and on the name
+  /// otherwise, so a Set saved before the service read its details still belongs to its creator.
+  var activeCreator: CreatorFilter? {
+    didSet { refreshDerivedState() }
+  }
+
   /// Every tag in the loaded library, in a stable order, so the filter row does not reshuffle
   /// between loads. Derived from the Sets rather than fetched, because the Library already
   /// holds all of them. Held rather than derived on demand, because every list body reads
   /// it on every render.
   private(set) var availableTags: [String] = []
+
+  private(set) var tagCounts: [String: Int] = [:]
 
   /// The Sets the filter admits. Unfiltered, it is the library itself. Held for the same
   /// reason as the tags: the body of every list reads it on every pass.
@@ -70,15 +79,16 @@ final class AppModel {
   private func refreshDerivedState() {
     guard case .loaded(let sets) = library else {
       availableTags = []
+      tagCounts = [:]
       visibleSets = library
       return
     }
-    availableTags = Set(sets.flatMap(\.tags)).sorted()
-    if let activeTag {
-      visibleSets = .loaded(sets.filter { $0.tags.contains(activeTag) })
-    } else {
-      visibleSets = .loaded(sets)
-    }
+    tagCounts = SetPresentation.tagCounts(sets)
+    availableTags = tagCounts.keys.sorted()
+    visibleSets = .loaded(
+      sets.filter { set in
+        (activeTag.map(set.tags.contains) ?? true) && (activeCreator?.admits(set) ?? true)
+      })
   }
 
   /// True when this device already holds a token, which makes the token field optional: a
@@ -227,6 +237,21 @@ final class AppModel {
     activeTag = tag
   }
 
+  /// Shows the Library filtered to one Set's creator, from wherever that Set's page was opened.
+  func showCreator(of set: SavedSet) {
+    guard let name = set.creator, !name.isEmpty else { return }
+    activeCreator = CreatorFilter(id: set.creatorId, name: name)
+    openedSets = [:]
+    destination = .library
+  }
+
+  var isFilteringLibrary: Bool { activeTag != nil || activeCreator != nil }
+
+  func clearLibraryFilters() {
+    activeTag = nil
+    activeCreator = nil
+  }
+
   /// Tests the connection before storing anything, so a wrong address or token never
   /// replaces a working configuration.
   func connect() async {
@@ -338,7 +363,8 @@ final class AppModel {
     playlistMembers = .idle
     playlistFailure = nil
     activeTag = nil
-    openedSetId = nil
+    activeCreator = nil
+    openedSets = [:]
     reveal = nil
     revealFailure = nil
     isEditingConnection = false
@@ -537,8 +563,10 @@ final class AppModel {
     guard let state = try? await client.audioState(id) else { return }
     audioStates[id] = state
     if state.state == "ready" || state.state == "failed" {
+      // Quietly: a reload through `.loading` emptied the library for a moment, and the open Set
+      // page flashed its "gone" state before the player arrived.
+      await refreshLibraryQuietly()
       audioStates[id] = nil
-      await loadLibrary()
     }
   }
 
@@ -845,9 +873,18 @@ final class AppModel {
 
   // MARK: - One Set's page
 
-  /// The Set whose page is open. Held as an identifier rather than a copy, so an edit shows on
-  /// the page and a removal closes it instead of leaving a stale Set on screen.
-  var openedSetId: String?
+  var openedSets: [Destination: String] = [:]
+
+  /// The mini player stands aside while the page on screen is the Set it would show.
+  var showsMiniPlayer: Bool {
+    guard let current = audioPlayer.currentSetId else { return false }
+    return openedSetId != current
+  }
+
+  var openedSetId: String? {
+    get { openedSets[destination] }
+    set { openedSets[destination] = newValue }
+  }
 
   /// What the last change from the page said. The Set stays where it is and the message stays
   /// in front of the person, who can try the same action again.
@@ -908,6 +945,26 @@ final class AppModel {
     await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
   }
 
+  func setMembership(_ id: String, in playlistId: String, _ included: Bool) async {
+    guard let current = savedSet(id)?.playlistIds else { return }
+    var wanted = current.filter { $0 != playlistId }
+    if included { wanted.append(playlistId) }
+    guard wanted != current else { return }
+    await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
+    guard setFailure == nil else { return }
+    await refreshPlaylistsQuietly()
+  }
+
+  func refreshPlaylistsQuietly() async {
+    guard let client else { return }
+    playlistGeneration += 1
+    let generation = playlistGeneration
+    guard let items = try? await client.playlists(),
+      generation == playlistGeneration, !Task.isCancelled
+    else { return }
+    playlists = .loaded(items)
+  }
+
   func nameAgain(_ id: String) async {
     await change(id) { try await $0.retryMetadata(id) }
   }
@@ -922,8 +979,9 @@ final class AppModel {
       if case .loaded(let sets) = library {
         library = .loaded(sets.filter { $0.id != removed.id })
       }
-      if openedSetId == removed.id {
-        closeSet()
+      if openedSets.values.contains(removed.id) {
+        setFailure = nil
+        openedSets = openedSets.filter { $0.value != removed.id }
       }
       // A removed Set leaves the queue with it, so the queue is read again rather than patched.
       await loadQueue()
@@ -1028,8 +1086,7 @@ final class AppModel {
     }
   }
 
-  /// Creates a Playlist and opens it when the service accepts the name.
-  func createPlaylist(named name: String) async -> Playlist? {
+  func createPlaylist(named name: String, opening: Bool = true) async -> Playlist? {
     let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !trimmed.isEmpty else { return nil }
     guard let client else { return nil }
@@ -1038,6 +1095,10 @@ final class AppModel {
     defer { isWorkingOnPlaylist = false }
     do {
       let created = try await client.createPlaylist(name: trimmed)
+      guard opening else {
+        await refreshPlaylistsQuietly()
+        return created
+      }
       await loadPlaylists()
       openPlaylist(created.id)
       await loadPlaylistMembers(created.id)
@@ -1179,6 +1240,7 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
   case home = "Home"
   case library = "Library"
   case playlists = "Playlists"
+  case people = "People"
   case search = "Search"
 
   /// Identity is the destination itself, so a list binding can select the case directly.
@@ -1194,7 +1256,19 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
     case .home: "house"
     case .library: "music.note.list"
     case .playlists: "rectangle.stack"
+    case .people: "person.2"
     case .search: "magnifyingglass"
     }
+  }
+}
+
+/// One creator, as the Library filters by it.
+struct CreatorFilter: Hashable {
+  let id: String?
+  let name: String
+
+  func admits(_ set: SavedSet) -> Bool {
+    if let id, let setId = set.creatorId { return id == setId }
+    return set.creator == name
   }
 }

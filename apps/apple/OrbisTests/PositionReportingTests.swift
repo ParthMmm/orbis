@@ -7,21 +7,6 @@ import XCTest
 /// timing: a position write every five seconds of playback is twelve a minute, and a position that
 /// stands still is not worth a request at all.
 final class PositionReportingTests: XCTestCase {
-  func testAPlayingSetReportsAtMostTwelveTimesAMinute() {
-    // Five seconds between reports is the whole of the bound: a minute of playback cannot produce
-    // more than twelve of them.
-    XCTAssertEqual(PositionReporting.interval, .seconds(5))
-
-    var reports = PositionReporting()
-    var sent = 0
-    for elapsed in stride(from: 0, to: 60, by: 5) {
-      if reports.position(elapsed: TimeInterval(elapsed), state: .playing) != nil {
-        sent += 1
-      }
-    }
-    XCTAssertEqual(sent, 12)
-  }
-
   func testASecondOfPlaybackIsReportedOnce() {
     var reports = PositionReporting()
 

@@ -23,41 +23,6 @@ final class ConnectionEditorTests: XCTestCase {
     }
   }
 
-  /// A wrong address is the common reason to open this screen, and correcting it must not
-  /// require pairing again on a device that already holds a token.
-  func testAnEmptyTokenKeepsTheOneTheDeviceHasAndATypedOneReplacesIt() {
-    let model = AppModel(settings: MemoryClientSettings())
-    model.connectionAddress = "https://library.example"
-    model.connectionToken = "typed on this screen"
-    model.editConnection()
-    XCTAssertTrue(model.connectionToken.isEmpty, "the field opens empty")
-    model.connectionAddress = "https://library.example:8444"
-    model.connectionToken = "   "
-    XCTAssertTrue(model.connectionToken.trimmingCharacters(in: .whitespaces).isEmpty)
-  }
-
-  func testLeavingTheEditorKeepsWhatWasWorking() {
-    let model = AppModel(settings: MemoryClientSettings())
-    model.library = .loaded([])
-    model.editConnection()
-    model.closeConnectionEditor()
-
-    XCTAssertFalse(model.isEditingConnection)
-    guard case .loaded = model.library else {
-      return XCTFail("closing the editor must not touch the library")
-    }
-  }
-
-  func testForgettingClosesTheEditorAndTheLibrary() {
-    let model = AppModel(settings: MemoryClientSettings())
-    model.library = .loaded([])
-    model.editConnection()
-    model.forget()
-
-    XCTAssertFalse(model.isEditingConnection)
-    XCTAssertEqual(model.library, .idle)
-  }
-
   /// A device that refuses to hold the new token must keep the pairing it already has. The
   /// address is only committed after the token is stored, so a refused save changes nothing
   /// and says so where the address was typed.

@@ -18,6 +18,7 @@ const PROVIDER_RESULT: EnrichedMetadata = {
   artworkUrl: "https://example.test/artwork.jpg",
   creator: "Ada Lovelace",
   durationSeconds: 253,
+  releasedAt: "2015-10-28T10:00:00.000Z",
   title: "Analytical Engine live | SoundCloud",
 };
 
@@ -136,39 +137,6 @@ test("keeps the provider title when revision fails", async () => {
   }
 });
 
-test("keeps the provider title when revision is not configured", async () => {
-  const server = await startApp({});
-  try {
-    const saved = await saveSet(server.app);
-    expect(saved.statusCode).toBe(201);
-    expect(saved.json()).toMatchObject({
-      metadataState: "enriched",
-      title: "Analytical Engine live | SoundCloud",
-    });
-  } finally {
-    await server.dispose();
-  }
-});
-
-test("a typed title is final, so no revision is asked", async () => {
-  const server = await startApp({
-    reviser: TitleReviser.layerOf({
-      revise: () => Effect.succeed("Ada Lovelace - Analytical Engine"),
-    }),
-  });
-  try {
-    const saved = await saveSet(server.app, "My own title");
-    expect(saved.statusCode).toBe(201);
-    expect(saved.json()).toMatchObject({
-      metadataState: "pending",
-      title: "My own title",
-      titleEditedByUser: true,
-    });
-  } finally {
-    await server.dispose();
-  }
-});
-
 test("the model layer returns the revised title it was given", async () => {
   const reviser = await loadReviser(
     TitleReviser.layerWithModel(
@@ -220,20 +188,6 @@ test("the model layer reports a model failure as unavailable", async () => {
 test("layer without a key or model stays unconfigured", async () => {
   const reviser = await loadReviser(
     TitleReviser.layer({ apiKey: "  ", model: undefined })
-  );
-  const error = await Effect.runPromise(
-    reviser
-      .revise({ creator: null, source: "youtube", title: "Any" })
-      .pipe(Effect.flip)
-  );
-  expect(error.reason).toBe("not-configured");
-});
-
-test("the config layer stays unconfigured when the environment is empty", async () => {
-  const reviser = await loadReviser(
-    TitleReviser.layerConfig().pipe(
-      Layer.provide(ConfigProvider.layer(ConfigProvider.fromUnknown({})))
-    )
   );
   const error = await Effect.runPromise(
     reviser

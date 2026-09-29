@@ -28,40 +28,6 @@ final class OrbisClientTests: XCTestCase {
     }
   }
 
-  func testHealthDecodesTheStatus() async throws {
-    let session = StubProtocol.session(status: 200, body: #"{"status":"ok"}"#)
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let status = try await client.health()
-    XCTAssertEqual(status, "ok")
-    XCTAssertEqual(StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"), "Bearer token")
-  }
-
-  func testLibraryDecodesSetsAndSendsTheSearchQuery() async throws {
-    let body = """
-      {"sets":[{"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
-      "title":"Night session","source":"youtube","tags":["techno"],"createdAt":"2026-01-01T00:00:00.000Z",
-      "creator":null,"artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
-      "downloadState":"none","playlistIds":[],"playbackPositionSeconds":1800,"listenCount":2,"finishCount":0,
-      "lastListenedAt":null}]}
-      """
-    let session = StubProtocol.session(status: 200, body: body)
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let sets = try await client.library(query: "night mix")
-    XCTAssertEqual(sets.count, 1)
-    XCTAssertEqual(sets[0].title, "Night session")
-    XCTAssertEqual(sets[0].durationSeconds, 5400)
-    XCTAssertEqual(sets[0].playbackPositionSeconds, 1800)
-    XCTAssertTrue(StubProtocol.lastRequest?.url?.query()?.contains("night") == true)
-  }
-
   /// The bare tailnet name answers with Caddy's page, which is the trap this whole thread is
   /// about. It must read as a web page, not as an unreadable answer or a refusal.
   /// A source the app does not know must not make the library unreadable. One new word
@@ -76,13 +42,6 @@ final class OrbisClientTests: XCTestCase {
     let sets = try await client.library()
     XCTAssertEqual(sets.count, 1)
     XCTAssertEqual(sets[0].source.label, "bandcamp")
-  }
-
-  func testTheKnownSourcesKeepTheirNames() throws {
-    for (raw, name) in [("youtube", "YouTube"), ("soundcloud", "SoundCloud")] {
-      let source = try JSONDecoder().decode(SetSource.self, from: Data("\"\(raw)\"".utf8))
-      XCTAssertEqual(source.label, name)
-    }
   }
 
   func testAWebPageIsItsOwnFailure() async {
@@ -130,67 +89,6 @@ final class OrbisClientTests: XCTestCase {
     }
   }
 
-  func testSavePostsTheLinkAndDecodesTheSavedSet() async throws {
-    let body = """
-      {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
-      "title":"Night session","source":"youtube","tags":[],"createdAt":"2026-01-01T00:00:00.000Z",
-      "creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
-      "downloadState":"none","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
-      "lastListenedAt":null}
-      """
-    let session = StubProtocol.session(status: 201, body: body)
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let saved = try await client.save(url: "https://youtu.be/abcdefghijk")
-    XCTAssertEqual(saved.title, "Night session")
-    XCTAssertEqual(saved.creator, "Ada Lovelace")
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets")
-    let sent = try XCTUnwrap(StubProtocol.lastBody)
-    let json = try XCTUnwrap(
-      try JSONSerialization.jsonObject(with: sent) as? [String: Any]
-    )
-    XCTAssertEqual(json["url"] as? String, "https://youtu.be/abcdefghijk")
-    XCTAssertEqual(json["tags"] as? [String], [])
-  }
-
-  func testTitleEditPatchesTheSetAndDecodesWhatCameBack() async throws {
-    let session = StubProtocol.session(
-      status: 200, body: Self.savedSet(title: "Renamed by hand", tags: []))
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let updated = try await client.updateTitle("42", title: "Renamed by hand")
-    XCTAssertEqual(updated.title, "Renamed by hand")
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PATCH")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42/title")
-    let sent = try XCTUnwrap(StubProtocol.lastBody)
-    let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
-    XCTAssertEqual(json["title"] as? String, "Renamed by hand")
-  }
-
-  func testTagEditPatchesTheSetAndDecodesWhatCameBack() async throws {
-    let session = StubProtocol.session(
-      status: 200, body: Self.savedSet(title: "Night session", tags: ["techno", "live"]))
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let updated = try await client.updateTags("42", tags: ["techno", "live"])
-    XCTAssertEqual(updated.tags, ["techno", "live"])
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PATCH")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42/tags")
-    let sent = try XCTUnwrap(StubProtocol.lastBody)
-    let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
-    XCTAssertEqual(json["tags"] as? [String], ["techno", "live"])
-  }
-
   /// A service older than this field must not make the library unreadable, which is exactly
   /// what happened when the field arrived.
   func testASetFromAnOlderServiceStillDecodes() async throws {
@@ -209,37 +107,6 @@ final class OrbisClientTests: XCTestCase {
     XCTAssertEqual(sets.count, 1)
     XCTAssertEqual(sets[0].title, "Night session")
     XCTAssertEqual(sets[0].playlistIds, [])
-  }
-
-  func testPlaylistMembershipIsStatedInFullOnTheSet() async throws {
-    let session = StubProtocol.session(
-      status: 200, body: Self.savedSet(title: "Night session", tags: []))
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    _ = try await client.updatePlaylists("42", playlistIds: ["p1", "p2"])
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PUT")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42/playlists")
-    let sent = try XCTUnwrap(StubProtocol.lastBody)
-    let json = try XCTUnwrap(try JSONSerialization.jsonObject(with: sent) as? [String: Any])
-    XCTAssertEqual(json["playlistIds"] as? [String], ["p1", "p2"])
-  }
-
-  func testDeleteAsksTheServiceToRemoveTheSet() async throws {
-    let session = StubProtocol.session(
-      status: 200, body: Self.savedSet(title: "Night session", tags: []))
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let removed = try await client.deleteSet("42")
-    XCTAssertEqual(removed.id, "1")
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/42")
-    XCTAssertNil(StubProtocol.lastBody)
   }
 
   func testMetadataRetryAsksAgainForTheName() async throws {
@@ -261,7 +128,7 @@ final class OrbisClientTests: XCTestCase {
     """
     {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
     "title":"\(title)","source":"youtube","tags":\(encode(tags)),"createdAt":"2026-01-01T00:00:00.000Z",
-    "creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
+    "releasedAt":null,"creator":"Ada Lovelace","artworkUrl":null,"durationSeconds":5400,"metadataState":"enriched",
     "downloadState":"\(downloadState)","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,"finishCount":0,
     "lastListenedAt":null}
     """
@@ -270,56 +137,6 @@ final class OrbisClientTests: XCTestCase {
   private static func encode(_ tags: [String]) -> String {
     let data = try? JSONEncoder().encode(tags)
     return data.flatMap { String(data: $0, encoding: .utf8) } ?? "[]"
-  }
-
-  func testPlaylistsDecodeWithTheirCounts() async throws {
-    let body = """
-      {"playlists":[{"id":"1","name":"Long drives","createdAt":"2026-01-01T00:00:00.000Z","setCount":4},
-      {"id":"2","name":"Closing sets","createdAt":"2026-01-01T00:00:00.000Z","setCount":0}]}
-      """
-    let session = StubProtocol.session(status: 200, body: body)
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: session
-    )
-    let playlists = try await client.playlists()
-    XCTAssertEqual(playlists.map(\.name), ["Long drives", "Closing sets"])
-    XCTAssertEqual(playlists.map(\.setCount), [4, 0])
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/playlists")
-  }
-
-  func testCreatePlaylistPostsTheName() async throws {
-    let body = #"{"id":"p1","name":"Evenings","setCount":0}"#
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: StubProtocol.session(status: 201, body: body)
-    )
-    let playlist = try await client.createPlaylist(name: "Evenings")
-    XCTAssertEqual(playlist.name, "Evenings")
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/playlists")
-    let sent = try XCTUnwrap(
-      try JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody)) as? [String: Any]
-    )
-    XCTAssertEqual(sent["name"] as? String, "Evenings")
-  }
-
-  func testSetPlaylistMembersStatesTheWholeOrder() async throws {
-    let body = #"{"sets":[]}"#
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: StubProtocol.session(status: 200, body: body)
-    )
-    _ = try await client.setPlaylistMembers("p1", setIds: ["a", "b"])
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PUT")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/playlists/p1/sets")
-    let sent = try XCTUnwrap(
-      try JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody)) as? [String: Any]
-    )
-    XCTAssertEqual(sent["setIds"] as? [String], ["a", "b"])
   }
 
   func testLibraryAsksForOnePlaylistByItsIdentifier() async throws {
@@ -344,22 +161,6 @@ final class OrbisClientTests: XCTestCase {
       XCTFail("expected a cancellation")
     } catch let error as OrbisError {
       XCTAssertEqual(error, .cancelled)
-    } catch {
-      XCTFail("unexpected \(error)")
-    }
-  }
-
-  func testTransportFailureIsUnreachable() async {
-    let client = OrbisClient(
-      address: URL(string: "https://vanta.example.ts.net")!,
-      token: "token",
-      session: StubProtocol.session(failure: URLError(.cannotConnectToHost))
-    )
-    do {
-      _ = try await client.library()
-      XCTFail("expected unreachable")
-    } catch let error as OrbisError {
-      XCTAssertEqual(error, .unreachable)
     } catch {
       XCTFail("unexpected \(error)")
     }

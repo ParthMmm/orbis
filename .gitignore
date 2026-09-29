@@ -31,3 +31,6 @@ apps/apple/*.xcodeproj/
 
 # Agent tooling state, not part of the project.
 skills-lock.json
+
+# Local implementation plans
+/plans/

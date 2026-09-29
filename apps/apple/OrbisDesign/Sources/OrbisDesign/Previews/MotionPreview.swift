@@ -1,7 +1,6 @@
 import SwiftUI
 
-/// The samples a motion preview shows, shared with the tests so a motion added to the
-/// vocabulary cannot miss its preview.
+/// The samples a motion preview shows, derived from the vocabulary so every motion has a demo.
 ///
 /// The preview walks `samples`, and `samples` walks `OrbisMotion.allCases`, so both forms of
 /// every motion are shown by construction rather than by a list someone has to remember to
@@ -47,6 +46,9 @@ enum MotionPreview {
     case .filingFailed: "exclamationmark.triangle"
     case .tagToggled: "tag"
     case .playlistReordered: "arrow.up.arrow.down"
+    case .pageTinted: "paintpalette"
+    case .downloadProgressed: "arrow.down.circle"
+    case .pressed: "hand.tap"
     }
   }
 
@@ -56,6 +58,9 @@ enum MotionPreview {
     case .filingFailed: "Refuse it"
     case .tagToggled: "Toggle the Tag"
     case .playlistReordered: "Move the Set"
+    case .pageTinted: "Tint the page"
+    case .downloadProgressed: "Move the Download on"
+    case .pressed: "Press"
     }
   }
 }

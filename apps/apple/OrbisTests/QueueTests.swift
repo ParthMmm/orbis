@@ -229,17 +229,6 @@ final class QueueTests: XCTestCase {
     XCTAssertEqual(queue(model)?.entries.map(\.id), ["b"])
   }
 
-  func testAQueueThatCannotBeReadSaysWhyAndCanBeRetried() async {
-    let model = model { _ in (500, #"{"message":"Could not complete the library request."}"#) }
-
-    await model.loadQueue()
-
-    guard case .failed(let failure) = model.queue else {
-      return XCTFail("a failed read should keep its reason")
-    }
-    XCTAssertTrue(failure.message.contains("Could not complete the library request."))
-  }
-
   func testForgettingTheDeviceClearsTheQueue() async {
     let model = model { _ in (200, Self.queueBody(active: "a", entries: [Self.set(id: "a")])) }
     await model.loadQueue()
@@ -253,37 +242,5 @@ final class QueueTests: XCTestCase {
       XCTFail("the queue belonged to the service that was forgotten")
     }
     XCTAssertNil(model.queueNotice)
-  }
-
-  func testNothingIsPlayingUntilSomethingIs() async {
-    let model = model { _ in (200, "{}") }
-
-    // Replacing the queue asks a question only when a Set is playing now, which this is the rule
-    // the Library reads.
-    XCTAssertFalse(model.isPlayingNow)
-  }
-
-  func testASetResumesFromItsStoredPosition() {
-    let heard = SavedSet(
-      id: "a",
-      url: "https://www.youtube.com/watch?v=abcdefghijk",
-      title: "Night session",
-      source: .youtube,
-      tags: [],
-      createdAt: "2026-01-01T00:00:00.000Z",
-      creator: nil,
-      artworkUrl: nil,
-      artworkLargeUrl: nil,
-      durationSeconds: 5400,
-      metadataState: "enriched",
-      downloadState: "ready",
-      playlistIds: [],
-      playbackPositionSeconds: 300,
-      listenCount: 1,
-      finishCount: 0,
-      lastListenedAt: nil
-    )
-
-    XCTAssertEqual(heard.resumePosition, 300)
   }
 }

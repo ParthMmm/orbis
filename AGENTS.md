@@ -10,6 +10,14 @@ Topics: quick-start, project-setup, tsconfig, basics, services-and-layers, data-
 
 Never guess at Effect patterns - check the guide first.
 
+## Testing
+
+- Never write unit tests after you write code.
+- Highly prefer E2E tests as the sole testing mechanism. Use them to verify complex features work. At the end of E2E tests, produce a verifiable and repeatable artifact.
+- If you must test a system in isolation, first write down all the ways it could fail, then write the code.
+
+The E2E suites are the UI journeys in `apps/apple/OrbisUITests` (`node scripts/native-lanes.mjs --journeys`, which exports screenshots) and the server tests that drive `createApp` over HTTP with a real database.
+
 ## Local Effect Source
 
 The Effect source repository is available at `~/.local/share/effect-solutions/effect` for reference. Use it to explore APIs, find usage examples, and understand implementation details when the documentation is not enough.
@@ -37,3 +45,5 @@ Three tools, quietest first:
 - **Codex computer use** acts on the visible screen. Four integrations carry it and only `codex-computer-use` holds the full set, including `set_value` and `scroll`; reach it with `tools.search` from the executor's `execute` tool.
 
 Before driving a real build by hand, read `docs/agents/ui-verification.md`. It records the traps that cost time or produce a wrong conclusion: choosing the platform and session, ref lifetime, and the system alerts that make a screenshot unusable as evidence.
+
+- If using XcodeBuildMCP, use the installed XcodeBuildMCP skill before calling XcodeBuildMCP tools.

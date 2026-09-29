@@ -1,110 +1,78 @@
-# Orbis
+<p align="center">
+  <img src="docs/images/icon.png" alt="The Orbis icon: a dark orb with a blue and coral edge" width="128">
+</p>
 
-A personal library for YouTube and SoundCloud music and DJ sets.
+<h1 align="center">Orbis</h1>
 
-The first slice saves links and titles, supports title and tag editing, deletion, ordered playlists, tag suggestions, and combined text, source, and tag filters. SQLite keeps the library across server restarts. Click a title to open the original source in your browser.
+<p align="center">
+  <a href="https://github.com/ParthMmm/orbis/actions/workflows/quality.yml"><img src="https://github.com/ParthMmm/orbis/actions/workflows/quality.yml/badge.svg" alt="Code quality"></a>
+</p>
 
-## Workspace
+A private library for long music: DJ sets and mixes from YouTube and SoundCloud. Paste a link, file it with a title and tags, download the audio to a server you own, and play it from a native iPhone, iPad, or Mac app.
 
-- `apps/desktop`: Electron Forge + Vite + React desktop app.
-- `apps/server`: Bun + Effect v4 RC HTTP API and Bun SQLite storage.
-- `packages/contracts`: shared TypeScript API types.
-- `apps/apple/OrbisDesign`: SwiftUI design system (tokens, styles, components) shared by the planned macOS and iOS apps. See [ADR 0001](docs/adr/0001-client-platform-strategy.md).
-- `apps/raycast`: Save Current Tab and Save Clipboard commands. See [setup and browser support](apps/raycast/README.md).
-- `apps/apple/Orbis`: one SwiftUI multiplatform app for iOS and macOS, generated with xcodegen. It imports `OrbisDesign`.
+<p align="center">
+  <img src="docs/images/library.png" alt="The Orbis library on iPhone: a paste field above a list of filed sets" width="320">
+</p>
 
-## Development
+Orbis is a personal project. It is built for one listener and one home server, and it makes firm choices to stay that way: no accounts, no public endpoint, no cloud. The source is public to read and to fork. It is not open source; see [License](#license).
 
-Requires Bun 1.4.1 and Node.js 24 (Electron Forge and smoke tooling). TypeScript 7 is pinned and patched with Effect diagnostics by the install preparation script. The server runs on Bun, not Node.js.
+## How it fits together
+
+```text
+ iPhone / iPad / Mac ─┐                        ┌─ SQLite library + audio files
+ Raycast extension ───┼── Tailscale (HTTPS) ──▶ Bun + Effect API ──▶ Cobalt (audio fetch)
+ Electron desktop ────┘   device token          └─ loopback only
+```
+
+- The server binds to loopback. A tailnet-only Tailscale Serve bridge is the only way in, and every request from off the machine needs an enrolled device token. The server stores only a digest of each token. See [ADR 0004](docs/adr/0004-native-service-identity.md).
+- Saving a link creates a library entry. A separate Download step fetches audio and keeps it as Retained Audio beside the database. Native apps stream it with system media frameworks and seek by byte range.
+- One Listening Queue and each Playback Position live on the server, so a second device resumes where the first stopped.
+
+## What is in the repo
+
+| Path | What it is |
+| --- | --- |
+| [`apps/server`](apps/server) | Bun and Effect v4 HTTP API, Bun SQLite storage, download worker, metadata providers |
+| [`apps/apple/Orbis`](apps/apple/Orbis) | One SwiftUI app for iOS and macOS, with Now Playing, CarPlay, and a share extension. The Xcode project is generated with xcodegen |
+| [`apps/apple/OrbisDesign`](apps/apple/OrbisDesign) | Swift package with the design tokens, styles, and components |
+| [`apps/raycast`](apps/raycast) | Raycast commands: Save Current Tab and Save Clipboard |
+| [`apps/desktop`](apps/desktop) | Electron, Vite, and React desktop client. The first client. The native apps are the focus now |
+| [`packages/contracts`](packages/contracts) | Shared TypeScript API types |
+| [`deploy`](deploy) | systemd unit and Tailscale Serve setup for the server, and the Cobalt Compose file |
+
+## Choices worth a look
+
+- **Domain language first.** [`CONTEXT.md`](CONTEXT.md) defines the terms (Set, Retained Audio, Playback Position, Listen) and the words to avoid. The code and the [decision records](docs/adr) use them.
+- **Decision records.** Six [ADRs](docs/adr) cover the client platform, persisted download jobs, the audio fetch path, service identity, metadata providers, and artwork sizes.
+- **One source for design tokens.** [`docs/design/tokens.json`](docs/design/tokens.json) generates the Swift colors and the CSS. CI fails if the output drifts.
+- **Native test lanes.** `bun run native:lanes` starts a temporary server with its own database and trust store, pairs a device, and runs the unit tests and UI journeys against it. Every lane runs a strict swift-format check first.
+- **Swift 6 strict concurrency**, on by default in the app target.
+- **Written for agents too.** [`AGENTS.md`](AGENTS.md) and [`docs/agents`](docs/agents) record how coding agents work in this repo: issue tracker, triage labels, and how to verify UI on a real build.
+
+## Status
+
+Working today: saving and organizing Sets, tags, and Playlists; search and filters; audio Downloads; streaming playback with a shared Listening Queue and resume positions; Raycast capture. Planned work is tracked in [GitHub Issues](https://github.com/ParthMmm/orbis/issues).
+
+Not built: shared libraries, collaborative Playlists, and a bundled server for the desktop app. Signing, notarization, and App Store release are not set up. The app is built and run from Xcode.
+
+## Run it
+
+You need Bun 1.4.1 and Node.js 24. The native app also needs Xcode 26.
 
 ```sh
 bun install
-bun run dev
+bun run dev          # API on 127.0.0.1:4310 plus the desktop client
+bun run check        # lint, format, types, tests, Effect diagnostics
 ```
 
-The desktop connects to `http://127.0.0.1:4310`. Run only the API with `bun run --filter @orbis/server dev`. Run only the desktop with `bun run --filter @orbis/desktop dev`.
+Setup, server logging, the smoke test, and the native lanes are in [`docs/development.md`](docs/development.md). Routes are in [`docs/api.md`](docs/api.md). Deploying the server to a Linux host is in [`deploy/orbis-server`](deploy/orbis-server/README.md).
 
-The server stores `library.sqlite` under `data/` in its working directory (`apps/server/data/` with the workspace scripts). Set `ORBIS_DATA_DIR` to an absolute path for a stable custom location. `ORBIS_PORT` overrides the loopback port; set the same value for both processes. This development setup does not launch a bundled server from the packaged desktop app.
+Downloads need a self-hosted [Cobalt](https://github.com/imputnet/cobalt) instance. See [`deploy/cobalt`](deploy/cobalt) and [`docs/research/cobalt-self-hosting.md`](docs/research/cobalt-self-hosting.md). Use it only for content you have the right to save.
 
-### Server logs
+## Contributing
 
-The server writes one structured event per request when the request settles: request id, method, path with the query string removed, status, outcome, and elapsed time. An `Effect.log*` call made while handling a request is folded into that event instead of a second line.
+I do not take pull requests or feature requests. Issues here are my own planning notes. Forks are welcome.
 
-Authorization headers, cookies, request bodies, source links, and raw error stacks are never recorded, and credential-shaped values are redacted before output. Redaction follows key names, so a credential written as free text can still reach a line: treat logged free text as public.
+## License
 
-`NODE_ENV` sets the event `environment`, which defaults to `development`. In production each event is one JSON line, where `info` goes to standard output and `warn` and `error` go to standard error; development prints readable lines. The wiring lives in `apps/server/src/logging.ts`. `createApp({ logging })` overrides the environment, quiets output (`silent`), or receives every event (`onEvent`), which the tests use.
-
-## Checks
-
-Run `bun run check` locally or in CI for cached lint, formatting, TypeScript, tests, and Effect diagnostics. Turbo runs independent tasks in parallel, bounded by the available CPU count, and builds shared contracts before consumers. `bun run check:force` bypasses task-cache reads. `bun run fix` applies Ultracite fixes; it is never cached.
-
-GitHub Actions cancels superseded runs and runs React Doctor alongside the quality job. Bun downloads and Turbo results use separate caches; each workflow run saves a new Turbo snapshot. Cache restores stay within the same OS and CPU architecture. No remote-cache account is required. Typechecks use separate incremental files so they do not race with builds.
-
-The quality workflow also runs the Swift style check and `swift test` for `OrbisDesign` on a macOS runner, so the Swift package is verified even when no Mac is present.
-
-Individual checks and packaging remain available:
-
-```sh
-bun run typecheck
-bun run test
-bun run build
-bun run smoke:desktop
-bun run format:check
-```
-
-Run the build before the smoke check. The smoke check launches Electron and a separate Bun server on an ephemeral port, uses a temporary database, and cleans up both processes and data. It leaves a screenshot in the system temporary directory. It needs a desktop session, not a headless shell. Desktop renderer changes that affect saving, filtering, empty states, title editing, or deletion are not complete until `bun run smoke:desktop` has passed locally; that gate is documented rather than a macOS CI job because the check requires a real desktop session.
-
-Desktop builds package the current host platform into `apps/desktop/out/`. Signing, installers, and cross-platform release automation are not configured. Server builds need Bun and installed workspace dependencies.
-
-## API
-
-| Method | Route | Purpose |
-| --- | --- | --- |
-| GET | `/health` | Health status |
-| POST | `/sets` | Save `{ url }`. `title` and `tags` are optional. A missing `tags` is an empty list. |
-| GET | `/sets` | List newest first; optional `q`, `source`, `playlistId`, repeated `tag` parameters |
-| PATCH | `/sets/:id/title` | Replace title with `{ title }` |
-| PATCH | `/sets/:id/tags` | Replace tags with `{ tags }` |
-| DELETE | `/sets/:id` | Delete a Set and related membership |
-| GET | `/tags` | Existing tags for suggestions |
-| GET / POST | `/playlists` | List playlists or create one with `{ name }` |
-| PUT | `/playlists/:id/sets` | Replace ordered membership with `{ setIds }` |
-| GET | `/queue` | The one Listening Queue in play order, with its active Set |
-| PUT | `/queue/active` | Make `{ setId }` the active Set |
-| POST | `/queue/entries` | Queue `{ setId, placement }`, where placement is `next` or `end` |
-| PUT | `/queue/playlist` | Replace the queue with a Playlist's playable members, in Playlist order |
-| POST | `/queue/completion` | Finish `{ setId }`: remove it, reset its position, start what followed |
-| PUT | `/sets/:id/position` | Report `{ seconds }` of Playback Position |
-
-Tags are trimmed, lowercased, and deduplicated; each set accepts up to 20 tags of 40 characters. Tag filters use AND semantics. Text search checks titles and URLs. Duplicate normalized links return 409; invalid input returns 400. Metadata is entered manually; short SoundCloud share links and private track links are not supported yet.
-
-Playlists contain whole sets, not individual tracks. A set can belong to multiple playlists; removing membership keeps the library entry. Each playlist supports up to 500 unique sets. Library views sort newest first; playlist views keep playlist order. Folders are deferred.
-
-The Listening Queue is one ordered list with at most one active Set, and the active Set is the one whose Listen is open. Tapping a playable Set makes it active and keeps the rest of the queue; `next` inserts after the active Set and `end` appends; playing a Playlist replaces the queue with its playable members in Playlist order. Only Sets with Retained Audio can be queued. When the active Set finishes, it leaves the queue, its Playback Position returns to zero, and the Set that followed it becomes active; an empty queue stops. A Listen is counted when a Set becomes active and at most one Finish per Listen, so a signal repeated by another device counts nothing. A Playback Position is stored as whole seconds, never below zero and never past the Set's own length.
-
-The desktop uses shadcn preset `b1VlIttI`, Tailwind v4, and the Inter variable font. Layout styles are separate from the generated theme tokens.
-
-Design tokens live in `docs/design/tokens.json`. `node scripts/design-tokens.mjs` regenerates the Swift colors in `OrbisDesign` and `docs/design/tokens.css`.
-
-## Native clients
-
-`apps/apple/Orbis` builds one SwiftUI app for iOS and macOS from an xcodegen specification. The generated project and derived data are not tracked.
-
-```sh
-bun run native:lanes          # unit tests and native journeys against a temporary service
-bun run native:lanes --unit   # unit tests only
-```
-
-A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Copy the xcodegen output path from `apps/apple/DerivedData` when opening the project in Xcode.
-
-Every lane runs `bun run native:format` first, which checks every tracked Swift file with the Xcode toolchain's swift-format against `apps/apple/.swift-format`. swift-format ships with Xcode, so the native style gate needs no install. The check writes nothing; to fix drift, run `xcrun swift-format format --in-place` on the changed files.
-
-## Security and next steps
-
-**Local-only by default.** The server binds to loopback. A request carrying a browser `Origin` header is refused, a request from a non-loopback host is refused unless it carries a valid device token, and loopback requests need no credential, which is what the desktop client relies on. Device tokens are enrolled with `bun run --filter @orbis/server trust add --label "<name>"` and the host stores only their digest, so a copy of the trust store cannot authenticate. See `docs/adr/0004-native-service-identity.md`.
-
-Vanta runs the API as a systemd user service behind a tailnet-only Tailscale Serve bridge, so nothing is published publicly. Setup and rollback are in `deploy/orbis-server/README.md`.
-
-The renderer is sandboxed and uses a narrow preload API. Only the main process performs local HTTP requests and opens allowlisted source URLs.
-
-Downloads, playback, retention, shared groups, Tailscale device sharing, iOS, Versos, and MCP remain planned. Raycast capture is implemented; full live and performance verification remains tracked in [Save Sets through Raycast](https://github.com/ParthMmm/orbis/issues/9). See [the first-slice scope](docs/specs/first-library-slice.md). Specs and tickets belong in [GitHub Issues](https://github.com/ParthMmm/orbis/issues).
+Copyright (c) 2026 Parth Mangrola. All rights reserved. You can read the code and fork it on GitHub. You need written permission to reuse it. See [`LICENSE`](LICENSE).

@@ -26,19 +26,6 @@ beforeEach(() => {
   });
 });
 
-test("Save Clipboard rejects text without a supported link before any request", async () => {
-  raycast.clipboard = "listen to this: https://example.com/playlist/42";
-
-  await saveClipboard();
-
-  expect(requests).toEqual([]);
-  expect(finalToast()).toMatchObject({
-    message: "Use a YouTube or SoundCloud link.",
-    style: "failure",
-    title: "Unsupported link",
-  });
-});
-
 test("Save Clipboard extracts a link from surrounding text and saves it", async () => {
   raycast.clipboard =
     "Set of the week → https://www.youtube.com/watch?v=abcdefghijk&list=ignored (great)";

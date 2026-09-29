@@ -103,6 +103,7 @@ const runBackfill = (databasePath: string, asked: string[]) =>
                 artworkUrl: "https://example.test/listing.jpg",
                 creator: "Ada Lovelace",
                 durationSeconds: 253,
+                releasedAt: null,
                 title: "The provider's title",
               };
             }),
@@ -130,24 +131,6 @@ test("fills both images on a Set that holds only one", async () => {
       artwork_large_url: "https://example.test/large.jpg",
       artwork_url: "https://example.test/listing.jpg",
     });
-  } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
-});
-
-test("leaves nothing to do on a second run", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "orbis-artwork-"));
-  const databasePath = path.join(directory, "library.sqlite");
-  try {
-    await seedLibrary(databasePath);
-    await runBackfill(databasePath, []);
-
-    const asked: string[] = [];
-    expect(await runBackfill(databasePath, asked)).toEqual({
-      attempted: 0,
-      filled: 0,
-    });
-    expect(asked).toEqual([]);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }

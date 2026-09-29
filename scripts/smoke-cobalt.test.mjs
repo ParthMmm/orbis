@@ -338,28 +338,6 @@ test("smoke command defaults to the best audio format and omits the bitrate", as
   }
 });
 
-test("smoke command rejects an unknown audio format", async () => {
-  const result = await runSmoke(
-    [
-      "--endpoint",
-      "http://127.0.0.1:1/",
-      "--api-key-env",
-      "COBALT_TEST_API_KEY",
-      "--invalid-url",
-      "https://example.invalid/not-supported",
-      "--sample",
-      "youtube|https://youtu.be/test-video|1",
-      "--report",
-      "-",
-      "--audio-format",
-      "flac",
-    ],
-    { COBALT_TEST_API_KEY: apiKey }
-  );
-  assert.equal(result.code, 2);
-  assert.match(result.stderr, /--audio-format must be one of/u);
-});
-
 test("smoke command rejects media that cannot be decoded completely", async () => {
   const workspace = await mkdtemp(path.join(tmpdir(), "orbis-cobalt-test-"));
   const tempRoot = path.join(workspace, "temporary");

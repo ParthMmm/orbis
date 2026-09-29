@@ -24,6 +24,7 @@ struct SetList: View {
   /// A screen that files Sets puts its paste field here, so it scrolls with the rows and is
   /// absent on a screen that only reads, such as Search.
   let hero: AnyView?
+  var aboveRows: AnyView?
   /// A screen with a collection can put its horizontal rails — the recently filed, the
   /// playlists — between the hero and the list header, the way a music app's home carries its
   /// sections. Absent on a screen that only reads.
@@ -58,7 +59,7 @@ struct SetList: View {
         }
         .accessibilityIdentifier("library-error")
       case .loaded(let sets):
-        if sets.isEmpty {
+        if sets.isEmpty, aboveRows == nil {
           emptyPresentation
         } else {
           rows(sets)
@@ -123,6 +124,9 @@ struct SetList: View {
   private func rows(_ sets: [SavedSet]) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
+        if let aboveRows {
+          aboveRows.padding(.bottom, 20)
+        }
         if let hero {
           hero.padding(.bottom, 16)
         }
@@ -148,6 +152,7 @@ struct SetList: View {
       .padding()
     }
     .scrollEdgeEffectStyle(.soft, for: .top)
+    .scrollEdgeEffectStyle(.soft, for: .bottom)
     .accessibilityIdentifier(listIdentifier)
   }
 
@@ -163,6 +168,7 @@ struct SetList: View {
       artwork: model.artwork,
       creator: model.creator,
       length: model.length,
+      dates: SetPresentation.datesLine(set),
       tags: model.tags,
       activeTag: activeTag,
       state: model.state,

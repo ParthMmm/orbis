@@ -220,7 +220,7 @@ public struct LoadingState: View {
         "Check that Tailscale is connected and the Orbis service is running on the host.",
       symbol: "wifi.exclamationmark",
       isRetryable: true,
-      address: "https://vanta.tail01d084.ts.net:8444"
+      address: "https://vanta.example.ts.net:8444"
     ),
     context: "loading the library",
     retry: {}

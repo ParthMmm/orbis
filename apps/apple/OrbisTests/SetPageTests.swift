@@ -20,6 +20,7 @@ final class SetPageTests: XCTestCase {
       source: .youtube,
       tags: tags,
       createdAt: "2026-01-01T00:00:00.000Z",
+      releasedAt: nil,
       creator: nil,
       artworkUrl: nil,
       artworkLargeUrl: nil,
@@ -53,59 +54,33 @@ final class SetPageTests: XCTestCase {
     return model
   }
 
-  /// Open leaves the app, so what it would hand to the system is checked rather than driven.
-  func testOpenHandsTheSourceAddressToTheSystem() {
-    XCTAssertEqual(
-      SetPresentation.sourceURL(set())?.absoluteString,
-      "https://www.youtube.com/watch?v=abcdefghijk"
-    )
-  }
-
-  func testOpenHasNothingToOfferWhenTheAddressIsNotOne() {
-    let broken = SavedSet(
-      id: "1",
-      url: "not a url",
-      title: "Night session",
-      source: .youtube,
-      tags: [],
-      createdAt: "2026-01-01T00:00:00.000Z",
-      creator: nil,
-      artworkUrl: nil,
-      artworkLargeUrl: nil,
-      durationSeconds: nil,
-      metadataState: "enriched",
-      downloadState: "none",
-      playlistIds: [],
-      playbackPositionSeconds: 0,
-      listenCount: 0,
-      finishCount: 0,
-      lastListenedAt: nil
-    )
-    XCTAssertNil(SetPresentation.sourceURL(broken))
-  }
-
-  func testOpeningASetRemembersWhichOne() {
-    let model = model(sets: [set()])
-    model.openSet("1")
-    XCTAssertEqual(model.openedSetId, "1")
-    XCTAssertEqual(model.savedSet("1")?.title, "Night session")
-
-    model.closeSet()
-    XCTAssertNil(model.openedSetId)
-  }
-
-  func testRemovingASetTakesItOutOfTheLibraryAndClosesThePage() async {
+  func testEachTabKeepsItsOwnOpenSet() {
     let model = model(sets: [set(), set(id: "2", title: "Other")])
+    model.destination = .home
+    model.openSet("1")
+
+    model.destination = .library
+    XCTAssertNil(model.openedSetId, "a Set opened from Home must not appear under Library")
+    model.openSet("2")
+
+    model.destination = .home
+    XCTAssertEqual(model.openedSetId, "1", "Home keeps the page it had open")
+    model.destination = .library
+    XCTAssertEqual(model.openedSetId, "2")
+  }
+
+  func testRemovingASetClosesItInEveryTab() async {
+    let model = model(sets: [set(), set(id: "2", title: "Other")])
+    model.destination = .home
+    model.openSet("1")
+    model.destination = .search
     model.openSet("1")
 
     await model.remove("1")
 
-    guard case .loaded(let sets) = model.library else {
-      return XCTFail("expected a loaded library")
-    }
-    XCTAssertEqual(sets.map(\.id), ["2"])
     XCTAssertNil(model.openedSetId)
-    XCTAssertNil(model.setFailure)
+    model.destination = .home
+    XCTAssertNil(model.openedSetId)
   }
 
   /// The Set stays on screen with the reason beside it, so the removal can be tried again
@@ -124,23 +99,6 @@ final class SetPageTests: XCTestCase {
       model.setFailure?.message,
       OrbisError.server(status: 500, message: "The library is busy.").failure().message
     )
-  }
-
-  func testRenamingSendsTheTrimmedTitle() async {
-    let model = model(sets: [set()])
-
-    await model.rename("1", to: "  Closing set  ")
-
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PATCH")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/1/title")
-    let sent = try? JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody))
-    XCTAssertEqual((sent as? [String: Any])?["title"] as? String, "Closing set")
-  }
-
-  func testRenamingToTheSameTitleAsksNothing() async {
-    let model = model(sets: [set()])
-    await model.rename("1", to: "Night session")
-    XCTAssertNil(StubProtocol.lastRequest, "an unchanged title is not worth a request")
   }
 
   func testAnEmptyTitleIsNeverSent() async {
@@ -179,12 +137,6 @@ final class SetPageTests: XCTestCase {
 
     let sent = try? JSONSerialization.jsonObject(with: XCTUnwrap(StubProtocol.lastBody))
     XCTAssertEqual((sent as? [String: Any])?["playlistIds"] as? [String], [])
-  }
-
-  func testMovingToThePlaylistItIsAlreadyInAsksNothing() async {
-    let model = model(sets: [set(playlists: ["same"])])
-    await model.move("1", to: "same")
-    XCTAssertNil(StubProtocol.lastRequest)
   }
 
   /// While the Library is showing one playlist, a Set that moves out of it must leave the

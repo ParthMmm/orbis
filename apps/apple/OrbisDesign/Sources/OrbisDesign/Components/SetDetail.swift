@@ -1,29 +1,34 @@
 import SwiftUI
 
 /// One Set, open for reading and for changing.
-///
-/// The composition is fixed even when the Set is not: the artwork leads, the title is said once,
-/// the transport sits under it, and the management rows follow. The rows are `SetManagement`,
-/// which the Now Playing screen carries too, so a Set is managed the same way wherever it is
-/// met.
 public struct SetDetail: View {
   public let title: String
   /// The Source Link's name, as the header reads it out.
   public let source: String
-  /// Who made it, how long it runs, when it arrived. Composed by the caller, which knows which
-  /// of the three the service filled in.
-  public let subtitle: String?
+  public let creator: String?
+  /// Makes the creator a control. Nil leaves it as plain text.
+  public let showCreator: (() -> Void)?
+  public let length: String?
   public let artwork: URL?
-  /// Where playback left off, when it has started.
-  public let position: String?
-  /// How far listening got, from 0 to 1, for the bar along the artwork.
-  public let progress: Double?
   /// The service could not name this Set, so the name is the caller's to supply or the
   /// service's to try again.
   public let failedToName: Bool
+  public let dates: Dates?
   /// How often this Set was started and finished, and when it was last heard. Nil keeps the two
   /// rows off the page entirely, which is what a Set that has never been played shows.
   public let statistics: Statistics?
+
+  /// When the Set was saved and, when the provider named it, when the source released it. The
+  /// values are plain and already formatted, because the design system holds no dates of its own.
+  public struct Dates: Equatable, Sendable {
+    public let imported: String
+    public let released: String?
+
+    public init(imported: String, released: String? = nil) {
+      self.imported = imported
+      self.released = released
+    }
+  }
 
   /// How often a Set was listened to and finished, and when it was last heard.
   ///
@@ -58,28 +63,28 @@ public struct SetDetail: View {
   }
 
   public let retryName: () -> Void
-  /// Download and playback for this Set, which the app owns. It sits under the position, in the
-  /// page, so no bar can cover it. Erased, so the static text helpers stay reachable without a
-  /// type parameter.
   private let transport: AnyView
   /// The rows a person changes the Set with, usually a `SetManagement`. Erased for the same
   /// reason.
   private let management: AnyView
 
   public init(
-    title: String, source: String, subtitle: String? = nil, artwork: URL? = nil,
-    position: String? = nil, progress: Double? = nil, failedToName: Bool = false,
-    statistics: Statistics? = nil, retryName: @escaping () -> Void = {},
+    title: String, source: String, creator: String? = nil, showCreator: (() -> Void)? = nil,
+    length: String? = nil,
+    artwork: URL? = nil,
+    failedToName: Bool = false,
+    dates: Dates? = nil, statistics: Statistics? = nil, retryName: @escaping () -> Void = {},
     @ViewBuilder transport: () -> some View = { EmptyView() },
     @ViewBuilder management: () -> some View
   ) {
     self.title = title
     self.source = source
-    self.subtitle = subtitle
+    self.creator = creator
+    self.showCreator = showCreator
+    self.length = length
     self.artwork = artwork
-    self.position = position
-    self.progress = progress
     self.failedToName = failedToName
+    self.dates = dates
     self.statistics = statistics
     self.retryName = retryName
     self.transport = AnyView(transport())
@@ -92,6 +97,30 @@ public struct SetDetail: View {
     "\(title), \(source)"
   }
 
+  public static func factsLine(dates: Dates?, statistics: Statistics?) -> String? {
+    var parts: [String] = []
+    if let released = dates?.released { parts.append("Released \(released)") }
+    if let imported = dates?.imported { parts.append("Added \(imported)") }
+    if let statistics, !statistics.isEmpty {
+      let count = statistics.listenCount
+      parts.append(count == 1 ? "1 listen" : "\(count) listens")
+      switch statistics.finishCount {
+      case 0: break
+      case 1: parts.append("finished once")
+      case let n: parts.append("finished \(n) times")
+      }
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+  }
+
+  public static func metaLine(
+    source: String, length: String?, dates: Dates?, statistics: Statistics?
+  ) -> String {
+    ([source, length] + [factsLine(dates: dates, statistics: statistics)])
+      .compactMap { $0 }
+      .joined(separator: " · ")
+  }
+
   /// The line under the artwork: the source, then whatever the caller composed.
   public static func stampLine(source: String, subtitle: String?) -> String {
     [source, subtitle].compactMap { $0 }.joined(separator: " · ")
@@ -99,95 +128,83 @@ public struct SetDetail: View {
 
   public var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 0) {
-        Artwork(url: artwork, seed: title, size: .header, progress: progress)
-        VStack(alignment: .leading, spacing: 16) {
+      VStack(spacing: 0) {
+        Artwork(url: artwork, seed: title, size: .header)
+          .clipShape(.rect(cornerRadius: Radius.row))
+          .shadow(color: .black.opacity(0.3), radius: 18, y: 10)
+          .padding([.horizontal, .top])
+        VStack(spacing: 24) {
           header
-          if failedToName {
-            HStack(spacing: 6) {
-              Text("Orbis could not name this set.")
-                .font(.orbis.mono)
-                .foregroundStyle(.secondary)
-              Button("Try again", action: retryName)
-                .buttonStyle(.plain)
-                .foregroundStyle(Color.orbis.tint)
-            }
-          }
-          if let position {
-            Text(position)
-              .font(.orbis.timecode)
-              .monospacedDigit()
-              .accessibilityLabel("Resumes at \(position)")
-          }
           transport
-          if let statistics, !statistics.isEmpty {
-            VStack(spacing: 0) {
-              ListingRule()
-              ListingRow(
-                "Listens", value: statistics.listens, identifier: "detail-listens")
-              ListingRow(
-                "Finishes", value: statistics.finishes, identifier: "detail-finishes")
-            }
-          }
           management
         }
-        .padding()
+        .padding(.horizontal)
+        .padding(.top, 20)
+        .padding(.bottom)
       }
     }
-    .background(Color.orbis.paper)
+    .background { ArtworkBackdrop(url: artwork) }
   }
 
   private var header: some View {
-    VStack(alignment: .leading, spacing: 6) {
-      ListingLabel(Self.stampLine(source: source, subtitle: subtitle))
+    VStack(spacing: 6) {
       Text(title)
         .font(.orbis.title)
+        .multilineTextAlignment(.center)
+        .accessibilityLabel(Self.headerLabel(title: title, source: source))
+        .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("detail-title")
+      if let creator, !creator.isEmpty {
+        let name = Text(creator)
+          .font(.title3.weight(.semibold))
+          .foregroundStyle(Color.orbis.tint)
+          .multilineTextAlignment(.center)
+        if let showCreator {
+          Button(action: showCreator) { name }
+            .buttonStyle(.plain)
+            .accessibilityHint("Shows this creator's sets in the Library")
+            .accessibilityIdentifier("detail-creator")
+        } else {
+          name
+        }
+      }
+      Text(Self.metaLine(source: source, length: length, dates: dates, statistics: statistics))
+        .font(.orbis.detail)
+        .foregroundStyle(.secondary)
+        .multilineTextAlignment(.center)
+        .padding(.top, 2)
+        .accessibilityIdentifier("detail-facts")
+      if failedToName {
+        HStack(spacing: 6) {
+          Text("Orbis could not name this set.")
+            .font(.orbis.detail)
+            .foregroundStyle(.secondary)
+          Button("Try again", action: retryName)
+            .buttonStyle(.plain)
+            .font(.orbis.detail.weight(.semibold))
+            .foregroundStyle(Color.orbis.tint)
+        }
+        .padding(.top, 4)
+      }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .accessibilityElement(children: .combine)
-    .accessibilityLabel(Self.headerLabel(title: title, source: source))
+    .frame(maxWidth: .infinity)
   }
+
 }
 
-/// The rows a Set is changed with: its Tags, its Playlist, its Source Link, its title, and
-/// last, in red, its removal, with the consequences stated before it happens rather than after.
-/// Open is the only tinted control, and the one thing a person came to do.
 public struct SetManagement: View {
-  public let title: String
-  /// The Source Link's name, as the row reads it.
-  public let source: String
   public let tags: [String]
-  /// Audio is kept for this Set, which makes removal mean more than a row.
-  public let retainedAudio: Bool
-
-  @Binding public var playlistId: String?
-  public let playlists: [PlaylistPicker.Choice]
   public let category: @MainActor (String) -> OrbisColor.Category
-
-  public let open: () -> Void
-  public let rename: () -> Void
   public let editTags: () -> Void
-  public let remove: () -> Void
 
   public init(
-    title: String, source: String, tags: [String] = [], retainedAudio: Bool = false,
-    playlistId: Binding<String?>, playlists: [PlaylistPicker.Choice] = [],
+    tags: [String] = [],
     category: @escaping @MainActor (String) -> OrbisColor.Category = OrbisColor.Category.forTag,
-    open: @escaping () -> Void, rename: @escaping () -> Void,
-    editTags: @escaping () -> Void, remove: @escaping () -> Void
+    editTags: @escaping () -> Void
   ) {
-    self.title = title
-    self.source = source
     self.tags = tags
-    self.retainedAudio = retainedAudio
-    _playlistId = playlistId
-    self.playlists = playlists
     self.category = category
-    self.open = open
-    self.rename = rename
     self.editTags = editTags
-    self.remove = remove
   }
 
   /// What removal costs, said before it happens. The first line always holds; the second only
@@ -205,87 +222,38 @@ public struct SetManagement: View {
   }
 
   public var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      VStack(spacing: 0) {
-        ListingRule()
-        ListingRow("Tags", action: editTags, identifier: "detail-tags-row") {
-          if tags.isEmpty {
-            Text("None")
-              .font(.orbis.mono)
-              .foregroundStyle(.secondary)
-          } else {
-            ChipFlow {
-              ForEach(tags, id: \.self) { tag in
-                TagWord(tag, category: category(tag))
-              }
-            }
-          }
+    ChipFlow(spacing: 8, alignment: .center) {
+      ForEach(tags, id: \.self) { tag in
+        Button(action: editTags) {
+          TagWord(tag, category: category(tag))
         }
-        ListingRow("Playlist") {
-          PlaylistPicker(selection: $playlistId, choices: playlists, category: category)
-        }
-        ListingRow("Source", value: source) {
-          // The one tinted control on the page: the thing a person came here to do.
-          Button("Open", action: open)
-            .buttonStyle(.plain)
-            .fontWeight(.semibold)
-            .foregroundStyle(Color.orbis.tint)
-            .accessibilityIdentifier("detail-open")
-        }
-        ListingRow("Title", value: title, action: rename, identifier: "detail-title-row")
-      }
-      removal
-    }
-  }
-
-  private var removal: some View {
-    let notice = Self.removalNotice(retainedAudio: retainedAudio)
-    return VStack(alignment: .leading, spacing: 6) {
-      Button("Remove from library", action: remove)
         .buttonStyle(.plain)
-        .font(.orbis.mono)
-        .foregroundStyle(Color.orbis.destructive)
-        .orbisRowHeight()
-        .accessibilityIdentifier("detail-remove")
-      Text(notice.scope)
-        .font(.orbis.mono)
-        .foregroundStyle(.secondary)
-      if let retained = notice.retained {
-        Text(retained)
-          .font(.orbis.mono)
-          .foregroundStyle(.secondary)
+        .accessibilityHint("Edits Tags")
       }
+      Button(tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag", action: editTags)
+        .buttonStyle(.bordered)
+        .buttonBorderShape(.capsule)
+        .controlSize(.small)
+        .tint(.secondary)
+        .accessibilityIdentifier("detail-tags-row")
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .padding(.top, 8)
+    .frame(maxWidth: .infinity)
   }
 }
 
 private struct SetDetailSample: View {
-  @State private var playlist: String? = "1"
-  @State private var none: String?
-
   var body: some View {
     SetDetail(
       title: "CHRIS STASSY @ N:A:M:E: Birmingham 22.08.2026",
       source: "YouTube",
-      subtitle: "CHRIS STASSY · 2h 33m · Sep 11",
-      position: "42:00",
-      progress: 0.27,
-      statistics: .init(listenCount: 3, finishCount: 1, lastHeard: "Thu 11 Sep")
-    ) {
-      SetManagement(
-        title: "CHRIS STASSY @ N:A:M:E: Birmingham 22.08.2026",
-        source: "YouTube",
-        tags: ["techno", "festival", "hardgroove"],
-        playlistId: $playlist,
-        playlists: [
-          .init(id: "1", name: "Long drives", category: .cyan),
-          .init(id: "2", name: "Closing sets", category: .purple),
-        ],
-        open: {}, rename: {}, editTags: {}, remove: {}
-      )
-    }
+      creator: "CHRIS STASSY",
+      length: "2h 33m",
+      dates: .init(imported: "11 Sep 2026", released: "22 Aug 2026"),
+      statistics: .init(listenCount: 3, finishCount: 1, lastHeard: "Thu 11 Sep"),
+      management: {
+        SetManagement(tags: ["techno", "festival", "hardgroove"], editTags: {})
+      }
+    )
   }
 }
 
@@ -300,18 +268,12 @@ private struct SetDetailSample: View {
 }
 
 #Preview("Set detail, nothing named yet") {
-  @Previewable @State var playlist: String?
-  return SetDetail(
+  SetDetail(
     title: "YouTube video",
     source: "YouTube",
     failedToName: true,
     retryName: {},
-    management: {
-      SetManagement(
-        title: "YouTube video", source: "YouTube", retainedAudio: true,
-        playlistId: $playlist, open: {}, rename: {}, editTags: {}, remove: {}
-      )
-    }
+    management: { SetManagement(editTags: {}) }
   )
 }
 

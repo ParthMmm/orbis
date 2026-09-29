@@ -6,24 +6,29 @@ import XCTest
 @MainActor
 final class SetPresentationTests: XCTestCase {
   private func makeSet(
+    id: String = "one",
     url: String = "https://www.youtube.com/watch?v=abcdefghijk",
     title: String = "Night session",
     tags: String = #"["techno","breaks"]"#,
     createdAt: String = "2026-09-11T02:33:14.729Z",
     playbackPositionSeconds: Int = 0,
     durationSeconds: Int? = nil,
+    creator: String? = nil,
+    releasedAt: String? = nil,
     artworkUrl: String? = nil,
     artworkLargeUrl: String? = nil,
-    downloadState: String = "none"
+    downloadState: String = "none",
+    lastListenedAt: String? = nil
   ) throws -> SavedSet {
     let json = """
-      {"id":"one","url":"\(url)","title":"\(title)","source":"youtube","tags":\(tags),
-      "createdAt":"\(createdAt)","creator":null,"artworkUrl":\(quoted(artworkUrl)),
+      {"id":"\(id)","url":"\(url)","title":"\(title)","source":"youtube","tags":\(tags),
+      "createdAt":"\(createdAt)","releasedAt":\(quoted(releasedAt)),"creator":\(quoted(creator)),
+      "artworkUrl":\(quoted(artworkUrl)),
       "artworkLargeUrl":\(quoted(artworkLargeUrl)),"durationSeconds":\(durationSeconds.map(String.init) ?? "null"),
       "metadataState":"pending","titleEditedByUser":false,"downloadState":"\(downloadState)",
       "playlistIds":[],"retainedAudioBytes":null,"retainedAudioFormat":null,
       "playbackPositionSeconds":\(playbackPositionSeconds),"listenCount":0,"finishCount":0,
-      "lastListenedAt":null}
+      "lastListenedAt":\(quoted(lastListenedAt))}
       """
     return try JSONDecoder().decode(SavedSet.self, from: Data(json.utf8))
   }
@@ -33,78 +38,50 @@ final class SetPresentationTests: XCTestCase {
     value.map { "\"\($0)\"" } ?? "null"
   }
 
-  func testThePageDrawsTheLargestImageTheProviderOffered() throws {
+  func testTagCountsCountEachSetOncePerTag() throws {
+    let counts = SetPresentation.tagCounts([
+      try makeSet(id: "a", tags: #"["techno","house"]"#),
+      try makeSet(id: "b", tags: #"["techno","techno"]"#),
+      try makeSet(id: "c", tags: #"[]"#),
+    ])
+    XCTAssertEqual(counts, ["techno": 2, "house": 1])
+  }
+
+  func testContinueListeningHoldsStartedSetsMostRecentFirst() throws {
+    let sets = [
+      try makeSet(id: "untouched", durationSeconds: 3600),
+      try makeSet(
+        id: "older", playbackPositionSeconds: 600, durationSeconds: 3600,
+        lastListenedAt: "2026-09-10T20:00:00.000Z"),
+      try makeSet(
+        id: "finished", playbackPositionSeconds: 3600, durationSeconds: 3600,
+        lastListenedAt: "2026-09-12T20:00:00.000Z"),
+      try makeSet(
+        id: "newer", playbackPositionSeconds: 60, durationSeconds: 3600,
+        lastListenedAt: "2026-09-11T20:00:00.000Z"),
+      try makeSet(id: "unmeasured", playbackPositionSeconds: 30),
+    ]
     XCTAssertEqual(
-      SetPresentation.pageArtwork(
-        try makeSet(
-          artworkUrl: "https://example.test/listing.jpg",
-          artworkLargeUrl: "https://example.test/large.jpg"
-        )
-      )?.absoluteString,
-      "https://example.test/large.jpg")
-    // A service that predates the second image sends one, and the page still has an image.
+      SetPresentation.continueListening(sets).map(\.id), ["newer", "older", "unmeasured"])
+    XCTAssertEqual(SetPresentation.continueListening(sets, limit: 1).map(\.id), ["newer"])
+  }
+
+  func testTheDownloadControlFollowsTheLiveState() {
+    let live = { (state: String, received: Int, total: Int?) in
+      AudioState(state: state, bytesReceived: received, bytesTotal: total, format: nil)
+    }
+    // The Set still says queued; the watch already sees bytes arriving.
     XCTAssertEqual(
-      SetPresentation.pageArtwork(try makeSet(artworkUrl: "https://example.test/listing.jpg"))?
-        .absoluteString,
-      "https://example.test/listing.jpg")
-    XCTAssertNil(SetPresentation.pageArtwork(try makeSet()))
-  }
-
-  func testRowCarriesIdentitySourceTagsAndDate() throws {
-    let model = SetPresentation.row(try makeSet())
-
-    XCTAssertEqual(model.source, "YouTube")
-    XCTAssertEqual(model.title, "Night session")
-    XCTAssertEqual(model.tags.map(\.name), ["techno", "breaks"])
-    XCTAssertEqual(model.added.timeIntervalSince1970, 1_789_093_994.729, accuracy: 0.01)
-  }
-
-  func testProgressNeedsALengthToMeasureAgainst() throws {
-    XCTAssertNil(SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 600)))
+      SetPresentation.downloadPhase("queued", live: live("downloading", 42, 100)), .downloading(0.42))
     XCTAssertEqual(
-      SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 600, durationSeconds: 2400)), 0.25)
+      SetPresentation.downloadPhase("queued", live: live("downloading", 0, nil)), .downloading(nil))
+    XCTAssertEqual(SetPresentation.downloadPhase("queued", live: nil), .queued)
+    // Finished, before the library is read again: a full bar rather than a step back.
     XCTAssertEqual(
-      SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 9000, durationSeconds: 2400)), 1)
-  }
-
-  func testDisplayURLCarriesNoSchemeOrWWW() {
-    XCTAssertEqual(SetPresentation.displayURL("https://www.youtube.com/watch?v=x"), "youtube.com/watch?v=x")
-    XCTAssertEqual(SetPresentation.displayURL("http://soundcloud.com/a/b"), "soundcloud.com/a/b")
-    XCTAssertEqual(SetPresentation.displayURL("https://vanta.tail01d084.ts.net/sets"), "vanta.tail01d084.ts.net/sets")
-  }
-
-  func testTagColourIsStableAndIndependentOfOtherTags() throws {
-    let alone = SetPresentation.row(try makeSet(tags: #"["techno"]"#))
-    let mixed = SetPresentation.row(try makeSet(tags: #"["breaks","techno"]"#))
-
-    let technoAlone = alone.tags.first { $0.name == "techno" }?.category
-    let technoMixed = mixed.tags.first { $0.name == "techno" }?.category
-
-    XCTAssertEqual(SetPresentation.category(for: "techno"), SetPresentation.category(for: "techno"))
-    XCTAssertEqual(technoAlone, technoMixed)
-    XCTAssertNotEqual(
-      SetPresentation.category(for: "techno"),
-      SetPresentation.category(for: "breaks")
-    )
-  }
-
-  func testStateAppearsOnlyWhenThereIsSomethingToSay() throws {
-    XCTAssertNil(SetPresentation.row(try makeSet()).state)
-    XCTAssertNil(SetPresentation.row(try makeSet(downloadState: "none")).state)
-
-    let both = try XCTUnwrap(
-      SetPresentation.row(try makeSet(playbackPositionSeconds: 3661, downloadState: "queued")).state
-    )
-    XCTAssertEqual(both.resumeAt, 3661)
-    XCTAssertEqual(both.label, "Resume at 1:01:01 · Download queued")
-
-    let downloadOnly = try XCTUnwrap(
-      SetPresentation.row(try makeSet(downloadState: "ready")).state
-    )
-    XCTAssertNil(downloadOnly.resumeAt)
-    XCTAssertNil(downloadOnly.download, "kept audio is a symbol on the row, not a line of words")
-    XCTAssertTrue(downloadOnly.kept)
-    XCTAssertEqual(downloadOnly.label, "Audio kept")
+      SetPresentation.downloadPhase("queued", live: live("ready", 99, 99)), .downloading(1))
+    XCTAssertEqual(SetPresentation.downloadPhase("failed", live: nil), .failed)
+    XCTAssertEqual(SetPresentation.downloadPhase("canceled", live: nil), .failed)
+    XCTAssertEqual(SetPresentation.downloadPhase("none", live: nil), .available)
   }
 
   /// The artwork's control exists only where there is Retained Audio, and for the Set in the
@@ -118,16 +95,6 @@ final class SetPresentationTests: XCTestCase {
     XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "two", isPlaying: true), .ready)
     XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "one", isPlaying: true), .playing)
     XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "one", isPlaying: false), .paused)
-  }
-
-  func testDownloadLabelsCoverEveryServerState() {
-    XCTAssertNil(SetPresentation.downloadLabel("none"))
-    XCTAssertEqual(SetPresentation.downloadLabel("queued"), "Download queued")
-    XCTAssertEqual(SetPresentation.downloadLabel("downloading"), "Downloading")
-    XCTAssertEqual(SetPresentation.downloadLabel("ready"), "Audio ready")
-    XCTAssertEqual(SetPresentation.downloadLabel("failed"), "Download failed")
-    XCTAssertEqual(SetPresentation.downloadLabel("canceled"), "Download canceled")
-    XCTAssertNil(SetPresentation.downloadLabel("something-new"))
   }
 
   func testDateParsesWithAndWithoutFractionalSeconds() {

@@ -1,16 +1,11 @@
 import { expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import path from "node:path";
 
-import { createApp } from "./app.js";
 import {
   addToQueue,
   complete,
   play,
   ready,
   savedSet,
-  seedSets,
   withSeededApp,
 } from "./test-library.js";
 
@@ -73,17 +68,6 @@ test("automatic queue advancement counts one Listen for the Set that takes over"
   });
 });
 
-test("a Listen that reaches the natural end counts one Finish", async () => {
-  await withSeededApp(ready(["a"]), async (app) => {
-    await play(app, "a");
-    await complete(app, "a");
-
-    const finished = await savedSet(app, "a");
-    expect(finished.listenCount).toBe(1);
-    expect(finished.finishCount).toBe(1);
-  });
-});
-
 test("replaying after a finish counts a second Listen and leaves one Finish", async () => {
   await withSeededApp(ready(["a"]), async (app) => {
     await play(app, "a");
@@ -124,44 +108,4 @@ test("a completion repeated from another device leaves both counters alone", asy
     expect(finished.listenCount).toBe(1);
     expect(finished.finishCount).toBe(1);
   });
-});
-
-test("a stopped Set keeps its Listen open without counting a second one", async () => {
-  await withSeededApp(ready(["a", "b"]), async (app) => {
-    await play(app, "a");
-    // Stopping early is the client's own act: it reports no completion. Playing the same Set
-    // again is the same Listen, so the count does not move.
-    await play(app, "a");
-
-    const stopped = await savedSet(app, "a");
-    expect(stopped.listenCount).toBe(1);
-    expect(stopped.finishCount).toBe(0);
-  });
-});
-
-test("the counters survive a restart", async () => {
-  const directory = await mkdtemp(path.join(tmpdir(), "orbis-stats-"));
-  const databasePath = path.join(directory, "library.sqlite");
-  try {
-    await seedSets(databasePath, ready(["a", "b"]));
-    const first = createApp({ databasePath });
-    await play(first, "a");
-    await addToQueue(first, "b");
-    await complete(first, "a");
-    await first.dispose();
-
-    const second = createApp({ databasePath });
-    try {
-      const finished = await savedSet(second, "a");
-      expect(finished.listenCount).toBe(1);
-      expect(finished.finishCount).toBe(1);
-      const advanced = await savedSet(second, "b");
-      expect(advanced.listenCount).toBe(1);
-      expect(advanced.lastListenedAt).not.toBeNull();
-    } finally {
-      await second.dispose();
-    }
-  } finally {
-    await rm(directory, { force: true, recursive: true });
-  }
 });

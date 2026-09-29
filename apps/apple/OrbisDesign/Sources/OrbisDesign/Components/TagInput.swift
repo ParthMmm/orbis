@@ -94,7 +94,7 @@ public struct TagInput: View {
                 tags.removeAll { $0 == tag }
               } label: {
                 Image(systemName: "xmark.circle.fill")
-                  .font(.orbis.mono)
+                  .font(.orbis.detail)
                   // The glyph is about 13 pt square. 44 pt is the target the touch platforms need
                   // and 20 pt the Mac one; the HStack keeps the chip centred in the taller target.
                   #if os(macOS)
@@ -118,7 +118,7 @@ public struct TagInput: View {
                 tags = Self.adding(tag, to: tags, limit: limit)
               } label: {
                 Label(tag, systemImage: "plus")
-                  .font(.orbis.mono)
+                  .font(.orbis.detail)
               }
               .buttonStyle(.bordered)
               .buttonBorderShape(.capsule)
@@ -129,7 +129,7 @@ public struct TagInput: View {
         .scrollIndicators(.hidden)
       }
       Text(hint)
-        .font(.orbis.mono)
+        .font(.orbis.detail)
         .foregroundStyle(.secondary)
     }
   }
@@ -144,10 +144,16 @@ public struct TagInput: View {
 
 /// Lays chips out in rows, wrapping when the width runs out. Rows are as tall as the tallest
 /// chip in them, so a removed Tag does not move the ones beside it.
-struct ChipFlow: Layout {
-  var spacing: CGFloat = 6
+public struct ChipFlow: Layout {
+  public var spacing: CGFloat = 6
+  public var alignment: HorizontalAlignment = .leading
 
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+  public init(spacing: CGFloat = 6, alignment: HorizontalAlignment = .leading) {
+    self.spacing = spacing
+    self.alignment = alignment
+  }
+
+  public func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
     let width = proposal.width ?? .infinity
     var lineWidth: CGFloat = 0
     var height: CGFloat = 0
@@ -165,22 +171,30 @@ struct ChipFlow: Layout {
     return CGSize(width: width == .infinity ? lineWidth : width, height: height + lineHeight)
   }
 
-  func placeSubviews(
+  public func placeSubviews(
     in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
   ) {
-    var x = bounds.minX
-    var y = bounds.minY
-    var lineHeight: CGFloat = 0
+    var rows: [[(subview: LayoutSubview, size: CGSize)]] = [[]]
+    var rowWidth: CGFloat = 0
     for subview in subviews {
       let size = size(of: subview, upTo: bounds.width)
-      if x > bounds.minX, x + size.width > bounds.maxX {
-        x = bounds.minX
-        y += lineHeight + spacing
-        lineHeight = 0
+      if rowWidth > 0, rowWidth + size.width > bounds.width {
+        rows.append([])
+        rowWidth = 0
       }
-      subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-      x += size.width + spacing
-      lineHeight = max(lineHeight, size.height)
+      rows[rows.count - 1].append((subview, size))
+      rowWidth += size.width + spacing
+    }
+    var y = bounds.minY
+    for row in rows where !row.isEmpty {
+      let width = row.map(\.size.width).reduce(0, +) + spacing * CGFloat(row.count - 1)
+      let lineHeight = row.map(\.size.height).max() ?? 0
+      var x = alignment == .center ? bounds.minX + max(bounds.width - width, 0) / 2 : bounds.minX
+      for (subview, size) in row {
+        subview.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+        x += size.width + spacing
+      }
+      y += lineHeight + spacing
     }
   }
 

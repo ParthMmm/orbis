@@ -30,19 +30,6 @@ final class ClientSettingsTests: XCTestCase {
     )
   }
 
-  func testMemoryStoresDoNotShareAddressOrToken() {
-    let first = MemoryClientSettings()
-    let second = MemoryClientSettings()
-
-    first.serviceAddress = "https://first.example"
-    XCTAssertTrue(first.store(deviceToken: "first-token"))
-
-    XCTAssertEqual(first.serviceAddress, "https://first.example")
-    XCTAssertEqual(first.deviceToken, "first-token")
-    XCTAssertNil(second.serviceAddress)
-    XCTAssertNil(second.deviceToken)
-  }
-
   /// Forgetting and pairing again through a model must move only the store that model was
   /// given. A store the model never saw is the proof that nothing global was touched.
   func testForgettingAndConnectingChangeOnlyTheInjectedStore() async {

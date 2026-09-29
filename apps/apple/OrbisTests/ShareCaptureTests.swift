@@ -16,6 +16,11 @@ final class ShareCaptureTests: XCTestCase {
         .host(),
       "soundcloud.com"
     )
+    XCTAssertEqual(
+      ShareCapture.sourceLink(from: ["Listen on #SoundCloud https://on.soundcloud.com/AbCdEf123"])?
+        .host(),
+      "on.soundcloud.com"
+    )
   }
 
   func testSourceLinkRejectsUnsupportedHosts() {
@@ -29,7 +34,7 @@ final class ShareCaptureTests: XCTestCase {
     XCTAssertTrue(settings.store(deviceToken: "synthetic-token"))
     let session = StubProtocol.session { request in
       XCTAssertEqual(request.httpMethod, "POST")
-      return (409, #"{"message":"duplicate"}"#)
+      return (409, #"{"message":"This set is already in your library."}"#)
     }
     let client = OrbisClient(
       address: URL(string: "https://vanta.example.ts.net")!,
