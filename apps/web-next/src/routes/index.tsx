@@ -3,7 +3,7 @@ import { createServerFn } from "@tanstack/react-start";
 
 import { apiUrl } from "@/lib/api-url";
 
-// Only the Worker holds the address, so the page asks it once (ADR 0015).
+// Only the Worker holds the address, so the page asks it once.
 const getApiUrl = createServerFn({ method: "GET" }).handler(() => apiUrl());
 
 const home = getRouteApi("/");
