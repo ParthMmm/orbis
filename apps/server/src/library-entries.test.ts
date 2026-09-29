@@ -16,7 +16,10 @@ const B_TOKEN = "person-b-test-token";
 type RemotePayload =
   | { readonly url: string; readonly tags?: string[] }
   | { readonly title: string }
-  | { readonly tags: string[] };
+  | { readonly tags: string[] }
+  | { readonly name: string }
+  | { readonly setIds: string[] }
+  | { readonly playlistIds: string[] };
 const remote = (method: string, url: string, payload?: RemotePayload) => ({
   accessMode: "device" as const,
   headers: { authorization: `Bearer ${B_TOKEN}` },
@@ -149,6 +152,52 @@ test("legacy Host entry migrates and two People keep separate Library state", as
     ]);
     const empty = await request(app, remote("GET", "/sets"));
     expect(empty.json()).toEqual({ sets: [] });
+    const hostPlaylists = await request(app, {
+      method: "GET",
+      url: "/playlists",
+    });
+    expect(hostPlaylists.json().playlists).toMatchObject([
+      { id: "host-playlist", name: "Host playlist", setCount: 1 },
+    ]);
+    const bPlaylistsBefore = await request(app, remote("GET", "/playlists"));
+    expect(bPlaylistsBefore.json()).toEqual({ playlists: [] });
+    const foreignRename = await request(
+      app,
+      remote("PATCH", "/playlists/host-playlist", { name: "Taken" })
+    );
+    expect(foreignRename.statusCode).toBe(404);
+    const foreignDelete = await request(
+      app,
+      remote("DELETE", "/playlists/host-playlist")
+    );
+    expect(foreignDelete.statusCode).toBe(404);
+    const foreignMembers = await request(
+      app,
+      remote("PUT", "/playlists/host-playlist/sets", { setIds: [] })
+    );
+    expect(foreignMembers.statusCode).toBe(404);
+    const bPlaylist = await request(
+      app,
+      remote("POST", "/playlists", { name: "Host playlist" })
+    );
+    expect(bPlaylist.statusCode).toBe(201);
+    const bPlaylistId: string = bPlaylist.json().id;
+    expect(bPlaylistId).not.toBe("host-playlist");
+    const bPlaylistsAfter = await request(app, remote("GET", "/playlists"));
+    expect(
+      bPlaylistsAfter
+        .json()
+        .playlists.map((playlist: { id: string }) => playlist.id)
+    ).toEqual([bPlaylistId]);
+    const hostPlaylistsAfter = await request(app, {
+      method: "GET",
+      url: "/playlists",
+    });
+    expect(
+      hostPlaylistsAfter
+        .json()
+        .playlists.map((playlist: { id: string }) => playlist.id)
+    ).toEqual(["host-playlist"]);
     const deniedGets = await Promise.all(
       ["/sets/shared-set/audio", "/sets/shared-set/audio/state"].map((url) =>
         request(app, remote("GET", url))
@@ -191,6 +240,28 @@ test("legacy Host entry migrates and two People keep separate Library state", as
       tags: ["b-tag"],
       title: "Provider first title",
     });
+    const foreignSetPlaylist = await request(
+      app,
+      remote("PUT", "/sets/shared-set/playlists", {
+        playlistIds: ["host-playlist"],
+      })
+    );
+    expect(foreignSetPlaylist.statusCode).toBe(404);
+    const ownSetPlaylist = await request(
+      app,
+      remote("PUT", "/sets/shared-set/playlists", {
+        playlistIds: [bPlaylistId],
+      })
+    );
+    expect(ownSetPlaylist.statusCode).toBe(200);
+    expect(ownSetPlaylist.json().playlistIds).toEqual([bPlaylistId]);
+    const hostAfterBMembership = await request(app, {
+      method: "GET",
+      url: "/sets",
+    });
+    expect(hostAfterBMembership.json().sets[0].playlistIds).toEqual([
+      "host-playlist",
+    ]);
     const renamed = await request(
       app,
       remote("PATCH", "/sets/shared-set/title", {

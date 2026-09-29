@@ -102,12 +102,15 @@ export const playlists = sqliteTable(
   "playlists",
   {
     createdAt: text("created_at").notNull(),
+    creatorId: text("creator_id").notNull().default("host"),
     id: text("id").primaryKey(),
     name: text("name").notNull(),
   },
   (table) => [
-    // Keep the existing case-insensitive name rule from the hand-written schema.
-    uniqueIndex("playlists_name_unique").on(sql`${table.name} COLLATE NOCASE`),
+    uniqueIndex("playlists_creator_name_unique").on(
+      table.creatorId,
+      sql`${table.name} COLLATE NOCASE`
+    ),
   ]
 );
 

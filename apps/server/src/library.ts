@@ -5,17 +5,7 @@ import type {
   SaveSetInput,
   SetSource,
 } from "@orbis/contracts";
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  inArray,
-  ne,
-  notInArray,
-  sql,
-} from "drizzle-orm";
+import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { Database } from "./db/database.js";
@@ -209,7 +199,13 @@ export class Library extends Context.Service<
         db
           .select({ playlistId: playlistSets.playlistId })
           .from(playlistSets)
-          .where(eq(playlistSets.setId, setId))
+          .innerJoin(playlists, eq(playlistSets.playlistId, playlists.id))
+          .where(
+            and(
+              eq(playlistSets.setId, setId),
+              eq(playlists.creatorId, personId)
+            )
+          )
           .orderBy(asc(playlistSets.playlistId))
           .pipe(Effect.map((rows) => rows.map((row) => row.playlistId)));
 
@@ -436,13 +432,19 @@ export class Library extends Context.Service<
                 '[]'
               )
               FROM ${playlistSets}
-              WHERE ${playlistSets.setId} = ${sets.id}
+              INNER JOIN ${playlists} ON ${playlists.id} = ${playlistSets.playlistId}
+              WHERE ${playlistSets.setId} = ${sets.id} AND ${playlists.creatorId} = ${personId}
             )`;
             if (playlistId) {
               const playlist = yield* db
                 .select({ id: playlists.id })
                 .from(playlists)
-                .where(eq(playlists.id, playlistId))
+                .where(
+                  and(
+                    eq(playlists.id, playlistId),
+                    eq(playlists.creatorId, personId)
+                  )
+                )
                 .limit(1);
               if (!playlist[0]) {
                 return yield* Effect.fail(playlistNotFound());
@@ -945,6 +947,7 @@ export class Library extends Context.Service<
               )`,
             })
             .from(playlists)
+            .where(eq(playlists.creatorId, personId))
             .orderBy(asc(sql`${playlists.name} COLLATE NOCASE`))
         )
       );
@@ -972,6 +975,7 @@ export class Library extends Context.Service<
                 .insert(playlists)
                 .values({
                   createdAt: playlist.createdAt,
+                  creatorId: personId,
                   id: playlist.id,
                   name: playlist.name,
                 })
@@ -1006,7 +1010,9 @@ export class Library extends Context.Service<
               const playlist = yield* db
                 .select({ id: playlists.id })
                 .from(playlists)
-                .where(eq(playlists.id, id))
+                .where(
+                  and(eq(playlists.id, id), eq(playlists.creatorId, personId))
+                )
                 .limit(1);
               if (!playlist[0]) {
                 return yield* Effect.fail(playlistNotFound());
@@ -1017,6 +1023,7 @@ export class Library extends Context.Service<
                 .where(
                   and(
                     sql`lower(${playlists.name}) = ${trimmedName.toLowerCase()}`,
+                    eq(playlists.creatorId, personId),
                     ne(playlists.id, id)
                   )
                 )
@@ -1032,7 +1039,9 @@ export class Library extends Context.Service<
               const [row] = yield* db
                 .update(playlists)
                 .set({ name: trimmedName })
-                .where(eq(playlists.id, id))
+                .where(
+                  and(eq(playlists.id, id), eq(playlists.creatorId, personId))
+                )
                 .returning({
                   createdAt: playlists.createdAt,
                   id: playlists.id,
@@ -1070,7 +1079,9 @@ export class Library extends Context.Service<
                 )`,
               })
               .from(playlists)
-              .where(eq(playlists.id, id))
+              .where(
+                and(eq(playlists.id, id), eq(playlists.creatorId, personId))
+              )
               .limit(1);
             const [row] = playlist;
             if (!row) {
@@ -1081,7 +1092,11 @@ export class Library extends Context.Service<
                 yield* tx
                   .delete(playlistSets)
                   .where(eq(playlistSets.playlistId, id));
-                yield* tx.delete(playlists).where(eq(playlists.id, id));
+                yield* tx
+                  .delete(playlists)
+                  .where(
+                    and(eq(playlists.id, id), eq(playlists.creatorId, personId))
+                  );
               })
             );
             return row;
@@ -1093,12 +1108,28 @@ export class Library extends Context.Service<
         (id: string, setIds: readonly string[]) =>
           execute(
             Effect.gen(function* setPlaylistMembersEffect() {
+              const [owned] = yield* db
+                .select({ id: playlists.id })
+                .from(playlists)
+                .where(
+                  and(eq(playlists.id, id), eq(playlists.creatorId, personId))
+                )
+                .limit(1);
+              if (!owned) {
+                return yield* Effect.fail(playlistNotFound());
+              }
+              yield* Effect.forEach(ensureEntry)(setIds);
               yield* db.transaction((tx) =>
                 Effect.gen(function* setPlaylistMembersTransaction() {
                   const playlist = yield* tx
                     .select({ id: playlists.id })
                     .from(playlists)
-                    .where(eq(playlists.id, id))
+                    .where(
+                      and(
+                        eq(playlists.id, id),
+                        eq(playlists.creatorId, personId)
+                      )
+                    )
                     .limit(1);
                   if (!playlist[0]) {
                     return yield* Effect.fail(playlistNotFound());
@@ -1139,7 +1170,16 @@ export class Library extends Context.Service<
                     const countRows = yield* tx
                       .select({ count: sql<number>`COUNT(*)` })
                       .from(playlistSets)
-                      .where(eq(playlistSets.setId, setId));
+                      .innerJoin(
+                        playlists,
+                        eq(playlistSets.playlistId, playlists.id)
+                      )
+                      .where(
+                        and(
+                          eq(playlistSets.setId, setId),
+                          eq(playlists.creatorId, personId)
+                        )
+                      );
                     if (
                       (countRows[0]?.count ?? 0) + 1 >
                       MAX_PLAYLISTS_PER_SET
@@ -1172,6 +1212,22 @@ export class Library extends Context.Service<
       )((setId: string, playlistIds: readonly string[]) =>
         execute(
           Effect.gen(function* setPlaylistMembershipsEffect() {
+            for (const playlistId of playlistIds) {
+              const [owned] = yield* db
+                .select({ id: playlists.id })
+                .from(playlists)
+                .where(
+                  and(
+                    eq(playlists.id, playlistId),
+                    eq(playlists.creatorId, personId)
+                  )
+                )
+                .limit(1);
+              if (!owned) {
+                return yield* Effect.fail(playlistNotFound());
+              }
+            }
+            yield* ensureEntry(setId);
             yield* db.transaction((tx) =>
               Effect.gen(function* setPlaylistMembershipsTransaction() {
                 const set = yield* tx
@@ -1197,7 +1253,12 @@ export class Library extends Context.Service<
                   const playlist = yield* tx
                     .select({ id: playlists.id })
                     .from(playlists)
-                    .where(eq(playlists.id, playlistId))
+                    .where(
+                      and(
+                        eq(playlists.id, playlistId),
+                        eq(playlists.creatorId, personId)
+                      )
+                    )
                     .limit(1);
                   if (!playlist[0]) {
                     return yield* Effect.fail(playlistNotFound());
@@ -1207,7 +1268,16 @@ export class Library extends Context.Service<
                 const currentRows = yield* tx
                   .select({ playlistId: playlistSets.playlistId })
                   .from(playlistSets)
-                  .where(eq(playlistSets.setId, setId));
+                  .innerJoin(
+                    playlists,
+                    eq(playlistSets.playlistId, playlists.id)
+                  )
+                  .where(
+                    and(
+                      eq(playlistSets.setId, setId),
+                      eq(playlists.creatorId, personId)
+                    )
+                  );
                 const currentPlaylistIds = new Set(
                   currentRows.map((row) => row.playlistId)
                 );
@@ -1224,16 +1294,19 @@ export class Library extends Context.Service<
                   }
                 }
 
-                yield* tx
-                  .delete(playlistSets)
-                  .where(
-                    playlistIds.length > 0
-                      ? and(
-                          eq(playlistSets.setId, setId),
-                          notInArray(playlistSets.playlistId, [...playlistIds])
-                        )
-                      : eq(playlistSets.setId, setId)
-                  );
+                const removedIds = [...currentPlaylistIds].filter(
+                  (id) => !playlistIds.includes(id)
+                );
+                if (removedIds.length > 0) {
+                  yield* tx
+                    .delete(playlistSets)
+                    .where(
+                      and(
+                        eq(playlistSets.setId, setId),
+                        inArray(playlistSets.playlistId, removedIds)
+                      )
+                    );
+                }
 
                 for (const playlistId of playlistIds) {
                   if (currentPlaylistIds.has(playlistId)) {

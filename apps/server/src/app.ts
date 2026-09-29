@@ -539,9 +539,10 @@ export const createApp = (
           handlers
             .handle("list", () =>
               withFailureResponse(
-                library
-                  .playlists()
-                  .pipe(Effect.map((playlists) => ({ playlists })))
+                Effect.gen(function* listPersonalPlaylists() {
+                  const personal = yield* Library;
+                  return { playlists: yield* personal.playlists() };
+                })
               )
             )
             .handleRaw("create", () =>
@@ -551,7 +552,8 @@ export const createApp = (
                     yield* HttpServerRequest.schemaBodyJson(
                       PlaylistNamePayload
                     );
-                  return yield* library.createPlaylist(input.name);
+                  const personal = yield* Library;
+                  return yield* personal.createPlaylist(input.name);
                 })
               )
             )
@@ -562,12 +564,18 @@ export const createApp = (
                     yield* HttpServerRequest.schemaBodyJson(
                       PlaylistNamePayload
                     );
-                  return yield* library.renamePlaylist(params.id, input.name);
+                  const personal = yield* Library;
+                  return yield* personal.renamePlaylist(params.id, input.name);
                 })
               )
             )
             .handle("remove", ({ params }) =>
-              withFailureResponse(library.deletePlaylist(params.id))
+              withFailureResponse(
+                Effect.gen(function* removePersonalPlaylist() {
+                  const personal = yield* Library;
+                  return yield* personal.deletePlaylist(params.id);
+                })
+              )
             )
             .handleRaw("replaceMembers", ({ params }) =>
               withFailureResponse(
@@ -575,8 +583,9 @@ export const createApp = (
                   const input = yield* HttpServerRequest.schemaBodyJson(
                     PlaylistMembersPayload
                   );
+                  const personal = yield* Library;
                   return {
-                    sets: yield* library.setPlaylistMembers(
+                    sets: yield* personal.setPlaylistMembers(
                       params.id,
                       input.setIds
                     ),
@@ -591,7 +600,8 @@ export const createApp = (
                     yield* HttpServerRequest.schemaBodyJson(
                       SetPlaylistsPayload
                     );
-                  return yield* library.setPlaylistMemberships(
+                  const personal = yield* Library;
+                  return yield* personal.setPlaylistMemberships(
                     params.id,
                     input.playlistIds
                   );
