@@ -6,10 +6,13 @@ import { Cause, Context, Effect, Exit, Layer, Queue, Stream } from "effect";
 import { Cobalt } from "./cobalt.js";
 import { LibraryError } from "./errors.js";
 import { Library } from "./library.js";
+import { withWideEvent } from "./logging.js";
+import type { LoggingOptions } from "./logging.js";
 import { MediaStore } from "./media-store.js";
 import { Ytdlp } from "./ytdlp.js";
 
 export interface DownloadWorkerOptions {
+  readonly logging?: LoggingOptions | undefined;
   readonly startWorker?: boolean;
 }
 
@@ -51,19 +54,23 @@ const fetchWithFallback = (
     Effect.as(current.name),
     Effect.matchEffect({
       onFailure: (error) =>
-        rest.length === 0 || signal.aborted
-          ? Effect.fail(error)
-          : Effect.logWarning("audio backend failed, trying the next").pipe(
-              Effect.annotateLogs({
-                backend: current.name,
-                reason: error.message,
-                set: setId,
-              }),
-              Effect.andThen(
-                Effect.promise(() => rm(tmpPath, { force: true }))
-              ),
-              Effect.andThen(fetchWithFallback(rest, setId, tmpPath, signal))
-            ),
+        Effect.logWarning("audio backend failed").pipe(
+          Effect.annotateLogs({
+            backend: current.name,
+            bytes: Bun.file(tmpPath).size,
+            reason: error.message,
+            set: setId,
+          }),
+          Effect.andThen(
+            rest.length === 0 || signal.aborted
+              ? Effect.fail(error)
+              : Effect.promise(() => rm(tmpPath, { force: true })).pipe(
+                  Effect.andThen(
+                    fetchWithFallback(rest, setId, tmpPath, signal)
+                  )
+                )
+          )
+        ),
       onSuccess: (name) => Effect.succeed(name),
     })
   );
@@ -101,6 +108,25 @@ export class DownloadWorker extends Context.Service<
             ytdlp: ytdlp.isConfigured,
           })
         );
+        const configured = (name: BackendName) =>
+          name === "ytdlp" ? ytdlp.isConfigured : cobalt.isConfigured;
+        // A source with one backend has no safety net, so say so before a download fails.
+        for (const source of ["youtube", "soundcloud"] as const) {
+          const available = backendOrder(source).filter(configured);
+          if (available.length < 2) {
+            yield* Effect.logWarning(
+              available.length === 0
+                ? `${source} downloads have no backend`
+                : `${source} downloads use ${available.join("")} only`
+            ).pipe(
+              Effect.annotateLogs({
+                fix: ytdlp.isConfigured
+                  ? "Set ORBIS_COBALT_URL and ORBIS_COBALT_API_KEY."
+                  : "Set ORBIS_YTDLP_BIN to an absolute yt-dlp path.",
+              })
+            );
+          }
+        }
         const downloadOne = Effect.fn("DownloadWorker.downloadOne")(
           function* downloadOne(set: SavedSet) {
             const tmpPath = media.partialPath(set.id);
@@ -121,16 +147,30 @@ export class DownloadWorker extends Context.Service<
                     tunnelUrl,
                     abort.signal
                   );
+                  yield* Effect.logInfo("cobalt tunnel opened").pipe(
+                    Effect.annotateLogs({
+                      contentLength:
+                        response.headers.get("content-length") ?? "none",
+                      status: response.status,
+                    })
+                  );
                   yield* media.streamResponse(
                     response,
                     tmpPath,
                     onProgress,
                     abort.signal
                   );
+                  // Cobalt can answer a YouTube tunnel with 200 and no bytes.
+                  if (Bun.file(tmpPath).size === 0) {
+                    return yield* Effect.fail(
+                      new LibraryError({
+                        message: "Cobalt sent an empty stream.",
+                        statusCode: 500,
+                      })
+                    );
+                  }
                 });
-                const backends = backendOrder(set.source).filter((name) =>
-                  name === "ytdlp" ? ytdlp.isConfigured : cobalt.isConfigured
-                );
+                const backends = backendOrder(set.source).filter(configured);
                 const backend = yield* fetchWithFallback(
                   backends.map((name) => ({
                     name,
@@ -189,7 +229,18 @@ export class DownloadWorker extends Context.Service<
             yield* Effect.logInfo("audio download claimed").pipe(
               Effect.annotateLogs({ set: claimed.id, source: claimed.source })
             );
-            const outcome = yield* Effect.exit(downloadOne(claimed));
+            const outcome = yield* Effect.exit(
+              downloadOne(claimed).pipe(
+                withWideEvent(
+                  {
+                    job: "audio-download",
+                    set: claimed.id,
+                    source: claimed.source,
+                  },
+                  options.logging
+                )
+              )
+            );
             if (Exit.isFailure(outcome)) {
               if (Cause.hasInterruptsOnly(outcome.cause)) {
                 return yield* Effect.interrupt;

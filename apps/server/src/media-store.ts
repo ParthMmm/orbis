@@ -7,6 +7,7 @@ import { Context, Effect, Layer, Schema } from "effect";
 import { Database } from "./db/database.js";
 import { downloadJobs, sets } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
+import { outputTail } from "./logging.js";
 
 const releaseError = <E>(error: E) =>
   error instanceof LibraryError
@@ -140,17 +141,25 @@ export class MediaStore extends Context.Service<
       const ran = yield* Effect.promise(() =>
         (async () => {
           const proc = Bun.spawn([command, ...args], {
-            stderr: "ignore",
+            stderr: "pipe",
             stdout: "pipe",
           });
-          const [output, code] = await Promise.all([
+          const [output, stderr, code] = await Promise.all([
             new Response(proc.stdout).text(),
+            new Response(proc.stderr).text(),
             proc.exited,
           ]);
-          return { code, output };
+          return { code, output, stderr };
         })()
       );
       if (ran.code !== 0) {
+        yield* Effect.logWarning("media command failed").pipe(
+          Effect.annotateLogs({
+            command: path.basename(command),
+            exitCode: ran.code,
+            stderr: outputTail(ran.stderr),
+          })
+        );
         return yield* Effect.fail(
           downloadFailed("The downloaded audio could not be read.")
         );
@@ -172,12 +181,20 @@ export class MediaStore extends Context.Service<
       const probed = yield* Schema.decodeUnknownEffect(ProbeFormat)(
         JSON.parse(output)
       ).pipe(
+        Effect.tapError(() =>
+          Effect.logWarning("ffprobe output did not parse").pipe(
+            Effect.annotateLogs({ output: outputTail(output) })
+          )
+        ),
         Effect.mapError(() =>
           downloadFailed("The downloaded audio could not be read.")
         )
       );
       const durationSeconds = Number(probed.format.duration);
       if (!Number.isFinite(durationSeconds)) {
+        yield* Effect.logWarning("ffprobe reported no duration").pipe(
+          Effect.annotateLogs({ container: probed.format.format_name })
+        );
         return yield* Effect.fail(
           downloadFailed("The downloaded audio could not be read.")
         );
@@ -243,6 +260,9 @@ export class MediaStore extends Context.Service<
     );
     const storeDownloaded = Effect.fn("MediaStore.storeDownloaded")(
       function* storeDownloaded(setId: string, tmpPath: string) {
+        if (Bun.file(tmpPath).size === 0) {
+          return yield* Effect.fail(downloadFailed("The download was empty."));
+        }
         const { container, durationSeconds } = yield* probe(tmpPath);
         if (/matroska|webm/u.test(container)) {
           const finalPath = fileFor(setId, "ogg");
