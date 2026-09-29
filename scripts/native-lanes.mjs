@@ -5,7 +5,7 @@
 //
 // Usage:
 //   node scripts/native-lanes.mjs --unit        # unit tests only
-//   node scripts/native-lanes.mjs --journeys    # UI journeys only
+//   node scripts/native-lanes.mjs --journeys    # UI journeys on two simulator clones
 //   node scripts/native-lanes.mjs               # both
 //   node scripts/native-lanes.mjs --unit --macos # unit tests on the macOS host
 //
@@ -25,6 +25,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 
+const startedAt = performance.now();
 const root = path.resolve(import.meta.dirname, "..");
 const native = path.join(root, "apps", "apple");
 const argument = (name, fallback) => {
@@ -45,8 +46,10 @@ const shots = path.resolve(
 
 const only = [];
 // --only narrows a lane to one test, which is how a single journey is re-run after a failure
-// without paying for the other seven.
+// without running the remaining journeys.
 const onlyTest = argument("only");
+const parallelJourneys = journeysOnly && !macos && !unitOnly && !onlyTest;
+const workerCount = parallelJourneys ? 2 : 1;
 if (onlyTest) {
   only.push(`-only-testing:${onlyTest}`);
 } else if (macos || unitOnly) {
@@ -212,6 +215,14 @@ try {
       "-resultBundlePath",
       resultBundle,
       ...only,
+      ...(parallelJourneys
+        ? [
+            "-parallel-testing-enabled",
+            "YES",
+            "-parallel-testing-worker-count",
+            String(workerCount),
+          ]
+        : []),
       "test",
     ],
     {
@@ -245,26 +256,68 @@ try {
     ],
     { cwd: native }
   );
-  // The export names files by UUID. Each is renamed to the name its journey gave it, so a run's
-  // record reads the same as the last one and can be compared file by file.
   const manifest = JSON.parse(
     readFileSync(path.join(shots, "manifest.json"), "utf-8")
   );
-  for (const attachment of manifest.flatMap((test) => test.attachments)) {
-    const named = attachment.suggestedHumanReadableName.replace(
-      /_\d+_[0-9A-F-]{36}(?=\.\w+$)/u,
-      ""
-    );
-    renameSync(
-      path.join(shots, attachment.exportedFileName),
-      path.join(shots, named)
-    );
+  const workers = new Map();
+  for (const test of manifest) {
+    for (const attachment of test.attachments) {
+      let worker = workers.get(attachment.deviceId);
+      if (!worker) {
+        worker = {
+          deviceId: attachment.deviceId,
+          deviceName: attachment.deviceName,
+          directory: `worker-${workers.size + 1}`,
+        };
+        workers.set(attachment.deviceId, worker);
+      }
+      const named = attachment.suggestedHumanReadableName.replace(
+        /_(?<iteration>\d+)_[0-9A-F-]{36}(?=\.\w+$)/u,
+        (_suffix, iteration) => (iteration === "0" ? "" : `-${iteration}`)
+      );
+      const directory = parallelJourneys
+        ? path.join(
+            worker.directory,
+            test.testIdentifier
+              .replaceAll(/[^a-zA-Z0-9_-]+/gu, "-")
+              .replace(/-$/u, "")
+          )
+        : ".";
+      mkdirSync(path.join(shots, directory), { recursive: true });
+      const exported = path.join(directory, named);
+      renameSync(
+        path.join(shots, attachment.exportedFileName),
+        path.join(shots, exported)
+      );
+      attachment.exportedFileName = exported;
+    }
   }
+  writeFileSync(
+    path.join(shots, "manifest.json"),
+    `${JSON.stringify(manifest, null, 2)}\n`
+  );
+  const elapsedSeconds = Number(
+    ((performance.now() - startedAt) / 1000).toFixed(3)
+  );
+  writeFileSync(
+    path.join(shots, "lane.json"),
+    `${JSON.stringify(
+      {
+        elapsedSeconds,
+        requestedWorkers: workerCount,
+        simulator,
+        workers: [...workers.values()],
+      },
+      null,
+      2
+    )}\n`
+  );
   writeFileSync(
     path.join(shots, "lane.txt"),
     `service=${address}\nsimulator=${simulator}\n`
   );
   console.log(`screenshots: ${shots}`);
+  console.log(`lane completed in ${elapsedSeconds}s`);
 } catch (error) {
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
