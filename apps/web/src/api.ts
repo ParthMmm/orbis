@@ -79,6 +79,24 @@ export const api = (key: string) => ({
     call(key, (client) => client.people.updateMe({ payload: { social } })),
 });
 
+export const adminApi = (key: string) => ({
+  addKey: (personId: string, label: string) =>
+    call(key, (client) =>
+      client.admin.addKey({ params: { id: personId }, payload: { label } })
+    ),
+  addPerson: (username: string) =>
+    call(key, (client) => client.admin.addPerson({ payload: { username } })),
+  keys: (personId: string) =>
+    call(key, (client) =>
+      client.admin.personKeys({ params: { id: personId } })
+    ),
+  people: () => call(key, (client) => client.admin.people()),
+  removePerson: (id: string) =>
+    call(key, (client) => client.admin.removePerson({ params: { id } })),
+  revokeKey: (id: string) =>
+    call(key, (client) => client.admin.revokeKey({ params: { id } })),
+});
+
 export const streamUrl = (setId: string, granted: string): string => {
   const url = new URL(granted, window.location.origin);
   if (
