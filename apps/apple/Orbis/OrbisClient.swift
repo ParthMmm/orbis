@@ -384,7 +384,10 @@ struct OrbisClient: Sendable {
   }
 
   private func send(path: String, method: String, body: Data?) async throws -> Data {
-    guard let url = URL(string: path, relativeTo: address) else {
+    // Resolving against the address would drop its last path segment, so an address such as
+    // the Funnel address with `/api` would lose `/api`. Join the strings instead.
+    let root = address.absoluteString
+    guard let url = URL(string: root.hasSuffix("/") ? root + path : root + "/" + path) else {
       throw OrbisError.badAddress
     }
     var request = URLRequest(url: url)

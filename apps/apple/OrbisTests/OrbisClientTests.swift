@@ -15,6 +15,23 @@ final class OrbisClientTests: XCTestCase {
     }
   }
 
+  /// The Funnel address carries `/api`. Every request keeps that segment, with or without a
+  /// trailing slash, and an address without a path still resolves as before.
+  func testRequestsKeepTheAddressPath() async throws {
+    for (address, expected) in [
+      ("https://vanta.example.ts.net:10000/api", "https://vanta.example.ts.net:10000/api/health"),
+      ("https://vanta.example.ts.net:10000/api/", "https://vanta.example.ts.net:10000/api/health"),
+      ("https://vanta.example.ts.net", "https://vanta.example.ts.net/health"),
+    ] {
+      let client = OrbisClient(
+        address: try OrbisClient.address(from: address),
+        token: "token",
+        session: StubProtocol.session(status: 200, body: #"{"status":"ok"}"#))
+      _ = try await client.health()
+      XCTAssertEqual(StubProtocol.lastRequest?.url?.absoluteString, expected)
+    }
+  }
+
   /// The bearer token rides on every request, so an address carries it only over TLS. The
   /// loopback exception is the temporary lane service, which the server itself trusts.
   func testAnAddressCarriesTheTokenOnlyOverTLSOrLoopback() throws {

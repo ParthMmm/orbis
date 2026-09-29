@@ -45,6 +45,22 @@ test("trims the trailing slash from the configured service URL", async () => {
   expect(urls).toEqual(["https://orbis.test/sets"]);
 });
 
+test("keeps a path on the configured service URL", async () => {
+  const urls: string[] = [];
+  await saveSourceUrl("https://youtu.be/abcdefghijk", {
+    fetch: (input) => {
+      urls.push(String(input));
+      return Promise.resolve(new Response(null, { status: 201 }));
+    },
+    preferences: {
+      ...preferences,
+      serviceUrl: "https://orbis.test:10000/api",
+    },
+  });
+
+  expect(urls).toEqual(["https://orbis.test:10000/api/sets"]);
+});
+
 test("extracts the first supported link and ignores trailing punctuation", () => {
   expect(
     extractSourceUrl(
