@@ -17,6 +17,7 @@ const people = [{ id: "host", username: "host" }];
 const keys = [];
 const calls = [];
 const results = [];
+let delayAliceKeys = true;
 
 const waitForServer = async () => {
   for (let attempt = 0; attempt < 100; attempt += 1) {
@@ -44,13 +45,20 @@ try {
     });
     const page = await context.newPage();
     page.setDefaultTimeout(3000);
-    await page.route("**/api/**", (route) => {
+    // eslint-disable-next-line complexity -- One route fixture covers the full admin journey.
+    await page.route("**/api/**", async (route) => {
       const request = route.request();
       const url = new URL(request.url());
       const authorization = request.headers().authorization ?? "";
       const payload = request.postDataJSON();
+      let credential = "none";
+      if (authorization === "Bearer admin-key") {
+        credential = "admin";
+      } else if (authorization === "Bearer daily-key") {
+        credential = "daily";
+      }
       calls.push({
-        authorization,
+        credential,
         method: request.method(),
         path: url.pathname,
       });
@@ -104,7 +112,17 @@ try {
         url.pathname.endsWith("/admin/people/alice/keys") &&
         request.method() === "GET"
       ) {
+        if (delayAliceKeys) {
+          delayAliceKeys = false;
+          await setTimeout(350);
+        }
         return respond(200, { keys });
+      }
+      if (
+        url.pathname.endsWith("/admin/people/host/keys") &&
+        request.method() === "GET"
+      ) {
+        return respond(200, { keys: [] });
       }
       if (
         url.pathname.endsWith("/admin/people/alice/keys") &&
@@ -157,6 +175,11 @@ try {
     await page.getByLabel("New Person username").fill("alice");
     await page.getByRole("button", { name: "Add Person" }).click();
     await page.getByRole("button", { name: "Manage alice" }).click();
+    await page.getByRole("button", { name: "Manage host" }).click();
+    await setTimeout(500);
+    assert.equal(await page.getByRole("heading", { name: "host" }).count(), 1);
+    results.push("older key response cannot replace selected Person");
+    await page.getByRole("button", { name: "Manage alice" }).click();
     await page.getByLabel("Key label").fill("Alice phone");
     await page.getByRole("button", { name: "Mint key" }).click();
     await page.getByText("one-time-alice-token").waitFor();
@@ -174,6 +197,10 @@ try {
     await page.getByText("Last used").waitFor();
     await page.getByRole("button", { name: "Revoke Alice phone" }).click();
     assert.equal(keys.length, 0);
+    page.once("dialog", (dialog) => dialog.dismiss());
+    await page.getByRole("button", { name: "Remove alice" }).click();
+    assert.equal(people.length, 2);
+    page.once("dialog", (dialog) => dialog.accept());
     await page.getByRole("button", { name: "Remove alice" }).click();
     await page
       .getByRole("button", { name: "Manage alice" })

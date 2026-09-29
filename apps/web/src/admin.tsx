@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
 import { adminApi, ApiFailureError } from "./api";
@@ -37,6 +37,7 @@ export const AdminView = ({ onClose }: { onClose: () => void }) => {
   const [copied, setCopied] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
+  const selectionRequest = useRef(0);
 
   useEffect(() => {
     if (access.kind !== "loading") {
@@ -78,6 +79,7 @@ export const AdminView = ({ onClose }: { onClose: () => void }) => {
     ) {
       sessionStorage.removeItem(ADMIN_KEY_STORAGE);
       setAccess({ kind: "locked", message: "An admin key is required." });
+      selectionRequest.current += 1;
       setSelection({ kind: "none" });
       setIssued("");
     } else {
@@ -103,14 +105,20 @@ export const AdminView = ({ onClose }: { onClose: () => void }) => {
     setMessage("");
     setIssued("");
     setCopied(false);
+    selectionRequest.current += 1;
+    const request = selectionRequest.current;
     setSelection({ kind: "loading", person });
     try {
       const response = await adminApi(access.key).keys(person.id);
-      setSelection({ keys: response.keys, kind: "ready", person });
+      if (request === selectionRequest.current) {
+        setSelection({ keys: response.keys, kind: "ready", person });
+      }
     } catch (error) {
-      lockIfDenied(
-        error instanceof Error ? error : new Error("Request failed")
-      );
+      if (request === selectionRequest.current) {
+        lockIfDenied(
+          error instanceof Error ? error : new Error("Request failed")
+        );
+      }
     }
   };
 
@@ -190,6 +198,14 @@ export const AdminView = ({ onClose }: { onClose: () => void }) => {
     if (access.kind !== "ready" || person.id === "host" || busy) {
       return;
     }
+    if (
+      // eslint-disable-next-line no-alert -- Native confirmation protects destructive removal.
+      !window.confirm(
+        `Remove ${person.username} and their keys and Library data?`
+      )
+    ) {
+      return;
+    }
     setBusy(true);
     setMessage("");
     try {
@@ -198,6 +214,7 @@ export const AdminView = ({ onClose }: { onClose: () => void }) => {
         ...access,
         people: access.people.filter((item) => item.id !== person.id),
       });
+      selectionRequest.current += 1;
       setSelection({ kind: "none" });
       setIssued("");
     } catch (error) {
@@ -255,6 +272,7 @@ export const AdminView = ({ onClose }: { onClose: () => void }) => {
             onClick={() => {
               sessionStorage.removeItem(ADMIN_KEY_STORAGE);
               setAccess({ kind: "locked", message: "" });
+              selectionRequest.current += 1;
               setSelection({ kind: "none" });
               setIssued("");
             }}
