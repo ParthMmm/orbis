@@ -87,3 +87,41 @@ test("Save Current Tab asks for an active tab when there is none", async () => {
     title: "No active tab",
   });
 });
+
+test("Save Current Tab saves the focused window's tab when several windows are open", async () => {
+  raycast.tabs = [
+    { active: true, title: "Inbox", url: "https://mail.example.com/" },
+    {
+      active: true,
+      title: "KETTAMA @ Creamfields - YouTube",
+      url: "https://www.youtube.com/watch?v=abcdefghijk",
+    },
+  ];
+  raycast.focusedTitle = "KETTAMA @ Creamfields - YouTube";
+
+  await saveCurrentTab();
+
+  expect(requests[0]?.body).toContain(
+    "https://www.youtube.com/watch?v=abcdefghijk"
+  );
+  expect(finalToast()).toMatchObject({ style: "success", title: "Set saved" });
+});
+
+test("Save Current Tab refuses to guess between windows it cannot tell apart", async () => {
+  raycast.tabs = [
+    { active: true, title: "Mix", url: "https://youtu.be/abcdefghijk" },
+    { active: true, title: "Mix", url: "https://youtu.be/bcdefghijkl" },
+  ];
+  raycast.focusedTitle = "Mix";
+  mockFetch(() => {
+    throw new Error("the command must not guess a tab");
+  });
+
+  await saveCurrentTab();
+
+  expect(requests).toEqual([]);
+  expect(finalToast()).toMatchObject({
+    style: "failure",
+    title: "Couldn't tell which window is in front",
+  });
+});
