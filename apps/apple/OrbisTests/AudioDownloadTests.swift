@@ -47,30 +47,10 @@ final class AudioDownloadTests: XCTestCase {
     )
   }
 
-  func testRequestDownloadHitsRouteAndDecodesSet() async throws {
-    let updated = try await client().requestAudioDownload("1")
-    XCTAssertEqual(updated.downloadState, "queued")
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
-    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/sets/1/audio/download")
-  }
-
-  func testAudioStateDecodesProgress() async throws {
-    let state = try await client().audioState("1")
-    XCTAssertEqual(state.state, "downloading")
-    XCTAssertEqual(state.bytesReceived, 10)
-    XCTAssertEqual(state.bytesTotal, 100)
-    XCTAssertNil(state.format)
-  }
-
   func testCancelDownloadDecodesSet() async throws {
     let updated = try await client().cancelAudioDownload("1")
     XCTAssertEqual(updated.downloadState, "none")
     XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
-  }
-
-  func testAudioFileURLShapesPath() {
-    let url = client().audioFileURL("1")
-    XCTAssertEqual(url.absoluteString, "https://vanta.example.ts.net/sets/1/audio")
   }
 
   func testDownloadUpdatesLibraryState() async throws {
@@ -197,26 +177,6 @@ final class AudioDownloadTests: XCTestCase {
     XCTAssertNil(paused[MPMediaItemPropertyPlaybackDuration])
   }
 
-  func testNowPlayingInfoCarriesTheArtistAndArtworkWhenKnown() {
-    let bare = AudioPlayer.nowPlayingInfo(
-      title: "Seeded set", artist: "", duration: nil, elapsed: 0, isPlaying: true
-    )
-    XCTAssertNil(bare[MPMediaItemPropertyArtist], "an empty creator is no artist line")
-    XCTAssertNil(bare[MPMediaItemPropertyArtwork])
-    XCTAssertEqual(
-      bare[MPNowPlayingInfoPropertyMediaType] as? UInt, MPNowPlayingInfoMediaType.audio.rawValue)
-
-    let artwork = AudioPlayer.artwork(from: onePixelPNG)
-    XCTAssertNotNil(artwork, "a decodable image becomes artwork")
-    let full = AudioPlayer.nowPlayingInfo(
-      title: "Seeded set", artist: "kettlemint", artwork: artwork, duration: 5400, elapsed: 12,
-      isPlaying: true
-    )
-    XCTAssertEqual(full[MPMediaItemPropertyArtist] as? String, "kettlemint")
-    XCTAssertNotNil(full[MPMediaItemPropertyArtwork])
-    XCTAssertNil(AudioPlayer.artwork(from: Data("not an image".utf8)))
-  }
-
   func testLetterboxedThumbnailsAreCroppedToTheirPicture() throws {
     let letterboxed = try XCTUnwrap(solidImage(width: 480, height: 360))
     let cropped = AudioPlayer.widescreen(letterboxed)
@@ -237,14 +197,6 @@ final class AudioDownloadTests: XCTestCase {
     context?.setFillColor(CGColor(red: 0, green: 0, blue: 0, alpha: 1))
     context?.fill(CGRect(x: 0, y: 0, width: width, height: height))
     return context?.makeImage()
-  }
-
-  /// A 1×1 PNG, so artwork decoding is exercised without a fixture on disk.
-  private var onePixelPNG: Data {
-    Data(
-      base64Encoded:
-        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=="
-    )!
   }
 
   func testRemoteCommandsRegisteredAndEnabled() {

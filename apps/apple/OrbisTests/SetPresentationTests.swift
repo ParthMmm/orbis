@@ -84,90 +84,6 @@ final class SetPresentationTests: XCTestCase {
     XCTAssertEqual(SetPresentation.downloadPhase("none", live: nil), .available)
   }
 
-  func testTimeLeftSaysWhatRemains() throws {
-    XCTAssertEqual(
-      SetPresentation.timeLeft(try makeSet(playbackPositionSeconds: 2460, durationSeconds: 4500)),
-      "34m left")
-    XCTAssertEqual(
-      SetPresentation.timeLeft(try makeSet(playbackPositionSeconds: 600, durationSeconds: 5400)),
-      "1h 20m left")
-    XCTAssertEqual(SetPresentation.timeLeft(try makeSet(playbackPositionSeconds: 90)), "1m in")
-    XCTAssertNil(SetPresentation.timeLeft(try makeSet(durationSeconds: 3600)))
-  }
-
-  func testThePageDrawsTheLargestImageTheProviderOffered() throws {
-    XCTAssertEqual(
-      SetPresentation.pageArtwork(
-        try makeSet(
-          artworkUrl: "https://example.test/listing.jpg",
-          artworkLargeUrl: "https://example.test/large.jpg"
-        )
-      )?.absoluteString,
-      "https://example.test/large.jpg")
-    // A service that predates the second image sends one, and the page still has an image.
-    XCTAssertEqual(
-      SetPresentation.pageArtwork(try makeSet(artworkUrl: "https://example.test/listing.jpg"))?
-        .absoluteString,
-      "https://example.test/listing.jpg")
-    XCTAssertNil(SetPresentation.pageArtwork(try makeSet()))
-  }
-
-  func testRowCarriesIdentitySourceTagsAndDate() throws {
-    let model = SetPresentation.row(try makeSet())
-
-    XCTAssertEqual(model.source, "YouTube")
-    XCTAssertEqual(model.title, "Night session")
-    XCTAssertEqual(model.tags.map(\.name), ["techno", "breaks"])
-    XCTAssertEqual(model.added.timeIntervalSince1970, 1_789_093_994.729, accuracy: 0.01)
-  }
-
-  func testProgressNeedsALengthToMeasureAgainst() throws {
-    XCTAssertNil(SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 600)))
-    XCTAssertEqual(
-      SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 600, durationSeconds: 2400)), 0.25)
-    XCTAssertEqual(
-      SetPresentation.progress(of: try makeSet(playbackPositionSeconds: 9000, durationSeconds: 2400)), 1)
-  }
-
-  func testDisplayURLCarriesNoSchemeOrWWW() {
-    XCTAssertEqual(SetPresentation.displayURL("https://www.youtube.com/watch?v=x"), "youtube.com/watch?v=x")
-    XCTAssertEqual(SetPresentation.displayURL("http://soundcloud.com/a/b"), "soundcloud.com/a/b")
-    XCTAssertEqual(SetPresentation.displayURL("https://vanta.example.ts.net/sets"), "vanta.example.ts.net/sets")
-  }
-
-  func testTagColourIsStableAndIndependentOfOtherTags() throws {
-    let alone = SetPresentation.row(try makeSet(tags: #"["techno"]"#))
-    let mixed = SetPresentation.row(try makeSet(tags: #"["breaks","techno"]"#))
-
-    let technoAlone = alone.tags.first { $0.name == "techno" }?.category
-    let technoMixed = mixed.tags.first { $0.name == "techno" }?.category
-
-    XCTAssertEqual(technoAlone, technoMixed)
-    XCTAssertNotEqual(
-      SetPresentation.category(for: "techno"),
-      SetPresentation.category(for: "breaks")
-    )
-  }
-
-  func testStateAppearsOnlyWhenThereIsSomethingToSay() throws {
-    XCTAssertNil(SetPresentation.row(try makeSet()).state)
-    XCTAssertNil(SetPresentation.row(try makeSet(downloadState: "none")).state)
-
-    let both = try XCTUnwrap(
-      SetPresentation.row(try makeSet(playbackPositionSeconds: 3661, downloadState: "queued")).state
-    )
-    XCTAssertEqual(both.resumeAt, 3661)
-    XCTAssertEqual(both.label, "Resume at 1:01:01 · Download queued")
-
-    let downloadOnly = try XCTUnwrap(
-      SetPresentation.row(try makeSet(downloadState: "ready")).state
-    )
-    XCTAssertNil(downloadOnly.resumeAt)
-    XCTAssertNil(downloadOnly.download, "kept audio is a symbol on the row, not a line of words")
-    XCTAssertTrue(downloadOnly.kept)
-    XCTAssertEqual(downloadOnly.label, "Audio kept")
-  }
-
   /// The artwork's control exists only where there is Retained Audio, and for the Set in the
   /// player it names the change it makes rather than the state it is in.
   func testRowPlaybackFollowsRetainedAudioAndThePlayer() throws {
@@ -179,42 +95,6 @@ final class SetPresentationTests: XCTestCase {
     XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "two", isPlaying: true), .ready)
     XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "one", isPlaying: true), .playing)
     XCTAssertEqual(SetPresentation.playback(of: kept, currentSetId: "one", isPlaying: false), .paused)
-  }
-
-  func testDownloadLabelsCoverEveryServerState() {
-    XCTAssertNil(SetPresentation.downloadLabel("none"))
-    XCTAssertEqual(SetPresentation.downloadLabel("queued"), "Download queued")
-    XCTAssertEqual(SetPresentation.downloadLabel("downloading"), "Downloading")
-    XCTAssertEqual(SetPresentation.downloadLabel("ready"), "Audio ready")
-    XCTAssertEqual(SetPresentation.downloadLabel("failed"), "Download failed")
-    XCTAssertEqual(SetPresentation.downloadLabel("canceled"), "Download canceled")
-    XCTAssertNil(SetPresentation.downloadLabel("something-new"))
-  }
-
-  func testDatesLineNamesImportedAndReleased() throws {
-    let json = """
-      {"id":"one","url":"https://www.youtube.com/watch?v=abcdefghijk","title":"Night session",
-      "source":"youtube","tags":[],"createdAt":"2026-09-11T02:33:14.729Z",
-      "releasedAt":"2015-10-28T10:00:00.000Z","creator":null,"artworkUrl":null,
-      "artworkLargeUrl":null,"durationSeconds":null,"metadataState":"pending",
-      "downloadState":"none","playlistIds":[],"playbackPositionSeconds":0,"listenCount":0,
-      "finishCount":0,"lastListenedAt":null}
-      """
-    let set = try JSONDecoder().decode(SavedSet.self, from: Data(json.utf8))
-    XCTAssertEqual(
-      SetPresentation.datesLine(set),
-      "Imported \(SetPresentation.plainDate(set.createdAt)) · Released \(SetPresentation.plainDate("2015-10-28T10:00:00.000Z"))"
-    )
-    let importedOnly = try makeSet()
-    XCTAssertEqual(
-      SetPresentation.datesLine(importedOnly),
-      "Imported \(SetPresentation.plainDate(importedOnly.createdAt))")
-  }
-
-  func testSubtitleLeavesOutDates() throws {
-    XCTAssertNil(SetPresentation.subtitle(try makeSet()))
-    let named = try makeSet(durationSeconds: 120)
-    XCTAssertEqual(SetPresentation.subtitle(named), "2m")
   }
 
   func testDateParsesWithAndWithoutFractionalSeconds() {

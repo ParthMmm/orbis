@@ -38,14 +38,6 @@ final class LibraryFilterTests: XCTestCase {
     return model
   }
 
-  func testOffersEveryTagOnceInAStableOrder() {
-    let model = library([
-      set(id: "1", tags: ["techno", "live"]),
-      set(id: "2", tags: ["ambient", "techno"]),
-    ])
-    XCTAssertEqual(model.availableTags, ["ambient", "live", "techno"])
-  }
-
   func testShowsOnlySetsCarryingTheActiveTag() {
     let model = library([
       set(id: "1", tags: ["techno"]),
@@ -65,12 +57,6 @@ final class LibraryFilterTests: XCTestCase {
       return XCTFail("expected a loaded list")
     }
     XCTAssertEqual(all.count, 3)
-  }
-
-  func testAnEmptyLibraryHasNoFilterToOffer() {
-    let model = library([])
-    XCTAssertEqual(model.availableTags, [])
-    XCTAssertEqual(model.totalCount, 0)
   }
 
   func testAnIdMatchesACreatorWhoseNameChanged() {

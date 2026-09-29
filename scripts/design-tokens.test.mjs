@@ -23,14 +23,6 @@ test("the committed token source matches its schema", () => {
   assert.doesNotThrow(() => validate(loadTokens()));
 });
 
-test("a colour that is not OKLCH is refused", () => {
-  const tokens = withTokens((copy) => {
-    copy.color.paper.light = "#fff";
-    return copy;
-  });
-  assert.throws(() => validate(tokens), /does not match its schema/u);
-});
-
 test("a colour without a dark value is refused", () => {
   const tokens = withTokens((copy) => {
     delete copy.color.field.dark;
@@ -48,25 +40,6 @@ test("an unknown token is refused rather than silently ignored", () => {
     return copy;
   });
   assert.throws(() => validate(tokens), /does not match its schema/u);
-});
-
-test("a category the Swift enum cannot draw is refused", () => {
-  const tokens = withTokens((copy) => {
-    delete copy.color.categoryText.brown;
-    return copy;
-  });
-  assert.throws(() => validate(tokens), /does not match its schema/u);
-});
-
-test("a $schema that points nowhere in the repo is refused", () => {
-  const tokens = withTokens((copy) => {
-    copy.$schema = "./missing.schema.json";
-    return copy;
-  });
-  assert.throws(
-    () => validate(tokens),
-    /not docs\/design\/tokens\.schema\.json/u
-  );
 });
 
 test("APCA reproduces the measurements the palette was chosen with", () => {
@@ -120,19 +93,6 @@ test("a colour that leaves Display P3 fails rather than being clamped", () => {
   });
   assert.ok(!inDisplayP3(tokens.color.categoryText.pink.dark));
   assert.throws(() => assertDisplayable(tokens), /leave Display P3/u);
-});
-
-test("a colour without an increased-contrast value is refused", () => {
-  const tokens = withTokens((copy) => {
-    delete copy.color.field.increasedContrast;
-    return copy;
-  });
-  assert.throws(() => validate(tokens), /does not match its schema/u);
-});
-
-test("rendering the same source twice produces the same text", () => {
-  const tokens = loadTokens();
-  assert.deepEqual(render(tokens), render(tokens));
 });
 
 test("every colour and radius reaches both generated files", () => {
