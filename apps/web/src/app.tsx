@@ -2,6 +2,7 @@ import type { SavedSet } from "@orbis/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { FormEvent } from "react";
 
+import { AdminView } from "./admin";
 import { api, ApiFailureError, streamUrl } from "./api";
 
 const KEY_STORAGE = "orbis.apiKey";
@@ -12,6 +13,7 @@ type Session =
 type WebListQuery = Parameters<ReturnType<typeof api>["list"]>[0];
 
 export const App = () => {
+  const [screen, setScreen] = useState<"library" | "admin">("library");
   const [session, setSession] = useState<Session>(() => {
     const key = localStorage.getItem(KEY_STORAGE);
     return key
@@ -83,6 +85,10 @@ export const App = () => {
     }
   };
 
+  if (screen === "admin") {
+    return <AdminView onClose={() => setScreen("library")} />;
+  }
+
   if (session.kind === "key-entry") {
     return (
       <main className="entry-shell">
@@ -114,6 +120,13 @@ export const App = () => {
           <button type="submit" disabled={connecting}>
             {connecting ? "Connecting…" : "Connect"}
           </button>
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => setScreen("admin")}
+          >
+            Manage people
+          </button>
         </form>
       </main>
     );
@@ -128,6 +141,7 @@ export const App = () => {
         localStorage.removeItem(KEY_STORAGE);
         setSession({ explanation: "", kind: "key-entry" });
       }}
+      onManagePeople={() => setScreen("admin")}
     />
   );
 };
@@ -136,10 +150,12 @@ const LibraryView = ({
   session,
   onRevoked,
   onDisconnect,
+  onManagePeople,
 }: {
   session: Extract<Session, { kind: "library" }>;
   onRevoked: () => void;
   onDisconnect: () => void;
+  onManagePeople: () => void;
 }) => {
   const [sets, setSets] = useState<SavedSet[]>([]);
   const [tags, setTags] = useState<string[]>([]);
@@ -320,6 +336,11 @@ const LibraryView = ({
         <div className="brand">ORBIS</div>
         <div className="identity">
           <span>{session.username}</span>
+          {session.username === "host" && (
+            <button type="button" onClick={onManagePeople}>
+              Manage people
+            </button>
+          )}
           <button type="button" onClick={onDisconnect}>
             Change key
           </button>
