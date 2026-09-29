@@ -126,6 +126,24 @@ const sampleKeyFor = (operationId: string): keyof typeof samples => {
   throw new Error(`No Swift sample for ${operationId}`);
 };
 
+const sampleFor = (operationId: string) => {
+  if (operationId === "people.friendPlaylists") {
+    return { playlists: [{ ...samples.playlist, sets: [samples.savedSet] }] };
+  }
+  if (operationId === "people.friendListens") {
+    return {
+      listens: [
+        {
+          finishedAt: null,
+          set: samples.savedSet,
+          startedAt: "2026-09-29T00:00:00.000Z",
+        },
+      ],
+    };
+  }
+  return samples[sampleKeyFor(operationId)];
+};
+
 test("the served OpenAPI document accepts the Swift response samples", async () => {
   const app = createApp();
   try {
@@ -153,7 +171,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
           checked += 1;
           continue;
         }
-        const sample = samples[sampleKeyFor(operation.operationId)];
+        const sample = sampleFor(operation.operationId);
         for (const [status, declared] of Object.entries(operation.responses)) {
           if (Number(status) < 200 || Number(status) >= 300) {
             continue;
@@ -171,7 +189,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(31);
+    expect(checked).toBe(33);
   } finally {
     await app.dispose();
   }

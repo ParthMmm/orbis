@@ -65,6 +65,10 @@ export const api = (key: string) => ({
     call(key, (client) => client.playlists.remove({ params: { id } })),
   download: (id: string) =>
     call(key, (client) => client.sets.requestDownload({ params: { id } })),
+  friendListens: (id: string) =>
+    call(key, (client) => client.people.friendListens({ params: { id } })),
+  friendPlaylists: (id: string) =>
+    call(key, (client) => client.people.friendPlaylists({ params: { id } })),
   friendSets: (id: string) =>
     call(key, (client) => client.people.sets({ params: { id } })),
   grant: (id: string) =>

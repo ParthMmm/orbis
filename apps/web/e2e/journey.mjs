@@ -156,6 +156,33 @@ try {
         body = { people: social ? [{ id: "person-b", username: "Bob" }] : [] };
       } else if (url.pathname.endsWith("/people/person-b/sets")) {
         body = { sets: [{ ...set, id: "friend-set", title: "Bob's set" }] };
+      } else if (url.pathname.endsWith("/people/person-b/playlists")) {
+        body = {
+          playlists: [
+            {
+              createdAt: "2026-09-29T00:00:00.000Z",
+              id: "playlist-b",
+              name: "Bob's picks",
+              setCount: 1,
+              sets: [{ ...set, id: "friend-set", title: "Bob's set" }],
+            },
+          ],
+        };
+      } else if (url.pathname.endsWith("/people/person-b/listens")) {
+        body = {
+          listens: [
+            {
+              finishedAt: null,
+              set: { ...set, id: "friend-set", title: "Bob's set" },
+              startedAt: "2026-09-29T11:00:00.000Z",
+            },
+            {
+              finishedAt: "2026-09-28T12:00:00.000Z",
+              set: { ...set, id: "old-friend-set", title: "Older set" },
+              startedAt: "2026-09-28T11:00:00.000Z",
+            },
+          ],
+        };
       } else if (url.pathname === "/api/sets") {
         if (request.method() === "POST") {
           saved = {
@@ -260,6 +287,9 @@ try {
     await page.getByRole("button", { name: "Open Bob's Library" }).click();
     await page.getByRole("heading", { name: "Bob's Library" }).waitFor();
     await page.getByRole("heading", { name: "Bob's set" }).waitFor();
+    await page.getByRole("heading", { name: "Bob's picks" }).waitFor();
+    await page.getByRole("heading", { name: "Listen History" }).waitFor();
+    await page.getByText("Finished Older set").waitFor();
     results.push("Social switch opens a friend's Library");
     assert.equal(
       await page.evaluate(() => localStorage.getItem("orbis.apiKey")),

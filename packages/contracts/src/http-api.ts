@@ -111,6 +111,15 @@ export const PlaylistSchema = Schema.Struct({
   name: Schema.String,
   setCount: Schema.Number,
 });
+export const FriendPlaylistSchema = Schema.Struct({
+  ...PlaylistSchema.fields,
+  sets: Schema.Array(SavedSetSchema),
+});
+export const ListenSchema = Schema.Struct({
+  finishedAt: Schema.NullOr(Schema.String),
+  set: SavedSetSchema,
+  startedAt: Schema.String,
+});
 const PlaylistName = Schema.String.check(Schema.isMaxLength(100));
 const MembershipId = Schema.String.check(Schema.isMaxLength(100));
 export const PlaylistNamePayload = Schema.Struct({ name: PlaylistName });
@@ -391,6 +400,18 @@ export const OrbisApi = PlaylistApi.add(
           error: [NotFound, InternalError],
           params: SetId,
           success: LibraryResponseSchema,
+        }),
+        HttpApiEndpoint.get("friendPlaylists", "/people/:id/playlists", {
+          error: [NotFound, InternalError],
+          params: SetId,
+          success: Schema.Struct({
+            playlists: Schema.Array(FriendPlaylistSchema),
+          }),
+        }),
+        HttpApiEndpoint.get("friendListens", "/people/:id/listens", {
+          error: [NotFound, InternalError],
+          params: SetId,
+          success: Schema.Struct({ listens: Schema.Array(ListenSchema) }),
         })
       )
       .middleware(SetAccess)
