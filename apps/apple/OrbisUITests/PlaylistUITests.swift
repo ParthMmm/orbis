@@ -124,8 +124,9 @@ final class PlaylistUITests: XCTestCase {
     XCTAssertTrue(empty.waitForExistence(timeout: 30), "the empty list must keep its identifier")
     XCTAssertTrue(app.staticTexts["No playlists yet"].exists)
     XCTAssertTrue(app.staticTexts["Create a playlist to organize your Sets."].exists)
-    let create = empty.buttons.matching(NSPredicate(format: "label == %@", "New playlist"))
-      .firstMatch
+    let create = app.buttons.matching(
+      NSPredicate(format: "identifier == %@ AND label == %@", "playlists-empty", "New playlist")
+    ).firstMatch
     XCTAssertTrue(create.exists, "the empty state must name the create action")
     capture("playlists-empty")
 
