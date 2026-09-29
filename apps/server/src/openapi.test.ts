@@ -171,6 +171,13 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
           checked += 1;
           continue;
         }
+        if (operation.operationId === "events.subscribe") {
+          expect(
+            operation.responses["200"]?.content?.["text/event-stream"]
+          ).toBeDefined();
+          checked += 1;
+          continue;
+        }
         const sample = sampleFor(operation.operationId);
         for (const [status, declared] of Object.entries(operation.responses)) {
           if (Number(status) < 200 || Number(status) >= 300) {
@@ -189,7 +196,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(33);
+    expect(checked).toBe(34);
   } finally {
     await app.dispose();
   }

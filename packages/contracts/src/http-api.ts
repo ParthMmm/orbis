@@ -153,6 +153,11 @@ export const PositionPayload = Schema.Struct({
   ),
 });
 export const TagsPayload = Schema.Struct({ tags: Tags });
+export const QueueEventSchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("queue"), queue: ListeningQueueSchema }),
+  Schema.Struct({ kind: Schema.Literal("heartbeat") }),
+]);
+
 export const MeSchema = Schema.Struct({
   autoDownload: Schema.Boolean,
   id: Schema.String,
@@ -460,6 +465,18 @@ export const OrbisApi = PlaylistApi.add(
           error: [NotFound, InternalError],
           params: SetId,
           success: AdminKey,
+        })
+      )
+      .middleware(SetAccess)
+  )
+  .add(
+    HttpApiGroup.make("events")
+      .add(
+        HttpApiEndpoint.get("subscribe", "/events", {
+          success: HttpApiSchema.StreamSse({
+            data: QueueEventSchema,
+            error: Schema.Never,
+          }),
         })
       )
       .middleware(SetAccess)

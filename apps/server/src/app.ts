@@ -22,7 +22,7 @@ import {
   UpdateMePayload,
 } from "@orbis/contracts/http-api";
 import { desc, eq, sql } from "drizzle-orm";
-import { Context, Effect, Layer, Option, Schema, Scope } from "effect";
+import { Context, Effect, Layer, Option, Schema, Scope, Stream } from "effect";
 import {
   Headers,
   HttpRouter,
@@ -67,6 +67,7 @@ import {
 import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
 import type { EnrichedMetadata } from "./metadata.js";
+import { QueueSignals } from "./queue-signals.js";
 import { Queue } from "./queue.js";
 import { expandShortLink } from "./short-link.js";
 import { Stats } from "./stats.js";
@@ -308,6 +309,7 @@ export const createApp = (
   });
   // The Database layer is one value used by every service that writes.
   const libraryLayer = Library.layer.pipe(Layer.provide(database));
+  const queueSignalsLayer = QueueSignals.layer;
   const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
@@ -316,6 +318,7 @@ export const createApp = (
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
       const scope = yield* Scope.Scope;
+      const signals = yield* QueueSignals;
       const reviseTitle = Effect.fn("reviseSavedSetTitle")((
         set: SavedSet,
         enriched: EnrichedMetadata
@@ -551,7 +554,10 @@ export const createApp = (
             withFailureResponse(
               Effect.gen(function* removePersonalSet() {
                 const personal = yield* Library;
-                return yield* personal.remove(params.id);
+                const queue = yield* Queue;
+                return yield* personal
+                  .remove(params.id)
+                  .pipe(Effect.tap(queue.notify));
               })
             )
           )
@@ -1094,6 +1100,43 @@ export const createApp = (
             )
           )
       );
+      const eventsGroup = HttpApiBuilder.group(OrbisApi, "events", (handlers) =>
+        handlers.handle("subscribe", () =>
+          Effect.gen(function* subscribeEvents() {
+            const queue = yield* Queue;
+            const caller = yield* SetCaller;
+            const authorized = () => {
+              if (caller.keyId === null) {
+                return true;
+              }
+              const { store } = readTrustRegistry(devicesPath);
+              return (
+                store.keys.some(
+                  (key) =>
+                    key.id === caller.keyId && key.personId === caller.person.id
+                ) &&
+                store.people.some(
+                  (person) => person.id === caller.person.id && !person.removed
+                )
+              );
+            };
+            const snapshots = queue.changes.pipe(
+              Stream.mapEffect(() => queue.read()),
+              Stream.map((snapshot) => ({
+                kind: "queue" as const,
+                queue: snapshot,
+              }))
+            );
+            return Stream.merge(
+              snapshots,
+              Stream.tick("30 seconds").pipe(
+                Stream.drop(1),
+                Stream.map(() => ({ kind: "heartbeat" as const }))
+              )
+            ).pipe(Stream.takeWhile(authorized), Stream.orDie);
+          })
+        )
+      );
       const systemGroup = HttpApiBuilder.group(OrbisApi, "system", (handlers) =>
         handlers.handle("health", () =>
           Effect.succeed({ status: "ok" as const })
@@ -1106,6 +1149,7 @@ export const createApp = (
           Layer.provide(queueGroup),
           Layer.provide(libraryGroup),
           Layer.provide(systemGroup),
+          Layer.provide(eventsGroup),
           Layer.provide(peopleGroup),
           Layer.provide(adminGroup),
           Layer.provide(
@@ -1127,6 +1171,7 @@ export const createApp = (
                         Layer.provide(
                           Layer.mergeAll(
                             Layer.succeed(Database, db),
+                            Layer.succeed(QueueSignals, signals),
                             personalLibrary,
                             Stats.forPersonLayer(access.person.id).pipe(
                               Layer.provide(Layer.succeed(Database, db))
@@ -1153,6 +1198,7 @@ export const createApp = (
     routes.pipe(
       Layer.provide(Audio.layer(options.audio ?? {})),
       Layer.provide(libraryLayer),
+      Layer.provide(queueSignalsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
       Layer.provide(options.titleReviser ?? TitleReviser.unconfigured()),
       Layer.provide(database)
@@ -1175,6 +1221,12 @@ export const createApp = (
         return Promise.resolve(browserResponse);
       }
       const withOrigin = (response: Response): Response => {
+        if (
+          response.headers.get("content-type")?.startsWith("text/event-stream")
+        ) {
+          response.headers.set("cache-control", "no-cache, no-transform");
+          response.headers.set("x-accel-buffering", "no");
+        }
         if (allowedBrowserOrigin(origin, mode, development)) {
           response.headers.set("access-control-allow-origin", origin);
           response.headers.set("vary", "origin");
