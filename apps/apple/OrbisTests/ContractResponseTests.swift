@@ -6,7 +6,10 @@ import XCTest
 final class ContractResponseTests: XCTestCase {
   private struct Samples: Decodable {
     struct Tags: Decodable { let tags: [String] }
-    struct Person: Decodable { let id: String; let username: String }
+    struct Person: Decodable {
+      let id: String
+      let username: String
+    }
 
     let audioState: AudioState
     let health: HealthResponse
