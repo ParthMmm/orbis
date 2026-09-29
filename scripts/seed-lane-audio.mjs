@@ -109,7 +109,7 @@ createServer(async (request, response) => {
       mkdirSync(audioDirectory, { recursive: true });
       copyFileSync(fixture, path.join(audioDirectory, `${setId}.m4a`));
       db.query(
-        "UPDATE sets SET download_state = 'ready', retained_audio_format = 'm4a', retained_audio_bytes = ?, duration_seconds = 8 WHERE id = ?"
+        "UPDATE sets SET download_state = 'ready', retained_audio_format = 'm4a', retained_audio_bytes = ?, duration_seconds = 30 WHERE id = ?"
       ).run(statSync(fixture).size, setId);
       break;
     }

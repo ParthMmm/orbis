@@ -36,6 +36,15 @@ final class LibraryUITests: XCTestCase {
     add(attachment)
   }
 
+  private func record(_ name: String, _ values: [String: Any]) throws {
+    let data = try JSONSerialization.data(
+      withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
+    let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
+    attachment.name = "\(name).json"
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
+
   /// Taps the centre of an element's own frame, with the point taken from the window. XCUITest
   /// reports a hit point of `{-1, -1}` for some controls inside the Library's scroll view — it
   /// decides the element is not visible, tries to scroll it into view, and gives up — while the
@@ -437,6 +446,74 @@ final class LibraryUITests: XCTestCase {
     XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 6), .completed)
     XCTAssertEqual(app.buttons["detail-play-toggle"].label, "Pause")
     capture("16-ready-audio-playing")
+  }
+
+  func testMiniPlayerNowPlayingAndStoredPosition() throws {
+    let service = try LaneService()
+    let seeded = try service.saveReadySet(
+      title: "Now Playing journey", url: "https://www.youtube.com/watch?v=nowplaying1")
+    let app = try launch(paired: true)
+    openLibrary(in: app)
+    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
+    XCTAssertTrue(row.waitForExistence(timeout: 60))
+    tapAtCentre(of: row, in: app)
+
+    let play = app.buttons["detail-play-toggle"]
+    XCTAssertTrue(play.waitForExistence(timeout: 30))
+    play.tap()
+    XCTAssertFalse(app.buttons.matching(identifier: "mini-player").firstMatch.exists)
+    capture("17-playing-on-set-page")
+
+    app.navigationBars.buttons.firstMatch.tap()
+    let miniToggle = app.buttons.matching(
+      NSPredicate(format: "identifier == %@ AND label == %@", "mini-player", "Pause")
+    ).firstMatch
+    XCTAssertTrue(miniToggle.waitForExistence(timeout: 10))
+    XCTAssertEqual(miniToggle.label, "Pause")
+    capture("18-mini-player")
+
+    let openNowPlaying = app.buttons.matching(
+      NSPredicate(
+        format: "identifier == %@ AND label == %@", "mini-player", "Now playing, \(seeded.title)")
+    ).firstMatch
+    openNowPlaying.tap()
+    let title = app.staticTexts["now-playing-title"]
+    XCTAssertTrue(title.waitForExistence(timeout: 10))
+    XCTAssertEqual(title.label, seeded.title)
+    let seek = app.sliders["now-playing-seek"]
+    let advanced = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value != %@", "0:00"), object: seek)
+    XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 4), .completed)
+    sleep(2)
+    let beforePause = try service.set(id: seeded.id)?.playbackPositionSeconds ?? 0
+    let pause = app.buttons.matching(
+      NSPredicate(format: "identifier == %@ AND label == %@", "now-playing", "Pause")
+    ).firstMatch
+    pause.tap()
+    let resume = app.buttons.matching(
+      NSPredicate(format: "identifier == %@ AND label == %@", "now-playing", "Play")
+    ).firstMatch
+    XCTAssertTrue(resume.waitForExistence(timeout: 4))
+    capture("19-now-playing-paused")
+
+    let stored = try service.position(of: seeded.id, becomesAtLeast: beforePause + 1)
+    XCTAssertGreaterThan(stored, beforePause)
+    XCTAssertLessThan(stored, 30)
+    let storedTitle = try service.set(id: seeded.id)?.title
+    XCTAssertEqual(storedTitle, seeded.title)
+    try record(
+      "playback-position",
+      [
+        "setId": seeded.id,
+        "expected": [
+          "title": seeded.title, "minimumPositionSeconds": beforePause + 1,
+          "maximumPositionSeconds": 29,
+        ],
+        "stored": [
+          "title": storedTitle ?? "", "positionBeforePauseSeconds": beforePause,
+          "positionSeconds": stored,
+        ],
+      ])
   }
 
   /// A confirmation dialog is a sheet on a phone and an alert on a Mac, so a journey asks for

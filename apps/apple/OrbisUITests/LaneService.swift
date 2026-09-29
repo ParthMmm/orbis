@@ -21,6 +21,7 @@ struct LaneService {
   struct Set: Decodable {
     let id: String
     let title: String
+    let playbackPositionSeconds: Int
   }
 
   struct AudioState: Codable {
@@ -119,6 +120,20 @@ struct LaneService {
   func library() throws -> [Set] {
     let response: Sets = try send("GET", "sets", nil)
     return response.sets
+  }
+
+  func set(id: String) throws -> Set? {
+    try library().first { $0.id == id }
+  }
+
+  func position(of id: String, becomesAtLeast minimum: Int) throws -> Int {
+    let deadline = Date().addingTimeInterval(10)
+    repeat {
+      let stored = try set(id: id)?.playbackPositionSeconds ?? 0
+      if stored >= minimum { return stored }
+      usleep(250_000)
+    } while Date() < deadline
+    return try set(id: id)?.playbackPositionSeconds ?? 0
   }
 
   private func send<Response: Decodable>(
