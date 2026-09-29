@@ -60,7 +60,8 @@ export const startListeners = async (
   };
   const start = (port: number, mode: AccessMode) => {
     const server = Bun.serve({
-      fetch: (request) => app.handler(request, mode),
+      fetch: (request, listener) =>
+        app.handler(request, mode, listener.requestIP(request)?.address),
       hostname: "127.0.0.1",
       maxRequestBodySize: 65_536,
       port,

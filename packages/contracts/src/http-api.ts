@@ -204,6 +204,11 @@ export const SetsApi = HttpApi.make("orbis").add(
         params: SetId,
         success: AudioStateSchema,
       }),
+      HttpApiEndpoint.post("audioGrant", "/sets/:id/audio/grant", {
+        error: [NotFound, InternalError],
+        params: SetId,
+        success: Schema.Struct({ url: Schema.String }),
+      }),
       HttpApiEndpoint.get("audio", "/sets/:id/audio", {
         error: [NotFound, RangeNotSatisfiable, InternalError],
         params: SetId,
