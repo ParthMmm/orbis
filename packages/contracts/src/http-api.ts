@@ -75,6 +75,7 @@ const NotFound = ErrorBody.pipe(HttpApiSchema.status(404));
 const Conflict = ErrorBody.pipe(HttpApiSchema.status(409));
 const RangeNotSatisfiable = Schema.Void.pipe(HttpApiSchema.status(416));
 const InternalError = ErrorBody.pipe(HttpApiSchema.status(500));
+const TooManyRequests = ErrorBody.pipe(HttpApiSchema.status(429));
 const ServiceUnavailable = ErrorBody.pipe(HttpApiSchema.status(503));
 const SearchValue = Schema.Union([Schema.String, Schema.Array(Schema.String)]);
 const Tags = Schema.Array(Schema.String.check(Schema.isMaxLength(40))).check(
@@ -187,7 +188,13 @@ export const SetsApi = HttpApi.make("orbis").add(
         success: SavedSetSchema,
       }),
       HttpApiEndpoint.post("requestDownload", "/sets/:id/audio/download", {
-        error: [NotFound, Conflict, InternalError, ServiceUnavailable],
+        error: [
+          NotFound,
+          Conflict,
+          TooManyRequests,
+          InternalError,
+          ServiceUnavailable,
+        ],
         params: SetId,
         success: [
           SavedSetSchema,

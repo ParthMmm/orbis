@@ -5,12 +5,24 @@ import type {
   SaveSetInput,
   SetSource,
 } from "@orbis/contracts";
-import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  inArray,
+  ne,
+  notInArray,
+  sql,
+} from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { Database } from "./db/database.js";
 import {
   libraryEntries,
+  downloadJobs,
+  downloadRequesters,
   playlistSets,
   playlists,
   queueEntries,
@@ -689,51 +701,107 @@ export class Library extends Context.Service<
         )
       );
 
-      // A download request never disturbs finished or running work. A Set with no
-      // download, or one that failed or was canceled, enters the queue; ready and
-      // in-flight states stay put. Every stored set comes from a source Cobalt
-      // handles, so the worker's verdict — not a source check here — decides the rest.
       const queueDownload = Effect.fn("Library.queueDownload")((id: string) =>
         execute(
           Effect.gen(function* queueDownloadEffect() {
-            const [queued] = yield* db
-              .update(sets)
-              .set({ downloadState: "queued" })
-              .where(
-                and(
-                  eq(sets.id, id),
-                  inArray(sets.downloadState, ["none", "failed", "canceled"])
-                )
-              )
-              .returning();
-            if (queued) {
-              return yield* hydrateSet(queued);
-            }
-            return yield* findSavedSet(id);
+            const row = yield* db.transaction((tx) =>
+              Effect.gen(function* enqueue() {
+                const [current] = yield* tx
+                  .select()
+                  .from(sets)
+                  .where(eq(sets.id, id));
+                if (!current) {
+                  return yield* Effect.fail(setNotFound());
+                }
+                if (
+                  !["none", "failed", "canceled"].includes(
+                    current.downloadState
+                  )
+                ) {
+                  return current;
+                }
+                const [waiting] = yield* tx
+                  .select({ value: count() })
+                  .from(downloadJobs)
+                  .innerJoin(sets, eq(sets.id, downloadJobs.setId))
+                  .where(
+                    and(
+                      eq(downloadJobs.personId, personId),
+                      eq(sets.downloadState, "queued")
+                    )
+                  );
+                if (waiting && waiting.value >= 20) {
+                  return yield* Effect.fail(
+                    new LibraryError({
+                      message:
+                        "You can have at most 20 Downloads waiting. Try again after one starts.",
+                      statusCode: 429,
+                    })
+                  );
+                }
+                yield* tx
+                  .insert(downloadRequesters)
+                  .values({ personId })
+                  .onConflictDoNothing();
+                yield* tx
+                  .delete(downloadJobs)
+                  .where(eq(downloadJobs.setId, id));
+                yield* tx.insert(downloadJobs).values({ personId, setId: id });
+                const [queued] = yield* tx
+                  .update(sets)
+                  .set({ downloadState: "queued" })
+                  .where(eq(sets.id, id))
+                  .returning();
+                if (!queued) {
+                  return yield* Effect.fail(setNotFound());
+                }
+                return queued;
+              })
+            );
+            return yield* hydrateSet(row);
           })
         )
       );
-      // One statement claims the oldest queued set, so two workers could never take the
-      // same row. There is only one worker, and the single statement keeps it that way
-      // even if that ever changes.
       const claimDownload = Effect.fn("Library.claimDownload")(() =>
         execute(
           Effect.gen(function* claimDownloadEffect() {
-            const oldest = db
-              .select({ id: sets.id })
-              .from(sets)
-              .where(eq(sets.downloadState, "queued"))
-              .orderBy(asc(sets.createdAt), asc(sets.id))
-              .limit(1);
-            const [claimed] = yield* db
-              .update(sets)
-              .set({ downloadState: "downloading" })
-              .where(eq(sets.id, oldest))
-              .returning();
-            if (!claimed) {
-              return null;
-            }
-            return yield* hydrateSet(claimed);
+            const row = yield* db.transaction((tx) =>
+              Effect.gen(function* claim() {
+                const [next] = yield* tx
+                  .select({
+                    personId: downloadJobs.personId,
+                    setId: downloadJobs.setId,
+                  })
+                  .from(downloadJobs)
+                  .innerJoin(sets, eq(sets.id, downloadJobs.setId))
+                  .innerJoin(
+                    downloadRequesters,
+                    eq(downloadRequesters.personId, downloadJobs.personId)
+                  )
+                  .where(eq(sets.downloadState, "queued"))
+                  .orderBy(
+                    asc(downloadRequesters.lastServed),
+                    asc(downloadJobs.sequence)
+                  )
+                  .limit(1);
+                if (!next) {
+                  return null;
+                }
+                yield* tx
+                  .update(downloadRequesters)
+                  .set({
+                    lastServed: sql`(SELECT COALESCE(MAX(last_served), 0) + 1 FROM download_requesters)`,
+                  })
+                  .where(eq(downloadRequesters.personId, next.personId));
+                const [claimed] = yield* tx
+                  .update(sets)
+                  .set({ downloadState: "downloading" })
+                  .where(eq(sets.id, next.setId))
+                  .returning();
+                return claimed ?? null;
+              })
+            );
+            return row ? yield* hydrateSet(row) : null;
           })
         )
       );
@@ -819,6 +887,13 @@ export class Library extends Context.Service<
               .update(sets)
               .set({ downloadState: "queued" })
               .where(eq(sets.downloadState, "downloading"));
+            yield* db.run(
+              sql`INSERT OR IGNORE INTO download_requesters (person_id) VALUES ('host')`
+            );
+            yield* db.run(sql`INSERT INTO download_jobs (set_id, person_id)
+              SELECT id, 'host' FROM sets
+              WHERE download_state = 'queued' AND id NOT IN (SELECT set_id FROM download_jobs)
+              ORDER BY created_at, id`);
             const queued = yield* db
               .select({ id: sets.id })
               .from(sets)
