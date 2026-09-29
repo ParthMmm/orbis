@@ -289,14 +289,9 @@ export const createApp = (
     databasePath,
     migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
   });
-  // The Database layer is one value used by every service that writes, so a build opens one
-  // connection however many services depend on it. Queue composes the three below itself,
-  // because it is the only service that needs the sets, the counters, and the queue at once.
+  // The Database layer is one value used by every service that writes.
   const libraryLayer = Library.layer.pipe(Layer.provide(database));
   const statsLayer = Stats.layer.pipe(Layer.provide(database));
-  const queueLayer = Queue.layer.pipe(
-    Layer.provide(Layer.mergeAll(database, libraryLayer, statsLayer))
-  );
   const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
@@ -304,7 +299,7 @@ export const createApp = (
       const audio = yield* Audio;
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
-      const queue = yield* Queue;
+      const stats = yield* Stats;
       const scope = yield* Scope.Scope;
       const reviseTitle = Effect.fn("reviseSavedSetTitle")((
         set: SavedSet,
@@ -608,11 +603,10 @@ export const createApp = (
         handlers
           .handle("read", () =>
             withFailureResponse(
-              queue
-                .read()
-                .pipe(
-                  Effect.map((listeningQueue) => ({ queue: listeningQueue }))
-                )
+              Effect.gen(function* readPersonalQueue() {
+                const queue = yield* Queue;
+                return { queue: yield* queue.read() };
+              })
             )
           )
           .handleRaw("play", () =>
@@ -620,6 +614,7 @@ export const createApp = (
               Effect.gen(function* setActiveQueueEntry() {
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(QueueSetPayload);
+                const queue = yield* Queue;
                 return { queue: yield* queue.play(input.setId) };
               })
             )
@@ -630,6 +625,7 @@ export const createApp = (
                 Effect.gen(function* addQueueEntry() {
                   const input =
                     yield* HttpServerRequest.schemaBodyJson(QueueEntryPayload);
+                  const queue = yield* Queue;
                   return {
                     queue: yield* queue.insert(input.setId, input.placement),
                   };
@@ -646,6 +642,7 @@ export const createApp = (
               Effect.gen(function* replaceQueueFromPlaylist() {
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(QueuePlaylistPayload);
+                const queue = yield* Queue;
                 return {
                   queue: yield* queue.replaceWithPlaylist(input.playlistId),
                 };
@@ -657,6 +654,7 @@ export const createApp = (
               Effect.gen(function* completeQueueEntry() {
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(QueueSetPayload);
+                const queue = yield* Queue;
                 return { queue: yield* queue.complete(input.setId) };
               })
             )
@@ -672,7 +670,8 @@ export const createApp = (
                 Effect.gen(function* setPlaybackPosition() {
                   const input =
                     yield* HttpServerRequest.schemaBodyJson(PositionPayload);
-                  return yield* library.setPlaybackPosition(
+                  const personal = yield* Library;
+                  return yield* personal.setPlaybackPosition(
                     params.id,
                     input.seconds
                   );
@@ -759,13 +758,26 @@ export const createApp = (
                   ),
                   Option.match({
                     onNone: () => Effect.die("Accepted access context missing"),
-                    onSome: (access) =>
-                      Effect.provide(
-                        Effect.provideService(effect, SetCaller, access),
-                        Library.forPersonLayer(access.person.id).pipe(
-                          Layer.provide(Layer.succeed(Database, db))
+                    onSome: (access) => {
+                      const personalLibrary = Library.forPersonLayer(
+                        access.person.id
+                      ).pipe(Layer.provide(Layer.succeed(Database, db)));
+                      const personalQueue = Queue.forPersonLayer(
+                        access.person.id
+                      ).pipe(
+                        Layer.provide(
+                          Layer.mergeAll(
+                            Layer.succeed(Database, db),
+                            personalLibrary,
+                            Layer.succeed(Stats, stats)
+                          )
                         )
-                      ),
+                      );
+                      return Effect.provide(
+                        Effect.provideService(effect, SetCaller, access),
+                        Layer.mergeAll(personalLibrary, personalQueue)
+                      );
+                    },
                   })
                 ),
             })
@@ -779,7 +791,6 @@ export const createApp = (
   const app = HttpRouter.toWebHandler(
     routes.pipe(
       Layer.provide(Audio.layer(options.audio ?? {})),
-      Layer.provide(queueLayer),
       Layer.provide(libraryLayer),
       Layer.provide(statsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
@@ -886,7 +897,7 @@ export const createApp = (
         );
       }
       markKeyUsed(devicesPath, decision.keyId);
-      // SAFETY: SetAccess provides the caller-bound Library before any handler reads it.
+      // SAFETY: SetAccess provides the caller-bound Library and Queue before handlers read them.
       return app
         .handler(
           request,
@@ -894,7 +905,7 @@ export const createApp = (
             Context.make(SetCaller, decision),
             AcceptedAccess,
             decision
-          ) as Context.Context<Library | SetCaller>
+          ) as Context.Context<Library | Queue | SetCaller>
         )
         .then(withOrigin);
     },

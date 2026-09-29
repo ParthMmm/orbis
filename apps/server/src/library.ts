@@ -23,6 +23,7 @@ import {
   libraryEntries,
   downloadJobs,
   downloadRequesters,
+  playbackPositions,
   playlistSets,
   playlists,
   queueEntries,
@@ -219,6 +220,16 @@ export class Library extends Context.Service<
         ) =>
           Effect.gen(function* hydrateSetEffect() {
             const [entry] = yield* entryFor(row.id);
+            const [position] = yield* db
+              .select({ seconds: playbackPositions.seconds })
+              .from(playbackPositions)
+              .where(
+                and(
+                  eq(playbackPositions.personId, personId),
+                  eq(playbackPositions.setId, row.id)
+                )
+              )
+              .limit(1);
             const tags = yield* decodeJsonArray(
               entry?.tags ?? (personId === "host" ? row.tags : "[]")
             );
@@ -236,6 +247,7 @@ export class Library extends Context.Service<
             return {
               ...visible,
               createdAt: entry?.savedAt ?? row.createdAt,
+              playbackPositionSeconds: position?.seconds ?? 0,
               playlistIds: yield* playlistIds,
               tags,
               title: entry?.titleOverride ?? row.title,
@@ -559,15 +571,14 @@ export class Library extends Context.Service<
                 current.durationSeconds === null
                   ? wanted
                   : Math.min(wanted, current.durationSeconds);
-              const [row] = yield* db
-                .update(sets)
-                .set({ playbackPositionSeconds: Math.round(bounded) })
-                .where(eq(sets.id, id))
-                .returning();
-              if (!row) {
-                return yield* Effect.fail(setNotFound());
-              }
-              return yield* hydrateSet(row);
+              yield* db
+                .insert(playbackPositions)
+                .values({ personId, seconds: Math.round(bounded), setId: id })
+                .onConflictDoUpdate({
+                  set: { seconds: Math.round(bounded) },
+                  target: [playbackPositions.personId, playbackPositions.setId],
+                });
+              return yield* hydrateSet(current);
             })
           )
       );
@@ -690,7 +701,12 @@ export class Library extends Context.Service<
                     .from(queueEntries)
                     .where(eq(queueEntries.setId, id))
                     .limit(1);
-                  if (!playlist && !queue) {
+                  const [position] = yield* tx
+                    .select({ setId: playbackPositions.setId })
+                    .from(playbackPositions)
+                    .where(eq(playbackPositions.setId, id))
+                    .limit(1);
+                  if (!playlist && !queue && !position) {
                     yield* tx.delete(sets).where(eq(sets.id, id));
                   }
                 }

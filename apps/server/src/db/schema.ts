@@ -138,18 +138,38 @@ export const queueEntries = sqliteTable(
     isActive: integer("is_active", { mode: "boolean" })
       .notNull()
       .default(false),
+    personId: text("person_id").notNull(),
     position: integer("position").notNull(),
     setId: text("set_id")
-      .primaryKey()
+      .notNull()
       .references(() => sets.id),
   },
   (table) => [
-    uniqueIndex("queue_entries_position_unique").on(table.position),
-    // One Listening Queue plays one Set at a time, so at most one entry is the active one. The
-    // index makes that a rule of the table rather than a rule every write has to remember.
+    primaryKey({ columns: [table.personId, table.setId] }),
+    uniqueIndex("queue_entries_position_unique").on(
+      table.personId,
+      table.position
+    ),
+    index("queue_entries_by_set").on(table.setId),
+    // Each Person's Listening Queue has at most one active Set.
     uniqueIndex("queue_entries_active_unique")
-      .on(table.isActive)
+      .on(table.personId)
       .where(sql`${table.isActive} = 1`),
+  ]
+);
+
+export const playbackPositions = sqliteTable(
+  "playback_positions",
+  {
+    personId: text("person_id").notNull(),
+    seconds: integer("seconds").notNull().default(0),
+    setId: text("set_id")
+      .notNull()
+      .references(() => sets.id),
+  },
+  (table) => [
+    primaryKey({ columns: [table.personId, table.setId] }),
+    index("playback_positions_by_set").on(table.setId),
   ]
 );
 
@@ -157,6 +177,7 @@ export const schema = {
   downloadJobs,
   downloadRequesters,
   libraryEntries,
+  playbackPositions,
   playlistSets,
   playlists,
   queueEntries,

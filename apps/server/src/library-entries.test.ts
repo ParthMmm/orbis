@@ -320,7 +320,7 @@ test("legacy Host entry migrates and two People keep separate Library state", as
     try {
       queued
         .query(
-          "INSERT INTO queue_entries (set_id, position, is_active) VALUES (?, 0, 0)"
+          "INSERT INTO queue_entries (person_id, set_id, position, is_active) VALUES ('host', ?, 0, 0)"
         )
         .run(bOnlyId);
     } finally {
@@ -359,7 +359,7 @@ test("legacy Host entry migrates and two People keep separate Library state", as
     try {
       sharedQueue
         .query(
-          "INSERT INTO queue_entries (set_id, position, is_active) VALUES (?, 1, 0)"
+          "INSERT INTO queue_entries (person_id, set_id, position, is_active) VALUES ('host', ?, 1, 0)"
         )
         .run(sharedId);
     } finally {

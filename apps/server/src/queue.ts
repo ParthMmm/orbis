@@ -1,10 +1,11 @@
 import type { ListeningQueue, QueuePlacement } from "@orbis/contracts";
-import { asc } from "drizzle-orm";
+import { asc, eq } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 
 import { Database } from "./db/database.js";
 import { queueEntries } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
+import { LibraryPerson } from "./library-person.js";
 import { Library } from "./library.js";
 import { Stats } from "./stats.js";
 
@@ -61,7 +62,7 @@ const placedBefore = (
 };
 
 /**
- * The one Listening Queue, and the Listen it keeps open.
+ * One Person's Listening Queue, and the Listen it keeps open.
  *
  * An entry is a Set waiting to play, and the entry marked active is the Set playing now. The
  * queue is the whole of the playback state: which Set is playing, what follows it, and — because
@@ -88,12 +89,13 @@ export class Queue extends Context.Service<
     ) => Effect.Effect<ListeningQueue, LibraryError>;
   }
 >()("@orbis/Queue") {
-  static readonly layer = Layer.effect(
+  static readonly scopedLayer = Layer.effect(
     Queue,
     Effect.gen(function* buildQueue() {
       const db = yield* Database;
       const library = yield* Library;
       const stats = yield* Stats;
+      const personId = yield* LibraryPerson;
 
       const order = () =>
         db
@@ -102,6 +104,7 @@ export class Queue extends Context.Service<
             setId: queueEntries.setId,
           })
           .from(queueEntries)
+          .where(eq(queueEntries.personId, personId))
           .orderBy(asc(queueEntries.position));
 
       const read = Effect.fn("Queue.read")(() =>
@@ -120,11 +123,14 @@ export class Queue extends Context.Service<
       const writeQueue = (ids: readonly string[], activeSetId: string | null) =>
         db.transaction((tx) =>
           Effect.gen(function* writeQueueTransaction() {
-            yield* tx.delete(queueEntries);
+            yield* tx
+              .delete(queueEntries)
+              .where(eq(queueEntries.personId, personId));
             if (ids.length > 0) {
               yield* tx.insert(queueEntries).values(
                 ids.map((setId, position) => ({
                   isActive: setId === activeSetId,
+                  personId,
                   position,
                   setId,
                 }))
@@ -137,7 +143,12 @@ export class Queue extends Context.Service<
       // instead, because a Playlist is not wrong to play just because one member has no audio.
       const playable = (id: string) =>
         Effect.gen(function* requirePlayable() {
-          const set = yield* library.find(id);
+          const [set] = yield* library.byIds([id]);
+          if (!set) {
+            return yield* Effect.fail(
+              new LibraryError({ message: "Set not found.", statusCode: 404 })
+            );
+          }
           if (set.downloadState !== "ready") {
             return yield* Effect.fail(notPlayable());
           }
@@ -248,4 +259,14 @@ export class Queue extends Context.Service<
       return { complete, insert, play, read, replaceWithPlaylist };
     })
   );
+
+  static readonly layer = Queue.scopedLayer.pipe(
+    Layer.provide(Layer.succeed(LibraryPerson, "host"))
+  );
+
+  static forPersonLayer(personId: string) {
+    return Layer.fresh(Queue.scopedLayer).pipe(
+      Layer.provide(Layer.succeed(LibraryPerson, personId))
+    );
+  }
 }
