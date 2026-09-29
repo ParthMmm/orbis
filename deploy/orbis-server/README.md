@@ -178,6 +178,33 @@ The worker logs `ytdlp: true` at startup when the binary is configured.
 
 `systemctl --user show -p Environment` will not show this value, because systemd reads the file at exec time. Check it by saving a Source Link with no title and reading `metadataState` in the response.
 
+## Check downloads every night
+
+`apps/server/src/canary.ts` downloads a short and a long Set per source through each configured backend, using the worker's own code, and checks that each stored file has the expected duration. It catches a backend that stops working before a user's download does: on 2026-09-29, Cobalt returned empty YouTube streams for long videos while short ones still worked.
+
+```sh
+cp ~/orbis-service/deploy/orbis-server/orbis-canary.{service,timer} ~/.config/systemd/user/
+systemctl --user daemon-reload
+systemctl --user enable --now orbis-canary.timer
+systemctl --user start orbis-canary.service   # first run now; takes a few minutes
+```
+
+It downloads about 400 MB a night and keeps none of it.
+
+## Where to look when a download fails
+
+Each record below is written for an agent to read without extra setup.
+
+| Question | Command |
+| --- | --- |
+| Did last night's canary pass? | `cat ~/orbis-service-data/canary/last.json` |
+| When did it start failing? | `jq -c '{at, ok}' ~/orbis-service-data/canary/history.jsonl \| tail` |
+| Is any unit failing? | `systemctl --user --failed` |
+| Why did one download fail? | `journalctl --user -u orbis-server --since today -o cat \| grep -B1 -A6 'job:.*audio-download'` |
+| What did the canary see? | `journalctl --user -u orbis-canary --since today -o cat \| grep -B1 -A6 'job:.*download-canary'` |
+
+A download's wide event (`job: audio-download`) lists every backend attempt: bytes received, yt-dlp's exit code and the end of its error output, Cobalt's tunnel status and content length, and ffprobe's error output. The canary's event (`job: download-canary`) holds the same evidence for each check. The startup line `youtube downloads use cobalt only` means `ORBIS_YTDLP_BIN` is missing; see [Give the service yt-dlp](#give-the-service-yt-dlp).
+
 ## Back up the database
 
 Retained Audio downloads again, so only the database and the trust store need a copy. A nightly user timer runs `apps/server/src/backup.ts`, which writes a consistent snapshot with `VACUUM INTO` (safe while the service writes), then `rsync`s the newest 14 snapshots to a destination the Host chooses. Prefer a different disk or host from the data directory. Set this up before the first friend key is minted.
