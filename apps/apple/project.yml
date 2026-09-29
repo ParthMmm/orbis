@@ -156,4 +156,5 @@ schemes:
         # Substituted at generation time, so the lane's temporary service is what the
         # journey tests type into the connection screen.
         ORBIS_UI_TEST_ADDRESS: ${ORBIS_UI_TEST_ADDRESS}
+        ORBIS_UI_TEST_SEED_ADDRESS: ${ORBIS_UI_TEST_SEED_ADDRESS}
         ORBIS_UI_TEST_TOKEN: ${ORBIS_UI_TEST_TOKEN}

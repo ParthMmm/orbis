@@ -90,10 +90,14 @@ const port = 43_000 + Math.floor(Math.random() * 2000);
 const address = `http://127.0.0.1:${port}`;
 const resultBundle = path.join(native, "DerivedData", "result.xcresult");
 let server;
+let seedServer;
 
 const stop = () => {
   if (server && server.exitCode === null) {
     server.kill("SIGTERM");
+  }
+  if (seedServer && seedServer.exitCode === null) {
+    seedServer.kill("SIGTERM");
   }
   rmSync(dataDirectory, { force: true, recursive: true });
 };
@@ -124,8 +128,13 @@ try {
     cwd: root,
     env: {
       ...process.env,
+      ORBIS_COBALT_API_KEY: "",
+      ORBIS_COBALT_URL: "",
       ORBIS_DATA_DIR: dataDirectory,
+      ORBIS_OPENROUTER_API_KEY: "",
       ORBIS_PORT: String(port),
+      ORBIS_YOUTUBE_API_KEY: "",
+      ORBIS_YTDLP_BIN: "",
     },
     stdio: ["ignore", "ignore", "inherit"],
   });
@@ -166,6 +175,20 @@ try {
     throw new Error(`seeding the lane library failed with ${seeded.status}`);
   }
 
+  const seedPort = port + 2000;
+  const seedAddress = `http://127.0.0.1:${seedPort}`;
+  seedServer = spawn(
+    "bun",
+    [
+      "scripts/seed-lane-audio.mjs",
+      dataDirectory,
+      path.join(root, "scripts", "fixtures", "ready-set.m4a"),
+      String(seedPort),
+    ],
+    { cwd: root, stdio: ["ignore", "ignore", "inherit"] }
+  );
+  await waitForService(seedAddress);
+
   run(["xcodegen", "generate"], { cwd: native });
 
   const derived = path.join(native, "DerivedData");
@@ -198,6 +221,7 @@ try {
       env: {
         ...process.env,
         ORBIS_UI_TEST_ADDRESS: address,
+        ORBIS_UI_TEST_SEED_ADDRESS: seedAddress,
         ORBIS_UI_TEST_TOKEN: token,
       },
       stdio: "inherit",

@@ -35,6 +35,27 @@ struct LaneService {
     try send("POST", "sets", ["title": title, "url": url, "tags": []])
   }
 
+  func saveReadySet(title: String, url: String) throws -> Set {
+    let saved = try saveSet(title: title, url: url)
+    guard let seedAddress = ProcessInfo.processInfo.environment["ORBIS_UI_TEST_SEED_ADDRESS"],
+      let endpoint = URL(string: "\(seedAddress)/ready-audio/\(saved.id)")
+    else {
+      throw URLError(.badURL)
+    }
+    var request = URLRequest(url: endpoint)
+    request.httpMethod = "POST"
+    var status = 0
+    let done = DispatchSemaphore(value: 0)
+    URLSession.shared.dataTask(with: request) { _, response, _ in
+      status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      done.signal()
+    }.resume()
+    guard done.wait(timeout: .now() + 20) == .success, status == 204 else {
+      throw URLError(.badServerResponse)
+    }
+    return saved
+  }
+
   func createPlaylist(named name: String) throws -> Playlist {
     try send("POST", "playlists", ["name": name])
   }

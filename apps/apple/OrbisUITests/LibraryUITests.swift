@@ -354,6 +354,28 @@ final class LibraryUITests: XCTestCase {
     capture("12-set-removed")
   }
 
+  func testPlaysASetWithRetainedAudio() throws {
+    let seeded = try LaneService().saveReadySet(
+      title: "Ready to play", url: "https://www.youtube.com/watch?v=readyaudio1")
+    let app = try launch(paired: true)
+    openLibrary(in: app)
+
+    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
+    XCTAssertTrue(row.waitForExistence(timeout: 60))
+    tapAtCentre(of: row, in: app)
+
+    let play = app.buttons["detail-play-toggle"]
+    XCTAssertTrue(play.waitForExistence(timeout: 30))
+    XCTAssertFalse(app.buttons["Download"].exists)
+    play.tap()
+    let seek = app.sliders["detail-seek"]
+    let advanced = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value != %@", "0:00"), object: seek)
+    XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 6), .completed)
+    XCTAssertEqual(app.buttons["detail-play-toggle"].label, "Pause")
+    capture("16-ready-audio-playing")
+  }
+
   /// A confirmation dialog is a sheet on a phone and an alert on a Mac, so a journey asks for
   /// both rather than assuming one shape. Each is waited for, because a dialog that is still
   /// rising has not been found yet.
