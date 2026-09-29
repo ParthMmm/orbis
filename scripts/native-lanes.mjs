@@ -13,6 +13,7 @@
 // --macos runs the unit tests on the macOS destination instead of the simulator.
 
 import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import {
   mkdirSync,
   mkdtempSync,
@@ -21,6 +22,7 @@ import {
   rmSync,
   writeFileSync,
 } from "node:fs";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
@@ -87,11 +89,23 @@ const waitForService = async (address, deadline = Date.now() + 30_000) => {
   }
 };
 
+const unusedPort = async (excluded) => {
+  const listener = createServer();
+  const listening = once(listener, "listening");
+  listener.listen(0, "127.0.0.1");
+  await listening;
+  const { port } = listener.address();
+  const closed = once(listener, "close");
+  listener.close();
+  await closed;
+  return port === excluded ? unusedPort(excluded) : port;
+};
+
 const dataDirectory = mkdtempSync(path.join(tmpdir(), "orbis-lane-"));
 const devicesPath = path.join(dataDirectory, "devices.json");
-const port = 43_000 + Math.floor(Math.random() * 2000);
+const port = await unusedPort();
 const address = `http://127.0.0.1:${port}`;
-const seedPort = port + 2000;
+const seedPort = await unusedPort(port);
 const seedAddress = `http://127.0.0.1:${seedPort}`;
 const resultBundle = path.join(native, "DerivedData", "result.xcresult");
 let server;
