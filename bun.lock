@@ -52,6 +52,7 @@
       "dependencies": {
         "@orbis/contracts": "workspace:*",
         "@raycast/api": "2.2.1",
+        "effect": "4.0.0-rc.113",
       },
       "devDependencies": {
         "@types/bun": "^1.3.0",
@@ -93,6 +94,9 @@
     "packages/contracts": {
       "name": "@orbis/contracts",
       "version": "0.0.0",
+      "dependencies": {
+        "effect": "4.0.0-rc.113",
+      },
     },
   },
   "packages": {
