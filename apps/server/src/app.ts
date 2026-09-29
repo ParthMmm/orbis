@@ -798,19 +798,22 @@ export const createApp = (
             )
           )
       );
+      const requireAdminScope = Effect.gen(function* verifyAdminScope() {
+        const caller = yield* SetCaller;
+        if (
+          caller.keyId === null ||
+          caller.scope !== "admin" ||
+          caller.person.id !== "host"
+        ) {
+          return yield* new LibraryError({
+            message: "An admin key is required.",
+            statusCode: 403,
+          });
+        }
+      });
       const adminCall = <A>(action: (storePath: string) => A) =>
         Effect.gen(function* authorizedAdminAction() {
-          const caller = yield* SetCaller;
-          if (
-            caller.keyId === null ||
-            caller.scope !== "admin" ||
-            caller.person.id !== "host"
-          ) {
-            return yield* new LibraryError({
-              message: "An admin key is required.",
-              statusCode: 403,
-            });
-          }
+          yield* requireAdminScope;
           return yield* Effect.try({
             catch: (error) =>
               new LibraryError({
@@ -839,6 +842,7 @@ export const createApp = (
           .handleRaw("addPerson", () =>
             withFailureResponse(
               Effect.gen(function* addAdminPerson() {
+                yield* requireAdminScope;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(AdminPersonPayload);
                 const person = yield* adminCall((storePath) =>
@@ -920,6 +924,7 @@ export const createApp = (
           .handleRaw("addKey", ({ params }) =>
             withFailureResponse(
               Effect.gen(function* addAdminKey() {
+                yield* requireAdminScope;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(AdminKeyPayload);
                 const key = yield* adminCall((storePath) =>

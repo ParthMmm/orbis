@@ -84,6 +84,7 @@ test("admin keys manage People and revoke all of a removed Person's data", async
     });
     expect(localAdmin.statusCode).toBe(403);
     const beforeBypass = await body(app, admin, "GET", "/admin/people");
+    const keysBeforeBypass = await body(app, admin, "GET", "/admin/keys");
     const variantAttempts = await Promise.all(
       ["/%61dmin", "//admin", "/ADMIN"].map((prefix) =>
         Promise.all([
@@ -91,6 +92,7 @@ test("admin keys manage People and revoke all of a removed Person's data", async
           status(app, daily, "POST", `${prefix}/people`, {
             username: `blocked-${prefix.length}`,
           }),
+          status(app, daily, "POST", `${prefix}/people`, {}),
           status(app, daily, "DELETE", `${prefix}/people/host`),
           status(app, daily, "GET", `${prefix}/keys`),
           status(app, daily, "GET", `${prefix}/people/host/keys`),
@@ -98,16 +100,34 @@ test("admin keys manage People and revoke all of a removed Person's data", async
             label: "bypass",
             scope: "admin",
           }),
+          status(app, daily, "POST", `${prefix}/people/host/keys`, {}),
           status(app, daily, "DELETE", `${prefix}/keys/missing`),
         ])
       )
     );
     for (const attempts of variantAttempts) {
-      expect(attempts).toEqual([403, 403, 403, 403, 403, 403, 403]);
+      expect(attempts).toEqual([403, 403, 403, 403, 403, 403, 403, 403, 403]);
     }
+    const malformed = await app.handler(
+      new Request("http://vanta.example.ts.net/%61dmin/people", {
+        body: "{",
+        headers: {
+          authorization: `Bearer ${daily}`,
+          "content-type": "application/json",
+        },
+        method: "POST",
+      }),
+      "device"
+    );
+    expect(malformed.status).toBe(403);
     expect(await body(app, admin, "GET", "/admin/people")).toEqual(
       beforeBypass
     );
+    const keysAfterBypass = await body(app, admin, "GET", "/admin/keys");
+    expect(keysAfterBypass.keys.map((key: { id: string }) => key.id)).toEqual(
+      keysBeforeBypass.keys.map((key: { id: string }) => key.id)
+    );
+    expect(await status(app, admin, "POST", "/admin/people", {})).toBe(400);
     const added = await call(app, admin, "POST", "/admin/people", {
       username: "alice",
     });
@@ -133,7 +153,10 @@ test("admin keys manage People and revoke all of a removed Person's data", async
     expect(minted.statusCode).toBe(201);
     const key = minted.json();
     expect(key.token).toBeString();
-    expect(await body(app, key.token, "GET", "/me")).toEqual(person);
+    expect(await body(app, key.token, "GET", "/me")).toEqual({
+      ...person,
+      autoDownload: true,
+    });
     const keys = await body(
       app,
       admin,

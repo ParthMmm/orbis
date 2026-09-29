@@ -165,7 +165,9 @@ export const SaveSetResultSchema = Schema.Struct({
     "unavailable",
   ]),
 });
-export const AdminPersonPayload = UpdateMePayload;
+export const AdminPersonPayload = Schema.Struct({
+  username: Schema.String.check(Schema.isMaxLength(40)),
+});
 export const AdminKeyPayload = Schema.Struct({
   label: Schema.String.check(Schema.isMaxLength(100)),
   scope: Schema.optionalKey(Schema.Literals(["daily", "admin"])),
