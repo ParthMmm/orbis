@@ -39,6 +39,7 @@ try {
     body("PATCH", { tags: ["house"] })
   );
   const samples = {
+    audioGrant: { url: `/sets/${savedSet.id}/audio?grant=sample` },
     audioState: await send(`/sets/${savedSet.id}/audio/state`),
     health: await send("/health"),
     library: await send("/sets"),

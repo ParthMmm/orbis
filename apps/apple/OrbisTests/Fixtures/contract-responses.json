@@ -1,4 +1,5 @@
 {
+  "audioGrant": { "url": "/sets/sample/audio?grant=sample" },
   "audioState": {
     "bytesReceived": 0,
     "bytesTotal": null,

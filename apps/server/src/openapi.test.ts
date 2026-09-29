@@ -13,6 +13,7 @@ import { Schema } from "effect";
 import { createApp } from "./app.js";
 
 const Samples = Schema.Struct({
+  audioGrant: Schema.Struct({ url: Schema.String }),
   audioState: AudioStateSchema,
   health: Schema.Struct({ status: Schema.Literal("ok") }),
   library: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
@@ -65,6 +66,9 @@ const sampleKeyFor = (operationId: string): keyof typeof samples => {
   }
   if (operationId === "sets.audioState") {
     return "audioState";
+  }
+  if (operationId === "sets.audioGrant") {
+    return "audioGrant";
   }
   if (operationId === "playlists.list") {
     return "playlists";
@@ -139,7 +143,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(27);
+    expect(checked).toBe(28);
   } finally {
     await app.dispose();
   }

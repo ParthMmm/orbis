@@ -31,7 +31,7 @@ import { Audio } from "./audio.js";
 import type { AudioFile, AudioOptions } from "./audio.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { LibraryError } from "./errors.js";
-import type { AccessDecision, AccessMode } from "./identity.js";
+import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
 import {
   decideAccess,
   markKeyUsed,
@@ -54,6 +54,11 @@ import type { EnrichedMetadata } from "./metadata.js";
 import { Queue } from "./queue.js";
 import { expandShortLink } from "./short-link.js";
 import { Stats } from "./stats.js";
+import {
+  grantSecret,
+  issueStreamGrant,
+  verifyStreamGrant,
+} from "./stream-grant.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
 
@@ -69,6 +74,78 @@ class AcceptedAccess extends Context.Service<
   AcceptedAccess,
   Exclude<AccessDecision, { readonly kind: "rejected" }>
 >()("Orbis/AcceptedAccess") {}
+
+const funnelOrigin = "https://vanta.tail01d084.ts.net:10000";
+const allowedBrowserOrigin = (
+  origin: string | null,
+  mode: AccessMode,
+  development: boolean
+): origin is string =>
+  mode === "device" &&
+  origin !== null &&
+  (origin === funnelOrigin ||
+    (development && /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/u.test(origin)));
+
+const browserIngress = (
+  request: Request,
+  mode: AccessMode,
+  development: boolean
+): Response | null => {
+  const origin = request.headers.get("origin");
+  if (origin === null) {
+    return null;
+  }
+  if (!allowedBrowserOrigin(origin, mode, development)) {
+    return Response.json(
+      { message: "Only local app requests are allowed." },
+      { status: 403 }
+    );
+  }
+  if (request.method !== "OPTIONS") {
+    return null;
+  }
+  return new Response(null, {
+    headers: {
+      "access-control-allow-headers": "authorization, content-type, range",
+      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
+      "access-control-allow-origin": origin,
+      vary: "origin",
+    },
+    status: 204,
+  });
+};
+
+const grantAccess = (
+  request: Request,
+  mode: AccessMode,
+  store: TrustStore,
+  secret: Buffer
+): AccessDecision | null => {
+  if (
+    mode !== "device" ||
+    request.method !== "GET" ||
+    request.headers.has("authorization")
+  ) {
+    return null;
+  }
+  const url = new URL(request.url);
+  const match = /^\/sets\/(?<id>[^/]+)\/audio$/u.exec(url.pathname);
+  const grant = url.searchParams.get("grant");
+  if (!match?.groups?.id || !grant) {
+    return null;
+  }
+  const personId = verifyStreamGrant(
+    secret,
+    decodeURIComponent(match.groups.id),
+    grant
+  );
+  const person = store.people.find(
+    (candidate) => candidate.id === personId && !candidate.removed
+  );
+  return person
+    ? { keyId: null, kind: "accepted", person, scope: "daily" }
+    : { kind: "rejected", message: "Invalid stream grant.", statusCode: 401 };
+};
 
 const Tags = TagsPayload.fields.tags;
 const Filters = Schema.Struct({
@@ -180,6 +257,7 @@ const audioFileResponse = (file: AudioFile, range: AudioRange | null) => {
 
 export const createApp = (
   options: {
+    allowDevelopmentOrigins?: boolean;
     audio?: AudioOptions;
     databasePath?: string;
     devicesPath?: string;
@@ -197,6 +275,13 @@ export const createApp = (
     (databasePath === ":memory:"
       ? undefined
       : path.join(path.dirname(databasePath), "devices.json"));
+  const development = options.allowDevelopmentOrigins === true;
+  const streamSecret = grantSecret(
+    databasePath === ":memory:"
+      ? undefined
+      : path.join(path.dirname(databasePath), "stream-grant.key")
+  );
+  const failedKeys = new Map<string, { count: number; until: number }>();
   if (devicesPath) {
     migrateTrustStore(devicesPath);
   }
@@ -305,6 +390,19 @@ export const createApp = (
           )
           .handle("audioState", ({ params }) =>
             withFailureResponse(audio.audioState(params.id))
+          )
+          .handleRaw("audioGrant", ({ params }) =>
+            Effect.gen(function* grantAudio() {
+              const caller = yield* SetCaller;
+              const result = yield* Effect.match(audio.audioFile(params.id), {
+                onFailure: failureResponse,
+                onSuccess: () =>
+                  HttpServerResponse.jsonUnsafe({
+                    url: `/sets/${encodeURIComponent(params.id)}/audio?grant=${issueStreamGrant(streamSecret, params.id, caller.person.id)}`,
+                  }),
+              });
+              return result;
+            })
           )
           .handleRaw("audio", ({ params, request }) =>
             Effect.match(
@@ -645,18 +743,71 @@ export const createApp = (
     dispose: app.dispose,
     handler: (
       request: Request,
-      mode: AccessMode = "local"
+      mode: AccessMode = "local",
+      clientAddress = "unknown"
     ): Promise<Response> => {
+      const origin = request.headers.get("origin");
+      const browserResponse = browserIngress(request, mode, development);
+      if (browserResponse) {
+        return Promise.resolve(browserResponse);
+      }
+      const withOrigin = (response: Response): Response => {
+        if (allowedBrowserOrigin(origin, mode, development)) {
+          response.headers.set("access-control-allow-origin", origin);
+          response.headers.set("vary", "origin");
+        }
+        return response;
+      };
       const host = request.headers.get("host") ?? new URL(request.url).host;
       const authorization = request.headers.get("authorization");
       const registry = readTrustRegistry(devicesPath);
-      const decision = decideAccess({
-        authorization,
-        hasOrigin: request.headers.has("origin"),
-        host,
+      const streamDecision = grantAccess(
+        request,
         mode,
-        store: registry.store,
-      });
+        registry.store,
+        streamSecret
+      );
+      if (
+        new URL(request.url).searchParams.has("grant") &&
+        streamDecision?.kind !== "accepted"
+      ) {
+        return Promise.resolve(
+          withOrigin(
+            Response.json({ message: "Invalid stream grant." }, { status: 401 })
+          )
+        );
+      }
+      const decision =
+        streamDecision ??
+        decideAccess({
+          authorization,
+          hasOrigin: false,
+          host,
+          mode,
+          store: registry.store,
+        });
+      if (
+        mode === "device" &&
+        authorization !== null &&
+        decision.kind === "rejected" &&
+        decision.statusCode === 401
+      ) {
+        const client = clientAddress;
+        const previous = failedKeys.get(client);
+        const count =
+          previous && previous.until > Date.now() ? previous.count + 1 : 1;
+        failedKeys.set(client, { count, until: Date.now() + 60_000 });
+        if (count > 20) {
+          return Promise.resolve(
+            withOrigin(
+              Response.json(
+                { message: "Too many invalid keys." },
+                { status: 429 }
+              )
+            )
+          );
+        }
+      }
       if (decision.kind === "rejected") {
         const logger = startRequestLog({
           method: request.method,
@@ -674,17 +825,25 @@ export const createApp = (
           options.logging
         );
         return Promise.resolve(
-          Response.json(
-            { message: decision.message },
-            { status: decision.statusCode }
+          withOrigin(
+            Response.json(
+              { message: decision.message },
+              { status: decision.statusCode }
+            )
           )
         );
       }
       markKeyUsed(devicesPath, decision.keyId);
-      return app.handler(
-        request,
-        Context.add(Context.make(SetCaller, decision), AcceptedAccess, decision)
-      );
+      return app
+        .handler(
+          request,
+          Context.add(
+            Context.make(SetCaller, decision),
+            AcceptedAccess,
+            decision
+          )
+        )
+        .then(withOrigin);
     },
   };
 };

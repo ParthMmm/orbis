@@ -21,6 +21,7 @@ const ports = listenerPorts({
   ORBIS_PORT: process.env.ORBIS_PORT,
 });
 const app = createApp({
+  allowDevelopmentOrigins: process.env.NODE_ENV === "development",
   audio: {
     audioDir: path.join(dataDirectory, "audio"),
     cobaltApiKey: process.env.ORBIS_COBALT_API_KEY,
