@@ -181,6 +181,9 @@ final class AppModel {
     self.settings = settings
     // A journey lane starts from a clean install so it exercises the connection screen.
     Self.resetSettings(ifRequestedBy: ProcessInfo.processInfo.arguments, in: settings)
+    #if DEBUG
+      Self.pair(ifRequestedBy: ProcessInfo.processInfo.arguments, in: settings)
+    #endif
     // A lane that checks a filtered Library opens already filtered, which is how the no-matches
     // state is reached without a tag that has no Sets.
     let arguments = ProcessInfo.processInfo.arguments
@@ -215,6 +218,18 @@ final class AppModel {
     settings.serviceAddress = nil
     settings.store(deviceToken: nil)
   }
+
+  #if DEBUG
+    /// A journey that is not about pairing starts paired, so it skips typing the address and
+    /// token. `-orbisPairedWith <address> <token>`.
+    static func pair(ifRequestedBy arguments: [String], in settings: any ClientSettingsStore) {
+      guard let flag = arguments.firstIndex(of: "-orbisPairedWith"),
+        arguments.indices.contains(flag + 2)
+      else { return }
+      settings.serviceAddress = arguments[flag + 1]
+      settings.store(deviceToken: arguments[flag + 2])
+    }
+  #endif
 
   var isConfigured: Bool { client != nil }
 

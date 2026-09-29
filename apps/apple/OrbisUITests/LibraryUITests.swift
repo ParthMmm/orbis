@@ -3,7 +3,11 @@ import XCTest
 /// Drives the real first-launch path against a server the lane starts. The address and
 /// token come from the environment so the test types them exactly as a person would.
 final class LibraryUITests: XCTestCase {
-  private func launch(filteringBy tag: String? = nil) throws -> XCUIApplication {
+  /// `paired` starts the app already paired, for a journey that is not about the connection
+  /// screen. Typing the address and token costs each journey several seconds.
+  private func launch(paired: Bool = false, filteringBy tag: String? = nil) throws
+    -> XCUIApplication
+  {
     let environment = ProcessInfo.processInfo.environment
     guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
       let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
@@ -12,6 +16,9 @@ final class LibraryUITests: XCTestCase {
     }
     let app = XCUIApplication()
     app.launchArguments.append("-orbisResetSettings")
+    if paired {
+      app.launchArguments.append(contentsOf: ["-orbisPairedWith", address, token])
+    }
     if let tag {
       app.launchArguments.append(contentsOf: ["-orbisStartTagFiltered", tag])
     }
@@ -235,8 +242,7 @@ final class LibraryUITests: XCTestCase {
   /// step after it: "Title and tags come next." This proves that step arrives, and that it can
   /// be left without naming anything.
   func testFilingALinkOpensTheNamingStep() throws {
-    let app = try launch()
-    connect(app)
+    let app = try launch(paired: true)
     openLibrary(in: app)
 
     // Filing lives in a sheet behind the toolbar's +, so the Library stays the collection.
@@ -282,12 +288,13 @@ final class LibraryUITests: XCTestCase {
   /// The Set page is where a Set is corrected or thrown away, so the journey walks the two
   /// actions that change the library, and the confirmation that guards the second one.
   func testOpensASetRenamesItAndRemovesIt() throws {
-    let app = try launch()
-    connect(app)
+    // Its own Set, because removing the lane's seeded one would take it from other journeys.
+    let seeded = try LaneService().saveSet(
+      title: "Set to rename", url: "https://www.youtube.com/watch?v=renameme001")
+    let app = try launch(paired: true)
     openLibrary(in: app)
 
-    let row = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
+    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
     XCTAssertTrue(
       row.waitForExistence(timeout: 60),
       "a saved Set must appear after connecting\n\(app.debugDescription)"
@@ -362,50 +369,41 @@ final class LibraryUITests: XCTestCase {
     return app.buttons[label]
   }
 
-  /// The design names the active filter in its heading, and the pill is the only way to reach
-  /// either state from the UI. A control that turns a filter off but never on looks alive while
+  /// The tag tile is the only way to reach either state from the Library. A control that turns a filter off but never on looks alive while
   /// leaving the Library unfilterable, so both directions are tapped.
   func testFiltersTheLibraryByTag() throws {
-    let app = try launch()
-    connect(app)
+    // An untagged Set, so the filter has something to hide.
+    _ = try LaneService().saveSet(
+      title: "Untagged set", url: "https://www.youtube.com/watch?v=untagged001")
+    let app = try launch(paired: true)
     openLibrary(in: app)
 
-    let pill = app.descendants(matching: .any)["tag-filter-techno"]
+    let tile = app.buttons["tag-filter-techno"]
     XCTAssertTrue(
-      pill.waitForExistence(timeout: 60),
+      tile.waitForExistence(timeout: 60),
       "the tag filter must appear above the rows\n\(app.debugDescription)")
-    XCTAssertFalse(
-      pill.label.contains("active filter"),
-      "the Library must open unfiltered\n\(app.debugDescription)")
+    XCTAssertFalse(tile.isSelected, "the Library must open unfiltered\n\(app.debugDescription)")
 
-    tapAtCentre(of: pill, in: app)
+    tapAtCentre(of: tile, in: app)
     let hidden = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS %@", "outside this filter")).firstMatch
     XCTAssertTrue(
       hidden.waitForExistence(timeout: 20),
-      "pressing the pill must turn the filter on\n\(app.debugDescription)")
-    let active = app.descendants(matching: .any)["tag-filter-techno"]
-    XCTAssertTrue(
-      active.label.contains("active filter"),
-      "the active filter is named on the pill\n\(app.debugDescription)")
+      "pressing the tile must turn the filter on\n\(app.debugDescription)")
+    XCTAssertTrue(tile.isSelected, "the active tile is selected\n\(app.debugDescription)")
     capture("06-library-filtered")
 
-    tapAtCentre(of: active, in: app)
-    let inactive = app.descendants(matching: .any)
-      .matching(identifier: "tag-filter-techno")
-      .matching(NSPredicate(format: "NOT (label CONTAINS %@)", "active filter"))
-      .firstMatch
+    tapAtCentre(of: tile, in: app)
     XCTAssertTrue(
-      inactive.waitForExistence(timeout: 20),
-      "pressing the same pill must clear the filter\n\(app.debugDescription)")
-    XCTAssertFalse(hidden.exists, "a cleared filter must stop reporting what it hides")
+      hidden.waitForNonExistence(timeout: 20),
+      "pressing the same tile must clear the filter\n\(app.debugDescription)")
+    XCTAssertFalse(tile.isSelected, "a cleared filter deselects its tile")
   }
 
   /// A Set found by search is the reason to search, so the result has to open. The Library row
   /// in the same component opens the same page, on the same build, in the same pass.
   func testOpensASetFromASearchResult() throws {
-    let app = try launch()
-    connect(app)
+    let app = try launch(paired: true)
 
     let spot = openSearch(in: app)
     submitSearch("night", in: app, spot: spot)
@@ -446,8 +444,7 @@ final class LibraryUITests: XCTestCase {
   /// to empty the field and return the screen to the state it shows before any query. It once
   /// left the query in the field and the result area on Loading, forever.
   func testClearsANoMatchSearch() throws {
-    let app = try launch()
-    connect(app)
+    let app = try launch(paired: true)
 
     let spot = openSearch(in: app)
     submitSearch("zzzznothing", in: app, spot: spot)
@@ -479,8 +476,7 @@ final class LibraryUITests: XCTestCase {
   /// `docs/agents/ui-verification.md`; the model change it makes is `setTagFilter(nil)`, which
   /// `LibraryFilterTests.testShowsOnlySetsCarryingTheActiveTag` covers.
   func testAFilterThatAdmitsNothingIsNotAnEmptyLibrary() throws {
-    let app = try launch(filteringBy: "hardgroove")
-    connect(app)
+    let app = try launch(paired: true, filteringBy: "hardgroove")
     openLibrary(in: app)
 
     XCTAssertTrue(

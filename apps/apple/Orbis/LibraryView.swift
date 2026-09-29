@@ -85,6 +85,9 @@ struct SetList: View {
         hero.padding(.bottom, 16)
       }
       if let noMatches {
+        if let rails {
+          rails.padding(.bottom, 20)
+        }
         listHeader
         noMatches.frame(maxWidth: .infinity, maxHeight: .infinity)
       } else {
