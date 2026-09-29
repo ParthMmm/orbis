@@ -84,11 +84,13 @@ extension ArtworkField {
       return true
     }
     guard drawn else { return brand }
-    let pixels = stride(from: 0, to: bytes.count, by: 4).map { index in
-      (
-        r: Double(bytes[index]) / 255, g: Double(bytes[index + 1]) / 255,
-        b: Double(bytes[index + 2]) / 255
-      )
+    let pixels: [(r: Double, g: Double, b: Double)] = stride(
+      from: 0, to: bytes.count, by: 4
+    ).map { index in
+      let red = Double(bytes[index]) / 255
+      let green = Double(bytes[index + 1]) / 255
+      let blue = Double(bytes[index + 2]) / 255
+      return (r: red, g: green, b: blue)
     }
     return from(pixels: pixels)
   }
