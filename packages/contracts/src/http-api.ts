@@ -169,7 +169,10 @@ export const AdminPersonPayload = UpdateMePayload;
 export const AdminKeyPayload = Schema.Struct({
   label: Schema.String.check(Schema.isMaxLength(100)),
 });
-const AdminPerson = Schema.Struct({ id: Schema.String, username: Schema.String });
+const AdminPerson = Schema.Struct({
+  id: Schema.String,
+  username: Schema.String,
+});
 const AdminKey = Schema.Struct({
   addedAt: Schema.String,
   id: Schema.String,
@@ -396,7 +399,10 @@ export const OrbisApi = PlaylistApi.add(
           error: [BadRequest, NotFound, InternalError],
           params: SetId,
           payload: AdminKeyPayload,
-          success: Schema.Struct({ ...AdminKey.fields, token: Schema.String }).pipe(HttpApiSchema.status(201)),
+          success: Schema.Struct({
+            ...AdminKey.fields,
+            token: Schema.String,
+          }).pipe(HttpApiSchema.status(201)),
         }),
         HttpApiEndpoint.delete("revokeKey", "/admin/keys/:id", {
           error: [NotFound, InternalError],

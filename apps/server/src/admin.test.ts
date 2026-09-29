@@ -7,7 +7,13 @@ import path from "node:path";
 import { createApp } from "./app.js";
 import { request } from "./test-http.js";
 
-const call = (app: ReturnType<typeof createApp>, token: string, method: string, url: string, payload?: unknown) =>
+const call = (
+  app: ReturnType<typeof createApp>,
+  token: string,
+  method: string,
+  url: string,
+  payload?: { [key: string]: string | number | string[] }
+) =>
   request(app, {
     accessMode: "device",
     headers: { authorization: `Bearer ${token}` },
@@ -17,66 +23,181 @@ const call = (app: ReturnType<typeof createApp>, token: string, method: string, 
     url,
   });
 
+const status = async (...args: Parameters<typeof call>) => {
+  const response = await call(...args);
+  return response.statusCode;
+};
+
+const body = async (...args: Parameters<typeof call>) => {
+  const response = await call(...args);
+  return response.json();
+};
+
 test("admin keys manage People and revoke all of a removed Person's data", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-admin-"));
   const databasePath = path.join(directory, "library.sqlite");
   const devicesPath = path.join(directory, "devices.json");
-  const trust = (...args: string[]) => Bun.spawnSync(
-    [process.execPath, "src/trust.ts", ...args, "--devices", devicesPath],
-    { cwd: path.resolve(import.meta.dir, "..") }
+  const trust = (...args: string[]) =>
+    Bun.spawnSync(
+      [process.execPath, "src/trust.ts", ...args, "--devices", devicesPath],
+      { cwd: path.resolve(import.meta.dir, "..") }
+    );
+  const adminSeed = trust(
+    "key",
+    "add",
+    "--person",
+    "host",
+    "--label",
+    "recovery",
+    "--scope",
+    "admin"
   );
-  const adminSeed = trust("key", "add", "--person", "host", "--label", "recovery", "--scope", "admin");
   expect(adminSeed.exitCode).toBe(0);
-  const admin = adminSeed.stdout.toString().match(/shown once: (?<token>\S+)/u)?.groups?.token;
-  if (!admin) throw new Error("Missing admin token");
+  const admin = adminSeed.stdout.toString().match(/shown once: (?<token>\S+)/u)
+    ?.groups?.token;
+  if (!admin) {
+    throw new Error("Missing admin token");
+  }
   const dailySeed = trust("key", "add", "--person", "host", "--label", "phone");
-  const daily = dailySeed.stdout.toString().match(/shown once: (?<token>\S+)/u)?.groups?.token;
-  if (!daily) throw new Error("Missing daily token");
+  const daily = dailySeed.stdout.toString().match(/shown once: (?<token>\S+)/u)
+    ?.groups?.token;
+  if (!daily) {
+    throw new Error("Missing daily token");
+  }
   const app = createApp({ databasePath, devicesPath });
   try {
-    for (const method of ["GET", "POST", "DELETE"]) {
-      expect((await call(app, daily, method, "/admin/people", { username: "blocked" })).statusCode).toBe(403);
-    }
-    expect((await call(app, daily, "GET", "/admin/keys")).statusCode).toBe(403);
-    const added = await call(app, admin, "POST", "/admin/people", { username: "alice" });
+    const denied = await Promise.all([
+      status(app, daily, "GET", "/admin/people"),
+      status(app, daily, "POST", "/admin/people", { username: "blocked" }),
+      status(app, daily, "DELETE", "/admin/people/someone"),
+      status(app, daily, "GET", "/admin/keys"),
+      status(app, daily, "GET", "/admin/people/someone/keys"),
+      status(app, daily, "POST", "/admin/people/someone/keys", {
+        label: "blocked",
+      }),
+      status(app, daily, "DELETE", "/admin/keys/some-key"),
+    ]);
+    expect(denied).toEqual([403, 403, 403, 403, 403, 403, 403]);
+    const localAdmin = await request(app, {
+      method: "GET",
+      url: "/admin/people",
+    });
+    expect(localAdmin.statusCode).toBe(403);
+    const added = await call(app, admin, "POST", "/admin/people", {
+      username: "alice",
+    });
     expect(added.statusCode).toBe(201);
-    const person = added.json() as { id: string; username: string };
+    const person = added.json();
     expect(person.username).toBe("alice");
-    expect((await call(app, admin, "GET", "/admin/people")).json()).toMatchObject({ people: [
-      { id: "host" }, { id: person.id, username: "alice" },
-    ] });
-    const minted = await call(app, admin, "POST", `/admin/people/${person.id}/keys`, { label: "Alice phone" });
+    expect(await body(app, admin, "GET", "/admin/people")).toMatchObject({
+      people: [{ id: "host" }, { id: person.id, username: "alice" }],
+    });
+    const minted = await call(
+      app,
+      admin,
+      "POST",
+      `/admin/people/${person.id}/keys`,
+      { label: "Alice phone" }
+    );
     expect(minted.statusCode).toBe(201);
-    const key = minted.json() as { id: string; token: string };
+    const key = minted.json();
     expect(key.token).toBeString();
-    expect((await call(app, key.token, "GET", "/me")).json()).toEqual(person);
-    const keys = (await call(app, admin, "GET", `/admin/people/${person.id}/keys`)).json() as { keys: { id: string; lastUsedAt: string | null }[] };
-    expect(keys.keys[0]).toMatchObject({ id: key.id, lastUsedAt: expect.any(String) });
+    expect(await body(app, key.token, "GET", "/me")).toEqual(person);
+    const keys = await body(
+      app,
+      admin,
+      "GET",
+      `/admin/people/${person.id}/keys`
+    );
+    expect(keys.keys[0]?.id).toBe(key.id);
+    expect(keys.keys[0]?.scope).toBe("daily");
+    expect(keys.keys[0]?.lastUsedAt).toBeString();
     const before = keys.keys[0]?.lastUsedAt;
     await call(app, key.token, "GET", "/me");
-    const after = (await call(app, admin, "GET", `/admin/people/${person.id}/keys`)).json() as typeof keys;
+    const after = await body(
+      app,
+      admin,
+      "GET",
+      `/admin/people/${person.id}/keys`
+    );
     expect(after.keys[0]?.lastUsedAt).toBe(before);
-    expect((await readFile(devicesPath, "utf8")).includes(key.token)).toBe(false);
-    expect((await call(app, admin, "DELETE", `/admin/keys/${key.id}`)).statusCode).toBe(200);
-    expect((await call(app, key.token, "GET", "/me")).statusCode).toBe(401);
+    const storeText = await readFile(devicesPath, "utf-8");
+    expect(storeText.includes(key.token)).toBe(false);
+    expect(await status(app, admin, "DELETE", `/admin/keys/${key.id}`)).toBe(
+      200
+    );
+    expect(await status(app, key.token, "GET", "/me")).toBe(401);
 
-    const second = await call(app, admin, "POST", `/admin/people/${person.id}/keys`, { label: "Second" });
-    const secondToken = (second.json() as { token: string }).token;
-    const saved = await call(app, secondToken, "POST", "/sets", { url: "https://www.youtube.com/watch?v=abcdefghijk" });
+    const second = await call(
+      app,
+      admin,
+      "POST",
+      `/admin/people/${person.id}/keys`,
+      { label: "Second" }
+    );
+    const secondToken = second.json().token;
+    const saved = await call(app, secondToken, "POST", "/sets", {
+      url: "https://www.youtube.com/watch?v=abcdefghijk",
+    });
     expect(saved.statusCode).toBe(201);
-    const setId = (saved.json() as { id: string }).id;
-    const playlist = await call(app, secondToken, "POST", "/playlists", { name: "Alice picks" });
+    const setId = saved.json().id;
+    const playlist = await call(app, secondToken, "POST", "/playlists", {
+      name: "Alice picks",
+    });
     expect(playlist.statusCode).toBe(201);
-    expect((await call(app, secondToken, "PUT", `/sets/${setId}/position`, { seconds: 12 })).statusCode).toBe(200);
-    expect((await call(app, secondToken, "PUT", "/queue/active", { setId })).statusCode).toBe(200);
-    expect((await call(app, admin, "DELETE", `/admin/people/${person.id}`)).statusCode).toBe(200);
-    expect((await call(app, secondToken, "GET", "/me")).statusCode).toBe(401);
+    const playlistId = playlist.json().id;
+    expect(
+      await status(app, secondToken, "PUT", `/playlists/${playlistId}/sets`, {
+        setIds: [setId],
+      })
+    ).toBe(200);
+    expect(
+      await status(app, secondToken, "PUT", `/sets/${setId}/position`, {
+        seconds: 12,
+      })
+    ).toBe(200);
+    const seeded = new Database(databasePath);
+    try {
+      seeded
+        .query(
+          "INSERT INTO queue_entries (person_id, set_id, position, is_active) VALUES (?, ?, 0, 0)"
+        )
+        .run(person.id, setId);
+      seeded
+        .query(
+          "INSERT INTO listens (person_id, set_id, started_at, start_known) VALUES (?, ?, ?, 1)"
+        )
+        .run(person.id, setId, new Date().toISOString());
+    } finally {
+      seeded.close();
+    }
+    expect(
+      await status(app, admin, "DELETE", `/admin/people/${person.id}`)
+    ).toBe(200);
+    expect(await status(app, secondToken, "GET", "/me")).toBe(401);
     const db = new Database(databasePath);
     try {
-      for (const table of ["library_entries", "playlists", "queue_entries", "playback_positions"]) {
+      for (const table of [
+        "library_entries",
+        "playlists",
+        "queue_entries",
+        "playback_positions",
+        "listens",
+      ]) {
         const column = table === "playlists" ? "creator_id" : "person_id";
-        expect(db.query(`SELECT count(*) AS count FROM ${table} WHERE ${column} = ?`).get(person.id)).toMatchObject({ count: 0 });
+        expect(
+          db
+            .query(`SELECT count(*) AS count FROM ${table} WHERE ${column} = ?`)
+            .get(person.id)
+        ).toMatchObject({ count: 0 });
       }
+      expect(
+        db
+          .query(
+            "SELECT count(*) AS count FROM playlist_sets WHERE playlist_id = ?"
+          )
+          .get(playlistId)
+      ).toMatchObject({ count: 0 });
     } finally {
       db.close();
     }
