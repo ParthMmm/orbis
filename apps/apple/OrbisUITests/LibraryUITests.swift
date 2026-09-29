@@ -408,7 +408,8 @@ final class LibraryUITests: XCTestCase {
       .matching(
         NSPredicate(
           format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "set-row-", "Night session"
-        ))
+        )
+      )
       .firstMatch
     XCTAssertTrue(night.waitForExistence(timeout: 30), "the seeded Set must appear in the Library")
     tapAtCentre(of: night, in: app)
