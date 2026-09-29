@@ -383,6 +383,7 @@ export const createApp = (
             Effect.match(
               Effect.gen(function* requestPersonalDownload() {
                 const personal = yield* Library;
+                yield* personal.find(params.id);
                 const result = yield* audio.requestDownload(params.id);
                 return { ...result, set: yield* personal.find(params.id) };
               }).pipe(Effect.tapError(logLibraryFailure)),
@@ -396,11 +397,19 @@ export const createApp = (
             )
           )
           .handle("audioState", ({ params }) =>
-            withFailureResponse(audio.audioState(params.id))
+            withFailureResponse(
+              Effect.gen(function* personalAudioState() {
+                const personal = yield* Library;
+                yield* personal.find(params.id);
+                return yield* audio.audioState(params.id);
+              })
+            )
           )
           .handleRaw("audioGrant", ({ params }) =>
             Effect.gen(function* grantAudio() {
               const caller = yield* SetCaller;
+              const personal = yield* Library;
+              yield* personal.find(params.id);
               const result = yield* Effect.match(audio.audioFile(params.id), {
                 onFailure: failureResponse,
                 onSuccess: () =>
@@ -413,7 +422,11 @@ export const createApp = (
           )
           .handleRaw("audio", ({ params, request }) =>
             Effect.match(
-              audio.audioFile(params.id).pipe(
+              Effect.gen(function* personalAudioFile() {
+                const personal = yield* Library;
+                yield* personal.find(params.id);
+                return yield* audio.audioFile(params.id);
+              }).pipe(
                 Effect.map((file) =>
                   audioFileResponse(
                     file,
@@ -434,6 +447,7 @@ export const createApp = (
             withFailureResponse(
               Effect.gen(function* cancelPersonalDownload() {
                 const personal = yield* Library;
+                yield* personal.find(params.id);
                 yield* audio.cancelDownload(params.id);
                 return yield* personal.find(params.id);
               })

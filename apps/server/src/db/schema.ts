@@ -33,6 +33,9 @@ export const sets = sqliteTable("sets", {
   durationSeconds: integer("duration_seconds"),
   finishCount: integer("finish_count").notNull().default(0),
   genre: text("genre"),
+  hostRemoved: integer("host_removed", { mode: "boolean" })
+    .notNull()
+    .default(false),
   id: text("id").primaryKey(),
   lastListenedAt: text("last_listened_at"),
   listenCount: integer("listen_count").notNull().default(0),

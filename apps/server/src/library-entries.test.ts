@@ -68,6 +68,12 @@ const writeLegacyLibrary = (databasePath: string) => {
         '["host-tag"]',
         "2026-01-01T00:00:00.000Z"
       );
+    database.exec(`
+      INSERT INTO playlists (id, name, created_at)
+      VALUES ('host-playlist', 'Host playlist', '2026-01-01T00:00:00.000Z');
+      INSERT INTO playlist_sets (playlist_id, set_id, position)
+      VALUES ('host-playlist', 'shared-set', 0);
+    `);
   } finally {
     database.close();
   }
@@ -143,6 +149,32 @@ test("legacy Host entry migrates and two People keep separate Library state", as
     ]);
     const empty = await request(app, remote("GET", "/sets"));
     expect(empty.json()).toEqual({ sets: [] });
+    const deniedGets = await Promise.all(
+      ["/sets/shared-set/audio", "/sets/shared-set/audio/state"].map((url) =>
+        request(app, remote("GET", url))
+      )
+    );
+    for (const denied of deniedGets) {
+      expect(denied.statusCode).toBe(404);
+    }
+    const deniedDownloads = await Promise.all(
+      (["POST", "DELETE"] as const).map((method) =>
+        request(app, remote(method, "/sets/shared-set/audio/download"))
+      )
+    );
+    for (const denied of deniedDownloads) {
+      expect(denied.statusCode).toBe(404);
+    }
+    const deniedGrant = await request(
+      app,
+      remote("POST", "/sets/shared-set/audio/grant")
+    );
+    expect(deniedGrant.statusCode).toBe(404);
+    const hostStillReady = await request(app, { method: "GET", url: "/sets" });
+    expect(hostStillReady.json().sets[0]).toMatchObject({
+      downloadState: "ready",
+      retainedAudioBytes: 1234,
+    });
 
     const saved = await request(
       app,
@@ -157,6 +189,7 @@ test("legacy Host entry migrates and two People keep separate Library state", as
       id: "shared-set",
       retainedAudioBytes: 1234,
       tags: ["b-tag"],
+      title: "Provider first title",
     });
     const renamed = await request(
       app,
@@ -250,6 +283,31 @@ test("legacy Host entry migrates and two People keep separate Library state", as
       tags: ["host-tag"],
       title: "Host edit",
     });
+    const hostRemoved = await request(app, {
+      method: "DELETE",
+      url: "/sets/shared-set",
+    });
+    expect(hostRemoved.statusCode).toBe(200);
+    const hostWithoutEntry = await request(app, {
+      method: "GET",
+      url: "/sets",
+    });
+    expect(
+      hostWithoutEntry.json().sets.map((set: { id: string }) => set.id)
+    ).not.toContain("shared-set");
+    const retained = new Database(databasePath);
+    try {
+      expect(
+        retained.query("SELECT id FROM sets WHERE id = 'shared-set'").get()
+      ).toEqual({ id: "shared-set" });
+      expect(
+        retained
+          .query("SELECT set_id FROM playlist_sets WHERE set_id = 'shared-set'")
+          .get()
+      ).toEqual({ set_id: "shared-set" });
+    } finally {
+      retained.close();
+    }
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

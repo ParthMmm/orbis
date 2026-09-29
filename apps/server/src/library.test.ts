@@ -663,7 +663,7 @@ test("edits and clears tags while retaining the set and updating tag suggestions
   }
 });
 
-test("deletes a set and keeps its playlists while removing membership", async () => {
+test("removes a Library Entry while keeping its playlist membership", async () => {
   const app = createApp();
   try {
     const saved = await request(app, {
@@ -709,7 +709,7 @@ test("deletes a set and keeps its playlists while removing membership", async ()
       method: "GET",
       url: "/playlists",
     });
-    expect(playlists.json()).toEqual({ playlists: [playlist] });
+    expect(playlists.json().playlists[0].setCount).toBe(1);
 
     const missing = await request(app, {
       method: "DELETE",

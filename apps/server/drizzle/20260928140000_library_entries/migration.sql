@@ -7,6 +7,7 @@ CREATE TABLE `library_entries` (
   PRIMARY KEY (`person_id`, `set_id`)
 );--> statement-breakpoint
 CREATE INDEX `library_entries_by_set` ON `library_entries` (`set_id`);--> statement-breakpoint
+ALTER TABLE `sets` ADD COLUMN `host_removed` integer NOT NULL DEFAULT 0;--> statement-breakpoint
 INSERT INTO `library_entries` (`person_id`, `set_id`, `saved_at`, `title_override`, `tags`)
 SELECT 'host', `id`, `created_at`,
   CASE WHEN `title_edited_by_user` = 1 THEN `title` ELSE NULL END,
@@ -16,7 +17,7 @@ FROM `sets`;
 UPDATE `sets` SET `title` = CASE `source`
   WHEN 'youtube' THEN 'YouTube video'
   ELSE 'SoundCloud track'
-END, `title_edited_by_user` = 0
+END, `title_edited_by_user` = 0, `metadata_state` = 'pending'
 WHERE `title_edited_by_user` = 1;
 --> statement-breakpoint
 UPDATE `sets` SET `tags` = '[]';

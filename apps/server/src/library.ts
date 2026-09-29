@@ -216,6 +216,7 @@ export class Library extends Context.Service<
               description: _description,
               detailsState: _detailsState,
               genre: _genre,
+              hostRemoved: _hostRemoved,
               sourceChapters: _sourceChapters,
               sourceTags: _sourceTags,
               ...visible
@@ -246,7 +247,7 @@ export class Library extends Context.Service<
             return yield* Effect.fail(setNotFound());
           }
           const [row] = yield* findRow(id);
-          if (!row) {
+          if (!row || row.hostRemoved) {
             return yield* Effect.fail(setNotFound());
           }
           const [other] = yield* db
@@ -276,6 +277,7 @@ export class Library extends Context.Service<
 
       const findSavedSet = (id: string) =>
         Effect.gen(function* findSavedSetEffect() {
+          yield* ensureEntry(id);
           const [row] = yield* findRow(id);
           if (!row) {
             return yield* Effect.fail(setNotFound());
@@ -321,6 +323,12 @@ export class Library extends Context.Service<
                 if (!row) {
                   return yield* Effect.fail(databaseError());
                 }
+                if (personId === "host" && row.hostRemoved) {
+                  yield* tx
+                    .update(sets)
+                    .set({ hostRemoved: false })
+                    .where(eq(sets.id, row.id));
+                }
                 const [entry] = yield* tx
                   .insert(libraryEntries)
                   .values({
@@ -356,7 +364,7 @@ export class Library extends Context.Service<
                 SELECT 1 FROM ${libraryEntries}
                 WHERE ${libraryEntries.setId} = ${sets.id}
                   AND ${libraryEntries.personId} = ${personId}
-              ) OR (${personId} = 'host' AND NOT EXISTS (
+              ) OR (${personId} = 'host' AND ${sets.hostRemoved} = 0 AND NOT EXISTS (
                 SELECT 1 FROM ${libraryEntries}
                 WHERE ${libraryEntries.setId} = ${sets.id}
               )))`,
@@ -653,13 +661,24 @@ export class Library extends Context.Service<
                   .where(eq(libraryEntries.setId, id))
                   .limit(1);
                 if (remaining.length === 0) {
-                  yield* tx
-                    .delete(playlistSets)
-                    .where(eq(playlistSets.setId, id));
-                  yield* tx
-                    .delete(queueEntries)
-                    .where(eq(queueEntries.setId, id));
-                  yield* tx.delete(sets).where(eq(sets.id, id));
+                  const [playlist] = yield* tx
+                    .select({ setId: playlistSets.setId })
+                    .from(playlistSets)
+                    .where(eq(playlistSets.setId, id))
+                    .limit(1);
+                  const [queue] = yield* tx
+                    .select({ setId: queueEntries.setId })
+                    .from(queueEntries)
+                    .where(eq(queueEntries.setId, id))
+                    .limit(1);
+                  if (!playlist && !queue) {
+                    yield* tx.delete(sets).where(eq(sets.id, id));
+                  } else if (personId === "host") {
+                    yield* tx
+                      .update(sets)
+                      .set({ hostRemoved: true })
+                      .where(eq(sets.id, id));
+                  }
                 }
               })
             );
