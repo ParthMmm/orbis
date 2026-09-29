@@ -6,9 +6,14 @@ import {
   OrbisApi,
   PlaylistMembersPayload,
   PlaylistNamePayload,
+  PositionPayload,
+  QueueEntryPayload,
+  QueuePlaylistPayload,
+  QueueSetPayload,
   SetAccess,
   SetCaller,
   SetPlaylistsPayload,
+  TagsPayload,
   UpdateTitlePayload,
 } from "@orbis/contracts/http-api";
 import { Context, Effect, Layer, Option, Schema, Scope } from "effect";
@@ -58,9 +63,7 @@ class AcceptedAccess extends Context.Service<
   Exclude<AccessDecision, { readonly kind: "rejected" }>
 >()("Orbis/AcceptedAccess") {}
 
-const Tags = Schema.Array(Schema.String.check(Schema.isMaxLength(40))).check(
-  Schema.isMaxLength(20)
-);
+const Tags = TagsPayload.fields.tags;
 const Filters = Schema.Struct({
   creatorId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
   playlistId: Schema.String.check(Schema.isMaxLength(100)),
@@ -72,13 +75,6 @@ const logDetailsFailure = (set: SavedSet, reason: string) =>
   Effect.logWarning("set details fill failed").pipe(
     Effect.annotateLogs({ reason, set: set.id })
   );
-
-// A Playback Position never goes backwards from zero, and the ceiling only refuses a number that
-// is not a moment in any Set. A real position is bounded by the Set's own duration in the Library.
-const PositionSeconds = Schema.Number.check(
-  Schema.isGreaterThanOrEqualTo(0),
-  Schema.isLessThanOrEqualTo(604_800)
-);
 
 /**
  * A failed library call is the one server-side failure the response status does not
@@ -95,23 +91,6 @@ const logLibraryFailure = <E>(error: E) => {
     Effect.annotateLogs({ errorTag: error._tag, status: error.statusCode })
   );
 };
-
-const respond = <A, E, R>(effect: Effect.Effect<A, E, R>, status = 200) =>
-  Effect.match(effect.pipe(Effect.tapError(logLibraryFailure)), {
-    onFailure: (error) => {
-      if (error instanceof LibraryError) {
-        return HttpServerResponse.jsonUnsafe(
-          { message: error.message },
-          { status: error.statusCode }
-        );
-      }
-      return HttpServerResponse.jsonUnsafe(
-        { message: "Check your request fields and send valid JSON." },
-        { status: 400 }
-      );
-    },
-    onSuccess: (body) => HttpServerResponse.jsonUnsafe(body, { status }),
-  });
 
 const failureResponse = <E>(error: E) => {
   if (error instanceof LibraryError) {
@@ -223,7 +202,7 @@ export const createApp = (
   const queueLayer = Queue.layer.pipe(
     Layer.provide(Layer.mergeAll(database, libraryLayer, statsLayer))
   );
-  const routes = HttpRouter.use((router) =>
+  const routes = HttpRouter.use(() =>
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
       const audio = yield* Audio;
@@ -475,118 +454,108 @@ export const createApp = (
               )
             )
       );
-      yield* router.add(
-        "GET",
-        "/health",
-        HttpServerResponse.jsonUnsafe({ status: "ok" })
-      );
-      yield* router.add(
-        "GET",
-        "/queue",
-        respond(
-          queue
-            .read()
-            .pipe(Effect.map((listeningQueue) => ({ queue: listeningQueue })))
-        )
-      );
-      yield* router.add(
-        "PUT",
-        "/queue/active",
-        respond(
-          Effect.gen(function* setActiveQueueEntry() {
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({
-                setId: Schema.String.check(Schema.isMaxLength(100)),
+      const queueGroup = HttpApiBuilder.group(OrbisApi, "queue", (handlers) =>
+        handlers
+          .handle("read", () =>
+            withFailureResponse(
+              queue
+                .read()
+                .pipe(
+                  Effect.map((listeningQueue) => ({ queue: listeningQueue }))
+                )
+            )
+          )
+          .handleRaw("play", () =>
+            withFailureResponse(
+              Effect.gen(function* setActiveQueueEntry() {
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(QueueSetPayload);
+                return { queue: yield* queue.play(input.setId) };
               })
-            );
-            return { queue: yield* queue.play(input.setId) };
-          })
-        )
-      );
-      yield* router.add(
-        "POST",
-        "/queue/entries",
-        respond(
-          Effect.gen(function* addQueueEntry() {
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({
-                placement: Schema.Literals(["next", "end"]),
-                setId: Schema.String.check(Schema.isMaxLength(100)),
+            )
+          )
+          .handleRaw("insert", () =>
+            Effect.map(
+              withFailureResponse(
+                Effect.gen(function* addQueueEntry() {
+                  const input =
+                    yield* HttpServerRequest.schemaBodyJson(QueueEntryPayload);
+                  return {
+                    queue: yield* queue.insert(input.setId, input.placement),
+                  };
+                })
+              ),
+              (result) =>
+                HttpServerResponse.isHttpServerResponse(result)
+                  ? result
+                  : HttpServerResponse.jsonUnsafe(result, { status: 201 })
+            )
+          )
+          .handleRaw("replaceWithPlaylist", () =>
+            withFailureResponse(
+              Effect.gen(function* replaceQueueFromPlaylist() {
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(QueuePlaylistPayload);
+                return {
+                  queue: yield* queue.replaceWithPlaylist(input.playlistId),
+                };
               })
-            );
-            return { queue: yield* queue.insert(input.setId, input.placement) };
-          }),
-          201
-        )
-      );
-      yield* router.add(
-        "PUT",
-        "/queue/playlist",
-        respond(
-          Effect.gen(function* replaceQueueFromPlaylist() {
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({
-                playlistId: Schema.String.check(Schema.isMaxLength(100)),
+            )
+          )
+          .handleRaw("complete", () =>
+            withFailureResponse(
+              Effect.gen(function* completeQueueEntry() {
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(QueueSetPayload);
+                return { queue: yield* queue.complete(input.setId) };
               })
-            );
-            return {
-              queue: yield* queue.replaceWithPlaylist(input.playlistId),
-            };
-          })
-        )
+            )
+          )
       );
-      yield* router.add(
-        "POST",
-        "/queue/completion",
-        respond(
-          Effect.gen(function* completeQueueEntry() {
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({
-                setId: Schema.String.check(Schema.isMaxLength(100)),
-              })
-            );
-            return { queue: yield* queue.complete(input.setId) };
-          })
-        )
+      const libraryGroup = HttpApiBuilder.group(
+        OrbisApi,
+        "library",
+        (handlers) =>
+          handlers
+            .handleRaw("setPosition", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* setPlaybackPosition() {
+                  const input =
+                    yield* HttpServerRequest.schemaBodyJson(PositionPayload);
+                  return yield* library.setPlaybackPosition(
+                    params.id,
+                    input.seconds
+                  );
+                })
+              )
+            )
+            .handle("tags", () =>
+              withFailureResponse(
+                library.tags().pipe(Effect.map((tags) => ({ tags })))
+              )
+            )
+            .handleRaw("updateTags", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* updateTags() {
+                  const input =
+                    yield* HttpServerRequest.schemaBodyJson(TagsPayload);
+                  return yield* library.updateTags(params.id, input.tags);
+                })
+              )
+            )
       );
-      yield* router.add(
-        "PUT",
-        "/sets/:id/position",
-        respond(
-          Effect.gen(function* setPlaybackPosition() {
-            const { params } = yield* HttpRouter.RouteContext;
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({ seconds: PositionSeconds })
-            );
-            return yield* library.setPlaybackPosition(
-              params.id ?? "",
-              input.seconds
-            );
-          })
-        )
-      );
-      yield* router.add(
-        "GET",
-        "/tags",
-        respond(library.tags().pipe(Effect.map((tags) => ({ tags }))))
-      );
-      yield* router.add(
-        "PATCH",
-        "/sets/:id/tags",
-        respond(
-          Effect.gen(function* updateTags() {
-            const { params } = yield* HttpRouter.RouteContext;
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({ tags: Tags })
-            );
-            return yield* library.updateTags(params.id ?? "", input.tags);
-          })
+      const systemGroup = HttpApiBuilder.group(OrbisApi, "system", (handlers) =>
+        handlers.handle("health", () =>
+          Effect.succeed({ status: "ok" as const })
         )
       );
       yield* Layer.buildWithScope(
         HttpApiBuilder.layer(OrbisApi, { openapiPath: "/openapi.json" }).pipe(
           Layer.provide(setGroup),
           Layer.provide(playlistGroup),
+          Layer.provide(queueGroup),
+          Layer.provide(libraryGroup),
+          Layer.provide(systemGroup),
           Layer.provide(
             Layer.succeed(SetAccess, {
               bearer: (effect) =>

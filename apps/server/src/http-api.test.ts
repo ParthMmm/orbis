@@ -2,18 +2,25 @@ import { expect, test } from "bun:test";
 
 import {
   AudioStateSchema,
+  ListeningQueueSchema,
   PlaylistSchema,
   SavedSetSchema,
 } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
 import { createApp } from "./app.js";
+import { ready, withSeededApp } from "./test-library.js";
 
 type PlaylistRequestBody =
   | { name: string }
   | { setIds: string[] }
   | { playlistIds: string[] }
-  | { title: string; url: string };
+  | { title: string; url: string }
+  | { placement: "next" | "end"; setId: string }
+  | { playlistId: string }
+  | { seconds: number }
+  | { setId: string }
+  | { tags: string[] };
 
 const json = (method: string, body: PlaylistRequestBody): RequestInit => ({
   body: JSON.stringify(body),
@@ -161,4 +168,65 @@ test("the Playlist contract decodes live HTTP responses", async () => {
   } finally {
     await app.dispose();
   }
+});
+
+test("the queue, position, and Tag contract decodes live HTTP responses", async () => {
+  await withSeededApp(ready(["a", "b"]), async (app) => {
+    const send = (path: string, init?: RequestInit) =>
+      app.handler(new Request(`http://localhost${path}`, init));
+    const queue = async (path: string, init?: RequestInit) => {
+      const response = await send(path, init);
+      const body = Schema.decodeUnknownSync(
+        Schema.Struct({ queue: ListeningQueueSchema })
+      )(await response.json());
+      return { body, status: response.status };
+    };
+
+    const initial = await queue("/queue");
+    expect(initial.body.queue.entries).toEqual([]);
+    const active = await queue("/queue/active", json("PUT", { setId: "a" }));
+    expect(active.body.queue.activeSetId).toBe("a");
+    const inserted = await queue(
+      "/queue/entries",
+      json("POST", { placement: "end", setId: "b" })
+    );
+    expect(inserted.status).toBe(201);
+    expect(inserted.body.queue.entries.map((set) => set.id)).toEqual([
+      "a",
+      "b",
+    ]);
+    const completed = await queue(
+      "/queue/completion",
+      json("POST", { setId: "a" })
+    );
+    expect(completed.body.queue.activeSetId).toBe("b");
+
+    const position = await send(
+      "/sets/b/position",
+      json("PUT", { seconds: 30 })
+    );
+    expect(position.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(SavedSetSchema)(await position.json())
+        .playbackPositionSeconds
+    ).toBe(30);
+    const tagged = await send(
+      "/sets/b/tags",
+      json("PATCH", { tags: ["house"] })
+    );
+    expect(tagged.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(SavedSetSchema)(await tagged.json()).tags
+    ).toEqual(["house"]);
+    const tags = await send("/tags");
+    expect(tags.status).toBe(200);
+    expect(
+      Schema.decodeUnknownSync(
+        Schema.Struct({ tags: Schema.Array(Schema.String) })
+      )(await tags.json()).tags
+    ).toEqual(["house"]);
+    const health = await send("/health");
+    expect(health.status).toBe(200);
+    expect(await health.json()).toEqual({ status: "ok" });
+  });
 });
