@@ -9,12 +9,19 @@ import { and, asc, desc, eq, inArray, ne, notInArray, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { Database } from "./db/database.js";
-import { playlistSets, playlists, queueEntries, sets } from "./db/schema.js";
+import {
+  libraryEntries,
+  playlistSets,
+  playlists,
+  queueEntries,
+  sets,
+} from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import {
   MAX_PLAYLISTS_PER_SET,
   MAX_SETS_PER_PLAYLIST,
 } from "./library-limits.js";
+import { LibraryPerson } from "./library-person.js";
 import type { EnrichedMetadata, SourceExtras } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
 import type { SourceDetails } from "./ytdlp-metadata.js";
@@ -167,10 +174,23 @@ export class Library extends Context.Service<
     readonly resetStuckDownloads: () => Effect.Effect<number, LibraryError>;
   }
 >()("@orbis/Library") {
-  static readonly layer = Layer.effect(
+  static readonly scopedLayer = Layer.effect(
     Library,
     Effect.gen(function* layer() {
       const db = yield* Database;
+      const personId = yield* LibraryPerson;
+
+      const entryFor = (setId: string) =>
+        db
+          .select()
+          .from(libraryEntries)
+          .where(
+            and(
+              eq(libraryEntries.personId, personId),
+              eq(libraryEntries.setId, setId)
+            )
+          )
+          .limit(1);
 
       const playlistIdsFor = (setId: string) =>
         db
@@ -186,7 +206,10 @@ export class Library extends Context.Service<
           playlistIds: Effect.Effect<string[], unknown> = playlistIdsFor(row.id)
         ) =>
           Effect.gen(function* hydrateSetEffect() {
-            const tags = yield* decodeJsonArray(row.tags);
+            const [entry] = yield* entryFor(row.id);
+            const tags = yield* decodeJsonArray(
+              entry?.tags ?? (personId === "host" ? row.tags : "[]")
+            );
             // The source details stay on the server; the client contract does not carry them.
             const {
               creatorUrl: _creatorUrl,
@@ -199,14 +222,57 @@ export class Library extends Context.Service<
             } = row;
             return {
               ...visible,
+              createdAt: entry?.savedAt ?? row.createdAt,
               playlistIds: yield* playlistIds,
               tags,
+              title: entry?.titleOverride ?? row.title,
+              titleEditedByUser: entry
+                ? entry.titleOverride !== null
+                : personId === "host" && row.titleEditedByUser,
             };
           })
       );
 
       const findRow = (id: string) =>
         db.select().from(sets).where(eq(sets.id, id)).limit(1);
+
+      const ensureEntry = (id: string) =>
+        Effect.gen(function* ensureEntryEffect() {
+          const [existing] = yield* entryFor(id);
+          if (existing) {
+            return existing;
+          }
+          if (personId !== "host") {
+            return yield* Effect.fail(setNotFound());
+          }
+          const [row] = yield* findRow(id);
+          if (!row) {
+            return yield* Effect.fail(setNotFound());
+          }
+          const [other] = yield* db
+            .select({ personId: libraryEntries.personId })
+            .from(libraryEntries)
+            .where(eq(libraryEntries.setId, id))
+            .limit(1);
+          if (other) {
+            return yield* Effect.fail(setNotFound());
+          }
+          const [entry] = yield* db
+            .insert(libraryEntries)
+            .values({
+              personId,
+              savedAt: row.createdAt,
+              setId: id,
+              tags: row.tags,
+              titleOverride: row.titleEditedByUser ? row.title : null,
+            })
+            .onConflictDoNothing()
+            .returning();
+          if (!entry) {
+            return yield* Effect.fail(databaseError());
+          }
+          return entry;
+        });
 
       const findSavedSet = (id: string) =>
         Effect.gen(function* findSavedSetEffect() {
@@ -220,32 +286,64 @@ export class Library extends Context.Service<
       const save = Effect.fn("Library.save")((input: SaveSetInput) =>
         execute(
           Effect.gen(function* saveSetEffect() {
-            const id = crypto.randomUUID();
             const { source, url } = yield* normalizeUrl(input.url);
             const title = input.title?.trim() ?? "";
             const tags = normalizeTags(input.tags);
-            const [row] = yield* db
-              .insert(sets)
-              .values({
-                createdAt: new Date().toISOString(),
-                id,
-                source,
-                tags: JSON.stringify(tags),
-                title: title || TEMPORARY_TITLES[source],
-                titleEditedByUser: Boolean(title),
-                url,
+            const savedRow = yield* db.transaction((tx) =>
+              Effect.gen(function* saveEntryTransaction() {
+                let [row] = yield* tx
+                  .select()
+                  .from(sets)
+                  .where(eq(sets.url, url))
+                  .limit(1);
+                if (!row) {
+                  const [inserted] = yield* tx
+                    .insert(sets)
+                    .values({
+                      createdAt: new Date().toISOString(),
+                      id: crypto.randomUUID(),
+                      source,
+                      tags: "[]",
+                      title: TEMPORARY_TITLES[source],
+                      titleEditedByUser: false,
+                      url,
+                    })
+                    .onConflictDoNothing()
+                    .returning();
+                  [row] = inserted
+                    ? [inserted]
+                    : yield* tx
+                        .select()
+                        .from(sets)
+                        .where(eq(sets.url, url))
+                        .limit(1);
+                }
+                if (!row) {
+                  return yield* Effect.fail(databaseError());
+                }
+                const [entry] = yield* tx
+                  .insert(libraryEntries)
+                  .values({
+                    personId,
+                    savedAt: new Date().toISOString(),
+                    setId: row.id,
+                    tags: JSON.stringify(tags),
+                    titleOverride: title || null,
+                  })
+                  .onConflictDoNothing()
+                  .returning();
+                if (!entry) {
+                  return yield* Effect.fail(
+                    new LibraryError({
+                      message: "This set is already in your library.",
+                      statusCode: 409,
+                    })
+                  );
+                }
+                return row;
               })
-              .onConflictDoNothing()
-              .returning();
-            if (!row) {
-              return yield* Effect.fail(
-                new LibraryError({
-                  message: "This set is already in your library.",
-                  statusCode: 409,
-                })
-              );
-            }
-            return yield* hydrateSet(row);
+            );
+            return yield* hydrateSet(savedRow);
           })
         )
       );
@@ -253,12 +351,31 @@ export class Library extends Context.Service<
       const list = Effect.fn("Library.list")((filters: LibraryFilters) =>
         execute(
           Effect.gen(function* listSetsEffect() {
-            const conditions = [];
+            const conditions = [
+              sql`(EXISTS (
+                SELECT 1 FROM ${libraryEntries}
+                WHERE ${libraryEntries.setId} = ${sets.id}
+                  AND ${libraryEntries.personId} = ${personId}
+              ) OR (${personId} = 'host' AND NOT EXISTS (
+                SELECT 1 FROM ${libraryEntries}
+                WHERE ${libraryEntries.setId} = ${sets.id}
+              )))`,
+            ];
+            const entryTitle = sql`coalesce((
+              SELECT ${libraryEntries.titleOverride} FROM ${libraryEntries}
+              WHERE ${libraryEntries.setId} = ${sets.id}
+                AND ${libraryEntries.personId} = ${personId}
+            ), ${sets.title})`;
+            const entryTags = sql`coalesce((
+              SELECT ${libraryEntries.tags} FROM ${libraryEntries}
+              WHERE ${libraryEntries.setId} = ${sets.id}
+                AND ${libraryEntries.personId} = ${personId}
+            ), ${sets.tags})`;
             if (filters.q?.trim()) {
               const query = filters.q.trim();
               conditions.push(
                 sql`(
-                  instr(lower(${sets.title}), lower(${query})) > 0
+                  instr(lower(${entryTitle}), lower(${query})) > 0
                   OR instr(lower(${sets.url}), lower(${query})) > 0
                   OR instr(lower(coalesce(${sets.creator}, '')), lower(${query})) > 0
                 )`
@@ -273,7 +390,7 @@ export class Library extends Context.Service<
             for (const tag of filters.tags ?? []) {
               conditions.push(
                 sql`EXISTS (
-                  SELECT 1 FROM json_each(${sets.tags})
+                  SELECT 1 FROM json_each(${entryTags})
                   WHERE value = ${tag.trim().toLowerCase()}
                 )`
               );
@@ -326,16 +443,21 @@ export class Library extends Context.Service<
         (id: string, tags: readonly string[]) =>
           execute(
             Effect.gen(function* updateTagsEffect() {
-              const rows = yield* db
-                .update(sets)
+              yield* ensureEntry(id);
+              const [entry] = yield* db
+                .update(libraryEntries)
                 .set({ tags: JSON.stringify(normalizeTags(tags)) })
-                .where(eq(sets.id, id))
+                .where(
+                  and(
+                    eq(libraryEntries.personId, personId),
+                    eq(libraryEntries.setId, id)
+                  )
+                )
                 .returning();
-              const [row] = rows;
-              if (!row) {
+              if (!entry) {
                 return yield* Effect.fail(setNotFound());
               }
-              return yield* hydrateSet(row);
+              return yield* findSavedSet(id);
             })
           )
       );
@@ -344,6 +466,7 @@ export class Library extends Context.Service<
         (id: string, title: string) =>
           execute(
             Effect.gen(function* updateTitleEffect() {
+              yield* ensureEntry(id);
               const trimmedTitle = title.trim();
               if (!trimmedTitle) {
                 return yield* Effect.fail(
@@ -353,16 +476,20 @@ export class Library extends Context.Service<
                   })
                 );
               }
-              const rows = yield* db
-                .update(sets)
-                .set({ title: trimmedTitle, titleEditedByUser: true })
-                .where(eq(sets.id, id))
+              const [entry] = yield* db
+                .update(libraryEntries)
+                .set({ titleOverride: trimmedTitle })
+                .where(
+                  and(
+                    eq(libraryEntries.personId, personId),
+                    eq(libraryEntries.setId, id)
+                  )
+                )
                 .returning();
-              const [row] = rows;
-              if (!row) {
+              if (!entry) {
                 return yield* Effect.fail(setNotFound());
               }
-              return yield* hydrateSet(row);
+              return yield* findSavedSet(id);
             })
           )
       );
@@ -439,10 +566,7 @@ export class Library extends Context.Service<
                   ...(metadata.extras && extrasColumns(metadata.extras)),
                   metadataState: "enriched",
                   releasedAt: metadata.releasedAt,
-                  title: sql<string>`CASE
-                  WHEN ${sets.titleEditedByUser} = 1 THEN ${sets.title}
-                  ELSE ${metadata.title}
-                END`,
+                  title: metadata.title,
                 })
                 .where(eq(sets.id, id))
                 .returning();
@@ -511,18 +635,32 @@ export class Library extends Context.Service<
       const remove = Effect.fn("Library.remove")((id: string) =>
         execute(
           Effect.gen(function* removeEffect() {
+            yield* ensureEntry(id);
             const saved = yield* findSavedSet(id);
             yield* db.transaction((tx) =>
               Effect.gen(function* removeTransaction() {
                 yield* tx
-                  .delete(playlistSets)
-                  .where(eq(playlistSets.setId, id));
-                // A removed Set cannot stay scheduled for playback: the queue would hold an
-                // entry with nothing behind it.
-                yield* tx
-                  .delete(queueEntries)
-                  .where(eq(queueEntries.setId, id));
-                yield* tx.delete(sets).where(eq(sets.id, id));
+                  .delete(libraryEntries)
+                  .where(
+                    and(
+                      eq(libraryEntries.personId, personId),
+                      eq(libraryEntries.setId, id)
+                    )
+                  );
+                const remaining = yield* tx
+                  .select({ personId: libraryEntries.personId })
+                  .from(libraryEntries)
+                  .where(eq(libraryEntries.setId, id))
+                  .limit(1);
+                if (remaining.length === 0) {
+                  yield* tx
+                    .delete(playlistSets)
+                    .where(eq(playlistSets.setId, id));
+                  yield* tx
+                    .delete(queueEntries)
+                    .where(eq(queueEntries.setId, id));
+                  yield* tx.delete(sets).where(eq(sets.id, id));
+                }
               })
             );
             return saved;
@@ -671,11 +809,12 @@ export class Library extends Context.Service<
       const tags = Effect.fn("Library.tags")(() =>
         execute(
           db
-            .all<{ readonly tag: string }>(
-              sql`SELECT DISTINCT value AS tag
-                FROM ${sets}, json_each(${sets.tags})
-                ORDER BY tag`
-            )
+            .all<{ readonly tag: string }>(sql`
+          SELECT DISTINCT value AS tag
+          FROM ${libraryEntries}, json_each(${libraryEntries.tags})
+          WHERE ${libraryEntries.personId} = ${personId}
+          ORDER BY tag
+        `)
             .pipe(Effect.map((rows) => rows.map((row) => row.tag)))
         )
       );
@@ -1039,4 +1178,14 @@ export class Library extends Context.Service<
       };
     })
   );
+
+  static readonly layer = Library.scopedLayer.pipe(
+    Layer.provide(Layer.succeed(LibraryPerson, "host"))
+  );
+
+  static forPersonLayer(personId: string) {
+    return Layer.fresh(Library.scopedLayer).pipe(
+      Layer.provide(Layer.succeed(LibraryPerson, personId))
+    );
+  }
 }

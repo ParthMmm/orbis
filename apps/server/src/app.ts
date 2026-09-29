@@ -29,7 +29,7 @@ import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { Audio } from "./audio.js";
 import type { AudioFile, AudioOptions } from "./audio.js";
-import { layer as databaseLayer } from "./db/database.js";
+import { Database, layer as databaseLayer } from "./db/database.js";
 import { LibraryError } from "./errors.js";
 import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
 import {
@@ -300,6 +300,7 @@ export const createApp = (
   const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
+      const db = yield* Database;
       const audio = yield* Audio;
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
@@ -349,7 +350,10 @@ export const createApp = (
       );
       // Enrichment failure is swallowed so the save still succeeds, so it is the
       // one outcome a client cannot see. The log records which set and which reason.
-      const enrichSavedSet = Effect.fn("enrichSavedSet")((set: SavedSet) => {
+      const enrichSavedSet = Effect.fn("enrichSavedSet")((
+        set: SavedSet,
+        personal: typeof Library.Service
+      ) => {
         const onMetadataFailure = (error: MetadataError) =>
           Effect.logWarning("set metadata enrichment failed").pipe(
             Effect.annotateLogs({ reason: error.reason, set: set.id }),
@@ -369,16 +373,19 @@ export const createApp = (
           ),
           Effect.catchTag("MetadataError", (failure) =>
             onMetadataFailure(failure).pipe(Effect.tap(() => fillDetails(set)))
-          )
+          ),
+          Effect.flatMap(() => personal.find(set.id))
         );
       });
       const setGroup = HttpApiBuilder.group(OrbisApi, "sets", (handlers) =>
         handlers
           .handleRaw("requestDownload", ({ params }) =>
             Effect.match(
-              audio
-                .requestDownload(params.id)
-                .pipe(Effect.tapError(logLibraryFailure)),
+              Effect.gen(function* requestPersonalDownload() {
+                const personal = yield* Library;
+                const result = yield* audio.requestDownload(params.id);
+                return { ...result, set: yield* personal.find(params.id) };
+              }).pipe(Effect.tapError(logLibraryFailure)),
               {
                 onFailure: failureResponse,
                 onSuccess: ({ accepted, set }) =>
@@ -424,7 +431,13 @@ export const createApp = (
             )
           )
           .handle("cancelDownload", ({ params }) =>
-            withFailureResponse(audio.cancelDownload(params.id))
+            withFailureResponse(
+              Effect.gen(function* cancelPersonalDownload() {
+                const personal = yield* Library;
+                yield* audio.cancelDownload(params.id);
+                return yield* personal.find(params.id);
+              })
+            )
           )
           .handleRaw("save", () =>
             withFailureResponse(
@@ -435,7 +448,8 @@ export const createApp = (
                   input.url,
                   options.shortLinkFetch
                 );
-                const saved = yield* library.save({
+                const personal = yield* Library;
+                const saved = yield* personal.save({
                   tags: [...(input.tags ?? [])],
                   title: input.title ?? "",
                   url,
@@ -443,17 +457,24 @@ export const createApp = (
                 yield* Effect.logInfo("set saved").pipe(
                   Effect.annotateLogs({ set: saved.id, source: saved.source })
                 );
-                if (saved.titleEditedByUser) {
+                if (
+                  saved.titleEditedByUser ||
+                  saved.metadataState === "enriched"
+                ) {
                   yield* fillDetails(saved);
                   return saved;
                 }
-                return yield* enrichSavedSet(saved);
+                return yield* enrichSavedSet(saved, personal);
               })
             )
           )
           .handle("retryMetadata", ({ params }) =>
             withFailureResponse(
-              library.find(params.id).pipe(Effect.flatMap(enrichSavedSet))
+              Effect.gen(function* retrySetMetadata() {
+                const personal = yield* Library;
+                const set = yield* personal.find(params.id);
+                return yield* enrichSavedSet(set, personal);
+              })
             )
           )
           .handleRaw("updateTitle", ({ params }) =>
@@ -461,12 +482,18 @@ export const createApp = (
               Effect.gen(function* updateSetTitle() {
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(UpdateTitlePayload);
-                return yield* library.updateTitle(params.id, input.title);
+                const personal = yield* Library;
+                return yield* personal.updateTitle(params.id, input.title);
               })
             )
           )
           .handle("remove", ({ params }) =>
-            withFailureResponse(library.remove(params.id))
+            withFailureResponse(
+              Effect.gen(function* removePersonalSet() {
+                const personal = yield* Library;
+                return yield* personal.remove(params.id);
+              })
+            )
           )
           .handleRaw("list", ({ request }) =>
             withFailureResponse(
@@ -486,7 +513,8 @@ export const createApp = (
                 }
                 const filters =
                   yield* Schema.decodeUnknownEffect(Filters)(rawFilters);
-                const sets = yield* library.list({
+                const personal = yield* Library;
+                const sets = yield* personal.list({
                   ...filters,
                   tags: [...filters.tags],
                 });
@@ -639,7 +667,10 @@ export const createApp = (
             )
             .handle("tags", () =>
               withFailureResponse(
-                library.tags().pipe(Effect.map((tags) => ({ tags })))
+                Effect.gen(function* listPersonalTags() {
+                  const personal = yield* Library;
+                  return { tags: yield* personal.tags() };
+                })
               )
             )
             .handleRaw("updateTags", ({ params }) =>
@@ -647,7 +678,8 @@ export const createApp = (
                 Effect.gen(function* updateTags() {
                   const input =
                     yield* HttpServerRequest.schemaBodyJson(TagsPayload);
-                  return yield* library.updateTags(params.id, input.tags);
+                  const personal = yield* Library;
+                  return yield* personal.updateTags(params.id, input.tags);
                 })
               )
             )
@@ -714,7 +746,12 @@ export const createApp = (
                   Option.match({
                     onNone: () => Effect.die("Accepted access context missing"),
                     onSome: (access) =>
-                      Effect.provideService(effect, SetCaller, access),
+                      Effect.provide(
+                        Effect.provideService(effect, SetCaller, access),
+                        Library.forPersonLayer(access.person.id).pipe(
+                          Layer.provide(Layer.succeed(Database, db))
+                        )
+                      ),
                   })
                 ),
             })
@@ -732,7 +769,8 @@ export const createApp = (
       Layer.provide(libraryLayer),
       Layer.provide(statsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
-      Layer.provide(options.titleReviser ?? TitleReviser.unconfigured())
+      Layer.provide(options.titleReviser ?? TitleReviser.unconfigured()),
+      Layer.provide(database)
     ),
     {
       disableLogger: true,
@@ -834,6 +872,7 @@ export const createApp = (
         );
       }
       markKeyUsed(devicesPath, decision.keyId);
+      // SAFETY: SetAccess provides the caller-bound Library before any handler reads it.
       return app
         .handler(
           request,
@@ -841,7 +880,7 @@ export const createApp = (
             Context.make(SetCaller, decision),
             AcceptedAccess,
             decision
-          )
+          ) as Context.Context<Library | SetCaller>
         )
         .then(withOrigin);
     },
