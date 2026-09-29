@@ -18,11 +18,11 @@
     "trust": "bun src/trust.ts"
   },
   "dependencies": {
-    "@effect/ai-openrouter": "4.0.0-rc.113",
-    "@effect/sql-sqlite-bun": "4.0.0-rc.113",
+    "@effect/ai-openrouter": "4.0.0-rc.117",
+    "@effect/sql-sqlite-bun": "4.0.0-rc.117",
     "@orbis/contracts": "workspace:*",
     "drizzle-orm": "1.0.0-rc.5-5935859",
-    "effect": "4.0.0-rc.113",
+    "effect": "4.0.0-rc.117",
     "evlog": "2.28.1"
   },
   "devDependencies": {
