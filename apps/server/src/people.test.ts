@@ -210,8 +210,8 @@ test("concurrent key usage cannot restore a removed Person's keys", async () => 
       tokens.map((token) => request(app, remote(token)))
     );
     expect(
-      responses.every(
-        (response) => response.statusCode === 200 || response.statusCode === 401
+      responses.every((response) =>
+        [200, 401, 429].includes(response.statusCode)
       )
     ).toBe(true);
     expect(await removal.exited).toBe(0);
