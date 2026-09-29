@@ -1,5 +1,12 @@
 import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import { readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmdirSync,
+  writeFileSync,
+} from "node:fs";
 
 import { Schema } from "effect";
 
@@ -92,7 +99,7 @@ export const readTrustStrict = (storePath: string): TrustStore => {
   return parsed.version === 1 ? fromLegacy(parsed) : parsed;
 };
 
-export const writeTrustStore = (storePath: string, store: TrustStore): void => {
+const writeTrustStore = (storePath: string, store: TrustStore): void => {
   const temporary = `${storePath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
   writeFileSync(temporary, `${JSON.stringify(store, null, 2)}\n`, {
     mode: 0o600,
@@ -103,24 +110,79 @@ export const writeTrustStore = (storePath: string, store: TrustStore): void => {
 const isMissingFile = (error: Error): boolean =>
   "code" in error && error.code === "ENOENT";
 
+const LOCK_WAIT_MS = 10;
+const LOCK_TIMEOUT_MS = 5000;
+const lockWaiter = new Int32Array(new SharedArrayBuffer(4));
+
+const withTrustStoreLock = <T>(storePath: string, action: () => T): T => {
+  const lockPath = `${storePath}.lock`;
+  const deadline = Date.now() + LOCK_TIMEOUT_MS;
+  for (;;) {
+    try {
+      mkdirSync(lockPath, { mode: 0o700 });
+      break;
+    } catch (error) {
+      if (
+        !(error instanceof Error) ||
+        !("code" in error) ||
+        error.code !== "EEXIST"
+      ) {
+        throw error;
+      }
+      if (Date.now() >= deadline) {
+        throw new Error(`Timed out waiting for trust store lock: ${lockPath}`, {
+          cause: error,
+        });
+      }
+      Atomics.wait(lockWaiter, 0, 0, LOCK_WAIT_MS);
+    }
+  }
+  try {
+    return action();
+  } finally {
+    rmdirSync(lockPath);
+  }
+};
+
+export const mutateTrustStore = <T>(
+  storePath: string,
+  read: () => TrustStore,
+  change: (store: TrustStore) => {
+    readonly store?: TrustStore;
+    readonly value: T;
+  }
+): T =>
+  withTrustStoreLock(storePath, () => {
+    const { store, value } = change(read());
+    if (store) {
+      writeTrustStore(storePath, store);
+    }
+    return value;
+  });
+
 export const migrateTrustStore = (storePath: string): void => {
-  let raw: unknown;
-  try {
-    raw = JSON.parse(readFileSync(storePath, "utf-8"));
-  } catch {
+  if (!existsSync(storePath)) {
     return;
   }
-  let parsed: typeof LegacyTrustFile.Type | typeof TrustFile.Type;
-  try {
-    parsed = Schema.decodeUnknownSync(
-      Schema.Union([LegacyTrustFile, TrustFile])
-    )(raw);
-  } catch {
-    return;
-  }
-  if (parsed.version === 1) {
-    writeTrustStore(storePath, fromLegacy(parsed));
-  }
+  withTrustStoreLock(storePath, () => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(readFileSync(storePath, "utf-8"));
+    } catch {
+      return;
+    }
+    let parsed: typeof LegacyTrustFile.Type | typeof TrustFile.Type;
+    try {
+      parsed = Schema.decodeUnknownSync(
+        Schema.Union([LegacyTrustFile, TrustFile])
+      )(raw);
+    } catch {
+      return;
+    }
+    if (parsed.version === 1) {
+      writeTrustStore(storePath, fromLegacy(parsed));
+    }
+  });
 };
 
 export interface TrustRegistry {
@@ -202,26 +264,32 @@ export const markKeyUsed = (
     return;
   }
   try {
-    const store = readTrustStrict(storePath);
-    const key = store.keys.find((record) => record.id === keyId);
-    if (!key) {
-      return;
-    }
-    const now = Date.now();
-    if (
-      key.lastUsedAt &&
-      now - Date.parse(key.lastUsedAt) < USAGE_INTERVAL_MS
-    ) {
-      return;
-    }
-    writeTrustStore(storePath, {
-      ...store,
-      keys: store.keys.map((record) =>
-        record.id === keyId
-          ? { ...record, lastUsedAt: new Date(now).toISOString() }
-          : record
-      ),
-    });
+    mutateTrustStore(
+      storePath,
+      () => readTrustStrict(storePath),
+      (store) => {
+        const key = store.keys.find((record) => record.id === keyId);
+        const now = Date.now();
+        if (
+          !key ||
+          (key.lastUsedAt &&
+            now - Date.parse(key.lastUsedAt) < USAGE_INTERVAL_MS)
+        ) {
+          return { value: undefined };
+        }
+        return {
+          store: {
+            ...store,
+            keys: store.keys.map((record) =>
+              record.id === keyId
+                ? { ...record, lastUsedAt: new Date(now).toISOString() }
+                : record
+            ),
+          },
+          value: undefined,
+        };
+      }
+    );
   } catch {
     // Usage time is advisory; authentication already checked the current store.
   }
@@ -244,31 +312,38 @@ export const renamePerson = (
     return { kind: "unavailable" };
   }
   try {
-    const store = readTrustStrict(storePath);
-    if (
-      store.people.some(
-        (person) =>
-          !person.removed &&
-          person.id !== personId &&
-          person.username.toLowerCase() === name.toLowerCase()
-      )
-    ) {
-      return { kind: "conflict" };
-    }
-    const person = store.people.find(
-      (record) => record.id === personId && !record.removed
+    return mutateTrustStore<RenamePersonResult>(
+      storePath,
+      () => readTrustStrict(storePath),
+      (store) => {
+        if (
+          store.people.some(
+            (person) =>
+              !person.removed &&
+              person.id !== personId &&
+              person.username.toLowerCase() === name.toLowerCase()
+          )
+        ) {
+          return { value: { kind: "conflict" as const } };
+        }
+        const person = store.people.find(
+          (record) => record.id === personId && !record.removed
+        );
+        if (!person) {
+          return { value: { kind: "unavailable" as const } };
+        }
+        const updated = { ...person, username: name };
+        return {
+          store: {
+            ...store,
+            people: store.people.map((record) =>
+              record.id === personId ? updated : record
+            ),
+          },
+          value: { kind: "updated" as const, person: updated },
+        };
+      }
     );
-    if (!person) {
-      return { kind: "unavailable" };
-    }
-    const updated = { ...person, username: name };
-    writeTrustStore(storePath, {
-      ...store,
-      people: store.people.map((record) =>
-        record.id === personId ? updated : record
-      ),
-    });
-    return { kind: "updated", person: updated };
   } catch {
     return { kind: "unavailable" };
   }

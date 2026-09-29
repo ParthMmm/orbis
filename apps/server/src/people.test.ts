@@ -155,3 +155,73 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
     await rm(directory, { force: true, recursive: true });
   }
 });
+
+test("concurrent key usage cannot restore a removed Person's keys", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-people-race-"));
+  const devicesPath = path.join(directory, "devices.json");
+  const personId = "race-person";
+  const tokens = Array.from(
+    { length: 80 },
+    (_, index) => `race-token-${index}`
+  );
+  await writeFile(
+    devicesPath,
+    JSON.stringify({
+      keys: tokens.map((token, index) => ({
+        addedAt: "2026-09-11T00:00:00.000Z",
+        id: `race-key-${index}`,
+        label: `Race key ${index}`,
+        lastUsedAt: null,
+        personId,
+        scope: "daily",
+        tokenHash: hashToken(token),
+      })),
+      people: [
+        { id: "host", removed: false, username: "host" },
+        { id: personId, removed: false, username: "race" },
+      ],
+      version: 2,
+    })
+  );
+  const app = createApp({
+    databasePath: path.join(directory, "library.sqlite"),
+    devicesPath,
+  });
+  try {
+    const removal = Bun.spawn(
+      [
+        process.execPath,
+        "src/trust.ts",
+        "person",
+        "remove",
+        "--id",
+        personId,
+        "--devices",
+        devicesPath,
+      ],
+      {
+        cwd: path.resolve(import.meta.dir, ".."),
+        stderr: "pipe",
+        stdout: "pipe",
+      }
+    );
+    const responses = await Promise.all(
+      tokens.map((token) => request(app, remote(token)))
+    );
+    expect(
+      responses.every(
+        (response) => response.statusCode === 200 || response.statusCode === 401
+      )
+    ).toBe(true);
+    expect(await removal.exited).toBe(0);
+    const stored = JSON.parse(await readFile(devicesPath, "utf-8"));
+    expect(
+      stored.keys.some((key: { personId: string }) => key.personId === personId)
+    ).toBe(false);
+    const afterRemoval = await request(app, remote(tokens[0] ?? ""));
+    expect(afterRemoval.statusCode).toBe(401);
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});

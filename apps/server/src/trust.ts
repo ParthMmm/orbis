@@ -5,8 +5,8 @@ import {
   emptyTrustStore,
   hashToken,
   HOST_PERSON_ID,
+  mutateTrustStore,
   readTrustStrict,
-  writeTrustStore,
 } from "./identity.js";
 import type { KeyRecord, TrustStore } from "./identity.js";
 
@@ -53,6 +53,13 @@ const readStore = (): TrustStore => {
   }
 };
 
+const mutateStore = <T>(
+  change: (store: TrustStore) => {
+    readonly store: TrustStore;
+    readonly value: T;
+  }
+): T => mutateTrustStore(target, readStore, change);
+
 const username = (): string => {
   const value = required("username");
   if (value.length > 40) {
@@ -62,22 +69,27 @@ const username = (): string => {
 };
 
 const personAdd = () => {
-  const store = readStore();
   const name = username();
-  if (
-    store.people.some(
-      (person) =>
-        !person.removed && person.username.toLowerCase() === name.toLowerCase()
-    )
-  ) {
-    throw new Error("That username is already in use.");
-  }
-  const person = {
-    id: randomBytes(8).toString("hex"),
-    removed: false,
-    username: name,
-  };
-  writeTrustStore(target, { ...store, people: [...store.people, person] });
+  const person = mutateStore((store) => {
+    if (
+      store.people.some(
+        (candidate) =>
+          !candidate.removed &&
+          candidate.username.toLowerCase() === name.toLowerCase()
+      )
+    ) {
+      throw new Error("That username is already in use.");
+    }
+    const added = {
+      id: randomBytes(8).toString("hex"),
+      removed: false,
+      username: name,
+    };
+    return {
+      store: { ...store, people: [...store.people, added] },
+      value: added,
+    };
+  });
   console.log(`Added Person ${person.id} (${name}).`);
 };
 
@@ -94,16 +106,20 @@ const personRemove = () => {
   if (id === HOST_PERSON_ID) {
     throw new Error("Host cannot be removed.");
   }
-  const store = readStore();
-  if (!store.people.some((person) => person.id === id && !person.removed)) {
-    throw new Error(`No active Person with id ${id}.`);
-  }
-  writeTrustStore(target, {
-    ...store,
-    keys: store.keys.filter((key) => key.personId !== id),
-    people: store.people.map((person) =>
-      person.id === id ? { ...person, removed: true } : person
-    ),
+  mutateStore((store) => {
+    if (!store.people.some((person) => person.id === id && !person.removed)) {
+      throw new Error(`No active Person with id ${id}.`);
+    }
+    return {
+      store: {
+        ...store,
+        keys: store.keys.filter((key) => key.personId !== id),
+        people: store.people.map((person) =>
+          person.id === id ? { ...person, removed: true } : person
+        ),
+      },
+      value: undefined,
+    };
   });
   console.log(
     `Removed Person ${id}. Their keys stop working on the next request.`
@@ -111,14 +127,7 @@ const personRemove = () => {
 };
 
 const keyAdd = (legacy = false) => {
-  const store = readStore();
   const personId = legacy ? HOST_PERSON_ID : required("person");
-  const person = store.people.find(
-    (candidate) => candidate.id === personId && !candidate.removed
-  );
-  if (!person) {
-    throw new Error(`No active Person with id ${personId}.`);
-  }
   const scope = option("scope") ?? "daily";
   if (scope !== "daily" && scope !== "admin") {
     throw new Error("--scope must be daily or admin.");
@@ -137,7 +146,17 @@ const keyAdd = (legacy = false) => {
     scope,
     tokenHash: hashToken(token),
   };
-  writeTrustStore(target, { ...store, keys: [...store.keys, key] });
+  mutateStore((store) => {
+    if (
+      !store.people.some((person) => person.id === personId && !person.removed)
+    ) {
+      throw new Error(`No active Person with id ${personId}.`);
+    }
+    return {
+      store: { ...store, keys: [...store.keys, key] },
+      value: undefined,
+    };
+  });
   console.log(`Enrolled ${key.id} (${label}) in ${target}.`);
   console.log(`${legacy ? "Device" : "Key"} token, shown once: ${token}`);
 };
@@ -156,12 +175,13 @@ const keyList = () => {
 
 const keyRevoke = () => {
   const id = required("id");
-  const store = readStore();
-  const keys = store.keys.filter((key) => key.id !== id);
-  if (keys.length === store.keys.length) {
-    throw new Error(`No paired key with id ${id}.`);
-  }
-  writeTrustStore(target, { ...store, keys });
+  mutateStore((store) => {
+    const keys = store.keys.filter((key) => key.id !== id);
+    if (keys.length === store.keys.length) {
+      throw new Error(`No paired key with id ${id}.`);
+    }
+    return { store: { ...store, keys }, value: undefined };
+  });
   console.log(`Removed ${id}. It stops working on the next request.`);
 };
 
