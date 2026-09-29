@@ -7,7 +7,7 @@ import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
 import { request } from "./test-http.js";
 
-const TAILNET_HOST = "vanta.tail01d084.ts.net";
+const TAILNET_HOST = "vanta.example.ts.net";
 
 const withTrustStore = async (
   devices: readonly { id: string; label: string; token: string }[]
