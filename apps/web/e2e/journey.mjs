@@ -117,7 +117,7 @@ try {
       }
       let body = set;
       if (url.pathname.endsWith("/me")) {
-        body = { id: "person-a", username: "A" };
+        body = { autoDownload: true, id: "person-a", username: "A" };
       } else if (url.pathname.endsWith("/sets")) {
         body = { sets: [set] };
       } else if (url.pathname.endsWith("/tags")) {
