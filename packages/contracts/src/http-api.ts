@@ -147,11 +147,25 @@ export const TagsPayload = Schema.Struct({ tags: Tags });
 export const MeSchema = Schema.Struct({
   autoDownload: Schema.Boolean,
   id: Schema.String,
+  social: Schema.Boolean,
   username: Schema.String,
 });
 export const UpdateMePayload = Schema.Struct({
   autoDownload: Schema.optionalKey(Schema.Boolean),
+  social: Schema.optionalKey(Schema.Boolean),
   username: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(40))),
+});
+export const SocialFiltersPayload = Schema.Struct({
+  appear: Schema.optionalKey(Schema.Boolean),
+  see: Schema.optionalKey(Schema.Boolean),
+});
+const SocialFilters = Schema.Struct({
+  appear: Schema.Boolean,
+  see: Schema.Boolean,
+});
+const VisiblePerson = Schema.Struct({
+  id: Schema.String,
+  username: Schema.String,
 });
 
 export const SaveSetResultSchema = Schema.Struct({
@@ -363,6 +377,20 @@ export const OrbisApi = PlaylistApi.add(
           error: [BadRequest, Conflict, InternalError],
           payload: UpdateMePayload,
           success: MeSchema,
+        }),
+        HttpApiEndpoint.get("list", "/people", {
+          success: Schema.Struct({ people: Schema.Array(VisiblePerson) }),
+        }),
+        HttpApiEndpoint.put("filters", "/people/:id/filters", {
+          error: [BadRequest, NotFound, InternalError],
+          params: SetId,
+          payload: SocialFiltersPayload,
+          success: SocialFilters,
+        }),
+        HttpApiEndpoint.get("sets", "/people/:id/sets", {
+          error: [NotFound, InternalError],
+          params: SetId,
+          success: LibraryResponseSchema,
         })
       )
       .middleware(SetAccess)

@@ -69,6 +69,7 @@ try {
     let revoked = false;
     let revokeOnNextLibrary = false;
     let grantCount = 0;
+    let social = false;
     const requests = [];
     const fulfillAudio = async (route, request, grant) => {
       if (grant === "grant-2") {
@@ -135,7 +136,14 @@ try {
       }
       let body = set;
       if (url.pathname.endsWith("/me")) {
-        body = { autoDownload: true, id: "person-a", username: "A" };
+        if (request.method() === "PATCH") {
+          social = request.postDataJSON().social;
+        }
+        body = { autoDownload: true, id: "person-a", social, username: "A" };
+      } else if (url.pathname.endsWith("/people")) {
+        body = { people: social ? [{ id: "person-b", username: "Bob" }] : [] };
+      } else if (url.pathname.endsWith("/people/person-b/sets")) {
+        body = { sets: [{ ...set, id: "friend-set", title: "Bob's set" }] };
       } else if (url.pathname.endsWith("/sets")) {
         body = { sets: [set] };
       } else if (url.pathname.endsWith("/tags")) {
@@ -163,6 +171,11 @@ try {
     await page.getByRole("button", { name: "Connect" }).click();
     await page.getByRole("heading", { name: "Your library" }).waitFor();
     await page.getByRole("heading", { name: "Long set" }).waitFor();
+    await page.getByLabel("Social").check();
+    await page.getByRole("button", { name: "Open Bob's Library" }).click();
+    await page.getByRole("heading", { name: "Bob's Library" }).waitFor();
+    await page.getByRole("heading", { name: "Bob's set" }).waitFor();
+    results.push("Social switch opens a friend's Library");
     assert.equal(
       await page.evaluate(() => localStorage.getItem("orbis.apiKey")),
       "good-key"

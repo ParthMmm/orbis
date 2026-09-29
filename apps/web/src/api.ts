@@ -57,6 +57,8 @@ const call = <A, E>(
 export const api = (key: string) => ({
   complete: (setId: string) =>
     call(key, (client) => client.queue.complete({ payload: { setId } })),
+  friendSets: (id: string) =>
+    call(key, (client) => client.people.sets({ params: { id } })),
   grant: (id: string) =>
     call(key, (client) => client.sets.audioGrant({ params: { id } })),
   list: (query: {
@@ -65,6 +67,7 @@ export const api = (key: string) => ({
     tag?: string[];
   }) => call(key, (client) => client.sets.list({ query })),
   me: () => call(key, (client) => client.people.me()),
+  people: () => call(key, (client) => client.people.list()),
   play: (setId: string) =>
     call(key, (client) => client.queue.play({ payload: { setId } })),
   position: (id: string, seconds: number) =>
@@ -72,6 +75,8 @@ export const api = (key: string) => ({
       client.library.setPosition({ params: { id }, payload: { seconds } })
     ),
   tags: () => call(key, (client) => client.library.tags()),
+  updateMe: (social: boolean) =>
+    call(key, (client) => client.people.updateMe({ payload: { social } })),
 });
 
 export const streamUrl = (setId: string, granted: string): string => {
