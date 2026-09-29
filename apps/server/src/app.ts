@@ -1,19 +1,28 @@
 import path from "node:path";
 
 import type { SavedSet } from "@orbis/contracts";
-import { Effect, Layer, Option, Schema, Scope } from "effect";
+import {
+  SaveSetPayload,
+  SetsApi,
+  SetAccess,
+  SetCaller,
+  UpdateTitlePayload,
+} from "@orbis/contracts/http-api";
+import { Context, Effect, Layer, Option, Schema, Scope } from "effect";
 import {
   Headers,
   HttpRouter,
+  HttpServer,
   HttpServerRequest,
   HttpServerResponse,
 } from "effect/unstable/http";
+import { HttpApiBuilder } from "effect/unstable/httpapi";
 
 import { Audio } from "./audio.js";
 import type { AudioFile, AudioOptions } from "./audio.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { LibraryError } from "./errors.js";
-import type { AccessMode } from "./identity.js";
+import type { AccessDecision, AccessMode } from "./identity.js";
 import { decideAccess, readDeviceRegistry } from "./identity.js";
 import {
   MAX_PLAYLISTS_PER_SET,
@@ -45,10 +54,14 @@ interface RawFilters {
   source?: string | null;
 }
 
+class AcceptedAccess extends Context.Service<
+  AcceptedAccess,
+  Exclude<AccessDecision, { readonly kind: "rejected" }>
+>()("Orbis/AcceptedAccess") {}
+
 const Tags = Schema.Array(Schema.String.check(Schema.isMaxLength(40))).check(
   Schema.isMaxLength(20)
 );
-const Title = Schema.String.check(Schema.isMaxLength(200));
 const Filters = Schema.Struct({
   creatorId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
   playlistId: Schema.String.check(Schema.isMaxLength(100)),
@@ -61,11 +74,6 @@ const logDetailsFailure = (set: SavedSet, reason: string) =>
     Effect.annotateLogs({ reason, set: set.id })
   );
 
-const SaveInput = Schema.Struct({
-  tags: Schema.optionalKey(Tags),
-  title: Schema.optionalKey(Title),
-  url: Schema.String.check(Schema.isMaxLength(2048)),
-});
 // A Playback Position never goes backwards from zero, and the ceiling only refuses a number that
 // is not a moment in any Set. A real position is bounded by the Set's own duration in the Library.
 const PositionSeconds = Schema.Number.check(
@@ -118,6 +126,12 @@ const failureResponse = <E>(error: E) => {
     { status: 400 }
   );
 };
+
+const withFailureResponse = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.match(effect.pipe(Effect.tapError(logLibraryFailure)), {
+    onFailure: failureResponse,
+    onSuccess: (body) => body,
+  });
 
 type AudioRange =
   | { readonly offset: number; readonly length: number }
@@ -285,103 +299,120 @@ export const createApp = (
           )
         );
       });
+      const setGroup = HttpApiBuilder.group(SetsApi, "sets", (handlers) =>
+        handlers
+          .handleRaw("requestDownload", ({ params }) =>
+            Effect.match(
+              audio
+                .requestDownload(params.id)
+                .pipe(Effect.tapError(logLibraryFailure)),
+              {
+                onFailure: failureResponse,
+                onSuccess: ({ accepted, set }) =>
+                  HttpServerResponse.jsonUnsafe(set, {
+                    status: accepted ? 202 : 200,
+                  }),
+              }
+            )
+          )
+          .handle("audioState", ({ params }) =>
+            withFailureResponse(audio.audioState(params.id))
+          )
+          .handleRaw("audio", ({ params, request }) =>
+            Effect.match(
+              audio.audioFile(params.id).pipe(
+                Effect.map((file) =>
+                  audioFileResponse(
+                    file,
+                    audioRange(
+                      Option.getOrUndefined(
+                        Headers.get(request.headers, "range")
+                      ),
+                      file.bytes
+                    )
+                  )
+                ),
+                Effect.tapError(logLibraryFailure)
+              ),
+              { onFailure: failureResponse, onSuccess: (response) => response }
+            )
+          )
+          .handle("cancelDownload", ({ params }) =>
+            withFailureResponse(audio.cancelDownload(params.id))
+          )
+          .handleRaw("save", () =>
+            withFailureResponse(
+              Effect.gen(function* saveSet() {
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(SaveSetPayload);
+                const url = yield* expandShortLink(
+                  input.url,
+                  options.shortLinkFetch
+                );
+                const saved = yield* library.save({
+                  tags: [...(input.tags ?? [])],
+                  title: input.title ?? "",
+                  url,
+                });
+                yield* Effect.logInfo("set saved").pipe(
+                  Effect.annotateLogs({ set: saved.id, source: saved.source })
+                );
+                if (saved.titleEditedByUser) {
+                  yield* fillDetails(saved);
+                  return saved;
+                }
+                return yield* enrichSavedSet(saved);
+              })
+            )
+          )
+          .handle("retryMetadata", ({ params }) =>
+            withFailureResponse(
+              library.find(params.id).pipe(Effect.flatMap(enrichSavedSet))
+            )
+          )
+          .handleRaw("updateTitle", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* updateSetTitle() {
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(UpdateTitlePayload);
+                return yield* library.updateTitle(params.id, input.title);
+              })
+            )
+          )
+          .handle("remove", ({ params }) =>
+            withFailureResponse(library.remove(params.id))
+          )
+          .handleRaw("list", ({ request }) =>
+            withFailureResponse(
+              Effect.gen(function* listSets() {
+                const params = new URL(request.url, "http://localhost")
+                  .searchParams;
+                const rawFilters: RawFilters = {
+                  playlistId: params.get("playlistId") ?? "",
+                  q: params.get("q") ?? "",
+                  tags: params.getAll("tag"),
+                };
+                if (params.has("creatorId")) {
+                  rawFilters.creatorId = params.get("creatorId");
+                }
+                if (params.has("source")) {
+                  rawFilters.source = params.get("source");
+                }
+                const filters =
+                  yield* Schema.decodeUnknownEffect(Filters)(rawFilters);
+                const sets = yield* library.list({
+                  ...filters,
+                  tags: [...filters.tags],
+                });
+                return { sets };
+              })
+            )
+          )
+      );
       yield* router.add(
         "GET",
         "/health",
         HttpServerResponse.jsonUnsafe({ status: "ok" })
-      );
-      yield* router.add(
-        "POST",
-        "/sets/:id/audio/download",
-        Effect.match(
-          Effect.gen(function* requestAudioDownload() {
-            const { params } = yield* HttpRouter.RouteContext;
-            const { accepted, set } = yield* audio.requestDownload(
-              params.id ?? ""
-            );
-            return { set, status: accepted ? 202 : 200 };
-          }).pipe(Effect.tapError(logLibraryFailure)),
-          {
-            onFailure: failureResponse,
-            onSuccess: ({ set, status }) =>
-              HttpServerResponse.jsonUnsafe(set, { status }),
-          }
-        )
-      );
-      yield* router.add(
-        "GET",
-        "/sets/:id/audio/state",
-        respond(
-          Effect.gen(function* readAudioState() {
-            const { params } = yield* HttpRouter.RouteContext;
-            return yield* audio.audioState(params.id ?? "");
-          })
-        )
-      );
-      yield* router.add(
-        "GET",
-        "/sets/:id/audio",
-        Effect.match(
-          Effect.gen(function* serveAudio() {
-            const { params } = yield* HttpRouter.RouteContext;
-            const file = yield* audio.audioFile(params.id ?? "");
-            const request = yield* HttpServerRequest.HttpServerRequest;
-            const range = audioRange(
-              Option.getOrUndefined(Headers.get(request.headers, "range")),
-              file.bytes
-            );
-            return audioFileResponse(file, range);
-          }).pipe(Effect.tapError(logLibraryFailure)),
-          { onFailure: failureResponse, onSuccess: (response) => response }
-        )
-      );
-      yield* router.add(
-        "DELETE",
-        "/sets/:id/audio/download",
-        respond(
-          Effect.gen(function* cancelAudioDownload() {
-            const { params } = yield* HttpRouter.RouteContext;
-            return yield* audio.cancelDownload(params.id ?? "");
-          })
-        )
-      );
-      yield* router.add(
-        "POST",
-        "/sets",
-        respond(
-          Effect.gen(function* saveSet() {
-            const input = yield* HttpServerRequest.schemaBodyJson(SaveInput);
-            const url = yield* expandShortLink(
-              input.url,
-              options.shortLinkFetch
-            );
-            const saved = yield* library.save({
-              tags: [...(input.tags ?? [])],
-              title: input.title ?? "",
-              url,
-            });
-            yield* Effect.logInfo("set saved").pipe(
-              Effect.annotateLogs({ set: saved.id, source: saved.source })
-            );
-            // A typed title is final, so the desktop client keeps its offline save path.
-            if (saved.titleEditedByUser) {
-              yield* fillDetails(saved);
-              return saved;
-            }
-            return yield* enrichSavedSet(saved);
-          }),
-          201
-        )
-      );
-      yield* router.add(
-        "POST",
-        "/sets/:id/metadata",
-        respond(
-          Effect.gen(function* retryMetadata() {
-            const { params } = yield* HttpRouter.RouteContext;
-            return yield* enrichSavedSet(yield* library.find(params.id ?? ""));
-          })
-        )
       );
       yield* router.add(
         "GET",
@@ -575,57 +606,27 @@ export const createApp = (
           })
         )
       );
-      yield* router.add(
-        "PATCH",
-        "/sets/:id/title",
-        respond(
-          Effect.gen(function* updateTitle() {
-            const { params } = yield* HttpRouter.RouteContext;
-            const input = yield* HttpServerRequest.schemaBodyJson(
-              Schema.Struct({ title: Title })
-            );
-            return yield* library.updateTitle(params.id ?? "", input.title);
-          })
-        )
-      );
-      yield* router.add(
-        "DELETE",
-        "/sets/:id",
-        respond(
-          Effect.gen(function* removeSet() {
-            const { params } = yield* HttpRouter.RouteContext;
-            return yield* library.remove(params.id ?? "");
-          })
-        )
-      );
-      yield* router.add(
-        "GET",
-        "/sets",
-        respond(
-          Effect.gen(function* listSets() {
-            const request = yield* HttpServerRequest.HttpServerRequest;
-            const params = new URL(request.url, "http://localhost")
-              .searchParams;
-            const rawFilters: RawFilters = {
-              playlistId: params.get("playlistId") ?? "",
-              q: params.get("q") ?? "",
-              tags: params.getAll("tag"),
-            };
-            if (params.has("creatorId")) {
-              rawFilters.creatorId = params.get("creatorId");
-            }
-            if (params.has("source")) {
-              rawFilters.source = params.get("source");
-            }
-            const filters =
-              yield* Schema.decodeUnknownEffect(Filters)(rawFilters);
-            const sets = yield* library.list({
-              ...filters,
-              tags: [...filters.tags],
-            });
-            return { sets };
-          })
-        )
+      yield* Layer.buildWithScope(
+        HttpApiBuilder.layer(SetsApi, { openapiPath: "/openapi.json" }).pipe(
+          Layer.provide(setGroup),
+          Layer.provide(
+            Layer.succeed(SetAccess, {
+              bearer: (effect) =>
+                Effect.flatMap(
+                  Effect.withFiberSucceed((fiber) =>
+                    Context.getOption(fiber.context, AcceptedAccess)
+                  ),
+                  Option.match({
+                    onNone: () => Effect.die("Accepted access context missing"),
+                    onSome: (access) =>
+                      Effect.provideService(effect, SetCaller, access),
+                  })
+                ),
+            })
+          ),
+          Layer.provide(HttpServer.layerServices)
+        ),
+        scope
       );
     })
   );
@@ -685,7 +686,7 @@ export const createApp = (
           )
         );
       }
-      return app.handler(request);
+      return app.handler(request, Context.make(AcceptedAccess, decision));
     },
   };
 };
