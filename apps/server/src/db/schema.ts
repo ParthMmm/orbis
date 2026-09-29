@@ -33,6 +33,9 @@ export const sets = sqliteTable("sets", {
   durationSeconds: integer("duration_seconds"),
   finishCount: integer("finish_count").notNull().default(0),
   genre: text("genre"),
+  hostRemoved: integer("host_removed", { mode: "boolean" })
+    .notNull()
+    .default(false),
   id: text("id").primaryKey(),
   lastListenedAt: text("last_listened_at"),
   listenCount: integer("listen_count").notNull().default(0),
@@ -62,6 +65,23 @@ export const sets = sqliteTable("sets", {
     .default(true),
   url: text("url").notNull().unique(),
 });
+
+export const libraryEntries = sqliteTable(
+  "library_entries",
+  {
+    personId: text("person_id").notNull(),
+    savedAt: text("saved_at").notNull(),
+    setId: text("set_id")
+      .notNull()
+      .references(() => sets.id),
+    tags: text("tags").notNull(),
+    titleOverride: text("title_override"),
+  },
+  (table) => [
+    primaryKey({ columns: [table.personId, table.setId] }),
+    index("library_entries_by_set").on(table.setId),
+  ]
+);
 
 export const playlists = sqliteTable(
   "playlists",
@@ -118,4 +138,10 @@ export const queueEntries = sqliteTable(
   ]
 );
 
-export const schema = { playlistSets, playlists, queueEntries, sets };
+export const schema = {
+  libraryEntries,
+  playlistSets,
+  playlists,
+  queueEntries,
+  sets,
+};

@@ -204,7 +204,7 @@ test("a completion for a Set that is not active leaves the queue alone", async (
   });
 });
 
-test("removing a Set removes its queue entry", async () => {
+test("removing a Library Entry keeps its queue reference", async () => {
   await withSeededApp(ready(["a", "b"]), async (app) => {
     await play(app, "a");
     await addToQueue(app, "b");
@@ -212,7 +212,7 @@ test("removing a Set removes its queue entry", async () => {
     const removed = await request(app, { method: "DELETE", url: "/sets/a" });
 
     expect(removed.statusCode).toBe(200);
-    expect(await order(app)).toEqual(["b"]);
+    expect(await order(app)).toEqual(["a", "b"]);
   });
 });
 
