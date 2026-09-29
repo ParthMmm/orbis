@@ -400,6 +400,33 @@ final class LibraryUITests: XCTestCase {
     XCTAssertFalse(tile.isSelected, "a cleared filter deselects its tile")
   }
 
+  func testHomeTagOpensFilteredLibraryAfterOpeningASet() throws {
+    let app = try launch(paired: true)
+    openLibrary(in: app)
+
+    let night = app.descendants(matching: .any)
+      .matching(
+        NSPredicate(
+          format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "set-row-", "Night session"
+        )
+      )
+      .firstMatch
+    XCTAssertTrue(night.waitForExistence(timeout: 30), "the seeded Set must appear in the Library")
+    tapAtCentre(of: night, in: app)
+    XCTAssertTrue(app.staticTexts["detail-title"].waitForExistence(timeout: 15))
+
+    selectTab("Home", in: app, sidebarIdentifier: "sidebar-home")
+    let tag = app.buttons["home-tag-techno"]
+    XCTAssertTrue(tag.waitForExistence(timeout: 15), "Home must show the seeded tag")
+    tapAtCentre(of: tag, in: app)
+
+    let filter = app.buttons["tag-filter-techno"]
+    XCTAssertTrue(filter.waitForExistence(timeout: 15), "the tag must open the Library list")
+    XCTAssertTrue(filter.isSelected, "the Library must filter by the tapped tag")
+    XCTAssertFalse(app.staticTexts["detail-title"].exists, "the opened Set must be closed")
+    capture("home-tag-filtered-library")
+  }
+
   /// A Set found by search is the reason to search, so the result has to open. The Library row
   /// in the same component opens the same page, on the same build, in the same pass.
   func testOpensASetFromASearchResult() throws {

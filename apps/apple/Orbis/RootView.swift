@@ -826,6 +826,7 @@ struct HomeRails: View {
         ForEach(model.availableTags, id: \.self) { tag in
           Button {
             model.setTagFilter(tag)
+            model.openedSets[.library] = nil
             model.destination = .library
           } label: {
             TagWord(tag, category: SetPresentation.category(for: tag))
