@@ -219,7 +219,10 @@ test("concurrent key usage cannot restore a removed Person's keys", async () => 
     expect(
       stored.keys.some((key: { personId: string }) => key.personId === personId)
     ).toBe(false);
-    const afterRemoval = await request(app, remote(tokens[0] ?? ""));
+    const afterRemoval = await request(app, {
+      ...remote(tokens[0] ?? ""),
+      clientAddress: "post-removal-client",
+    });
     expect(afterRemoval.statusCode).toBe(401);
   } finally {
     await app.dispose();
