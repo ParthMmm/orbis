@@ -1,5 +1,6 @@
+import type { ListeningQueue } from "@orbis/contracts";
 import { OrbisApi } from "@orbis/contracts/http-api";
-import { Effect } from "effect";
+import { Effect, Stream } from "effect";
 import type { Effect as EffectType, Success } from "effect/Effect";
 import {
   FetchHttpClient,
@@ -33,7 +34,8 @@ type OrbisClient = Success<ReturnType<typeof makeOrbisClient>>;
 
 const call = <A, E>(
   key: string,
-  operation: (client: OrbisClient) => EffectType<A, E>
+  operation: (client: OrbisClient) => EffectType<A, E>,
+  signal?: AbortSignal
 ): Promise<A> => {
   let status: number | undefined;
   const trackedFetch: typeof fetch = async (input, init) => {
@@ -48,7 +50,8 @@ const call = <A, E>(
     }).pipe(
       Effect.provide(FetchHttpClient.layer),
       Effect.provideService(FetchHttpClient.Fetch, trackedFetch)
-    )
+    ),
+    signal ? { signal } : undefined
   ).catch(() => {
     throw new ApiFailureError(status);
   });
@@ -65,6 +68,24 @@ export const api = (key: string) => ({
     call(key, (client) => client.playlists.remove({ params: { id } })),
   download: (id: string) =>
     call(key, (client) => client.sets.requestDownload({ params: { id } })),
+  events: (onQueue: (queue: ListeningQueue) => void, signal: AbortSignal) =>
+    call(
+      key,
+      (client) =>
+        Effect.gen(function* receiveQueueEvents() {
+          const events = yield* client.events.subscribe();
+          yield* events.pipe(
+            Stream.runForEach((event) =>
+              Effect.sync(() => {
+                if (event.kind === "queue") {
+                  onQueue(event.queue);
+                }
+              })
+            )
+          );
+        }),
+      signal
+    ),
   friendListens: (id: string) =>
     call(key, (client) => client.people.friendListens({ params: { id } })),
   friendPlaylists: (id: string) =>

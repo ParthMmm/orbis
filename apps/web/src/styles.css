@@ -496,3 +496,29 @@ p {
     grid-column: auto;
   }
 }
+
+.queue-panel {
+  margin-block: 1.5rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid #bec8c1;
+  border-radius: 1rem;
+}
+.queue-panel h2 {
+  font-size: 1rem;
+  margin: 0 0 0.75rem;
+}
+.queue-panel p {
+  margin: 0;
+}
+.queue-panel ol {
+  margin: 0;
+  padding-left: 1.25rem;
+}
+.queue-panel li {
+  padding-block: 0.25rem;
+}
+.queue-current {
+  margin-left: 0.75rem;
+  font-size: 0.8rem;
+  opacity: 0.7;
+}

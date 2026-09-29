@@ -201,6 +201,8 @@ const LibraryView = ({
       { bytesReceived: number; bytesTotal: number | null; state: string }
     >
   >({});
+  const [reconnecting, setReconnecting] = useState(false);
+
   const lastReport = useRef(0);
   const client = api(session.key);
 
@@ -405,6 +407,35 @@ const LibraryView = ({
     next[other] = currentSet;
     void changeMembers(next);
   };
+  useEffect(() => {
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const connect = async () => {
+      try {
+        await api(session.key).events((current) => {
+          setQueue(current);
+          setReconnecting(false);
+        }, controller.signal);
+      } catch (error) {
+        if (controller.signal.aborted) {
+          return;
+        }
+        if (error instanceof ApiFailureError && error.status === 401) {
+          onRevoked();
+          return;
+        }
+      }
+      if (!controller.signal.aborted) {
+        setReconnecting(true);
+        timer = setTimeout(connect, 1000);
+      }
+    };
+    connect();
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [session.key, onRevoked]);
 
   const reportPosition = async (seconds: number) => {
     if (!playing || !Number.isFinite(seconds)) {
@@ -772,8 +803,10 @@ const LibraryView = ({
                 </div>
               )}
           </section>
-          <section className="workspace-panel" aria-labelledby="queue-heading">
+          <section className="workspace-panel" aria-label="Listening queue">
             <h2 id="queue-heading">Listening Queue</h2>
+            {reconnecting && <p role="status">Reconnecting to live updates…</p>}
+            {queue?.entries.length === 0 && <p>Your queue is empty.</p>}
             <p>
               {queue?.activeSetId
                 ? `Playing ${queue.entries.find((set) => set.id === queue.activeSetId)?.title ?? "Set"}`
@@ -788,6 +821,7 @@ const LibraryView = ({
             </ol>
           </section>
         </div>
+
         <div className="filter-row">
           <label>
             Search library

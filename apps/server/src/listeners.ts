@@ -63,6 +63,7 @@ export const startListeners = async (
       fetch: (request, listener) =>
         app.handler(request, mode, listener.requestIP(request)?.address),
       hostname: "127.0.0.1",
+      idleTimeout: 60,
       maxRequestBodySize: 65_536,
       port,
     });

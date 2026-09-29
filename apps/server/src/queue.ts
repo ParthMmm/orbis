@@ -1,5 +1,6 @@
 import type { ListeningQueue, QueuePlacement } from "@orbis/contracts";
 import { asc, eq } from "drizzle-orm";
+import type { Stream } from "effect";
 import { Context, Effect, Layer } from "effect";
 
 import { Database } from "./db/database.js";
@@ -7,6 +8,7 @@ import { queueEntries } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import { LibraryPerson } from "./library-person.js";
 import { Library } from "./library.js";
+import { QueueSignals } from "./queue-signals.js";
 import { Stats } from "./stats.js";
 
 const databaseError = () =>
@@ -73,6 +75,8 @@ const placedBefore = (
 export class Queue extends Context.Service<
   Queue,
   {
+    readonly changes: Stream.Stream<boolean>;
+    readonly notify: () => Effect.Effect<void>;
     readonly read: () => Effect.Effect<ListeningQueue, LibraryError>;
     /** Makes a Set the active one, which is what tapping a playable Set does. */
     readonly play: (id: string) => Effect.Effect<ListeningQueue, LibraryError>;
@@ -96,6 +100,8 @@ export class Queue extends Context.Service<
       const library = yield* Library;
       const stats = yield* Stats;
       const personId = yield* LibraryPerson;
+      const signals = yield* QueueSignals;
+      const notify = () => signals.publish(personId);
 
       const order = () =>
         db
@@ -172,7 +178,7 @@ export class Queue extends Context.Service<
           if (activeSetId !== id) {
             yield* stats.recordListen(id);
           }
-          return yield* read();
+          return yield* read().pipe(Effect.tap(notify));
         })
       );
 
@@ -185,7 +191,7 @@ export class Queue extends Context.Service<
             // Moving the Set that is playing now would leave the open Listen beside a queue it no
             // longer matches, so a queued action on the active Set changes nothing.
             if (activeSetId === id) {
-              return yield* read();
+              return yield* read().pipe(Effect.tap(notify));
             }
             const rest = rows
               .map((row) => row.setId)
@@ -195,7 +201,7 @@ export class Queue extends Context.Service<
                 ? [...rest, id]
                 : placedAfter(rest, id, activeSetId);
             yield* execute(writeQueue(next, activeSetId));
-            return yield* read();
+            return yield* read().pipe(Effect.tap(notify));
           })
       );
 
@@ -223,7 +229,7 @@ export class Queue extends Context.Service<
             if (activeSetId !== null && activeSetId !== previousActive) {
               yield* stats.recordListen(activeSetId);
             }
-            return yield* read();
+            return yield* read().pipe(Effect.tap(notify));
           })
       );
 
@@ -234,7 +240,7 @@ export class Queue extends Context.Service<
           // A Set that is not the active one was already finished, or the person started
           // something else while it played. Either way this signal adds nothing.
           if (at === -1) {
-            return yield* read();
+            return yield* read().pipe(Effect.tap(notify));
           }
           const ids = rows.map((row) => row.setId);
           const nextActive = ids[at + 1] ?? null;
@@ -252,11 +258,19 @@ export class Queue extends Context.Service<
           if (nextActive !== null) {
             yield* stats.recordListen(nextActive);
           }
-          return yield* read();
+          return yield* read().pipe(Effect.tap(notify));
         })
       );
 
-      return { complete, insert, play, read, replaceWithPlaylist };
+      return {
+        changes: signals.subscribe(personId),
+        complete,
+        insert,
+        notify,
+        play,
+        read,
+        replaceWithPlaylist,
+      };
     })
   );
 
