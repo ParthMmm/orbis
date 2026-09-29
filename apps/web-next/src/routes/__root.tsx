@@ -6,8 +6,13 @@ import { apiUrl } from "@/lib/api-url";
 
 import appCss from "../styles.css?url";
 
-// Only the Worker holds the API address, so the page asks it once.
+// Only the Worker holds the API address, so the page asks it once per load.
 const getApiUrl = createServerFn({ method: "GET" }).handler(() => apiUrl());
+let knownApiUrl: string | undefined;
+const loadApiUrl = async (): Promise<string> => {
+  knownApiUrl ??= await getApiUrl();
+  return knownApiUrl;
+};
 
 const RootDocument = ({ children }: { readonly children: ReactNode }) => (
   <html lang="en">
@@ -22,6 +27,7 @@ const RootDocument = ({ children }: { readonly children: ReactNode }) => (
 );
 
 export const Route = createRootRoute({
+  beforeLoad: async () => ({ apiUrl: await loadApiUrl() }),
   head: () => ({
     links: [{ href: appCss, rel: "stylesheet" }],
     meta: [
@@ -30,12 +36,10 @@ export const Route = createRootRoute({
       { title: "Orbis" },
     ],
   }),
-  loader: async () => ({ apiUrl: await getApiUrl() }),
   notFoundComponent: () => (
     <main className="mx-auto max-w-md p-6 pt-16">
       <h1 className="font-medium">Page not found</h1>
     </main>
   ),
   shellComponent: RootDocument,
-  staleTime: Number.POSITIVE_INFINITY,
 });
