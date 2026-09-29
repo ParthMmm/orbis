@@ -101,6 +101,9 @@ export const downloadJobs = sqliteTable("download_jobs", {
 export const playlists = sqliteTable(
   "playlists",
   {
+    collaborative: integer("collaborative", { mode: "boolean" })
+      .notNull()
+      .default(false),
     createdAt: text("created_at").notNull(),
     creatorId: text("creator_id").notNull().default("host"),
     id: text("id").primaryKey(),
@@ -111,6 +114,21 @@ export const playlists = sqliteTable(
       table.creatorId,
       sql`${table.name} COLLATE NOCASE`
     ),
+  ]
+);
+
+export const playlistEditors = sqliteTable(
+  "playlist_editors",
+  {
+    creatorId: text("creator_id").notNull(),
+    editorId: text("editor_id").notNull(),
+    playlistId: text("playlist_id")
+      .notNull()
+      .references(() => playlists.id, { onDelete: "cascade" }),
+  },
+  (table) => [
+    primaryKey({ columns: [table.playlistId, table.editorId] }),
+    index("playlist_editors_by_editor").on(table.editorId, table.playlistId),
   ]
 );
 
@@ -202,6 +220,7 @@ export const schema = {
   libraryEntries,
   listens,
   playbackPositions,
+  playlistEditors,
   playlistSets,
   playlists,
   queueEntries,

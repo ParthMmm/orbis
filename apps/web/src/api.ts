@@ -60,6 +60,8 @@ const call = <A, E>(
 export const api = (key: string) => ({
   audioState: (id: string) =>
     call(key, (client) => client.sets.audioState({ params: { id } })),
+  collaboration: (id: string) =>
+    call(key, (client) => client.playlists.collaboration({ params: { id } })),
   complete: (setId: string) =>
     call(key, (client) => client.queue.complete({ payload: { setId } })),
   createPlaylist: (name: string) =>
@@ -138,6 +140,17 @@ export const api = (key: string) => ({
     ),
   save: (url: string) =>
     call(key, (client) => client.sets.save({ payload: { url } })),
+  setCollaboration: (id: string, collaborative: boolean) =>
+    call(key, (client) =>
+      client.playlists.setCollaboration({
+        params: { id },
+        payload: { collaborative },
+      })
+    ),
+  setEditors: (id: string, editorIds: string[]) =>
+    call(key, (client) =>
+      client.playlists.setEditors({ params: { id }, payload: { editorIds } })
+    ),
   tags: () => call(key, (client) => client.library.tags()),
   updateAutoDownload: (autoDownload: boolean) =>
     call(key, (client) =>

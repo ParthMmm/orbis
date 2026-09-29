@@ -128,6 +128,16 @@ export const PlaylistMembersPayload = Schema.Struct({
     Schema.isMaxLength(MAX_SETS_PER_PLAYLIST)
   ),
 });
+export const CollaborationPayload = Schema.Struct({
+  collaborative: Schema.Boolean,
+});
+export const PlaylistEditorsPayload = Schema.Struct({
+  editorIds: Schema.Array(MembershipId),
+});
+export const CollaborationSchema = Schema.Struct({
+  collaborative: Schema.Boolean,
+  editorIds: Schema.Array(Schema.String),
+});
 export const SetPlaylistsPayload = Schema.Struct({
   playlistIds: Schema.Array(MembershipId).check(
     Schema.isMaxLength(MAX_PLAYLISTS_PER_SET)
@@ -329,6 +339,23 @@ const PlaylistApi = SetsApi.add(
         params: SetId,
         payload: PlaylistMembersPayload,
         success: LibraryResponseSchema,
+      }),
+      HttpApiEndpoint.get("collaboration", "/playlists/:id/collaboration", {
+        error: [NotFound, InternalError],
+        params: SetId,
+        success: CollaborationSchema,
+      }),
+      HttpApiEndpoint.put("setCollaboration", "/playlists/:id/collaboration", {
+        error: [BadRequest, NotFound, InternalError],
+        params: SetId,
+        payload: CollaborationPayload,
+        success: CollaborationSchema,
+      }),
+      HttpApiEndpoint.put("setEditors", "/playlists/:id/editors", {
+        error: [BadRequest, NotFound, InternalError],
+        params: SetId,
+        payload: PlaylistEditorsPayload,
+        success: CollaborationSchema,
       }),
       HttpApiEndpoint.put("replaceSetPlaylists", "/sets/:id/playlists", {
         error: [BadRequest, NotFound, InternalError],

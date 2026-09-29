@@ -75,6 +75,8 @@ try {
     let downloadState = "none";
     let playlist = null;
     let members = [];
+    let collaborative = false;
+    let editorIds = [];
     const requests = [];
     const fulfillAudio = async (route, request, grant) => {
       if (grant === "grant-2") {
@@ -241,6 +243,14 @@ try {
         members = request.postDataJSON().setIds;
         playlist = { ...playlist, setCount: members.length };
         body = { sets: members.map((id) => (id === "set-a" ? set : saved)) };
+      } else if (url.pathname.endsWith("/playlists/playlist-a/collaboration")) {
+        if (request.method() === "PUT") {
+          ({ collaborative } = request.postDataJSON());
+        }
+        body = { collaborative, editorIds };
+      } else if (url.pathname.endsWith("/playlists/playlist-a/editors")) {
+        ({ editorIds } = request.postDataJSON());
+        body = { collaborative, editorIds };
       } else if (url.pathname.endsWith("/queue")) {
         body = { queue: { activeSetId: null, entries: [] } };
       } else if (url.pathname.endsWith("/queue/entries")) {
@@ -368,6 +378,12 @@ try {
 
     await page.getByLabel("Playlist name").fill("Evening");
     await page.getByRole("button", { name: "Create Playlist" }).click();
+    await page.getByRole("checkbox", { name: "Collaborative" }).check();
+    await page.getByLabel("Add editor").selectOption("person-b");
+    await page.getByRole("button", { name: "Add editor" }).click();
+    await page.getByRole("button", { name: "Remove editor Bob" }).waitFor();
+    assert.deepEqual(editorIds, ["person-b"]);
+    results.push("creator enables Collaborative and adds a visible editor");
     await page.getByRole("button", { name: "Play Evening" }).click();
     await page.locator("audio").waitFor({ state: "detached" });
     await page.getByRole("button", { name: "Add Long set to Evening" }).click();
