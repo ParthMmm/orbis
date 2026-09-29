@@ -62,6 +62,8 @@ export const api = (key: string) => ({
     call(key, (client) => client.sets.audioState({ params: { id } })),
   complete: (setId: string) =>
     call(key, (client) => client.queue.complete({ payload: { setId } })),
+  collaboration: (id: string) =>
+    call(key, (client) => client.playlists.collaboration({ params: { id } })),
   createPlaylist: (name: string) =>
     call(key, (client) => client.playlists.create({ payload: { name } })),
   deletePlaylist: (id: string) =>
@@ -127,6 +129,17 @@ export const api = (key: string) => ({
   replaceMembers: (id: string, setIds: string[]) =>
     call(key, (client) =>
       client.playlists.replaceMembers({ params: { id }, payload: { setIds } })
+    ),
+  setCollaboration: (id: string, collaborative: boolean) =>
+    call(key, (client) =>
+      client.playlists.setCollaboration({
+        params: { id },
+        payload: { collaborative },
+      })
+    ),
+  setEditors: (id: string, editorIds: string[]) =>
+    call(key, (client) =>
+      client.playlists.setEditors({ params: { id }, payload: { editorIds } })
     ),
   save: (url: string) =>
     call(key, (client) => client.sets.save({ payload: { url } })),

@@ -192,6 +192,10 @@ const LibraryView = ({
   const [playlists, setPlaylists] = useState<Playlist[]>([]);
   const [playlistName, setPlaylistName] = useState("");
   const [selectedPlaylist, setSelectedPlaylist] = useState<string | null>(null);
+  const [collaboration, setCollaboration] = useState<Awaited<
+    ReturnType<ReturnType<typeof api>["collaboration"]>
+  > | null>(null);
+  const [editorInput, setEditorInput] = useState("");
   const [members, setMembers] = useState<SavedSet[]>([]);
   const [rename, setRename] = useState("");
   const [queue, setQueue] = useState<Queue | null>(null);
@@ -283,6 +287,7 @@ const LibraryView = ({
   useEffect(() => {
     if (!selectedPlaylist) {
       setMembers([]);
+      setCollaboration(null);
       return;
     }
     let live = true;
@@ -301,6 +306,22 @@ const LibraryView = ({
       }
     };
     loadMembers();
+    return () => {
+      live = false;
+    };
+  }, [selectedPlaylist, session.key, handleError]);
+
+  useEffect(() => {
+    if (!selectedPlaylist) return;
+    let live = true;
+    api(session.key)
+      .collaboration(selectedPlaylist)
+      .then((response) => {
+        if (live) setCollaboration(response);
+      })
+      .catch((error: Error) => {
+        if (live) handleError(error, "Could not load Playlist editors.");
+      });
     return () => {
       live = false;
     };
@@ -732,6 +753,118 @@ const LibraryView = ({
                 (playlist) => playlist.id === selectedPlaylist
               ) && (
                 <div className="playlist-editor">
+                  <fieldset className="collaboration-controls">
+                    <legend>Collaboration</legend>
+                    <label className="toggle">
+                      <input
+                        type="checkbox"
+                        checked={collaboration?.collaborative ?? false}
+                        disabled={!collaboration}
+                        onChange={async (event) => {
+                          if (!selectedPlaylist || !collaboration) return;
+                          const next = event.target.checked;
+                          setCollaboration({
+                            ...collaboration,
+                            collaborative: next,
+                          });
+                          try {
+                            setCollaboration(
+                              await client.setCollaboration(
+                                selectedPlaylist,
+                                next
+                              )
+                            );
+                          } catch (error) {
+                            setCollaboration(collaboration);
+                            if (error instanceof Error)
+                              handleError(
+                                error,
+                                "Could not change Collaborative setting."
+                              );
+                          }
+                        }}
+                      />
+                      Collaborative
+                    </label>
+                    <p>
+                      Editors can add, remove, and reorder Sets. Only you can
+                      change Playlist settings.
+                    </p>
+                    <label htmlFor="playlist-editor-person">Add editor</label>
+                    <div className="inline-form">
+                      <select
+                        id="playlist-editor-person"
+                        value={editorInput}
+                        onChange={(event) => setEditorInput(event.target.value)}
+                      >
+                        <option value="">Choose a Person</option>
+                        {people
+                          .filter(
+                            (person) =>
+                              !collaboration?.editorIds.includes(person.id)
+                          )
+                          .map((person) => (
+                            <option key={person.id} value={person.id}>
+                              {person.username}
+                            </option>
+                          ))}
+                      </select>
+                      <button
+                        type="button"
+                        disabled={!editorInput || !collaboration}
+                        onClick={async () => {
+                          if (!selectedPlaylist || !collaboration) return;
+                          try {
+                            setCollaboration(
+                              await client.setEditors(selectedPlaylist, [
+                                ...collaboration.editorIds,
+                                editorInput,
+                              ])
+                            );
+                            setEditorInput("");
+                          } catch (error) {
+                            if (error instanceof Error)
+                              handleError(error, "Could not add editor.");
+                          }
+                        }}
+                      >
+                        Add editor
+                      </button>
+                    </div>
+                    <ul>
+                      {collaboration?.editorIds.map((id) => (
+                        <li key={id}>
+                          {people.find((person) => person.id === id)
+                            ?.username ?? id}{" "}
+                          <button
+                            type="button"
+                            aria-label={`Remove editor ${people.find((person) => person.id === id)?.username ?? id}`}
+                            onClick={async () => {
+                              if (!selectedPlaylist || !collaboration) return;
+                              try {
+                                setCollaboration(
+                                  await client.setEditors(
+                                    selectedPlaylist,
+                                    collaboration.editorIds.filter(
+                                      (editorId) => editorId !== id
+                                    )
+                                  )
+                                );
+                              } catch (error) {
+                                if (error instanceof Error)
+                                  handleError(
+                                    error,
+                                    "Could not remove editor."
+                                  );
+                              }
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  </fieldset>
                   <form
                     className="inline-form"
                     onSubmit={async (event) => {
