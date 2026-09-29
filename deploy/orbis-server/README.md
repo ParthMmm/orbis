@@ -209,7 +209,10 @@ This makes `https://vanta.tail01d084.ts.net:10000` public (ADR 0007). Run it on 
 ```sh
 sudo tailscale serve --bg --https=10000 --set-path=/api http://127.0.0.1:4311/
 sudo tailscale serve --bg --https=10000 --set-path=/ ~/orbis-service/apps/web/dist
-sudo tailscale funnel --bg 10000
+# `funnel` takes the same flags as `serve`. Repeat both handlers; a bare
+# `tailscale funnel --bg 10000` reads 10000 as the target and tries port 443.
+sudo tailscale funnel --bg --https=10000 --set-path=/api http://127.0.0.1:4311/
+sudo tailscale funnel --bg --https=10000 --set-path=/ ~/orbis-service/apps/web/dist
 tailscale serve status
 tailscale funnel status
 ```
