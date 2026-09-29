@@ -5,9 +5,11 @@ import type { SaveSetResultSchema } from "@orbis/contracts/http-api";
 import {
   AdminKeyPayload,
   AdminPersonPayload,
+  CollaborationPayload,
   SaveSetPayload,
   OrbisApi,
   PlaylistMembersPayload,
+  PlaylistEditorsPayload,
   PlaylistNamePayload,
   PositionPayload,
   QueueEntryPayload,
@@ -21,7 +23,7 @@ import {
   UpdateTitlePayload,
   UpdateMePayload,
 } from "@orbis/contracts/http-api";
-import { desc, eq, sql } from "drizzle-orm";
+import { and, desc, eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema, Scope, Stream } from "effect";
 import {
   Headers,
@@ -44,7 +46,7 @@ import {
 import { Audio } from "./audio.js";
 import type { AudioFile, AudioOptions } from "./audio.js";
 import { Database, layer as databaseLayer } from "./db/database.js";
-import { listens } from "./db/schema.js";
+import { listens, playlistEditors, playlists } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
 import {
@@ -206,6 +208,9 @@ const failureResponse = <E>(error: E) => {
     { status: 400 }
   );
 };
+
+const missingPlaylist = () =>
+  new LibraryError({ message: "Playlist not found.", statusCode: 404 });
 
 const withFailureResponse = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.match(effect.pipe(Effect.tapError(logLibraryFailure)), {
@@ -593,6 +598,100 @@ export const createApp = (
             )
           )
       );
+      const visibleFriend = (id: string) =>
+        Effect.gen(function* resolveFriend() {
+          const caller = yield* SetCaller;
+          const { people } = readTrustRegistry(devicesPath).store;
+          return yield* Effect.try({
+            catch: (error) =>
+              error instanceof LibraryError
+                ? error
+                : new LibraryError({
+                    message: "Could not read People.",
+                    statusCode: 500,
+                  }),
+            try: () => resolveVisiblePerson(people, caller.person.id, id),
+          });
+        });
+      const mutuallyVisibleFriend = (id: string) =>
+        Effect.gen(function* resolveMutualVisibility() {
+          const caller = yield* SetCaller;
+          const target = yield* visibleFriend(id);
+          const { people } = readTrustRegistry(devicesPath).store;
+          yield* Effect.try({
+            catch: (error) =>
+              error instanceof LibraryError ? error : missingPlaylist(),
+            try: () =>
+              resolveVisiblePerson(people, target.id, caller.person.id),
+          });
+          return target;
+        });
+      const ownedPlaylist = (id: string, personId: string) =>
+        Effect.gen(function* findOwnedPlaylist() {
+          const [row] = yield* db
+            .select({
+              collaborative: playlists.collaborative,
+              id: playlists.id,
+            })
+            .from(playlists)
+            .where(and(eq(playlists.id, id), eq(playlists.creatorId, personId)))
+            .limit(1);
+          if (!row) {
+            return yield* Effect.fail(missingPlaylist());
+          }
+          return row;
+        });
+      const collaborationFor = (id: string, personId: string) =>
+        Effect.gen(function* readCollaboration() {
+          const playlist = yield* ownedPlaylist(id, personId);
+          const editors = yield* db
+            .select({ editorId: playlistEditors.editorId })
+            .from(playlistEditors)
+            .where(eq(playlistEditors.playlistId, id));
+          return {
+            collaborative: playlist.collaborative,
+            editorIds: editors.map((row) => row.editorId),
+          };
+        });
+      const editablePlaylistOwner = (id: string, personId: string) =>
+        Effect.gen(function* resolveEditablePlaylist() {
+          const [owned] = yield* db
+            .select({ id: playlists.id })
+            .from(playlists)
+            .where(and(eq(playlists.id, id), eq(playlists.creatorId, personId)))
+            .limit(1);
+          if (owned) {
+            return personId;
+          }
+          const [editor] = yield* db
+            .select({ creatorId: playlistEditors.creatorId })
+            .from(playlistEditors)
+            .where(
+              and(
+                eq(playlistEditors.playlistId, id),
+                eq(playlistEditors.editorId, personId)
+              )
+            )
+            .limit(1);
+          if (!editor) {
+            return yield* Effect.fail(missingPlaylist());
+          }
+          yield* mutuallyVisibleFriend(editor.creatorId);
+          const [playlist] = yield* db
+            .select({ collaborative: playlists.collaborative })
+            .from(playlists)
+            .where(
+              and(
+                eq(playlists.id, id),
+                eq(playlists.creatorId, editor.creatorId)
+              )
+            )
+            .limit(1);
+          if (!playlist?.collaborative) {
+            return yield* Effect.fail(missingPlaylist());
+          }
+          return editor.creatorId;
+        });
       const playlistGroup = HttpApiBuilder.group(
         OrbisApi,
         "playlists",
@@ -644,13 +743,116 @@ export const createApp = (
                   const input = yield* HttpServerRequest.schemaBodyJson(
                     PlaylistMembersPayload
                   );
+                  const caller = yield* SetCaller;
+                  const ownerId = yield* editablePlaylistOwner(
+                    params.id,
+                    caller.person.id
+                  );
                   const personal = yield* Library;
+                  if (ownerId !== caller.person.id) {
+                    const visible = yield* personal.byIds(input.setIds);
+                    if (visible.length !== input.setIds.length) {
+                      return yield* Effect.fail(
+                        new LibraryError({
+                          message: "Set not found.",
+                          statusCode: 404,
+                        })
+                      );
+                    }
+                    const ownerLayer = Library.forPersonLayer(
+                      ownerId,
+                      libraryOptions
+                    ).pipe(Layer.provide(Layer.succeed(Database, db)));
+                    return {
+                      sets: yield* Effect.provide(
+                        Effect.gen(function* updateSharedPlaylist() {
+                          const ownerLibrary = yield* Library;
+                          return yield* ownerLibrary.setPlaylistMembers(
+                            params.id,
+                            input.setIds
+                          );
+                        }),
+                        ownerLayer
+                      ),
+                    };
+                  }
                   return {
                     sets: yield* personal.setPlaylistMembers(
                       params.id,
                       input.setIds
                     ),
                   };
+                })
+              )
+            )
+            .handle("collaboration", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* readPlaylistCollaboration() {
+                  const caller = yield* SetCaller;
+                  return yield* collaborationFor(params.id, caller.person.id);
+                })
+              )
+            )
+            .handleRaw("setCollaboration", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* changePlaylistCollaboration() {
+                  const caller = yield* SetCaller;
+                  const input =
+                    yield* HttpServerRequest.schemaBodyJson(
+                      CollaborationPayload
+                    );
+                  yield* ownedPlaylist(params.id, caller.person.id);
+                  yield* db
+                    .update(playlists)
+                    .set({ collaborative: input.collaborative })
+                    .where(
+                      and(
+                        eq(playlists.id, params.id),
+                        eq(playlists.creatorId, caller.person.id)
+                      )
+                    );
+                  return yield* collaborationFor(params.id, caller.person.id);
+                })
+              )
+            )
+            .handleRaw("setEditors", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* setPlaylistEditors() {
+                  const caller = yield* SetCaller;
+                  const input = yield* HttpServerRequest.schemaBodyJson(
+                    PlaylistEditorsPayload
+                  );
+                  yield* ownedPlaylist(params.id, caller.person.id);
+                  if (
+                    new Set(input.editorIds).size !== input.editorIds.length
+                  ) {
+                    return yield* Effect.fail(
+                      new LibraryError({
+                        message: "An editor can only appear once.",
+                        statusCode: 400,
+                      })
+                    );
+                  }
+                  for (const editorId of input.editorIds) {
+                    yield* mutuallyVisibleFriend(editorId);
+                  }
+                  yield* db.transaction((tx) =>
+                    Effect.gen(function* replaceEditors() {
+                      yield* tx
+                        .delete(playlistEditors)
+                        .where(eq(playlistEditors.playlistId, params.id));
+                      if (input.editorIds.length > 0) {
+                        yield* tx.insert(playlistEditors).values(
+                          input.editorIds.map((editorId) => ({
+                            creatorId: caller.person.id,
+                            editorId,
+                            playlistId: params.id,
+                          }))
+                        );
+                      }
+                    })
+                  );
+                  return yield* collaborationFor(params.id, caller.person.id);
                 })
               )
             )
@@ -768,21 +970,6 @@ export const createApp = (
               )
             )
       );
-      const visibleFriend = (id: string) =>
-        Effect.gen(function* resolveFriend() {
-          const caller = yield* SetCaller;
-          const { people } = readTrustRegistry(devicesPath).store;
-          return yield* Effect.try({
-            catch: (error) =>
-              error instanceof LibraryError
-                ? error
-                : new LibraryError({
-                    message: "Could not read People.",
-                    statusCode: 500,
-                  }),
-            try: () => resolveVisiblePerson(people, caller.person.id, id),
-          });
-        });
       const friendLibraryLayer = (personId: string) =>
         Library.forPersonLayer(personId).pipe(
           Layer.provide(Layer.succeed(Database, db))
@@ -900,7 +1087,7 @@ export const createApp = (
             withFailureResponse(
               Effect.gen(function* readFriendPlaylists() {
                 const target = yield* visibleFriend(params.id);
-                const playlists = yield* Effect.provide(
+                const friendPlaylists = yield* Effect.provide(
                   Effect.gen(function* listFriendPlaylists() {
                     const personal = yield* Library;
                     const owned = yield* personal.playlists();
@@ -917,7 +1104,7 @@ export const createApp = (
                   }),
                   friendLibraryLayer(target.id)
                 );
-                return { playlists };
+                return { playlists: friendPlaylists };
               })
             )
           )

@@ -127,6 +127,15 @@ const sampleKeyFor = (operationId: string): keyof typeof samples => {
 };
 
 const sampleFor = (operationId: string) => {
+  if (
+    [
+      "playlists.collaboration",
+      "playlists.setCollaboration",
+      "playlists.setEditors",
+    ].includes(operationId)
+  ) {
+    return { collaborative: true, editorIds: ["b"] };
+  }
   if (operationId === "people.friendPlaylists") {
     return { playlists: [{ ...samples.playlist, sets: [samples.savedSet] }] };
   }
@@ -196,7 +205,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(34);
+    expect(checked).toBe(37);
   } finally {
     await app.dispose();
   }
