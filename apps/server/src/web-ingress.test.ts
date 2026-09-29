@@ -213,3 +213,120 @@ test("the default device listener refuses localhost browser Origins", async () =
     await listeners.stop();
   }
 });
+
+test("device listener accepts the Cloudflare web Origin and the local listener refuses it", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-web-origin-"));
+  const token = "web-origin-test-key";
+  await writeFile(
+    path.join(directory, "devices.json"),
+    JSON.stringify({
+      keys: [
+        {
+          addedAt: new Date().toISOString(),
+          id: "web-key",
+          label: "Web test",
+          lastUsedAt: null,
+          personId: "host",
+          scope: "daily",
+          tokenHash: hashToken(token),
+        },
+      ],
+      people: [{ id: "host", removed: false, username: "host" }],
+      version: 2,
+    })
+  );
+  const app = createApp({
+    audio: { audioDir: path.join(directory, "audio") },
+    databasePath: path.join(directory, "library.sqlite"),
+    logging: { environment: "test", silent: true },
+  });
+  const listeners = await startListeners(app, { devicePort: 0, localPort: 0 });
+  try {
+    const { device } = listeners;
+    if (!device) {
+      throw new Error("Missing device listener");
+    }
+    const origin = "https://orbis.p11a.xyz";
+    const preflight = await fetch(new URL("/sets", device.url), {
+      headers: {
+        "access-control-request-headers": "authorization, content-type",
+        "access-control-request-method": "POST",
+        origin,
+      },
+      method: "OPTIONS",
+    });
+    expect(preflight.status).toBe(204);
+    expect(preflight.headers.get("access-control-allow-origin")).toBe(origin);
+    expect(preflight.headers.get("vary")).toBe("origin");
+    const listed = (name: string) =>
+      preflight.headers
+        .get(name)
+        ?.split(",")
+        .map((value) => value.trim());
+    expect(listed("access-control-allow-headers")).toEqual(
+      expect.arrayContaining(["authorization", "content-type"])
+    );
+    expect(listed("access-control-allow-methods")).toEqual(
+      expect.arrayContaining([
+        "GET",
+        "POST",
+        "PUT",
+        "PATCH",
+        "DELETE",
+        "OPTIONS",
+      ])
+    );
+
+    const saved = await fetch(new URL("/sets", device.url), {
+      body: JSON.stringify({
+        title: "Web origin",
+        url: "https://www.youtube.com/watch?v=weborigin01",
+      }),
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        origin,
+      },
+      method: "POST",
+    });
+    expect(saved.status).toBe(201);
+    expect(saved.headers.get("access-control-allow-origin")).toBe(origin);
+    expect(saved.headers.get("vary")).toBe("origin");
+
+    expect(
+      await statusOf(new URL("/sets", device.url), {
+        headers: { origin: "https://vanta.tail01d084.ts.net:10000" },
+        method: "OPTIONS",
+      })
+    ).toBe(204);
+
+    const refused = await Promise.all(
+      [
+        "https://evil.example",
+        "http://orbis.p11a.xyz",
+        "https://orbis.p11a.xyz.evil.example",
+        "https://evil.orbis.p11a.xyz",
+      ].map((refusedOrigin) =>
+        statusOf(new URL("/sets", device.url), {
+          headers: { authorization: `Bearer ${token}`, origin: refusedOrigin },
+          method: "POST",
+        })
+      )
+    );
+    expect(refused).toEqual([403, 403, 403, 403]);
+    expect(
+      await statusOf(new URL("/sets", listeners.local.url), {
+        headers: { origin },
+        method: "OPTIONS",
+      })
+    ).toBe(403);
+    expect(
+      await statusOf(new URL("/health", listeners.local.url), {
+        headers: { authorization: `Bearer ${token}`, origin },
+      })
+    ).toBe(403);
+  } finally {
+    await listeners.stop();
+    await rm(directory, { force: true, recursive: true });
+  }
+});

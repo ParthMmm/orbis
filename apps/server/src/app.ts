@@ -101,7 +101,10 @@ class AcceptedAccess extends Context.Service<
   Exclude<AccessDecision, { readonly kind: "rejected" }>
 >()("Orbis/AcceptedAccess") {}
 
-const funnelOrigin = "https://vanta.tail01d084.ts.net:10000";
+const browserOrigins: ReadonlySet<string> = new Set([
+  "https://orbis.p11a.xyz",
+  "https://vanta.tail01d084.ts.net:10000",
+]);
 const allowedBrowserOrigin = (
   origin: string | null,
   mode: AccessMode,
@@ -109,7 +112,7 @@ const allowedBrowserOrigin = (
 ): origin is string =>
   mode === "device" &&
   origin !== null &&
-  (origin === funnelOrigin ||
+  (browserOrigins.has(origin) ||
     (development && /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/u.test(origin)));
 
 const browserIngress = (
