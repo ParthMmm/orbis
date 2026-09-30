@@ -7,6 +7,15 @@ const MAX_POSITION = 604_800;
 export const playSet = (credentials: Credentials, setId: string) =>
   callOrbis(credentials, (client) => client.queue.play({ payload: { setId } }));
 
+/** Replaces the queue with the Playlist's Sets that have kept audio, in order. */
+export const replaceQueueWithPlaylist = (
+  credentials: Credentials,
+  playlistId: string
+) =>
+  callOrbis(credentials, (client) =>
+    client.queue.replaceWithPlaylist({ payload: { playlistId } })
+  );
+
 export const queueSet = (
   credentials: Credentials,
   setId: string,

@@ -7,6 +7,7 @@ import {
 import { useState } from "react";
 import type { FormEvent } from "react";
 
+import { usePlayer } from "@/components/player/player";
 import { CollaborationCard } from "@/components/playlists/collaboration";
 import { Members } from "@/components/playlists/members";
 import { RouteProblem } from "@/components/route-problem";
@@ -182,6 +183,32 @@ const DeleteDialog = ({
   );
 };
 
+// Only the creator: the API fills the queue from the caller's own Library.
+const PlayButton = ({ playlist }: { readonly playlist: PlaylistDetail }) => {
+  const { playPlaylist } = usePlayer();
+  const [problem, setProblem] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const playable = playlist.sets.some((set) => set.downloadState === "ready");
+  const play = async () => {
+    setPending(true);
+    const played = await playPlaylist(playlist.id);
+    setPending(false);
+    setProblem(played.ok ? null : FAILURE_MESSAGES[played.failure]);
+  };
+  return (
+    <>
+      <Button disabled={!playable || pending} onClick={play}>
+        Play Playlist
+      </Button>
+      {problem === null ? null : (
+        <p className="text-destructive text-sm" role="alert">
+          {problem}
+        </p>
+      )}
+    </>
+  );
+};
+
 const PlaylistPage = ({
   collaboration,
   credentials,
@@ -214,6 +241,7 @@ const PlaylistPage = ({
           </CardDescription>
           {creator ? (
             <CardAction className="flex gap-2">
+              <PlayButton playlist={playlist} />
               <RenameDialog credentials={credentials} playlist={playlist} />
               <DeleteDialog credentials={credentials} playlist={playlist} />
             </CardAction>

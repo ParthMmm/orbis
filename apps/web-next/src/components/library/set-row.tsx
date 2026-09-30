@@ -3,8 +3,8 @@ import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
-import { usePlayer } from "@/components/player/player";
 import { AddToPlaylistDialog } from "@/components/library/add-to-playlist-dialog";
+import { usePlayer } from "@/components/player/player";
 import {
   AlertDialog,
   AlertDialogCancel,

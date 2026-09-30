@@ -274,6 +274,10 @@ try {
       .waitFor();
     await bob.getByText(/Shared by host/u).waitFor();
     await expectOrder(bob, ["Charlie", "Bravo"]);
+    assert.equal(
+      await bob.getByRole("button", { name: "Play Playlist" }).count(),
+      0
+    );
     assert.equal(await bob.getByRole("button", { name: "Rename…" }).count(), 0);
     assert.equal(await bob.getByRole("button", { name: "Delete…" }).count(), 0);
     assert.equal(await bob.getByRole("switch").count(), 0);
@@ -307,6 +311,42 @@ try {
     await host.goto(playlistUrl);
     await expectOrder(host, ["Bravo", "Charlie", "Alpha"]);
     step("the Library's Add to Playlist puts a Set at the end");
+
+    // Only Charlie gets kept audio, so the queue skips Bravo and starts on Charlie.
+    const hostApi = async (method, route) => {
+      const response = await fetch(`${apiUrl}${route}`, {
+        headers: { authorization: `Bearer ${keys.host}` },
+        method,
+      });
+      assert.ok(response.ok, `${method} ${route} answered ${response.status}`);
+      return response.json();
+    };
+    const { sets: library } = await hostApi("GET", "/sets");
+    const charlie = library.find((set) => set.title === "Charlie");
+    await hostApi("POST", `/sets/${charlie.id}/audio/download`);
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const state = await hostApi("GET", `/sets/${charlie.id}/audio/state`);
+      if (state.state === "ready") {
+        break;
+      }
+      // eslint-disable-next-line no-await-in-loop
+      await setTimeout(200);
+    }
+    await host.reload();
+    await host.getByRole("button", { name: "Play Playlist" }).click();
+    await host
+      .getByRole("region", { name: "Audio player" })
+      .getByText("Charlie")
+      .waitFor();
+    const { queue } = await hostApi("GET", "/queue");
+    assert.deepEqual(
+      queue.entries.map((entry) => entry.id),
+      [charlie.id]
+    );
+    assert.equal(queue.activeSetId, charlie.id);
+    await shot(host, "play-playlist.png");
+    step("Play Playlist queues the Sets with kept audio and plays the first");
 
     await host.getByRole("button", { name: "Delete…" }).click();
     await host

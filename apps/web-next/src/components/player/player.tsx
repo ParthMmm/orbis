@@ -22,6 +22,7 @@ import {
   completeSet,
   playSet,
   queueSet,
+  replaceQueueWithPlaylist,
   reportPosition,
   streamUrl,
 } from "@/lib/player";
@@ -40,6 +41,8 @@ export interface Player {
   readonly playing: Playing | null;
   /** Makes `set` the active queue entry and plays it from its saved position. */
   readonly play: (set: SavedSet) => Promise<ApiResult<unknown>>;
+  /** Replaces the queue with a Playlist and plays its first Set with kept audio. */
+  readonly playPlaylist: (playlistId: string) => Promise<ApiResult<unknown>>;
   readonly queue: (
     set: SavedSet,
     placement: "next" | "end"
@@ -52,6 +55,7 @@ const unavailable = (): Promise<ApiResult<unknown>> =>
 
 const PlayerContext = createContext<Player>({
   play: unavailable,
+  playPlaylist: unavailable,
   playing: null,
   queue: unavailable,
 });
@@ -88,8 +92,10 @@ export const PlayerProvider = ({
     return src;
   };
 
-  const play = async (set: SavedSet): Promise<ApiResult<unknown>> => {
-    const played = await playSet(credentials, set.id);
+  // Plays the queue's active entry from a queue the API just answered with.
+  const startActive = async (
+    played: Awaited<ReturnType<typeof playSet>>
+  ): Promise<ApiResult<unknown>> => {
     if (!played.ok) {
       return played;
     }
@@ -99,8 +105,15 @@ export const PlayerProvider = ({
       setPlaying(null);
       return played;
     }
-    return start(active, (playing?.attempt ?? 0) + 1);
+    const started = await start(active, (playing?.attempt ?? 0) + 1);
+    return started;
   };
+
+  const play = async (set: SavedSet) =>
+    startActive(await playSet(credentials, set.id));
+
+  const playPlaylist = async (playlistId: string) =>
+    startActive(await replaceQueueWithPlaylist(credentials, playlistId));
 
   const queue = (set: SavedSet, placement: "next" | "end") =>
     queueSet(credentials, set.id, placement);
@@ -149,7 +162,7 @@ export const PlayerProvider = ({
   };
 
   return (
-    <PlayerContext value={{ play, playing, queue }}>
+    <PlayerContext value={{ play, playPlaylist, playing, queue }}>
       {/* The page fills the shell, so the player bar rests at the bottom. */}
       <div className="flex flex-1 flex-col">{children}</div>
       {playing === null ? null : (
