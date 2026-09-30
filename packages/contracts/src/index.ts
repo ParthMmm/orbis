@@ -9,12 +9,15 @@ import type {
   QueueEntryPayload,
   SaveSetPayload,
   SavedSetSchema,
+  TracklistSchema,
   UpdateTitlePayload,
 } from "./http-api.js";
 
 export type HealthResponse = typeof HealthResponseSchema.Type;
 export type AudioState = typeof AudioStateSchema.Type;
 export type SavedSet = typeof SavedSetSchema.Type;
+export type Tracklist = typeof TracklistSchema.Type;
+export type Cue = Tracklist["cues"][number];
 export type SetSource = SavedSet["source"];
 export type MetadataState = SavedSet["metadataState"];
 export type DownloadState = SavedSet["downloadState"];

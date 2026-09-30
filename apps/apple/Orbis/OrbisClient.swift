@@ -23,9 +23,9 @@ enum OrbisError: Error, Equatable {
   var message: String {
     switch self {
     case .unreachable:
-      "Cannot reach your library. Check that Tailscale is connected and the Orbis service is running on the host."
+      "Cannot reach your library. Check your internet connection and try again."
     case .notPaired:
-      "This device is not paired with your library. Pair it on the host and enter the new token."
+      "This device is not signed in to your library. Sign in again or paste a new key."
     case .refused:
       "The service refused the request. Check the address points at your Orbis service."
     case .duplicate:

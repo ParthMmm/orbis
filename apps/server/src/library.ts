@@ -271,6 +271,8 @@ export class Library extends Context.Service<
               creatorUrl: _creatorUrl,
               description: _description,
               detailsState: _detailsState,
+              tracklistRunId: _tracklistRunId,
+              tracklistRunStartedAt: _tracklistRunStartedAt,
               genre: _genre,
               hostRemoved: _hostRemoved,
               sourceChapters: _sourceChapters,

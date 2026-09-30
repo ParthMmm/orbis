@@ -63,6 +63,7 @@ export const httpStatus = (status: number): Response =>
           tags: [],
           title: "Saved set",
           titleEditedByUser: false,
+          tracklistState: "pending",
           url: "https://www.youtube.com/watch?v=abcdefghijk",
         },
         { status }

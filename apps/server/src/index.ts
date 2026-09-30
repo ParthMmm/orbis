@@ -5,6 +5,7 @@ import { createApp } from "./app.js";
 import { listenerPorts, startListeners } from "./listeners.js";
 import { Metadata } from "./metadata.js";
 import { TitleReviser } from "./title-reviser.js";
+import { Versos } from "./versos.js";
 import { ytDlpMetadata } from "./ytdlp-metadata.js";
 
 const dataDirectory = path.resolve(process.env.ORBIS_DATA_DIR ?? "data");
@@ -34,6 +35,7 @@ const app = createApp({
   logging: { environment: process.env.NODE_ENV ?? "development" },
   metadata: Metadata.layer({ youTubeApiKey, ytDlp }),
   titleReviser: TitleReviser.layerConfig(),
+  versos: Versos.layerConfig(),
 });
 const listeners = await startListeners(app, ports);
 console.log(`Orbis local API listening on ${listeners.local.url}`);

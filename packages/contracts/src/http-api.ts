@@ -53,7 +53,20 @@ export const SavedSetSchema = Schema.Struct({
   tags: Schema.Array(Schema.String).pipe(Schema.mutable),
   title: Schema.String,
   titleEditedByUser: Schema.Boolean,
+  tracklistState: Schema.Literals(["pending", "ready", "none", "failed"]),
   url: Schema.String,
+});
+export const CueSchema = Schema.Struct({
+  appleMusicId: Schema.NullOr(Schema.String),
+  artist: Schema.String,
+  artworkUrl: Schema.NullOr(Schema.String),
+  position: Schema.Number,
+  startSeconds: Schema.NullOr(Schema.Number),
+  title: Schema.String,
+});
+export const TracklistSchema = Schema.Struct({
+  cues: Schema.Array(CueSchema),
+  state: SavedSetSchema.fields.tracklistState,
 });
 export const LibraryResponseSchema = Schema.Struct({
   sets: Schema.Array(SavedSetSchema).pipe(Schema.mutable),
@@ -201,14 +214,6 @@ const VisiblePerson = Schema.Struct({
   id: Schema.String,
   username: Schema.String,
 });
-/**
- * A Person the caller would see if their own See filter allowed it, with the
- * caller's See and Appear filters for them (ADR 0009).
- */
-export const PersonFiltersSchema = Schema.Struct({
-  ...VisiblePerson.fields,
-  ...SocialFilters.fields,
-});
 /** A Collaborative Playlist the caller may edit, with the Person who created it. */
 export const SharedPlaylistSchema = Schema.Struct({
   ...PlaylistSchema.fields,
@@ -222,6 +227,14 @@ export const PlaylistDetailSchema = Schema.Struct({
   ...SharedPlaylistSchema.fields,
   role: Schema.Literals(["creator", "editor"]),
   sets: Schema.Array(SavedSetSchema),
+});
+/**
+ * A Person the caller would see if their own See filter allowed it, with the
+ * caller's See and Appear filters for them (ADR 0009).
+ */
+export const PersonFiltersSchema = Schema.Struct({
+  ...VisiblePerson.fields,
+  ...SocialFilters.fields,
 });
 
 export const SaveSetResultSchema = Schema.Struct({
@@ -327,6 +340,16 @@ export const SetsApi = HttpApi.make("orbis").add(
         error: [NotFound, InternalError],
         params: SetId,
         success: SavedSetSchema,
+      }),
+      HttpApiEndpoint.get("tracklist", "/sets/:id/tracklist", {
+        error: [NotFound, InternalError],
+        params: SetId,
+        success: TracklistSchema,
+      }),
+      HttpApiEndpoint.post("retryTracklist", "/sets/:id/tracklist/retry", {
+        error: [NotFound, InternalError],
+        params: SetId,
+        success: TracklistSchema,
       }),
       HttpApiEndpoint.patch("updateTitle", "/sets/:id/title", {
         error: [BadRequest, NotFound, InternalError],
