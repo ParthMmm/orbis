@@ -17,7 +17,8 @@ import {
   NativeSelect,
   NativeSelectOption,
 } from "@/components/ui/native-select";
-import { listSets, listTags, saveSet } from "@/lib/library";
+import { Switch } from "@/components/ui/switch";
+import { listSets, listTags, saveSet, setAutoDownload } from "@/lib/library";
 import type {
   AutoDownloadResult,
   LibraryFilters,
@@ -27,6 +28,7 @@ import { FAILURE_MESSAGES } from "@/lib/orbis";
 import type { Credentials } from "@/lib/orbis";
 import { listPlaylists } from "@/lib/playlists";
 import type { Playlist } from "@/lib/playlists";
+import type { Session } from "@/routes/_app";
 
 const LibrarySearch = Schema.Struct({
   q: Schema.optionalKey(Schema.String),
@@ -176,6 +178,40 @@ const Filters = ({
   );
 };
 
+const AutoDownloadSwitch = ({ session }: { readonly session: Session }) => {
+  const router = useRouter();
+  const [pending, setPending] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const change = async (autoDownload: boolean) => {
+    setPending(true);
+    const result = await setAutoDownload(session, autoDownload);
+    if (result.ok) {
+      setProblem(null);
+      await router.invalidate();
+    } else {
+      setProblem(FAILURE_MESSAGES[result.failure]);
+    }
+    setPending(false);
+  };
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center gap-3">
+        <Switch
+          aria-label="Auto Download"
+          checked={session.person.autoDownload}
+          disabled={pending}
+          onCheckedChange={change}
+        />
+        <span aria-hidden>Auto Download</span>
+      </div>
+      <p className="text-muted-foreground text-sm">
+        Keep audio automatically when you save a Set.
+      </p>
+      {problem === null ? null : <p role="alert">{problem}</p>}
+    </div>
+  );
+};
+
 const Library = ({
   credentials,
   filters,
@@ -183,7 +219,7 @@ const Library = ({
   sets,
   tags,
 }: {
-  readonly credentials: Credentials;
+  readonly credentials: Session;
   readonly filters: LibraryFilters;
   readonly playlists: readonly Playlist[];
   readonly sets: readonly SavedSet[];
@@ -194,6 +230,7 @@ const Library = ({
   return (
     <main className="mx-auto flex w-full max-w-3xl flex-col gap-6 p-6">
       <h1 className="text-2xl font-medium">Library</h1>
+      <AutoDownloadSwitch session={credentials} />
       <SaveSetForm credentials={credentials} />
       <Filters filters={filters} tags={tags} />
       <p className="text-muted-foreground text-sm" role="status">

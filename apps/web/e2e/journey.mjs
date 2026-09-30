@@ -1,428 +1,276 @@
+// Every Library action through the built web client against a real Orbis API
+// (e2e/api-server.ts): save, duplicate save, rename, Tags, filters, search,
+// Download, and remove, with screenshots and a result.json as the artifact.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { createHash, randomBytes } from "node:crypto";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
 const root = path.resolve(import.meta.dirname, "../../..");
-const port = 5178;
-const server = spawn(
-  "bun",
-  ["x", "vite", "preview", "--host", "127.0.0.1", "--port", String(port)],
-  {
-    cwd: path.join(root, "apps/web"),
-    stdio: "ignore",
-  }
-);
-const waitForServer = async () => {
-  for (let attempt = 0; attempt < 100; attempt += 1) {
+const artifacts = path.join(root, ".cache/web-library");
+const apiPort = 4470;
+const devicePort = 4471;
+const webPort = 3371;
+const apiUrl = `http://127.0.0.1:${devicePort}`;
+const webUrl = `http://127.0.0.1:${webPort}`;
+const key = randomBytes(24).toString("base64url");
+const youTubeLink = "https://www.youtube.com/watch?v=abcdefghijk";
+const soundCloudLink = "https://soundcloud.com/artist/track";
+
+const waitFor = async (url) => {
+  for (let attempt = 0; attempt < 150; attempt += 1) {
     try {
       // eslint-disable-next-line no-await-in-loop
-      const response = await fetch(`http://127.0.0.1:${port}`);
-      if (response.ok) {
-        return;
-      }
+      await fetch(url);
+      return;
     } catch {
-      // The preview may not be listening yet.
+      // Not listening yet.
     }
     // eslint-disable-next-line no-await-in-loop
     await setTimeout(100);
   }
-  throw new Error("Web preview did not start");
+  throw new Error(`${url} did not start`);
 };
 
-const set = {
-  artworkLargeUrl: null,
-  artworkUrl: null,
-  createdAt: "2026-01-01T00:00:00.000Z",
-  creator: "DJ",
-  creatorId: null,
-  downloadState: "ready",
-  durationSeconds: 7200,
-  finishCount: 0,
-  id: "set-a",
-  lastListenedAt: null,
-  listenCount: 0,
-  metadataState: "enriched",
-  playbackPositionSeconds: 13,
-  playlistIds: [],
-  releasedAt: null,
-  retainedAudioBytes: 100_000,
-  retainedAudioFormat: "m4a",
-  source: "youtube",
-  tags: ["house"],
-  title: "Long set",
-  titleEditedByUser: false,
-  url: "https://www.youtube.com/watch?v=abcdefghijk",
-};
-const results = [];
+const dataDirectory = await mkdtemp(path.join(tmpdir(), "orbis-library-"));
+await writeFile(
+  path.join(dataDirectory, "devices.json"),
+  JSON.stringify({
+    keys: [
+      {
+        addedAt: new Date().toISOString(),
+        id: "journey-key",
+        label: "Library journey",
+        lastUsedAt: null,
+        personId: "host",
+        scope: "daily",
+        tokenHash: createHash("sha256").update(key).digest("hex"),
+      },
+    ],
+    // Auto Download off, so the journey starts the Download itself.
+    people: [
+      { autoDownload: false, id: "host", removed: false, username: "host" },
+    ],
+    version: 2,
+  })
+);
+const api = spawn("bun", ["apps/web/e2e/api-server.ts"], {
+  cwd: root,
+  env: {
+    ...process.env,
+    ORBIS_DATA_DIR: dataDirectory,
+    ORBIS_DEVICE_PORT: String(devicePort),
+    ORBIS_PORT: String(apiPort),
+  },
+  stdio: "ignore",
+});
+const web = spawn(
+  "bun",
+  [
+    "x",
+    "vite",
+    "preview",
+    "--host",
+    "127.0.0.1",
+    "--port",
+    String(webPort),
+    "--strictPort",
+  ],
+  {
+    cwd: path.join(root, "apps/web"),
+    env: { ...process.env, ORBIS_API_URL: apiUrl },
+    stdio: "ignore",
+  }
+);
+
+const steps = [];
+const step = (name, detail = {}) => steps.push({ name, ...detail });
 try {
-  await waitForServer();
+  await Promise.all([
+    waitFor(`http://127.0.0.1:${apiPort}/health`),
+    waitFor(webUrl),
+  ]);
+  await mkdir(artifacts, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
-    const audioBytes = await readFile(
-      path.join(root, "scripts/fixtures/ready-set.m4a")
-    );
     const page = await browser.newPage();
-    let revoked = false;
-    let revokeOnNextLibrary = false;
-    let grantCount = 0;
-    let social = false;
-    let autoDownload = true;
-    let saved = null;
-    let downloadState = "none";
-    let playlist = null;
-    let members = [];
-    let collaborative = false;
-    let editorIds = [];
-    const requests = [];
-    const fulfillAudio = async (route, request, grant) => {
-      if (grant === "grant-2") {
-        await route.fulfill({ body: "Audio unavailable", status: 503 });
-        return;
-      }
-      const range = /^bytes=(?<start>\d+)-(?<end>\d*)$/u.exec(
-        request.headers().range ?? ""
-      );
-      const start = range?.groups ? Number(range.groups.start) : 0;
-      const end = range?.groups?.end
-        ? Math.min(Number(range.groups.end), audioBytes.length - 1)
-        : audioBytes.length - 1;
-      const headers = {
-        "accept-ranges": "bytes",
-        "content-length": String(end - start + 1),
-      };
-      if (range) {
-        headers["content-range"] = `bytes ${start}-${end}/${audioBytes.length}`;
-      }
-      await route.fulfill({
-        body: audioBytes.subarray(start, end + 1),
-        contentType: "audio/mp4",
-        headers,
-        status: range ? 206 : 200,
+    const violations = [];
+    await page.exposeFunction("reportViolation", (text) =>
+      violations.push(text)
+    );
+    await page.addInitScript(() => {
+      document.addEventListener("securitypolicyviolation", (event) => {
+        window.reportViolation(
+          `${event.violatedDirective} ${event.blockedURI}`
+        );
       });
+    });
+    const count = page.getByRole("status").filter({ hasText: /^\d+ Sets?$/u });
+    const expectCount = async (n) => {
+      await count
+        .filter({ hasText: `${n} ${n === 1 ? "Set" : "Sets"}` })
+        .waitFor();
     };
-    // eslint-disable-next-line complexity -- The fixture covers each API route in one browser journey.
-    await page.route("**/api/**", async (route) => {
-      const request = route.request();
-      const url = new URL(request.url());
-      requests.push({
-        authorization: request.headers().authorization ?? "",
-        path: url.pathname,
-        payload: request.postDataJSON(),
-        query: url.search,
-        range: request.headers().range ?? "",
+    const setTitles = () =>
+      page
+        .getByRole("list", { name: "Sets" })
+        .getByRole("heading")
+        .allInnerTexts();
+    const save = async (link) => {
+      await page.getByLabel("Source Link").fill(link);
+      await page.getByRole("button", { exact: true, name: "Save" }).click();
+    };
+    const openAction = async (title, action) => {
+      await page.getByRole("button", { name: `Actions for ${title}` }).click();
+      await page.getByRole("menuitem", { name: action }).click();
+    };
+
+    await page.goto(`${webUrl}/sign-in`);
+    await page.getByLabel("API key").fill(key);
+    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
+    await page.getByRole("heading", { name: "Library" }).waitFor();
+    await expectCount(0);
+    await page.getByText("Save a Source Link to start your Library.").waitFor();
+    step("an empty Library invites a first save");
+    const autoDownload = page.getByRole("switch", {
+      exact: true,
+      name: "Auto Download",
+    });
+    assert.equal(await autoDownload.getAttribute("aria-checked"), "false");
+    await autoDownload.click();
+    await page.waitForFunction(
+      () =>
+        document
+          .querySelector('[role="switch"][aria-label="Auto Download"]')
+          ?.getAttribute("aria-checked") === "true"
+    );
+    const readPreference = async () => {
+      const response = await fetch(`${apiUrl}/me`, {
+        headers: { authorization: `Bearer ${key}` },
       });
-      if (url.pathname.endsWith("/sets") && revokeOnNextLibrary) {
-        revokeOnNextLibrary = false;
-        revoked = true;
-        await route.fulfill({
-          body: JSON.stringify({ message: "Invalid key" }),
-          contentType: "application/json",
-          status: 401,
-        });
-        return;
-      }
-      if (
-        url.pathname.endsWith("/sets/set-a/audio") &&
-        url.searchParams.get("grant")?.startsWith("grant-")
-      ) {
-        await fulfillAudio(route, request, url.searchParams.get("grant"));
-        return;
-      }
-      const authorized =
-        request.headers().authorization === "Bearer good-key" && !revoked;
-      if (!authorized) {
-        await route.fulfill({
-          body: JSON.stringify({ message: "Invalid key" }),
-          contentType: "application/json",
-          status: 401,
-        });
-        return;
-      }
-      let body = set;
-      if (url.pathname.endsWith("/me")) {
-        if (request.method() === "PATCH") {
-          const payload = request.postDataJSON();
-          if ("social" in payload) {
-            ({ social } = payload);
-          }
-          if ("autoDownload" in payload) {
-            ({ autoDownload } = payload);
-          }
-        }
-        body = { autoDownload, id: "person-a", social, username: "A" };
-      } else if (url.pathname.endsWith("/people")) {
-        body = { people: social ? [{ id: "person-b", username: "Bob" }] : [] };
-      } else if (url.pathname.endsWith("/people/person-b/sets")) {
-        body = { sets: [{ ...set, id: "friend-set", title: "Bob's set" }] };
-      } else if (url.pathname.endsWith("/people/person-b/playlists")) {
-        body = {
-          playlists: [
-            {
-              createdAt: "2026-09-29T00:00:00.000Z",
-              id: "playlist-b",
-              name: "Bob's picks",
-              setCount: 1,
-              sets: [{ ...set, id: "friend-set", title: "Bob's set" }],
-            },
-          ],
-        };
-      } else if (url.pathname.endsWith("/people/person-b/listens")) {
-        body = {
-          listens: [
-            {
-              finishedAt: null,
-              set: { ...set, id: "friend-set", title: "Bob's set" },
-              startedAt: "2026-09-29T11:00:00.000Z",
-            },
-            {
-              finishedAt: "2026-09-28T12:00:00.000Z",
-              set: { ...set, id: "old-friend-set", title: "Older set" },
-              startedAt: "2026-09-28T11:00:00.000Z",
-            },
-          ],
-        };
-      } else if (url.pathname === "/api/sets") {
-        if (request.method() === "POST") {
-          saved = {
-            ...set,
-            downloadState: "none",
-            id: "set-b",
-            title: "Provider title",
-            url: request.postDataJSON().url,
-          };
-          body = {
-            ...saved,
-            autoDownloadResult: autoDownload ? "queued" : "disabled",
-          };
-        } else {
-          const allSets = saved ? [set, { ...saved, downloadState }] : [set];
-          body = {
-            sets: url.searchParams.has("playlistId")
-              ? members.map((id) => allSets.find((item) => item.id === id))
-              : allSets,
-          };
-        }
-      } else if (url.pathname.endsWith("/sets/set-b/audio/download")) {
-        downloadState = "downloading";
-        body = { ...saved, downloadState };
-      } else if (url.pathname.endsWith("/sets/set-b/audio/state")) {
-        body = {
-          bytesReceived: 500,
-          bytesTotal: 1000,
-          format: null,
-          state: downloadState,
-        };
-      } else if (url.pathname.endsWith("/playlists")) {
-        if (request.method() === "POST") {
-          playlist = {
-            createdAt: "2026-01-01T00:00:00.000Z",
-            id: "playlist-a",
-            name: request.postDataJSON().name,
-            setCount: 0,
-          };
-          body = playlist;
-        } else {
-          body = { playlists: playlist ? [playlist] : [] };
-        }
-      } else if (url.pathname.endsWith("/playlists/playlist-a")) {
-        if (request.method() === "PATCH") {
-          playlist = { ...playlist, name: request.postDataJSON().name };
-        } else if (request.method() === "DELETE") {
-          const removed = playlist;
-          playlist = null;
-          body = removed;
-        }
-        if (playlist) {
-          body = playlist;
-        }
-      } else if (url.pathname.endsWith("/playlists/playlist-a/sets")) {
-        members = request.postDataJSON().setIds;
-        playlist = { ...playlist, setCount: members.length };
-        body = { sets: members.map((id) => (id === "set-a" ? set : saved)) };
-      } else if (url.pathname.endsWith("/playlists/playlist-a/collaboration")) {
-        if (request.method() === "PUT") {
-          ({ collaborative } = request.postDataJSON());
-        }
-        body = { collaborative, editorIds };
-      } else if (url.pathname.endsWith("/playlists/playlist-a/editors")) {
-        ({ editorIds } = request.postDataJSON());
-        body = { collaborative, editorIds };
-      } else if (url.pathname.endsWith("/queue")) {
-        body = { queue: { activeSetId: null, entries: [] } };
-      } else if (url.pathname.endsWith("/queue/entries")) {
-        body = { queue: { activeSetId: null, entries: [set] } };
-      } else if (url.pathname.endsWith("/queue/playlist")) {
-        body = {
-          queue: {
-            activeSetId: members[0] ?? null,
-            entries: members.map((id) => (id === "set-a" ? set : saved)),
-          },
-        };
-      } else if (url.pathname.endsWith("/tags")) {
-        body = { tags: ["house"] };
-      } else if (url.pathname.endsWith("/audio/grant")) {
-        grantCount += 1;
-        body = { url: `/sets/set-a/audio?grant=grant-${grantCount}` };
-      } else if (url.pathname.endsWith("/queue/active")) {
-        body = { queue: { activeSetId: "set-a", entries: [set] } };
-      }
-      await route.fulfill({
-        body: JSON.stringify(body),
-        contentType: "application/json",
-        status:
-          request.method() === "POST" &&
-          (url.pathname.endsWith("/sets") ||
-            url.pathname.endsWith("/playlists") ||
-            url.pathname.endsWith("/queue/entries"))
-            ? 201
-            : 200,
-      });
-    });
-
-    await page.goto(`http://127.0.0.1:${port}`);
-    await page.getByLabel("API key").fill("bad-key");
-    await page.getByRole("button", { name: "Connect" }).click();
-    await page.getByText("Check your key and try again.").waitFor();
-    results.push("bad key explained");
-
-    await page.getByLabel("API key").fill("good-key");
-    await page.getByRole("button", { name: "Connect" }).click();
-    await page.getByRole("heading", { name: "Your library" }).waitFor();
-    await page.getByRole("heading", { name: "Long set" }).waitFor();
-    await page.getByLabel("Social").check();
-    await page.getByRole("button", { name: "Open Bob's Library" }).click();
-    await page.getByRole("heading", { name: "Bob's Library" }).waitFor();
-    await page.getByRole("heading", { name: "Bob's set" }).waitFor();
-    await page.getByRole("heading", { name: "Bob's picks" }).waitFor();
-    await page.getByRole("heading", { name: "Listen History" }).waitFor();
-    await page.getByText("Finished Older set").waitFor();
-    results.push("Social switch opens a friend's Library");
-    assert.equal(
-      await page.evaluate(() => localStorage.getItem("orbis.apiKey")),
-      "good-key"
-    );
-    await page.getByLabel("Search library").fill("long");
-    await page.getByLabel("Tag").selectOption("house");
-    await page.getByRole("button", { name: "Play Long set" }).click();
-    await page.locator("audio[src*='grant=grant-1']").waitFor();
+      assert.equal(response.status, 200);
+      const person = await response.json();
+      return person.autoDownload;
+    };
+    assert.equal(await readPreference(), true);
+    await page.reload();
+    assert.equal(await autoDownload.getAttribute("aria-checked"), "true");
+    await autoDownload.click();
     await page.waitForFunction(
-      () => document.querySelector("audio")?.paused === false
+      () =>
+        document
+          .querySelector('[role="switch"][aria-label="Auto Download"]')
+          ?.getAttribute("aria-checked") === "false"
     );
-    await mkdir(path.join(root, ".cache/web-journey"), { recursive: true });
-    await page.screenshot({
-      path: path.join(root, ".cache/web-journey/library-and-player.png"),
-    });
-    assert.ok(
-      requests.some((request) => request.path.endsWith("/audio/grant"))
+    assert.equal(await readPreference(), false);
+    step(
+      "Auto Download changes in both directions and persists across reloads"
     );
-    assert.ok(requests.every((request) => !request.query.includes("good-key")));
-    results.push("library search, tag, grant playback, no key in URL");
 
-    await page.waitForFunction(
-      () => (document.querySelector("audio")?.readyState ?? 0) >= 1
-    );
-    await page.locator("audio").evaluate((audio) => {
-      audio.currentTime = 20;
-    });
-    await page.waitForFunction(
-      () => Math.abs(document.querySelector("audio")?.currentTime - 20) < 0.5
-    );
-    await page.waitForTimeout(150);
-    assert.ok(
-      requests.some(
-        (request) =>
-          request.path.endsWith("/sets/set-a/position") &&
-          request.payload?.seconds >= 19
-      )
-    );
-    assert.ok(
-      requests.some(
-        (request) =>
-          request.path.endsWith("/sets/set-a/audio") &&
-          request.range.startsWith("bytes=")
-      )
-    );
-    results.push("seek reports playback position");
+    await save(youTubeLink);
+    await expectCount(1);
+    assert.deepEqual(await setTitles(), ["YouTube video"]);
+    step("saving a YouTube link adds a Set");
 
-    await page.getByRole("button", { name: "Play Long set" }).click();
+    await save(youTubeLink);
+    await page.getByText("This Set is already in your Library.").waitFor();
+    await expectCount(1);
+    step("saving the same link again says it is already there");
+
+    await save(soundCloudLink);
+    await expectCount(2);
+    const titles = await setTitles();
+    const soundCloudTitle = titles.find((title) => title !== "YouTube video");
+    assert.ok(soundCloudTitle);
+    step("saving a SoundCloud link adds a second Set", { soundCloudTitle });
+
+    await openAction("YouTube video", "Rename…");
+    await page.getByLabel("Title").fill("Long set");
     await page
-      .getByText("Audio could not load. Try again.")
-      .waitFor({ timeout: 3000 });
-    await page.getByRole("button", { name: "Retry audio" }).click();
-    await page.locator("audio[src*='grant=grant-3']").waitFor();
-    await page.waitForFunction(
-      () => document.querySelector("audio")?.paused === false
-    );
-    assert.equal(grantCount, 3);
-    results.push("failed audio shows retry and gets a fresh grant");
-
-    await page.getByRole("checkbox", { name: "Auto Download" }).uncheck();
-    await page.getByLabel("Search library").fill("");
-    await page.getByLabel("Tag").selectOption("");
-    await page
-      .getByLabel("Source Link")
-      .fill("https://www.youtube.com/watch?v=12345678901");
-    await page.getByRole("button", { name: "Save Set" }).click();
-    await page.getByRole("heading", { name: "Provider title" }).waitFor();
-    await page.getByRole("button", { name: "Download Provider title" }).click();
-    await page.getByText("50%", { exact: false }).waitFor();
-    downloadState = "ready";
-    await page.getByRole("button", { name: "Play Provider title" }).waitFor();
-    results.push(
-      "save uses provider title, download progress and playable state"
-    );
-
-    await page.getByLabel("Playlist name").fill("Evening");
-    await page.getByRole("button", { name: "Create Playlist" }).click();
-    await page.getByRole("checkbox", { name: "Collaborative" }).check();
-    await page.getByLabel("Add editor").selectOption("person-b");
-    await page.getByRole("button", { name: "Add editor" }).click();
-    await page.getByRole("button", { name: "Remove editor Bob" }).waitFor();
-    assert.deepEqual(editorIds, ["person-b"]);
-    results.push("creator enables Collaborative and adds a visible editor");
-    await page.getByRole("button", { name: "Play Evening" }).click();
-    await page.locator("audio").waitFor({ state: "detached" });
-    await page.getByRole("button", { name: "Add Long set to Evening" }).click();
-    await page
-      .getByRole("button", { name: "Add Provider title to Evening" })
+      .getByRole("button", { exact: true, name: "Save" })
+      .last()
       .click();
-    await page.getByRole("button", { name: "Move Provider title up" }).click();
-    assert.deepEqual(members, ["set-b", "set-a"]);
-    await page.getByLabel("Rename Evening").fill("Night");
-    await page.getByRole("button", { name: "Save playlist name" }).click();
-    await page.getByRole("button", { name: "Play Night" }).click();
-    assert.ok(
-      requests.some(
-        (item) =>
-          item.path.endsWith("/queue/playlist") &&
-          item.payload?.playlistId === "playlist-a"
-      )
-    );
-    await page.getByRole("button", { name: "Delete Night" }).click();
-    results.push("playlist create, order, rename, play, delete");
+    await page.getByRole("heading", { name: "Long set" }).waitFor();
+    step("rename changes the title");
 
-    revokeOnNextLibrary = true;
-    await page.getByRole("button", { name: "Refresh library" }).click();
-    await page.getByText("Your key was revoked. Enter a new key.").waitFor();
-    assert.equal(
-      await page.evaluate(() => localStorage.getItem("orbis.apiKey")),
-      null
-    );
-    results.push("revoked key returns to entry");
+    await openAction("Long set", "Edit Tags…");
+    await page
+      .getByLabel("Tags, separated by commas")
+      .fill("house, techno, house");
+    await page
+      .getByRole("button", { exact: true, name: "Save" })
+      .last()
+      .click();
+    const longSet = page.getByRole("listitem").filter({ hasText: "Long set" });
+    await longSet.getByText("house", { exact: true }).waitFor();
+    await longSet.getByText("techno", { exact: true }).waitFor();
+    step("Tags are saved without repeats");
+
+    await page.getByLabel("Tag", { exact: true }).selectOption("house");
+    await expectCount(1);
+    assert.deepEqual(await setTitles(), ["Long set"]);
+    assert.equal(new URL(page.url()).searchParams.get("tag"), "house");
     await page.screenshot({
-      path: path.join(root, ".cache/web-journey/revoked.png"),
+      path: path.join(artifacts, "filtered-by-tag.png"),
     });
-    await writeFile(
-      path.join(root, ".cache/web-journey/result.json"),
-      JSON.stringify({ requests, results }, null, 2)
-    );
+    await page.getByLabel("Tag", { exact: true }).selectOption("");
+    await expectCount(2);
+    step("the Tag filter narrows the list and is kept in the URL");
+
+    await page.getByLabel("Source", { exact: true }).selectOption("soundcloud");
+    await expectCount(1);
+    assert.deepEqual(await setTitles(), [soundCloudTitle]);
+    await page.getByLabel("Source", { exact: true }).selectOption("");
+    await expectCount(2);
+    step("the source filter narrows the list");
+
+    await page.getByLabel("Search library").fill("Long");
+    await expectCount(1);
+    assert.deepEqual(await setTitles(), ["Long set"]);
+    await page.getByLabel("Search library").fill("");
+    await expectCount(2);
+    step("search narrows the list");
+
+    await openAction("Long set", "Download");
+    await longSet.getByText("Audio kept").waitFor({ timeout: 20_000 });
+    await page.screenshot({ path: path.join(artifacts, "downloaded.png") });
+    step("a Download runs to Audio kept");
+
+    await openAction(soundCloudTitle, "Remove…");
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "Remove" })
+      .click();
+    await expectCount(1);
+    assert.deepEqual(await setTitles(), ["Long set"]);
+    step("remove, after confirming, takes the Set out of the Library");
+
+    await page.reload();
+    await expectCount(1);
+    await longSet.getByText("Audio kept").waitFor();
+    await longSet.getByText("house", { exact: true }).waitFor();
+    await page.screenshot({ path: path.join(artifacts, "after-reload.png") });
+    step("everything holds after a reload");
+
+    assert.deepEqual(violations, []);
+    step("no Content Security Policy violations");
   } finally {
     await browser.close();
   }
+  await writeFile(
+    path.join(artifacts, "result.json"),
+    `${JSON.stringify({ apiUrl, steps, webUrl }, null, 2)}\n`
+  );
+  console.log(
+    `library journey passed: ${steps.length} steps, artifacts in ${artifacts}`
+  );
 } finally {
-  server.kill("SIGTERM");
+  api.kill("SIGTERM");
+  web.kill("SIGTERM");
+  await rm(dataDirectory, { force: true, recursive: true });
 }

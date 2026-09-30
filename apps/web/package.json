@@ -1,24 +1,42 @@
 {
   "name": "@orbis/web",
-  "version": "0.0.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
+    "dev": "vite dev --host 127.0.0.1 --port 3000",
     "build": "vite build",
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
-    "test": "vite build && node e2e/journey.mjs && node e2e/admin-journey.mjs && bun e2e/live-queue.mjs && node e2e/shared-audio.mjs"
+    "deploy": "alchemy deploy --stage prod",
+    "destroy": "alchemy destroy --stage prod",
+    "test": "vite build && node e2e/sign-in.mjs && node e2e/journey.mjs && node e2e/admin-journey.mjs && node e2e/devices.mjs && node e2e/device-link.mjs && node e2e/live-queue.mjs && node e2e/invite.mjs && node e2e/shared-audio.mjs && node e2e/playlists.mjs"
   },
   "dependencies": {
-    "@fontsource-variable/inter": "^5.3.0",
+    "@base-ui/react": "1.8.0",
+    "@fontsource-variable/inter": "5.3.0",
     "@orbis/contracts": "workspace:*",
-    "effect": "4.0.0-rc.117",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "@phosphor-icons/react": "2.1.10",
+    "@tanstack/react-router": "1.170.39",
+    "@tanstack/react-start": "1.168.58",
+    "ai": "^7.0.116",
+    "class-variance-authority": "0.7.1",
+    "cn": "0.2.6",
+    "media-chrome": "4.19.2",
+    "qrcode.react": "4.2.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "shadcn": "4.21.0",
+    "tw-animate-css": "1.4.0"
   },
   "devDependencies": {
+    "@effect/platform-bun": "4.0.0-rc.117",
+    "@effect/platform-node": "4.0.0-rc.117",
+    "@tailwindcss/vite": "4.3.3",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
-    "vite": "^6.1.0"
+    "@vitejs/plugin-react": "6.1.1",
+    "alchemy": "2.0.0-beta.79",
+    "effect": "4.0.0-rc.117",
+    "tailwindcss": "4.3.3",
+    "vite": "8.3.1"
   }
 }

@@ -1,6 +1,6 @@
 # Orbis API on Vanta
 
-The API runs as a systemd user service that binds loopback only. Tailscale Serve bridges the tailnet address to that loopback port. No port is published and no Funnel is added.
+The API runs as a systemd user service that binds loopback only. Tailscale Serve bridges the tailnet address to that loopback port. The device listener also serves the public `/api` path through Funnel on port `10000`. The web client runs on Cloudflare.
 
 ## Why a user service and a Serve bridge
 
@@ -253,30 +253,61 @@ kill %1
 
 To recover for real, stop `orbis-server`, copy `library.sqlite` and `devices.json` from the chosen snapshot into `~/orbis-service-data` (keep the broken files aside), and start the unit. `apps/server/src/backup.test.ts` runs the same restore in an automated test.
 
-## Put the web address live on Funnel
+## Cut over to Cloudflare and an API-only Funnel
 
-This makes `https://vanta.tail01d084.ts.net:10000` public (ADR 0007). Run it on Vanta only, with root, after the owner approves. Build the web client first (`bun run --filter @orbis/web build`) and note its `dist` path.
+Friends open `https://orbis.p11a.xyz`. Alchemy deploys the web client from `apps/web` to Cloudflare Workers. The browser sends its key directly to `https://vanta.tail01d084.ts.net:10000/api`, and Retained Audio stays on Vanta. The Funnel on port `10000` serves only `/api`. See [ADR 0015](../../docs/adr/0015-web-on-cloudflare-workers.md).
 
-```sh
-sudo tailscale serve --bg --https=10000 --set-path=/api http://127.0.0.1:4311/
-sudo tailscale serve --bg --https=10000 --set-path=/ ~/orbis-service/apps/web/dist
-# `funnel` takes the same flags as `serve`. Repeat both handlers; a bare
-# `tailscale funnel --bg 10000` reads 10000 as the target and tries port 443.
-sudo tailscale funnel --bg --https=10000 --set-path=/api http://127.0.0.1:4311/
-sudo tailscale funnel --bg --https=10000 --set-path=/ ~/orbis-service/apps/web/dist
-tailscale serve status
-tailscale funnel status
-```
+Run the local browser journeys in [`apps/web/README.md`](../../apps/web/README.md#verify-the-migration) first. Keep the previous service revision and the Serve status output for recovery. This repository change does not perform a live rollout.
 
-The device listener must see `/health`, not `/api/health`. Serve strips the mount path when it proxies (verified on Vanta on 2026-09-29: a request to `/api/health` is logged as `GET /health`). The server checks the key before it routes, so the first check returns 403 on any path; only the second, which must return 200, proves the route. A 404 there means Serve kept `/api`. A 401 means the key was sent but is not enrolled.
+The API includes the new Playlist routes before the web client calls them. Deploy the API and web client in the following order, after the owner approves the Vanta update and Cloudflare deploy:
+
+1. On Vanta, record `tailscale serve status` and `tailscale funnel status`. The Caddy rule on `443` and Jellyfin Funnel on `8443` must stay unchanged throughout the cutover.
+2. Update the Vanta service with the matching revision using [Install or update](#install-or-update). Confirm the new `InvocationID` and active status. The old web Origin now gets 403. Check the Cloudflare preflight and keyed health before the web deploy.
+3. On the Mac, install dependencies with `bun install --frozen-lockfile`. Build `@orbis/contracts`, then use the existing Alchemy identity. Run from `apps/web`:
 
 ```sh
-curl -s -o /dev/null -w '%{http_code}\n' https://vanta.tail01d084.ts.net:10000/api/health
-curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $ORBIS_DEVICE_TOKEN" \
-  https://vanta.tail01d084.ts.net:10000/api/health
+	./node_modules/.bin/alchemy profile edit --profile default --add Cloudflare
+	./node_modules/.bin/alchemy deploy --stage prod --dry-run
+	bun run deploy
 ```
 
-Run both from a phone on cellular (or another network off the tailnet). `tailscale funnel status` must list only `8443` (Jellyfin) and `10000` (Orbis). The Caddy rule on `443` and the Jellyfin Funnel on `8443` stay unchanged. If the strip check fails, run `sudo tailscale serve --https=10000 off` and `sudo tailscale funnel --https=10000 off`, then fix the target.
+The profile command opens Cloudflare OAuth for first setup. For an established profile, refresh it only when needed. Keep stack `OrbisWeb`, resource `Web`, and stage `prod` unchanged. A directory rename must not create a second Worker or remove the current domain.
+
+4. Open `https://orbis.p11a.xyz` in a browser. Confirm sign-in, Library, creator and editor Playlist actions, shared playback, stream-grant audio, queue updates, and Device Link. Verify that the response carries the Content Security Policy. Keep exported screenshots and the revision with the rollout record.
+5. On Vanta, remove only the root handler on port `10000`, then ensure `/api` remains public:
+
+```sh
+	sudo tailscale serve --https=10000 --set-path=/ off
+	sudo tailscale funnel --bg --https=10000 --set-path=/api http://127.0.0.1:4311/
+	tailscale serve status
+	tailscale funnel status
+```
+
+Do not reset Serve or disable all of port `10000`. The status must show `/api` targeting `4311`, no `/` file handler on `10000`, and the unchanged Jellyfin Funnel on `8443`. The device listener must receive `/health`, not `/api/health`. Serve strips the mount path when it proxies.
+
+6. From another network off the tailnet, check the public API and both browser Origins:
+
+```sh
+	curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
+	  https://vanta.tail01d084.ts.net:10000/api/health
+	curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
+	  -H "Authorization: Bearer $ORBIS_DEVICE_TOKEN" \
+	  https://vanta.tail01d084.ts.net:10000/api/health
+	curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
+	  -X OPTIONS -H 'Origin: https://orbis.p11a.xyz' \
+	  -H 'Access-Control-Request-Method: POST' \
+	  -H 'Access-Control-Request-Headers: authorization, content-type' \
+	  https://vanta.tail01d084.ts.net:10000/api/sets
+	curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
+	  -X OPTIONS -H 'Origin: https://vanta.tail01d084.ts.net:10000' \
+	  https://vanta.tail01d084.ts.net:10000/api/sets
+```
+
+Expect `403`, `200`, `204`, and `403`, in that order. Inject the existing device token without printing it or saving response data. The keyed `200` proves path stripping. A `404` means the mount path is wrong. A `401` means the key is not enrolled. Also confirm an enrolled Apple client still reads the Library and plays audio.
+
+7. Record the revision, Cloudflare deployment result, old and new service `InvocationID`, all four HTTP statuses, and Serve and Funnel status. Point friends at `https://orbis.p11a.xyz` after these checks pass.
+
+If the Cloudflare page fails, preserve `/api` and the stored data while restoring the previous Cloudflare deployment. If the API fails after restart, restore the known-good service revision under owner control. Do not expose the local listener on `4310`, delete service data, or reset unrelated Serve rules. Restoring the retired browser client requires both its old static files and its Origin permission, so that recovery is an explicit owner decision.
 
 ### Retire the tailnet-only rule
 

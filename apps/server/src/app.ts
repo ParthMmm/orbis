@@ -110,10 +110,7 @@ class AcceptedAccess extends Context.Service<
   Exclude<AccessDecision, { readonly kind: "rejected" }>
 >()("Orbis/AcceptedAccess") {}
 
-const browserOrigins: ReadonlySet<string> = new Set([
-  "https://orbis.p11a.xyz",
-  "https://vanta.tail01d084.ts.net:10000",
-]);
+const browserOrigins: ReadonlySet<string> = new Set(["https://orbis.p11a.xyz"]);
 const allowedBrowserOrigin = (
   origin: string | null,
   mode: AccessMode,

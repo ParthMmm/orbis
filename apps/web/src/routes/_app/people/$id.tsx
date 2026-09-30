@@ -5,6 +5,7 @@ import type { ReactNode } from "react";
 import { DownloadBadge, setDetails } from "@/components/library/set-row";
 import { useDownloadProgress } from "@/components/library/use-download-progress";
 import { useLiveEvents } from "@/components/live-events";
+import { usePlayer } from "@/components/player/player";
 import { RouteProblem } from "@/components/route-problem";
 import { Button, buttonVariants } from "@/components/ui/button";
 import {
@@ -66,6 +67,7 @@ const FriendSetRow = ({
   readonly set: SavedSet;
 }) => {
   const router = useRouter();
+  const player = usePlayer();
   const [pending, setPending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const act = async (run: () => Promise<ApiResult<unknown>>) => {
@@ -107,6 +109,17 @@ const FriendSetRow = ({
         )}
       </div>
       <div className="flex shrink-0 gap-2">
+        {set.downloadState === "ready" ? (
+          <Button
+            aria-label={`Play ${set.title}`}
+            disabled={pending}
+            onClick={() => act(() => player.play(set))}
+            size="sm"
+            variant="outline"
+          >
+            Play
+          </Button>
+        ) : null}
         {downloadable ? (
           <Button
             aria-label={`Download ${set.title}`}

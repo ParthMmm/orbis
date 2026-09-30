@@ -80,3 +80,11 @@ export type AutoDownloadResult = Extract<
   Awaited<ReturnType<typeof saveSet>>,
   { ok: true }
 >["value"]["autoDownloadResult"];
+
+export const setAutoDownload = (
+  credentials: Credentials,
+  autoDownload: boolean
+) =>
+  callOrbis(credentials, (client) =>
+    client.people.updateMe({ payload: { autoDownload } })
+  );
