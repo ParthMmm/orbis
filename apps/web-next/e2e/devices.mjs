@@ -135,7 +135,7 @@ try {
 
     await page.goto(webUrl);
     await page.getByLabel("API key").fill(tokens.laptop);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
     await page.getByRole("heading", { name: "Library" }).waitFor();
     step("the Laptop key signs in");
 

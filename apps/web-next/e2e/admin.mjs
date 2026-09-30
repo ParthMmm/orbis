@@ -141,7 +141,7 @@ try {
 
     await page.goto(`${webUrl}/sign-in`);
     await page.getByLabel("API key").fill(dailyKey);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
     await page.getByRole("heading", { name: "Library" }).waitFor();
     step("the Host signs in with their daily key");
 
