@@ -426,29 +426,41 @@ export const createApp = (
             if (runningTracklists.has(id)) {
               return;
             }
-            const [set] = yield* db
-              .select({ state: setRows.tracklistState })
-              .from(setRows)
-              .where(eq(setRows.id, id));
-            if (!set || (!retry && set.state !== "pending")) {
-              return;
-            }
-            if (retry) {
-              yield* db
-                .update(setRows)
-                .set({ tracklistState: "pending" })
-                .where(eq(setRows.id, id));
-            }
             runningTracklists.add(id);
-            yield* runTracklist(id).pipe(
-              Effect.provideService(Database, db),
-              Effect.provideService(Versos, versos),
+            let handedOff = false;
+            yield* Effect.gen(function* launchTracklist() {
+              const [set] = yield* db
+                .select({ state: setRows.tracklistState })
+                .from(setRows)
+                .where(eq(setRows.id, id));
+              if (!set || (!retry && set.state !== "pending")) {
+                return;
+              }
+              if (retry) {
+                yield* db
+                  .update(setRows)
+                  .set({ tracklistState: "pending" })
+                  .where(eq(setRows.id, id));
+              }
+              yield* runTracklist(id).pipe(
+                Effect.provideService(Database, db),
+                Effect.provideService(Versos, versos),
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    runningTracklists.delete(id);
+                  })
+                ),
+                Effect.forkIn(scope)
+              );
+              handedOff = true;
+            }).pipe(
               Effect.ensuring(
                 Effect.sync(() => {
-                  runningTracklists.delete(id);
+                  if (!handedOff) {
+                    runningTracklists.delete(id);
+                  }
                 })
-              ),
-              Effect.forkIn(scope)
+              )
             );
           })
       );

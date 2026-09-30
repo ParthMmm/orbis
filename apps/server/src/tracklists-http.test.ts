@@ -345,6 +345,69 @@ test("none stores no Cues and a concurrent retry does not start another run", as
   }
 });
 
+test("two HTTP retries arriving together start only one Versos run", async () => {
+  const directory = await mkdtemp(
+    path.join(tmpdir(), "orbis-tracklists-race-")
+  );
+  const databasePath = path.join(directory, "library.sqlite");
+  const seedApp = createApp({
+    databasePath,
+    metadata: Metadata.layerOf({
+      details: () => Effect.succeed(DETAILS),
+      enrich: () => Effect.die("title supplied by caller"),
+    }),
+  });
+  const saved = await save(seedApp);
+  const id = String(saved.json().id);
+  const seedDb = new Sqlite(databasePath);
+  try {
+    await eventually(() => {
+      const row = seedDb
+        .query<{ details_state: string }, [string]>(
+          "SELECT details_state FROM sets WHERE id = ?"
+        )
+        .get(id);
+      return Promise.resolve(row?.details_state === "filled" ? true : null);
+    });
+  } finally {
+    seedDb.close();
+    await seedApp.dispose();
+  }
+  const blocked = Promise.withResolvers<null>();
+  let requests = 0;
+  const app = createApp({
+    databasePath,
+    versos: Versos.layerOf({
+      poll: () => Effect.succeed({ state: "none" }),
+      request: () => {
+        requests += 1;
+        return Effect.promise(() => blocked.promise).pipe(
+          Effect.as({ requestId: "race-job" })
+        );
+      },
+    }),
+  });
+  try {
+    const responses = await Promise.all([
+      request(app, { method: "POST", url: `/sets/${id}/tracklist/retry` }),
+      request(app, { method: "POST", url: `/sets/${id}/tracklist/retry` }),
+    ]);
+    expect(responses.map((response) => response.statusCode)).toEqual([
+      200, 200,
+    ]);
+    await eventually(() => Promise.resolve(requests > 0 ? true : null));
+    await Bun.sleep(25);
+    expect(requests).toBe(1);
+    blocked.resolve(null);
+    const none = await waitForState(app, id, "none");
+    expect(none.json()).toEqual({ cues: [], state: "none" });
+  } finally {
+    blocked.resolve(null);
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test("a Set removed during a Versos run gets no Cues, and hidden Sets deny Tracklist reads", async () => {
   const blocked = Promise.withResolvers<null>();
   const server = await start(
