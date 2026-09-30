@@ -45,6 +45,21 @@ export const listKeys = (path: string, personId?: string) => {
     .map(({ tokenHash: _hash, ...key }) => key);
 };
 
+export const listDevices = (
+  path: string,
+  personId: string,
+  currentKeyId: string
+) =>
+  listKeys(path, personId)
+    .filter((key) => key.scope === "daily")
+    .map(({ addedAt, id, label, lastUsedAt }) => ({
+      addedAt,
+      current: id === currentKeyId,
+      id,
+      label,
+      lastUsedAt,
+    }));
+
 export const addPerson = (path: string, input: string) => {
   const username = input.trim();
   if (!username || username.length > 40) {
@@ -113,12 +128,19 @@ export const addKey = (
   );
 };
 
-export const revokeKey = (path: string, id: string) =>
+// With `ownerId`, only that Person's daily keys match, and every other key
+// answers the same 404 as a missing one.
+export const revokeKey = (path: string, id: string, ownerId?: string) =>
   mutateTrustStore(
     path,
     () => read(path),
     (store) => {
-      const key = store.keys.find((candidate) => candidate.id === id);
+      const key = store.keys.find(
+        (candidate) =>
+          candidate.id === id &&
+          (ownerId === undefined ||
+            (candidate.personId === ownerId && candidate.scope === "daily"))
+      );
       if (!key) {
         throw new AdminError(404, "Key not found.");
       }
@@ -132,6 +154,16 @@ export const revokeKey = (path: string, id: string) =>
       };
     }
   );
+
+export const revokeDevice = (
+  path: string,
+  personId: string,
+  currentKeyId: string,
+  id: string
+) => {
+  const { addedAt, label, lastUsedAt } = revokeKey(path, id, personId);
+  return { addedAt, current: id === currentKeyId, id, label, lastUsedAt };
+};
 
 export const removePerson = (path: string, id: string) => {
   if (id === HOST_PERSON_ID) {

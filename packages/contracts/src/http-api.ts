@@ -232,6 +232,14 @@ const AdminKey = Schema.Struct({
   scope: Schema.Literals(["daily", "admin"]),
 });
 
+export const DeviceSchema = Schema.Struct({
+  addedAt: Schema.String,
+  current: Schema.Boolean,
+  id: Schema.String,
+  label: Schema.String,
+  lastUsedAt: Schema.NullOr(Schema.String),
+});
+
 export const SetsApi = HttpApi.make("orbis").add(
   HttpApiGroup.make("sets")
     .add(
@@ -501,6 +509,21 @@ export const OrbisApi = PlaylistApi.add(
           error: [NotFound, InternalError],
           params: SetId,
           success: AdminKey,
+        })
+      )
+      .middleware(SetAccess)
+  )
+  .add(
+    HttpApiGroup.make("devices")
+      .add(
+        HttpApiEndpoint.get("list", "/me/devices", {
+          error: InternalError,
+          success: Schema.Struct({ devices: Schema.Array(DeviceSchema) }),
+        }),
+        HttpApiEndpoint.delete("revoke", "/me/devices/:id", {
+          error: [NotFound, InternalError],
+          params: SetId,
+          success: DeviceSchema,
         })
       )
       .middleware(SetAccess)
