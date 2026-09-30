@@ -96,7 +96,11 @@ import {
 } from "./stream-grant.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
-import { readTracklist, runTracklist } from "./tracklists.js";
+import {
+  claimTracklist,
+  readTracklist,
+  runClaimedTracklist,
+} from "./tracklists.js";
 import { Versos } from "./versos.js";
 import { listFilterablePeople, resolveVisiblePerson } from "./visibility.js";
 
@@ -429,20 +433,13 @@ export const createApp = (
             runningTracklists.add(id);
             let handedOff = false;
             yield* Effect.gen(function* launchTracklist() {
-              const [set] = yield* db
-                .select({ state: setRows.tracklistState })
-                .from(setRows)
-                .where(eq(setRows.id, id));
-              if (!set || (!retry && set.state !== "pending")) {
+              const claim = yield* claimTracklist(id, retry).pipe(
+                Effect.provideService(Database, db)
+              );
+              if (!claim) {
                 return;
               }
-              if (retry) {
-                yield* db
-                  .update(setRows)
-                  .set({ tracklistState: "pending" })
-                  .where(eq(setRows.id, id));
-              }
-              yield* runTracklist(id).pipe(
+              yield* runClaimedTracklist(claim).pipe(
                 Effect.provideService(Database, db),
                 Effect.provideService(Versos, versos),
                 Effect.ensuring(

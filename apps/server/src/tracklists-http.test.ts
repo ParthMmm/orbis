@@ -408,6 +408,106 @@ test("two HTTP retries arriving together start only one Versos run", async () =>
   }
 });
 
+test("backfill skips a live HTTP run and an expired run cannot replace newer Cues", async () => {
+  const directory = await mkdtemp(
+    path.join(tmpdir(), "orbis-tracklists-lease-")
+  );
+  const databasePath = path.join(directory, "library.sqlite");
+  const seedApp = createApp({
+    databasePath,
+    metadata: Metadata.layerOf({
+      details: () => Effect.succeed(DETAILS),
+      enrich: () => Effect.die("title supplied by caller"),
+    }),
+  });
+  const saved = await save(seedApp);
+  const id = String(saved.json().id);
+  const seedDb = new Sqlite(databasePath);
+  try {
+    await eventually(() => {
+      const row = seedDb
+        .query<{ details_state: string }, [string]>(
+          "SELECT details_state FROM sets WHERE id = ?"
+        )
+        .get(id);
+      return Promise.resolve(row?.details_state === "filled" ? true : null);
+    });
+  } finally {
+    seedDb.close();
+    await seedApp.dispose();
+  }
+
+  const blocked = Promise.withResolvers<null>();
+  let liveRequests = 0;
+  const app = createApp({
+    databasePath,
+    versos: Versos.layerOf({
+      poll: () => Effect.die("the first request fails before polling"),
+      request: () => {
+        liveRequests += 1;
+        return Effect.promise(() => blocked.promise).pipe(
+          Effect.flatMap(() =>
+            Effect.fail(new VersosError({ reason: "unavailable" }))
+          )
+        );
+      },
+    }),
+  });
+  const newerCues = CUES.map((cue) => ({ ...cue, artist: "Newer Artist" }));
+  let backfillRequests = 0;
+  const layers = Layer.mergeAll(
+    databaseLayer({
+      databasePath,
+      migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
+    }),
+    Versos.layerOf({
+      poll: () => Effect.succeed({ cues: newerCues, state: "ready" }),
+      request: () => {
+        backfillRequests += 1;
+        return Effect.succeed({ requestId: "newer-run" });
+      },
+    })
+  );
+  try {
+    const retry = await request(app, {
+      method: "POST",
+      url: `/sets/${id}/tracklist/retry`,
+    });
+    expect(retry.statusCode).toBe(200);
+    await eventually(() => Promise.resolve(liveRequests === 1 ? true : null));
+
+    const whileLive = await Effect.runPromise(
+      backfillTracklists({ delayMillis: 0 }).pipe(Effect.provide(layers))
+    );
+    expect(whileLive).toEqual({ attempted: 1, completed: 0 });
+    expect(backfillRequests).toBe(0);
+
+    const db = new Sqlite(databasePath);
+    try {
+      db.query("UPDATE sets SET tracklist_run_started_at = ? WHERE id = ?").run(
+        "2000-01-01T00:00:00.000Z",
+        id
+      );
+    } finally {
+      db.close();
+    }
+    const afterExpiry = await Effect.runPromise(
+      backfillTracklists({ delayMillis: 0 }).pipe(Effect.provide(layers))
+    );
+    expect(afterExpiry).toEqual({ attempted: 1, completed: 1 });
+    expect(backfillRequests).toBe(1);
+
+    blocked.resolve(null);
+    await Bun.sleep(100);
+    const tracklist = await read(app, id);
+    expect(tracklist.json()).toEqual({ cues: newerCues, state: "ready" });
+  } finally {
+    blocked.resolve(null);
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
 test("a Set removed during a Versos run gets no Cues, and hidden Sets deny Tracklist reads", async () => {
   const blocked = Promise.withResolvers<null>();
   const server = await start(

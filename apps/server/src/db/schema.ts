@@ -63,6 +63,8 @@ export const sets = sqliteTable("sets", {
   })
     .notNull()
     .default(true),
+  tracklistRunId: text("tracklist_run_id"),
+  tracklistRunStartedAt: text("tracklist_run_started_at"),
   tracklistState: text("tracklist_state", {
     enum: ["pending", "ready", "none", "failed"],
   })

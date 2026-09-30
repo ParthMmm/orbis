@@ -119,6 +119,8 @@ export class MediaStore extends Context.Service<
               downloadState: "none",
               retainedAudioBytes: null,
               retainedAudioFormat: null,
+              tracklistRunId: null,
+              tracklistRunStartedAt: null,
               tracklistState: "pending",
             })
             .where(eq(sets.id, id));
