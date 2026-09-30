@@ -136,6 +136,19 @@ const sampleFor = (operationId: string) => {
   ) {
     return { collaborative: true, editorIds: ["b"] };
   }
+  // The Swift client reads its own Playlists only, so these samples live here.
+  const creator = { id: "a", username: "alice" };
+  if (operationId === "playlists.shared") {
+    return { playlists: [{ ...samples.playlist, creator }] };
+  }
+  if (operationId === "playlists.read") {
+    return {
+      ...samples.playlist,
+      creator,
+      role: "editor",
+      sets: [samples.savedSet],
+    };
+  }
   if (operationId === "people.friendPlaylists") {
     return { playlists: [{ ...samples.playlist, sets: [samples.savedSet] }] };
   }
@@ -223,7 +236,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(39);
+    expect(checked).toBe(41);
   } finally {
     await app.dispose();
   }
