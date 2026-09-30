@@ -8,6 +8,14 @@ Orbis is a personal library for collecting and organizing music and DJ sets from
 A music recording or DJ performance identified by its Source Link. One Set exists per Source Link, shared by every Library that saves it.
 _Avoid_: Item, bookmark, track
 
+**Tracklist**:
+The ordered Cues identified for one Set, shared by everyone who can see that Set.
+_Avoid_: Playlist, chapters
+
+**Cue**:
+One named recording in a Set's Tracklist. It may name a start time in the Set's Retained Audio.
+_Avoid_: Track, chapter
+
 **Library Entry**:
 One Person's saving of one Set, holding that Person's title override and Tags.
 _Avoid_: Save, bookmark
