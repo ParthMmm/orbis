@@ -112,7 +112,12 @@ const SetPage = ({
   let tracklistContent = null;
   if (tracklist?.ok === false) {
     tracklistContent = (
-      <p role="alert">{FAILURE_MESSAGES[tracklist.failure]}</p>
+      <div className="flex items-center gap-3">
+        <p role="alert">{FAILURE_MESSAGES[tracklist.failure]}</p>
+        <Button onClick={() => router.invalidate()} size="sm" variant="outline">
+          Try again
+        </Button>
+      </div>
     );
   } else if (tracklist?.ok === true) {
     tracklistContent = (

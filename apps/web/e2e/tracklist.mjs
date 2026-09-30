@@ -159,6 +159,26 @@ try {
     });
     steps.push("Set page shows three Cues; the untimed Cue is not a button");
 
+    const firstPlayHeld = Promise.withResolvers();
+    const firstPlayObserved = Promise.withResolvers();
+    const firstPlayDelivered = Promise.withResolvers();
+    let playResponses = 0;
+    await page.route("**/queue/active", async (route) => {
+      const response = await route.fetch();
+      playResponses += 1;
+      if (playResponses === 1) {
+        firstPlayObserved.resolve();
+        await firstPlayHeld.promise;
+      }
+      await route.fulfill({ response });
+      if (playResponses === 2) {
+        firstPlayDelivered.resolve();
+      }
+    });
+    await list
+      .getByRole("button", { name: "Opening, First Artist, starts at 0:00" })
+      .click();
+    await firstPlayObserved.promise;
     await list
       .getByRole("button", { name: "Middle, Second Artist, starts at 0:12" })
       .click();
@@ -177,11 +197,16 @@ try {
           button.textContent?.includes("Middle")
       )
     );
+    firstPlayHeld.resolve();
+    await firstPlayDelivered.promise;
+    await page.waitForTimeout(200);
+    assert.ok(await audio.evaluate((element) => element.currentTime >= 12));
+    await page.unroute("**/queue/active");
     await page.screenshot({
       fullPage: true,
       path: path.join(artifacts, "cue-playing.png"),
     });
-    steps.push("tapping a Cue seeks audio to 12 seconds and highlights it");
+    steps.push("the latest rapid Cue tap wins and seeks audio to 12 seconds");
 
     const opening = list.getByRole("button", {
       name: "Opening, First Artist, starts at 0:00",
@@ -208,6 +233,18 @@ try {
       true
     );
     steps.push("Tracklist fits phone width");
+
+    await page.route(
+      `**/sets/${saved.id}/tracklist`,
+      (route) => route.fulfill({ body: "unavailable", status: 503 }),
+      { times: 1 }
+    );
+    await page.reload();
+    await page.getByRole("button", { name: "Try again" }).click();
+    await list.getByRole("listitem").first().waitFor();
+    steps.push(
+      "a failed Tracklist load can be retried without requesting a new analysis"
+    );
 
     execFileSync("bun", [
       "-e",
