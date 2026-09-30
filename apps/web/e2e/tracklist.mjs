@@ -166,12 +166,13 @@ try {
     await page.route("**/queue/active", async (route) => {
       const response = await route.fetch();
       playResponses += 1;
-      if (playResponses === 1) {
+      const responseNumber = playResponses;
+      if (responseNumber === 1) {
         firstPlayObserved.resolve();
         await firstPlayHeld.promise;
       }
       await route.fulfill({ response });
-      if (playResponses === 2) {
+      if (responseNumber === 1) {
         firstPlayDelivered.resolve();
       }
     });
@@ -201,6 +202,12 @@ try {
     await firstPlayDelivered.promise;
     await page.waitForTimeout(200);
     assert.ok(await audio.evaluate((element) => element.currentTime >= 12));
+    assert.equal(
+      await list
+        .getByRole("button", { name: "Middle, Second Artist, starts at 0:12" })
+        .getAttribute("aria-current"),
+      "true"
+    );
     await page.unroute("**/queue/active");
     await page.screenshot({
       fullPage: true,
