@@ -17,6 +17,10 @@
       "dependsOn": ["^build"],
       "outputs": []
     },
+    "@orbis/web#test": {
+      "dependsOn": ["^build"],
+      "cache": false
+    },
     "diagnostics": {
       "dependsOn": ["^build"],
       "outputs": []

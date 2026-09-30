@@ -1,12 +1,10 @@
+import tailwindcss from "@tailwindcss/vite";
+import { tanstackStart } from "@tanstack/react-start/plugin/vite";
+import viteReact from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
+// Alchemy adds the Cloudflare plugin when it builds for deploy.
 export default defineConfig({
-  server: {
-    proxy: {
-      "/api": {
-        rewrite: (path) => path.replace(/^\/api/u, ""),
-        target: "http://127.0.0.1:4311",
-      },
-    },
-  },
+  plugins: [tailwindcss(), tanstackStart(), viteReact()],
+  resolve: { tsconfigPaths: true },
 });

@@ -201,14 +201,6 @@ const VisiblePerson = Schema.Struct({
   id: Schema.String,
   username: Schema.String,
 });
-/**
- * A Person the caller would see if their own See filter allowed it, with the
- * caller's See and Appear filters for them (ADR 0009).
- */
-export const PersonFiltersSchema = Schema.Struct({
-  ...VisiblePerson.fields,
-  ...SocialFilters.fields,
-});
 /** A Collaborative Playlist the caller may edit, with the Person who created it. */
 export const SharedPlaylistSchema = Schema.Struct({
   ...PlaylistSchema.fields,
@@ -222,6 +214,14 @@ export const PlaylistDetailSchema = Schema.Struct({
   ...SharedPlaylistSchema.fields,
   role: Schema.Literals(["creator", "editor"]),
   sets: Schema.Array(SavedSetSchema),
+});
+/**
+ * A Person the caller would see if their own See filter allowed it, with the
+ * caller's See and Appear filters for them (ADR 0009).
+ */
+export const PersonFiltersSchema = Schema.Struct({
+  ...VisiblePerson.fields,
+  ...SocialFilters.fields,
 });
 
 export const SaveSetResultSchema = Schema.Struct({

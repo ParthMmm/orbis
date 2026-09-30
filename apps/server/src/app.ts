@@ -110,10 +110,7 @@ class AcceptedAccess extends Context.Service<
   Exclude<AccessDecision, { readonly kind: "rejected" }>
 >()("Orbis/AcceptedAccess") {}
 
-const browserOrigins: ReadonlySet<string> = new Set([
-  "https://orbis.p11a.xyz",
-  "https://vanta.tail01d084.ts.net:10000",
-]);
+const browserOrigins: ReadonlySet<string> = new Set(["https://orbis.p11a.xyz"]);
 const allowedBrowserOrigin = (
   origin: string | null,
   mode: AccessMode,
@@ -827,7 +824,6 @@ export const createApp = (
                     )
                     .orderBy(asc(sql`${playlists.name} COLLATE NOCASE`));
                   const shared = [];
-                  // An editor's rights lapse while the ADR 0009 gate is closed.
                   for (const { creatorId, ...playlist } of rows) {
                     const open = yield* Effect.option(
                       mutuallyVisibleFriend(creatorId)
@@ -863,7 +859,6 @@ export const createApp = (
                   if (!playlist) {
                     return yield* Effect.fail(missingPlaylist());
                   }
-                  // Members read as the creator sees them, as a friend's Playlist does.
                   const members = yield* Effect.provide(
                     Effect.gen(function* listPlaylistMembers() {
                       const ownerLibrary = yield* Library;
@@ -1097,9 +1092,17 @@ export const createApp = (
               Effect.gen(function* replaceQueueFromPlaylist() {
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(QueuePlaylistPayload);
+                const caller = yield* SetCaller;
+                const creatorId = yield* editablePlaylistOwner(
+                  input.playlistId,
+                  caller.person.id
+                );
                 const queue = yield* Queue;
                 return {
-                  queue: yield* queue.replaceWithPlaylist(input.playlistId),
+                  queue: yield* queue.replaceWithPlaylist(
+                    input.playlistId,
+                    creatorId
+                  ),
                 };
               })
             )
