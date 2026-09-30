@@ -94,6 +94,7 @@ test("fills title, creator, artwork, and duration from the provider when the sav
       tags: ["mix"],
       title: "Analytical Engine live",
       titleEditedByUser: false,
+      tracklistState: "pending",
       url: "https://www.youtube.com/watch?v=abcdefghijk",
     });
   } finally {

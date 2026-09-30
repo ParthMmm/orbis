@@ -35,6 +35,7 @@
         "tags": ["house"],
         "title": "Contract sample",
         "titleEditedByUser": true,
+        "tracklistState": "pending",
         "url": "https://www.youtube.com/watch?v=abcdefghijk"
       }
     ]
@@ -91,6 +92,7 @@
     "tags": [],
     "title": "Contract sample",
     "titleEditedByUser": true,
+    "tracklistState": "pending",
     "url": "https://www.youtube.com/watch?v=abcdefghijk",
     "autoDownloadResult": "unavailable"
   },
@@ -116,6 +118,7 @@
     "tags": ["house"],
     "title": "Contract sample",
     "titleEditedByUser": true,
+    "tracklistState": "pending",
     "url": "https://www.youtube.com/watch?v=abcdefghijk"
   },
   "tags": {
