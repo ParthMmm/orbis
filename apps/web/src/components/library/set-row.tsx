@@ -1,5 +1,5 @@
 import { DotsThreeIcon } from "@phosphor-icons/react";
-import { useRouter } from "@tanstack/react-router";
+import { Link, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
@@ -215,7 +215,15 @@ export const SetRow = ({
         />
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
-        <h2 className="truncate font-medium">{set.title}</h2>
+        <h2 className="truncate font-medium">
+          <Link
+            className="hover:underline"
+            params={{ id: set.id }}
+            to="/sets/$id"
+          >
+            {set.title}
+          </Link>
+        </h2>
         <p className="text-muted-foreground text-sm">{setDetails(set)}</p>
         <div className="flex flex-wrap gap-1">
           <DownloadBadge progress={progress} set={set} />
