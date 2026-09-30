@@ -51,7 +51,9 @@ final class DeviceLinkUITests: XCTestCase {
     // cursor at the end and delete more than the field can hold, the limit being 100.
     labelField.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
     labelField.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 110) + label)
-    XCTAssertEqual(labelField.value as? String, label)
+    XCTAssertTrue(
+      waitUntil(timeout: 15) { labelField.value as? String == label },
+      "the edited device name must appear before starting the link")
     app.buttons["device-link-start"].tap()
 
     let codeText = app.staticTexts["device-link-code"]
