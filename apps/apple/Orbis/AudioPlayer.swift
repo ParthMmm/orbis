@@ -29,6 +29,10 @@ final class AudioPlayer {
   private(set) var currentTitle = ""
   /// Who made the Set, for the artist line the system draws under the title.
   private(set) var currentArtist: String?
+  private var cues: [Cue] = []
+  var currentCue: Cue? {
+    cues.last { cue in cue.startSeconds.map { $0 <= elapsed } ?? false }
+  }
   /// The Set's artwork, once it has arrived, for the lock screen, the Dynamic Island, and
   /// Control Center. Fetched after playback starts so a slow image never delays the sound.
   private var currentArtwork: MPMediaItemArtwork?
@@ -116,20 +120,24 @@ final class AudioPlayer {
   static func nowPlayingInfo(
     title: String,
     artist: String? = nil,
+    cue: Cue? = nil,
     artwork: MPMediaItemArtwork? = nil,
     duration: TimeInterval?,
     elapsed: TimeInterval,
     isPlaying: Bool
   ) -> [String: Any] {
     var info: [String: Any] = [
-      MPMediaItemPropertyTitle: title,
+      MPMediaItemPropertyTitle: cue?.title ?? title,
       MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
       MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
       // A Set is one long recording, which the system otherwise treats as a song and
       // offers to skip past.
       MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
     ]
-    if let artist, !artist.isEmpty {
+    if let cue {
+      info[MPMediaItemPropertyArtist] = cue.artist
+      info[MPMediaItemPropertyAlbumTitle] = title
+    } else if let artist, !artist.isEmpty {
       info[MPMediaItemPropertyArtist] = artist
     }
     if let artwork {
@@ -230,6 +238,7 @@ final class AudioPlayer {
     currentSetId = set.id
     currentTitle = set.title
     currentArtist = set.creator
+    cues = []
     currentArtwork = nil
     elapsed = startAt
     isSeeking = false
@@ -280,7 +289,11 @@ final class AudioPlayer {
       MainActor.assumeIsolated {
         guard let self, self.playbackGeneration == generation else { return }
         guard !self.isSeeking, self.pendingSeek == nil else { return }
+        let previousCue = self.currentCue?.position
         self.elapsed = seconds
+        if self.currentCue?.position != previousCue {
+          self.publishNowPlaying(isPlaying: self.state == .playing)
+        }
       }
     }
     observeCompletion(of: item, generation: generation)
@@ -334,10 +347,23 @@ final class AudioPlayer {
   }
 
   func seek(to seconds: TimeInterval) {
-    guard let duration, duration.isFinite else { return }
+    guard let duration, duration.isFinite else {
+      guard player != nil, state == .loading else { return }
+      let target = max(seconds, 0)
+      pendingSeek = target
+      elapsed = target
+      publishNowPlaying(isPlaying: false)
+      return
+    }
     let clamped = min(max(seconds, 0), duration)
     move(to: clamped)
     elapsed = clamped
+    publishNowPlaying(isPlaying: state == .playing)
+  }
+
+  func setCues(_ cues: [Cue]) {
+    guard self.cues != cues else { return }
+    self.cues = cues
     publishNowPlaying(isPlaying: state == .playing)
   }
 
@@ -347,6 +373,7 @@ final class AudioPlayer {
     artworkFetch?.cancel()
     artworkFetch = nil
     currentArtwork = nil
+    cues = []
     player?.pause()
     dropPlayerObservers()
     player = nil
@@ -461,6 +488,7 @@ final class AudioPlayer {
     MPNowPlayingInfoCenter.default().nowPlayingInfo = Self.nowPlayingInfo(
       title: currentTitle,
       artist: currentArtist,
+      cue: currentCue,
       artwork: currentArtwork,
       duration: duration,
       elapsed: elapsed,

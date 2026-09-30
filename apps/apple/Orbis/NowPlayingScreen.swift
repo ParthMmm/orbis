@@ -64,10 +64,18 @@ struct NowPlayingScreen: View {
             .font(.title3.weight(.semibold))
             .lineLimit(2)
             .accessibilityIdentifier("now-playing-title")
-          Text(set.creator ?? set.source.label)
-            .font(.title3)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+          if let cue = model.audioPlayer.currentCue {
+            Text("\(cue.title) · \(cue.artist)")
+              .font(.title3)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .accessibilityIdentifier("now-playing-cue")
+          } else {
+            Text(set.creator ?? set.source.label)
+              .font(.title3)
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)

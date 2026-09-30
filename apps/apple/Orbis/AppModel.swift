@@ -50,6 +50,7 @@ final class AppModel {
   var queue: Loadable<ListeningQueue> = .idle
   /// What the last queue action did, said where the action was taken.
   var queueNotice: String?
+  private(set) var tracklists: [String: Tracklist] = [:]
   /// The playlist the Library is showing. Nil is everything the library holds.
   var selectedPlaylistId: String?
   var searchQuery = ""
@@ -118,6 +119,7 @@ final class AppModel {
   private var playlistGeneration = 0
   private var queueGeneration = 0
   private var connectionGeneration = 0
+  private var tracklistGeneration = 0
 
   /// What the person has pasted but not filed yet, and what the last filing said.
   var linkToFile = ""
@@ -339,6 +341,8 @@ final class AppModel {
     // about a Set it has never heard of.
     stopDownloadWatches()
     audioStates.removeAll()
+    tracklistGeneration += 1
+    tracklists.removeAll()
     await loadLibrary()
     // The sidebar reads playlists separately from the library, so pairing fills both.
     await loadPlaylists()
@@ -467,6 +471,8 @@ final class AppModel {
     stopDownloadWatches()
     stopReportingPosition()
     audioStates.removeAll()
+    tracklistGeneration += 1
+    tracklists.removeAll()
     cancelDeviceLink()
     settings.serviceAddress = nil
     settings.store(deviceToken: nil)
@@ -748,7 +754,7 @@ final class AppModel {
   /// Plays a Set from where it left off, and makes it the active entry so both devices agree on
   /// what is playing. Every play goes through the queue for that reason: a Listen is an activation
   /// on Vanta, not a local press.
-  func playSet(_ id: String) async {
+  func playSet(_ id: String, startAt: TimeInterval? = nil) async {
     guard let client else { return }
     queueNotice = nil
     do {
@@ -757,7 +763,8 @@ final class AppModel {
       guard let playing = loaded.entries.first(where: { $0.id == id }) else { return }
       audioPlayer.play(
         set: playing, baseURL: client.address, token: client.token,
-        startAt: playing.resumePosition)
+        startAt: startAt ?? playing.resumePosition)
+      attachTracklist(to: playing)
       startReportingPosition(id)
     } catch OrbisError.cancelled {
       return
@@ -765,6 +772,66 @@ final class AppModel {
       setFailure = error.failure(at: client.address)
     } catch {
       setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
+  func playCue(_ cue: Cue, in id: String) async {
+    guard let seconds = cue.startSeconds else { return }
+    if audioPlayer.currentSetId == id {
+      audioPlayer.seek(to: seconds)
+    } else {
+      await playSet(id, startAt: seconds)
+    }
+  }
+
+  private func attachTracklist(to set: SavedSet) {
+    audioPlayer.setCues(tracklists[set.id]?.cues ?? [])
+    if set.tracklistState != .none,
+      tracklists[set.id] == nil || tracklists[set.id]?.state == .pending
+    {
+      Task { await loadTracklist(set.id) }
+    }
+  }
+
+  func loadTracklist(_ id: String) async {
+    guard let client else { return }
+    let generation = tracklistGeneration
+    do {
+      for _ in 0..<60 {
+        guard generation == tracklistGeneration, !Task.isCancelled else { return }
+        let tracklist = try await client.tracklist(id)
+        guard generation == tracklistGeneration, !Task.isCancelled else { return }
+        tracklists[id] = tracklist
+        if audioPlayer.currentSetId == id { audioPlayer.setCues(tracklist.cues) }
+        guard tracklist.state == .pending else { return }
+        try await Task.sleep(for: .seconds(1))
+      }
+    } catch is CancellationError {
+      return
+    } catch OrbisError.cancelled {
+      return
+    } catch {
+      if generation == tracklistGeneration, tracklists[id]?.state != .ready {
+        tracklists[id] = Tracklist(state: .failed, cues: [])
+      }
+    }
+  }
+
+  func retryTracklist(_ id: String) async {
+    guard let client else { return }
+    let generation = tracklistGeneration
+    do {
+      let tracklist = try await client.retryTracklist(id)
+      guard generation == tracklistGeneration, !Task.isCancelled else { return }
+      tracklists[id] = tracklist
+      if audioPlayer.currentSetId == id { audioPlayer.setCues(tracklist.cues) }
+      if tracklist.state == .pending { await loadTracklist(id) }
+    } catch OrbisError.cancelled {
+      return
+    } catch {
+      if generation == tracklistGeneration {
+        tracklists[id] = Tracklist(state: .failed, cues: [])
+      }
     }
   }
 
@@ -824,6 +891,7 @@ final class AppModel {
     audioPlayer.play(
       set: active, baseURL: client.address, token: client.token,
       startAt: active.resumePosition)
+    attachTracklist(to: active)
     startReportingPosition(active.id)
   }
 
