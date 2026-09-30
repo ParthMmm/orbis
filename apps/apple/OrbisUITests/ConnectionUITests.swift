@@ -20,6 +20,30 @@ final class ConnectionUITests: XCTestCase {
     add(attachment)
   }
 
+  func testDeviceLinkSignsInAndKeepsItsKeyAfterRelaunch() throws {
+    let service = try LaneService()
+    let app = XCUIApplication()
+    app.launchArguments = ["-orbisResetSettings", "-orbisServiceAddress", service.address]
+    app.launch()
+    let start = app.buttons["device-link-start"]
+    XCTAssertTrue(start.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.textFields["connection-address"].exists)
+    start.tap()
+    let code = app.staticTexts["device-link-code"]
+    XCTAssertTrue(code.waitForExistence(timeout: 10))
+    XCTAssertTrue(app.images["device-link-qr"].exists)
+    capture("device-link-awaiting-approval")
+    try service.approveDeviceLink(code.label)
+    XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 20))
+    capture("device-link-signed-in")
+    app.terminate()
+    app.launchArguments = []
+    app.launch()
+    XCTAssertTrue(app.tabBars.buttons["Library"].waitForExistence(timeout: 15))
+    XCTAssertFalse(app.buttons["device-link-start"].exists)
+    capture("device-link-keychain-reopened")
+  }
+
   func testAutoDownloadFollowsThePersonAfterRelaunch() throws {
     let environment = ProcessInfo.processInfo.environment
     guard let token = environment["ORBIS_UI_TEST_SETTINGS_TOKEN"], !token.isEmpty,

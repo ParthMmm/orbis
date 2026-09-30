@@ -178,6 +178,7 @@ final class LibraryUITests: XCTestCase {
 
   func testConnectsBrowsesAndSearchesTheLibrary() throws {
     let app = try launch()
+    app.buttons["connection-key-entry"].tap()
 
     XCTAssertTrue(
       app.textFields["connection-address"].waitForExistence(timeout: 30),
@@ -212,6 +213,8 @@ final class LibraryUITests: XCTestCase {
     XCTAssertTrue(address.waitForExistence(timeout: 30), "the connection screen must appear\n\(app.debugDescription)")
 
     address.tap()
+    address.press(forDuration: 1)
+    app.menuItems["Select All"].tap()
     address.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_ADDRESS"] ?? "")
 
     let token = app.secureTextFields["connection-token"]
@@ -685,10 +688,13 @@ final class LibraryUITests: XCTestCase {
 
   func testUnreachableAddressNamesTheRecoveryAction() throws {
     let app = try launch()
+    app.buttons["connection-key-entry"].tap()
 
     let address = app.textFields["connection-address"]
     XCTAssertTrue(address.waitForExistence(timeout: 30))
     address.tap()
+    address.press(forDuration: 1)
+    app.menuItems["Select All"].tap()
     address.typeText("http://127.0.0.1:1")
 
     let token = app.secureTextFields["connection-token"]

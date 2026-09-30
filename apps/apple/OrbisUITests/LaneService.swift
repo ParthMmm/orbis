@@ -18,6 +18,11 @@ struct LaneService {
     self.token = token
   }
 
+  func approveDeviceLink(_ userCode: String) throws {
+    struct Approved: Decodable { let label: String }
+    let _: Approved = try send("POST", "device-links/approve", ["userCode": userCode])
+  }
+
   struct Preferences: Decodable { let autoDownload: Bool }
 
   func autoDownload(becomes expected: Bool) throws -> Bool {

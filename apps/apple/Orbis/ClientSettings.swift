@@ -95,6 +95,7 @@ final class MemoryClientSettings: ClientSettingsStore {
 /// The store the running app should use. The Debug path keeps tests off the device's real
 /// pairing; a release build always uses the device's own storage.
 enum ClientSettings {
+  static let productionAddress = "https://vanta.tail01d084.ts.net:10000/api"
   /// A development convenience. A build on this machine reads the service address and a device
   /// token from `~/.orbis/config.json`, so neither is retyped after a settings reset or a
   /// fresh install. The file sits outside the repository, so no credential is committed, and

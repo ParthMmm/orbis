@@ -23,9 +23,9 @@ enum OrbisError: Error, Equatable {
   var message: String {
     switch self {
     case .unreachable:
-      "Cannot reach your library. Check that Tailscale is connected and the Orbis service is running on the host."
+      "Cannot reach your library. Check your internet connection and try again."
     case .notPaired:
-      "This device is not paired with your library. Pair it on the host and enter the new token."
+      "This device is not signed in to your library. Sign in again or paste a new key."
     case .refused:
       "The service refused the request. Check the address points at your Orbis service."
     case .duplicate:
@@ -178,6 +178,48 @@ struct OrbisClient: Sendable {
     let body = try Self.encoder.encode(AutoDownloadUpdate(autoDownload: enabled))
     let response = try await send(path: "me", method: "PATCH", body: body)
     return try Self.decode(PersonPreferences.self, from: response)
+  }
+
+  struct DeviceLink: Decodable, Equatable {
+    let expiresAt: String
+    let pollSecret: String
+    let userCode: String
+
+    var approvalURL: URL {
+      var components = URLComponents(string: "https://orbis.p11a.xyz/link")!
+      components.fragment = userCode
+      return components.url!
+    }
+  }
+
+  enum DeviceLinkPoll: Decodable {
+    case pending
+    case expired
+    case approved(String)
+
+    private enum CodingKeys: String, CodingKey { case status, key }
+
+    init(from decoder: Decoder) throws {
+      let values = try decoder.container(keyedBy: CodingKeys.self)
+      switch try values.decode(String.self, forKey: .status) {
+      case "pending": self = .pending
+      case "expired": self = .expired
+      case "approved": self = .approved(try values.decode(String.self, forKey: .key))
+      default: throw OrbisError.malformed
+      }
+    }
+  }
+
+  func startDeviceLink(label: String) async throws -> DeviceLink {
+    let response = try await send(
+      path: "device-links", method: "POST", body: Self.encoder.encode(["label": label]))
+    return try Self.decode(DeviceLink.self, from: response)
+  }
+
+  func pollDeviceLink(secret: String) async throws -> DeviceLinkPoll {
+    let response = try await send(
+      path: "device-links/poll", method: "POST", body: Self.encoder.encode(["pollSecret": secret]))
+    return try Self.decode(DeviceLinkPoll.self, from: response)
   }
 
   func health() async throws -> String {
@@ -392,7 +434,9 @@ struct OrbisClient: Sendable {
     }
     var request = URLRequest(url: url)
     request.httpMethod = method
-    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    if !token.isEmpty {
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     request.timeoutInterval = 15
     if let body {

@@ -192,7 +192,14 @@ final class AppModel {
     {
       activeTag = arguments[flag + 1]
     }
-    connectionAddress = settings.serviceAddress ?? ""
+    connectionAddress = settings.serviceAddress ?? ClientSettings.productionAddress
+    #if DEBUG
+      if settings.configuredClient() == nil, let flag = arguments.firstIndex(of: "-orbisServiceAddress"),
+        arguments.indices.contains(flag + 1)
+      {
+        connectionAddress = arguments[flag + 1]
+      }
+    #endif
     client = settings.configuredClient()
     hasStoredToken = settings.deviceToken?.isEmpty == false
     refreshDerivedState()
@@ -365,7 +372,7 @@ final class AppModel {
     settings.store(deviceToken: nil)
     client = nil
     connectionToken = ""
-    connectionAddress = ""
+    connectionAddress = ClientSettings.productionAddress
     hasStoredToken = false
     library = .idle
     search = .idle
