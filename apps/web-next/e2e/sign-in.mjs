@@ -112,7 +112,7 @@ try {
       page.evaluate(() => localStorage.getItem("orbis.apiKey"));
     const signIn = async (value) => {
       await page.getByLabel("API key").fill(value);
-      await page.getByRole("button", { name: "Sign in" }).click();
+      await page.getByRole("button", { exact: true, name: "Sign in" }).click();
     };
 
     await page.goto(webUrl);
@@ -121,7 +121,7 @@ try {
     await page.screenshot({ path: path.join(artifacts, "signed-out.png") });
     step("a signed-out visit to / goes to the sign-in form");
 
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
     await page.getByRole("alert").getByText("Paste the API key").waitFor();
     step("an empty key asks for one");
 

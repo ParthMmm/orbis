@@ -14,6 +14,7 @@ import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppDevicesRouteImport } from './routes/_app/devices'
+import { Route as AppLinkRouteImport } from './routes/_app/link'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -39,17 +40,24 @@ const AppDevicesRoute = AppDevicesRouteImport.update({
   path: '/devices',
   getParentRoute: () => AppRoute,
 } as any)
+const AppLinkRoute = AppLinkRouteImport.update({
+  id: '/link',
+  path: '/link',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/sign-in': typeof SignInRoute
   '/admin': typeof AppAdminRoute
   '/devices': typeof AppDevicesRoute
+  '/link': typeof AppLinkRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/admin': typeof AppAdminRoute
   '/devices': typeof AppDevicesRoute
+  '/link': typeof AppLinkRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
@@ -58,19 +66,21 @@ export interface FileRoutesById {
   '/sign-in': typeof SignInRoute
   '/_app/admin': typeof AppAdminRoute
   '/_app/devices': typeof AppDevicesRoute
+  '/_app/link': typeof AppLinkRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/sign-in' | '/admin' | '/devices'
+  fullPaths: '/' | '/sign-in' | '/admin' | '/devices' | '/link'
   fileRoutesByTo: FileRoutesByTo
-  to: '/sign-in' | '/admin' | '/devices' | '/'
+  to: '/sign-in' | '/admin' | '/devices' | '/link' | '/'
   id:
     | '__root__'
     | '/_app'
     | '/sign-in'
     | '/_app/admin'
     | '/_app/devices'
+    | '/_app/link'
     | '/_app/'
   fileRoutesById: FileRoutesById
 }
@@ -116,18 +126,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppDevicesRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/link': {
+      id: '/_app/link'
+      path: '/link'
+      fullPath: '/link'
+      preLoaderRoute: typeof AppLinkRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRoute
   AppDevicesRoute: typeof AppDevicesRoute
+  AppLinkRoute: typeof AppLinkRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRoute,
   AppDevicesRoute: AppDevicesRoute,
+  AppLinkRoute: AppLinkRoute,
   AppIndexRoute: AppIndexRoute,
 }
 
