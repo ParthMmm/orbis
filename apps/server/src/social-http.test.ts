@@ -94,11 +94,13 @@ test("People see a friend's full Library only while both sides allow it", async 
         "INSERT INTO playlist_sets (playlist_id, set_id, position) VALUES (?, ?, 2)"
       )
       .run(playlistId, outside.json().id);
+    // Newer than the Listens this test records below, whenever it runs.
+    const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     sqlite
       .query(
-        "INSERT INTO listens (person_id, set_id, started_at, finished_at) VALUES ('b', ?, '2026-09-30T00:00:00.000Z', NULL)"
+        "INSERT INTO listens (person_id, set_id, started_at, finished_at) VALUES ('b', ?, ?, NULL)"
       )
-      .run(outside.json().id);
+      .run(outside.json().id, tomorrow);
     sqlite.close();
     expect(
       await status("b", "PUT", "/queue/active", { setId: first.json().id })
