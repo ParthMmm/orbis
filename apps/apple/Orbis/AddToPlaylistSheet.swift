@@ -34,12 +34,12 @@ struct AddToPlaylistSheet: View {
       List {
         if query.isEmpty, !recents.isEmpty {
           Section("Recents") {
-            ForEach(recents) { row($0) }
+            ForEach(recents) { row($0, identifier: "add-to-playlist-recent-\($0.id)") }
           }
         }
         if !matching.isEmpty {
           Section(query.isEmpty ? "All Playlists" : "Playlists") {
-            ForEach(matching) { row($0) }
+            ForEach(matching) { row($0, identifier: "add-to-playlist-all-\($0.id)") }
           }
         }
       }
@@ -94,7 +94,7 @@ struct AddToPlaylistSheet: View {
 
   // MARK: Rows
 
-  private func row(_ playlist: Playlist) -> some View {
+  private func row(_ playlist: Playlist, identifier: String) -> some View {
     let isMember = memberships.contains(playlist.id)
     return Button {
       choose(playlist, isMember: isMember)
@@ -126,7 +126,7 @@ struct AddToPlaylistSheet: View {
     .accessibilityLabel(playlist.name)
     .accessibilityValue(isMember ? "Added" : "")
     .accessibilityHint(isMember ? "Removes this Set" : "Adds this Set")
-    .accessibilityIdentifier("add-to-playlist-\(playlist.name)")
+    .accessibilityIdentifier(identifier)
   }
 
   // MARK: Data
