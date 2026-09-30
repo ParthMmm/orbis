@@ -267,21 +267,33 @@ final class LibraryUITests: XCTestCase {
     link.typeText("https://youtu.be/tPEMP9oYxTo")
     capture("07-link-pasted")
 
-    app.buttons["File it"].tap()
+    // Every query after this point names one element and waits for it. With a second simulator
+    // running journeys beside this one, a single snapshot of the app can outlast XCUITest's
+    // query timeout, and a bare `exists` or `tap()` gets one snapshot and no retry. A wait
+    // polls until its own deadline. The Tag check used to match a label substring across every
+    // static text in the app, the heaviest query in the journey; the Tag field's identifier
+    // proves the same thing.
+    let fileIt = app.buttons["File it"]
+    let enabled = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "exists == true AND enabled == true"), object: fileIt)
+    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed, "a pasted link must enable File it")
+    fileIt.tap()
 
     let title = app.textFields["reveal-title"]
     XCTAssertTrue(
       title.waitForExistence(timeout: 60),
       "filing must open the step where the Set is named\n\(app.debugDescription)"
     )
-    XCTAssertTrue(app.buttons["reveal-done"].exists, "the naming step must offer Done")
-    let chosen = app.staticTexts.matching(
-      NSPredicate(format: "label CONTAINS %@", "Press Return to add")
-    ).firstMatch
-    XCTAssertTrue(chosen.exists, "the naming step must offer Tags\n\(app.debugDescription)")
+    let dismiss = app.buttons["reveal-dismiss"]
+    XCTAssertTrue(app.buttons["reveal-done"].waitForExistence(timeout: 15), "the naming step must offer Done")
+    XCTAssertTrue(dismiss.waitForExistence(timeout: 15), "the naming step must offer Not Now")
+    XCTAssertTrue(
+      app.textFields["tag-field"].waitForExistence(timeout: 15),
+      "the naming step must offer Tags\n\(app.debugDescription)"
+    )
     capture("08-naming-step")
 
-    app.buttons["reveal-dismiss"].tap()
+    dismiss.tap()
 
     let confirmation = app.staticTexts["file-confirmation"]
     XCTAssertTrue(
