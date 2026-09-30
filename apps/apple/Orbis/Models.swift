@@ -8,6 +8,7 @@ struct SavedSet: Identifiable, Decodable, Hashable {
     case artworkLargeUrl
     case metadataState, downloadState, playlistIds, playbackPositionSeconds
     case listenCount, finishCount, lastListenedAt
+    case tracklistState
   }
 
   let id: String
@@ -30,6 +31,7 @@ struct SavedSet: Identifiable, Decodable, Hashable {
   let listenCount: Int
   let finishCount: Int
   let lastListenedAt: String?
+  var tracklistState: TracklistState = .none
 }
 
 extension SavedSet {
@@ -67,7 +69,37 @@ extension SavedSet {
     listenCount = try values.decode(Int.self, forKey: .listenCount)
     finishCount = try values.decode(Int.self, forKey: .finishCount)
     lastListenedAt = try values.decodeIfPresent(String.self, forKey: .lastListenedAt)
+    tracklistState = try values.decodeIfPresent(TracklistState.self, forKey: .tracklistState) ?? .none
   }
+}
+
+enum TracklistState: String, Decodable, Hashable {
+  case pending
+  case ready
+  case none
+  case failed
+
+  /// A newer service state must not make the whole Library unreadable.
+  init(from decoder: any Decoder) throws {
+    let raw = try decoder.singleValueContainer().decode(String.self)
+    self = Self(rawValue: raw) ?? .none
+  }
+}
+
+struct Cue: Decodable, Equatable, Identifiable {
+  let position: Int
+  let startSeconds: TimeInterval?
+  let artist: String
+  let title: String
+  let appleMusicId: String?
+  let artworkUrl: String?
+
+  var id: Int { position }
+}
+
+struct Tracklist: Decodable, Equatable {
+  let state: TracklistState
+  let cues: [Cue]
 }
 
 enum SetSource: Hashable, Decodable {

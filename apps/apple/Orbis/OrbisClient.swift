@@ -245,6 +245,16 @@ struct OrbisClient: Sendable {
     return try Self.decode(LibraryResponse.self, from: response).sets
   }
 
+  func tracklist(_ id: String) async throws -> Tracklist {
+    let response = try await send(path: "sets/\(id)/tracklist", method: "GET", body: nil)
+    return try Self.decode(Tracklist.self, from: response)
+  }
+
+  func retryTracklist(_ id: String) async throws -> Tracklist {
+    let response = try await send(path: "sets/\(id)/tracklist/retry", method: "POST", body: nil)
+    return try Self.decode(Tracklist.self, from: response)
+  }
+
   func playlists() async throws -> [Playlist] {
     let response = try await send(path: "playlists", method: "GET", body: nil)
     return try Self.decode(PlaylistsResponse.self, from: response).playlists

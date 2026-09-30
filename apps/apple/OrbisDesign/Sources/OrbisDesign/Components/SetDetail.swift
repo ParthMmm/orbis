@@ -64,6 +64,7 @@ public struct SetDetail: View {
 
   public let retryName: () -> Void
   private let transport: AnyView
+  private let tracklist: AnyView
   /// The rows a person changes the Set with, usually a `SetManagement`. Erased for the same
   /// reason.
   private let management: AnyView
@@ -75,6 +76,7 @@ public struct SetDetail: View {
     failedToName: Bool = false,
     dates: Dates? = nil, statistics: Statistics? = nil, retryName: @escaping () -> Void = {},
     @ViewBuilder transport: () -> some View = { EmptyView() },
+    @ViewBuilder tracklist: () -> some View = { EmptyView() },
     @ViewBuilder management: () -> some View
   ) {
     self.title = title
@@ -88,6 +90,7 @@ public struct SetDetail: View {
     self.statistics = statistics
     self.retryName = retryName
     self.transport = AnyView(transport())
+    self.tracklist = AnyView(tracklist())
     self.management = AnyView(management())
   }
 
@@ -136,6 +139,7 @@ public struct SetDetail: View {
         VStack(spacing: 24) {
           header
           transport
+          tracklist
           management
         }
         .padding(.horizontal)
