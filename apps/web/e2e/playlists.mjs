@@ -28,11 +28,11 @@ const sets = [
 
 const waitFor = async (url) => {
   for (let attempt = 0; attempt < 150; attempt += 1) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await fetch(url);
+    // eslint-disable-next-line no-await-in-loop
+    const response = await fetch(url).catch(() => null);
+    if (response !== null) {
       return;
-    } catch {}
+    }
     // eslint-disable-next-line no-await-in-loop
     await setTimeout(100);
   }
