@@ -21,18 +21,20 @@ Native clients authenticate per device. See [`docs/adr/0004-native-service-ident
 
 | Path | Purpose |
 | --- | --- |
-| `deploy/orbis-server/orbis-server.service` | The unit, templated on `%h` so it is not tied to one home directory. |
-| `~/orbis-service` | A checkout of this repository on the branch being deployed. |
+| `deploy/orbis-server/orbis-server.service` | Unit template. Adapt its checkout and data paths for a first install. Do not overwrite the current Vanta unit during an update. |
+| `~/Developer/orbis-service` | A checkout of this repository on the branch being deployed. |
 | `~/orbis` | The working checkout. Holds `apps/server/.env.local`, which supplies provider credentials and is ignored by git. |
-| `~/orbis-service-data` | `ORBIS_DATA_DIR`. Holds `library.sqlite` and `devices.json`, outside the checkout so a pull cannot touch it. |
+| `~/Developer/orbis-service-data` | `ORBIS_DATA_DIR`. Holds `library.sqlite` and `devices.json`, outside the checkout so a pull cannot touch it. |
 | `~/.config/systemd/user/orbis-server.service` | The installed unit. |
 
 ## Install or update
 
-Run this on Vanta only, after the owner approves the host and the update window.
+Run this on Vanta only, after the owner approves the host and the update window. The current checkout is `~/Developer/orbis-service`, and the data is `~/Developer/orbis-service-data`.
+
+Keep the installed unit and its provider drop-ins. The repository template still uses `%h/orbis-service` and `%h/orbis-service-data`. Do not copy it over the current unit during an update. For a first install, change its `WorkingDirectory` and `ORBIS_DATA_DIR` to the current paths before installing it.
 
 ```sh
-cd ~/orbis-service
+cd ~/Developer/orbis-service
 git fetch origin && git checkout <branch> && git pull --ff-only
 
 # Runtime preflight. Name the exact executable the unit uses, so the shell PATH
@@ -50,8 +52,11 @@ fi
 "$BUN" install --frozen-lockfile
 "$BUN" run --filter @orbis/contracts build
 
-mkdir -p ~/.config/systemd/user
-cp deploy/orbis-server/orbis-server.service ~/.config/systemd/user/
+EXPECTED_DIR="$HOME/Developer/orbis-service/apps/server"
+if [ "$(systemctl --user show orbis-server -p WorkingDirectory --value)" != "$EXPECTED_DIR" ]; then
+  echo "The installed unit does not use $EXPECTED_DIR. Stop and check its paths." >&2
+  exit 1
+fi
 systemctl --user daemon-reload
 BEFORE="$(systemctl --user show orbis-server -p InvocationID --value)"
 echo "invocation before: ${BEFORE:-none}"
@@ -71,7 +76,7 @@ The preflight covers the runtime only. The frozen install and the contracts buil
 
 ### If the update fails
 
-Stop before the restart when the runtime preflight, the frozen install, or the contracts build fails; the running service is untouched. If the new process starts and then fails, go back to the last known-good checkout and runtime and restart the unit under owner control. Do not delete `~/orbis-service-data` or the trust records, and do not print environment files or secrets. A failed update does not touch the Serve rule or the jellyfin Funnel on `8443`.
+Stop before the restart when the runtime preflight, the frozen install, or the contracts build fails; the running service is untouched. If the new process starts and then fails, go back to the last known-good checkout and runtime and restart the unit under owner control. Do not delete `~/Developer/orbis-service-data` or the trust records, and do not print environment files or secrets. A failed update does not touch the Serve rule or the jellyfin Funnel on `8443`.
 
 ### Record the update
 
@@ -88,8 +93,8 @@ The apps keep reading a library when a newer optional field is missing, so an ol
 Run this in the checkout with the same `ORBIS_DATA_DIR` the service uses. It prints the token once.
 
 ```sh
-ORBIS_DATA_DIR=~/orbis-service-data bun apps/server/src/trust.ts add --label "iPhone 17 Pro"
-ORBIS_DATA_DIR=~/orbis-service-data bun apps/server/src/trust.ts list
+ORBIS_DATA_DIR=~/Developer/orbis-service-data bun apps/server/src/trust.ts add --label "iPhone 17 Pro"
+ORBIS_DATA_DIR=~/Developer/orbis-service-data bun apps/server/src/trust.ts list
 ```
 
 Store the token in the client, not in the repository. Revoke one device with `trust.ts remove --id <id>`, which takes effect on the next request without restarting the service.
@@ -148,7 +153,7 @@ A 401 instead of a 403 means the token is present but not enrolled, so check the
 
 ## Give the service provider credentials
 
-Metadata enrichment reads a YouTube API key from the environment. The key lives in `apps/server/.env.local` in the working checkout at `~/orbis`, which is ignored by git. It reaches the service through a drop-in rather than being copied into the deployment checkout at `~/orbis-service`.
+Metadata enrichment reads a YouTube API key from the environment. The key lives in `apps/server/.env.local` in the working checkout at `~/orbis`, which is ignored by git. It reaches the service through a drop-in rather than being copied into the deployment checkout at `~/Developer/orbis-service`.
 
 ```sh
 mkdir -p ~/.config/systemd/user/orbis-server.service.d
@@ -183,7 +188,7 @@ The worker logs `ytdlp: true` at startup when the binary is configured.
 `apps/server/src/canary.ts` downloads a short and a long Set per source through each configured backend, using the worker's own code, and checks that each stored file has the expected duration. It catches a backend that stops working before a user's download does: on 2026-09-29, Cobalt returned empty YouTube streams for long videos while short ones still worked.
 
 ```sh
-cp ~/orbis-service/deploy/orbis-server/orbis-canary.{service,timer} ~/.config/systemd/user/
+cp ~/Developer/orbis-service/deploy/orbis-server/orbis-canary.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now orbis-canary.timer
 systemctl --user start orbis-canary.service   # first run now; takes a few minutes
@@ -197,8 +202,8 @@ Each record below is written for an agent to read without extra setup. The servi
 
 ```sh
 # Did last night's canary pass, and when did it start failing?
-cat ~/orbis-service-data/canary/last.json
-jq -c '{at, ok}' ~/orbis-service-data/canary/history.jsonl | tail
+cat ~/Developer/orbis-service-data/canary/last.json
+jq -c '{at, ok}' ~/Developer/orbis-service-data/canary/history.jsonl | tail
 
 # Is any unit failing?
 systemctl --user --failed
@@ -223,7 +228,7 @@ cat > ~/.config/orbis-backup.env <<'CONF'
 ORBIS_BACKUP_DEST=user@backup-host:orbis-backups/
 CONF
 chmod 600 ~/.config/orbis-backup.env
-cp ~/orbis-service/deploy/orbis-server/orbis-backup.{service,timer} ~/.config/systemd/user/
+cp ~/Developer/orbis-service/deploy/orbis-server/orbis-backup.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now orbis-backup.timer
 systemctl --user start orbis-backup.service   # first run now
@@ -243,7 +248,7 @@ mkdir -p ~/orbis-restore-test
 rsync -a user@backup-host:orbis-backups/ ~/orbis-backups-restored/
 LATEST="$(ls -1 ~/orbis-backups-restored | tail -1)"
 cp ~/orbis-backups-restored/$LATEST/{library.sqlite,devices.json} ~/orbis-restore-test/
-cd ~/orbis-service/apps/server
+cd ~/Developer/orbis-service/apps/server
 ORBIS_DATA_DIR=~/orbis-restore-test ORBIS_PORT=4320 ORBIS_DEVICE_PORT=4321 \
   "$HOME/.local/share/mise/installs/bun/1.4.1/bin/bun" src/index.ts &
 sleep 3
@@ -251,7 +256,7 @@ curl -s -H "Authorization: Bearer $ORBIS_DEVICE_TOKEN" http://127.0.0.1:4321/set
 kill %1
 ```
 
-To recover for real, stop `orbis-server`, copy `library.sqlite` and `devices.json` from the chosen snapshot into `~/orbis-service-data` (keep the broken files aside), and start the unit. `apps/server/src/backup.test.ts` runs the same restore in an automated test.
+To recover for real, stop `orbis-server`, copy `library.sqlite` and `devices.json` from the chosen snapshot into `~/Developer/orbis-service-data` (keep the broken files aside), and start the unit. `apps/server/src/backup.test.ts` runs the same restore in an automated test.
 
 ## Cut over to Cloudflare and an API-only Funnel
 
@@ -262,7 +267,7 @@ Run the local browser journeys in [`apps/web/README.md`](../../apps/web/README.m
 The API includes the new Playlist routes before the web client calls them. Deploy the API and web client in the following order, after the owner approves the Vanta update and Cloudflare deploy:
 
 1. On Vanta, record `tailscale serve status` and `tailscale funnel status`. The Caddy rule on `443` and Jellyfin Funnel on `8443` must stay unchanged throughout the cutover.
-2. Update the Vanta service with the matching revision using [Install or update](#install-or-update). Confirm the new `InvocationID` and active status. The old web Origin now gets 403. Check the Cloudflare preflight and keyed health before the web deploy.
+2. Update the checkout at `~/Developer/orbis-service` with the matching revision using [Install or update](#install-or-update). Build contracts and restart the existing installed unit. Keep `ORBIS_DATA_DIR` at `~/Developer/orbis-service-data`. Do not reinstall the repository unit template or replace the provider drop-ins. Confirm the new `InvocationID` and active status. The old web Origin now gets 403. Check the Cloudflare preflight and keyed health before the web deploy.
 3. On the Mac, install dependencies with `bun install --frozen-lockfile`. Build `@orbis/contracts`, then use the existing Alchemy identity. Run from `apps/web`:
 
 ```sh
@@ -325,4 +330,4 @@ systemctl --user disable --now orbis-server
 sudo tailscale serve --https=8444 off
 ```
 
-Removing the Serve rule does not affect the jellyfin Funnel on `8443`. The database and trust store stay in `~/orbis-service-data`. Do not point the rule back at the local port 4310, which would restore token-free access from the tailnet.
+Removing the Serve rule does not affect the jellyfin Funnel on `8443`. The database and trust store stay in `~/Developer/orbis-service-data`. Do not point the rule back at the local port 4310, which would restore token-free access from the tailnet.

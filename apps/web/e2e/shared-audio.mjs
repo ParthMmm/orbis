@@ -199,6 +199,9 @@ try {
       url: bobsOtherLink,
     });
     assert.equal(bobsOther.downloadState, "none");
+    await callAs("bob", "PATCH", `/sets/${bobsSet.id}/tags`, {
+      tags: ["bob-tag"],
+    });
     const playlist = await callAs("bob", "POST", "/playlists", {
       name: "Late night",
     });
@@ -295,9 +298,14 @@ try {
       mine.sets.map((set) => [set.id, set.titleEditedByUser]),
       [[bobsSet.id, false]]
     );
-    step("saving bob's Set adds it to alice's Library, without bob's title", {
-      aliceTitle: mine.sets[0].title,
-    });
+    assert.notEqual(mine.sets[0].title, "Bob's set");
+    assert.deepEqual(mine.sets[0].tags, []);
+    step(
+      "saving bob's Set adds it to alice's Library, without bob's title or Tags",
+      {
+        aliceTitle: mine.sets[0].title,
+      }
+    );
 
     await setRow("Bob's other set")
       .getByRole("button", { name: "Download Bob's other set" })
