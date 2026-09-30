@@ -4,10 +4,9 @@ import {
   createFileRoute,
   redirect,
   useNavigate,
-  useRouter,
 } from "@tanstack/react-router";
-import type { ErrorComponentProps } from "@tanstack/react-router";
 
+import { RouteProblem } from "@/components/route-problem";
 import { Button } from "@/components/ui/button";
 import { NAV_ITEMS } from "@/lib/nav";
 import { FAILURE_MESSAGES, fetchMe } from "@/lib/orbis";
@@ -18,22 +17,6 @@ import { forgetKey, readKey } from "@/lib/stored-key";
 export interface Session extends Credentials {
   readonly person: Person;
 }
-
-const SessionProblem = ({ error }: ErrorComponentProps) => {
-  const router = useRouter();
-  // Invalidating re-runs this route's beforeLoad; resetting alone would not.
-  const retry = () => router.invalidate();
-  return (
-    <main className="flex min-h-svh flex-col items-center justify-center gap-4 p-6">
-      <p className="text-destructive max-w-sm text-center text-sm" role="alert">
-        {error instanceof Error ? error.message : FAILURE_MESSAGES.failed}
-      </p>
-      <Button onClick={retry} variant="outline">
-        Try again
-      </Button>
-    </main>
-  );
-};
 
 const AppShell = ({ session }: { readonly session: Session }) => {
   const navigate = useNavigate();
@@ -93,7 +76,7 @@ export const Route = createFileRoute("/_app")({
   },
   // The route hands its own context down, which keeps the context's type exact.
   component: () => <AppShell session={Route.useRouteContext().session} />,
-  errorComponent: SessionProblem,
+  errorComponent: RouteProblem,
   // The key lives in the browser, so signed-in pages never render on the Worker.
   ssr: false,
 });
