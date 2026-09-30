@@ -127,6 +127,21 @@ const sampleKeyFor = (operationId: string): keyof typeof samples => {
 };
 
 const sampleFor = (operationId: string) => {
+  if (["sets.tracklist", "sets.retryTracklist"].includes(operationId)) {
+    return {
+      cues: [
+        {
+          appleMusicId: null,
+          artist: "Artist",
+          artworkUrl: null,
+          position: 0,
+          startSeconds: 12,
+          title: "Song",
+        },
+      ],
+      state: "ready",
+    };
+  }
   if (
     [
       "playlists.collaboration",
@@ -242,7 +257,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(42);
+    expect(checked).toBe(44);
   } finally {
     await app.dispose();
   }

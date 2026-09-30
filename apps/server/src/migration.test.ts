@@ -251,6 +251,7 @@ test("adds the membership index to a version-1 database without touching its dat
             tags: [],
             title: "A placeholder title",
             titleEditedByUser: false,
+            tracklistState: "pending",
             url: "https://www.youtube.com/watch?v=fghijklmnop",
           },
           {
@@ -275,6 +276,7 @@ test("adds the membership index to a version-1 database without touching its dat
             tags: ["techno"],
             title: "A kept title",
             titleEditedByUser: true,
+            tracklistState: "pending",
             url: "https://www.youtube.com/watch?v=uvwxyzabcde",
           },
         ],

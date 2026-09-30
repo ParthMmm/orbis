@@ -58,6 +58,7 @@ import {
   playlistSets,
   playlists,
   queueEntries,
+  sets as setRows,
 } from "./db/schema.js";
 import { DEVICE_LINK_TTL_MS, makeDeviceLinks } from "./device-link.js";
 import { LibraryError } from "./errors.js";
@@ -95,6 +96,12 @@ import {
 } from "./stream-grant.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
+import {
+  claimTracklist,
+  readTracklist,
+  runClaimedTracklist,
+} from "./tracklists.js";
+import { Versos } from "./versos.js";
 import { listFilterablePeople, resolveVisiblePerson } from "./visibility.js";
 
 interface RawFilters {
@@ -354,6 +361,7 @@ export const createApp = (
     /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
     shortLinkFetch?: (url: string, signal: AbortSignal) => Promise<Response>;
     titleReviser?: Layer.Layer<TitleReviser>;
+    versos?: Layer.Layer<Versos>;
   } = {}
 ) => {
   configureLogging(options.logging);
@@ -412,8 +420,47 @@ export const createApp = (
       const audio = yield* Audio;
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
+      const versos = yield* Versos;
       const scope = yield* Scope.Scope;
       const signals = yield* QueueSignals;
+      const runningTracklists = new Set<string>();
+      const startTracklist = Effect.fn("startSavedSetTracklist")(
+        (id: string, retry = false) =>
+          Effect.gen(function* startSavedSetTracklist() {
+            if (runningTracklists.has(id)) {
+              return;
+            }
+            runningTracklists.add(id);
+            let handedOff = false;
+            yield* Effect.gen(function* launchTracklist() {
+              const claim = yield* claimTracklist(id, retry).pipe(
+                Effect.provideService(Database, db)
+              );
+              if (!claim) {
+                return;
+              }
+              yield* runClaimedTracklist(claim).pipe(
+                Effect.provideService(Database, db),
+                Effect.provideService(Versos, versos),
+                Effect.ensuring(
+                  Effect.sync(() => {
+                    runningTracklists.delete(id);
+                  })
+                ),
+                Effect.forkIn(scope)
+              );
+              handedOff = true;
+            }).pipe(
+              Effect.ensuring(
+                Effect.sync(() => {
+                  if (!handedOff) {
+                    runningTracklists.delete(id);
+                  }
+                })
+              )
+            );
+          })
+      );
       const reviseTitle = Effect.fn("reviseSavedSetTitle")((
         set: SavedSet,
         enriched: EnrichedMetadata
@@ -441,6 +488,7 @@ export const createApp = (
       const fillDetails = Effect.fn("fillSavedSetDetails")((set: SavedSet) =>
         metadata.details({ source: set.source, url: set.url }).pipe(
           Effect.flatMap((details) => library.recordDetails(set.id, details)),
+          Effect.tap(() => startTracklist(set.id)),
           Effect.catchTags({
             LibraryError: (error) => logDetailsFailure(set, error.message),
             MetadataError: (error) =>
@@ -475,7 +523,7 @@ export const createApp = (
               // The yt-dlp fallback already stored the details, so a second read is skipped.
               .pipe(
                 Effect.tap(() =>
-                  enriched.extras ? Effect.void : fillDetails(set)
+                  enriched.extras ? startTracklist(set.id) : fillDetails(set)
                 )
               )
           ),
@@ -630,6 +678,35 @@ export const createApp = (
                 const personal = yield* Library;
                 const set = yield* personal.find(params.id);
                 return yield* enrichSavedSet(set, personal);
+              })
+            )
+          )
+          .handle("tracklist", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* getSetTracklist() {
+                const personal = yield* Library;
+                yield* personal.find(params.id);
+                return yield* readTracklist(params.id).pipe(
+                  Effect.provideService(Database, db)
+                );
+              })
+            )
+          )
+          .handle("retryTracklist", ({ params }) =>
+            withFailureResponse(
+              Effect.gen(function* retrySetTracklist() {
+                const personal = yield* Library;
+                yield* personal.find(params.id);
+                const [set] = yield* db
+                  .select({ detailsState: setRows.detailsState })
+                  .from(setRows)
+                  .where(eq(setRows.id, params.id));
+                yield* set?.detailsState === "filled"
+                  ? startTracklist(params.id, true)
+                  : fillDetails(yield* personal.find(params.id));
+                return yield* readTracklist(params.id).pipe(
+                  Effect.provideService(Database, db)
+                );
               })
             )
           )
@@ -1881,6 +1958,7 @@ export const createApp = (
       Layer.provide(queueSignalsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
       Layer.provide(options.titleReviser ?? TitleReviser.unconfigured()),
+      Layer.provide(options.versos ?? Versos.unconfigured()),
       Layer.provide(database),
       Layer.provide(loggingLayer)
     ),
