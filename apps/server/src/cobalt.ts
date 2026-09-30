@@ -14,9 +14,50 @@ const CobaltTunnel = Schema.Struct({
   status: Schema.Literal("tunnel"),
   url: Schema.String,
 });
+const CobaltErrorStatus = Schema.Struct({ status: Schema.Literal("error") });
+const CobaltProviderCode = Schema.Struct({
+  error: Schema.Struct({ code: Schema.String }),
+});
+
+type CobaltRequestFailure =
+  | { readonly kind: "timeout" | "transport" }
+  | {
+      readonly kind: "http" | "provider";
+      readonly status: number;
+      readonly code: string;
+    }
+  | {
+      readonly kind: "malformed";
+      readonly status: number;
+    };
+
+const FAILURE_REASONS = {
+  http: "Cobalt refused the download request.",
+  malformed: "Cobalt sent a malformed response.",
+  provider: "Cobalt could not fetch this audio.",
+  timeout: "Cobalt did not answer in time.",
+  transport: "Cobalt could not be reached.",
+} satisfies Readonly<Record<CobaltRequestFailure["kind"], string>>;
+
+const safeProviderCode = (code: string): string =>
+  code.length <= 80 && /^[a-z0-9._-]+$/iu.test(code)
+    ? code
+    : "cobalt_error_unknown";
 
 const downloadFailed = (reason: string) =>
   new LibraryError({ message: reason, statusCode: 500 });
+
+const failRequest = (failure: CobaltRequestFailure) => {
+  const annotations = {
+    cobaltFailure: failure.kind,
+    cobaltProviderCode: "code" in failure ? failure.code : undefined,
+    cobaltStatus: "status" in failure ? failure.status : undefined,
+  };
+  return Effect.logWarning("cobalt request failed").pipe(
+    Effect.annotateLogs(annotations),
+    Effect.andThen(Effect.fail(downloadFailed(FAILURE_REASONS[failure.kind])))
+  );
+};
 
 const fetchError = <E>(error: E) =>
   error instanceof LibraryError
@@ -63,13 +104,18 @@ export class Cobalt extends Context.Service<
         }),
         requestTunnel: Effect.fn("Cobalt.requestTunnel")(
           function* requestTunnel(sourceUrl: string, signal: AbortSignal) {
-            const cobaltResponse = yield* Effect.tryPromise({
-              catch: (error) =>
-                error instanceof LibraryError
-                  ? error
-                  : downloadFailed("Cobalt did not answer in time."),
+            const timeout = AbortSignal.timeout(COBALT_TIMEOUT_MS);
+            const response = yield* Effect.tryPromise({
+              catch: (error): CobaltRequestFailure =>
+                timeout.aborted ||
+                (error instanceof Error && error.name === "TimeoutError")
+                  ? {
+                      kind: "timeout",
+                    }
+                  : {
+                      kind: "transport",
+                    },
               try: (requestSignal) => {
-                const timeout = AbortSignal.timeout(COBALT_TIMEOUT_MS);
                 const combined = AbortSignal.any([
                   requestSignal,
                   timeout,
@@ -90,32 +136,37 @@ export class Cobalt extends Context.Service<
                   },
                   method: "POST",
                   signal: combined,
-                })
-                  .then(async (response) => {
-                    if (!response.ok) {
-                      throw downloadFailed(
-                        "Cobalt refused the download request."
-                      );
-                    }
-                    // SAFETY: Cobalt's response shape is asserted by the
-                    // CobaltTunnel Schema decode below; this only crosses
-                    // the JSON boundary.
-                    return (await response.json()) as unknown;
-                  })
-                  .catch(() => {
-                    throw downloadFailed(
-                      timeout.aborted
-                        ? "Cobalt did not answer in time."
-                        : "Cobalt could not be reached."
-                    );
-                  });
+                });
               },
-            });
+            }).pipe(Effect.catch(failRequest));
+            const cobaltResponse: unknown = yield* Effect.promise(() =>
+              response.json().catch(() => null)
+            );
+            const code = Schema.is(CobaltProviderCode)(cobaltResponse)
+              ? safeProviderCode(cobaltResponse.error.code)
+              : "cobalt_error_unknown";
+            if (!response.ok) {
+              return yield* failRequest({
+                code,
+                kind: "http",
+                status: response.status,
+              });
+            }
+            if (Schema.is(CobaltErrorStatus)(cobaltResponse)) {
+              return yield* failRequest({
+                code,
+                kind: "provider",
+                status: response.status,
+              });
+            }
             const tunneled = yield* Schema.decodeUnknownEffect(CobaltTunnel)(
               cobaltResponse
             ).pipe(
-              Effect.mapError(() =>
-                downloadFailed("Cobalt could not fetch this audio.")
+              Effect.catch(() =>
+                failRequest({
+                  kind: "malformed",
+                  status: response.status,
+                })
               )
             );
             return tunneled.url;
