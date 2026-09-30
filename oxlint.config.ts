@@ -8,5 +8,6 @@ export default defineConfig({
     ...core.ignorePatterns,
     // shadcn generates these; `shadcn add` overwrites any hand edits.
     "apps/web-next/src/components/ui/**",
+    "apps/web-next/src/components/ai-elements/**",
   ],
 });
