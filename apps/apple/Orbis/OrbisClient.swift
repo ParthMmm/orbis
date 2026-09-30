@@ -133,6 +133,24 @@ private struct AutoDownloadUpdate: Encodable {
   let autoDownload: Bool
 }
 
+/// A Device Link this device started. The poll secret is what collects the key, so it stays in
+/// memory and is never shown.
+struct DeviceLinkStart: Decodable, Equatable, Sendable {
+  let userCode: String
+  let pollSecret: String
+}
+
+enum DeviceLinkPoll: Equatable, Sendable {
+  case pending
+  case expired
+  case approved(key: String)
+}
+
+private struct DeviceLinkPollAnswer: Decodable {
+  let status: String
+  let key: String?
+}
+
 /// Talks to the Orbis service. Every request carries the device token, and the same
 /// failure mapping is used everywhere, so a view only has to render `message`.
 struct OrbisClient: Sendable {
@@ -178,6 +196,29 @@ struct OrbisClient: Sendable {
     let body = try Self.encoder.encode(AutoDownloadUpdate(autoDownload: enabled))
     let response = try await send(path: "me", method: "PATCH", body: body)
     return try Self.decode(PersonPreferences.self, from: response)
+  }
+
+  /// Starts a Device Link (ADR 0016). Needs no key: `signedOut` clients call it.
+  func startDeviceLink(label: String) async throws -> DeviceLinkStart {
+    let body = try Self.encoder.encode(["label": label])
+    let response = try await send(path: "device-links", method: "POST", body: body)
+    return try Self.decode(DeviceLinkStart.self, from: response)
+  }
+
+  /// Asks whether a Device Link was approved. The key arrives once, in the first answer after
+  /// approval.
+  func pollDeviceLink(secret: String) async throws -> DeviceLinkPoll {
+    let body = try Self.encoder.encode(["pollSecret": secret])
+    let response = try await send(path: "device-links/poll", method: "POST", body: body)
+    let answer = try Self.decode(DeviceLinkPollAnswer.self, from: response)
+    switch answer.status {
+    case "pending": return .pending
+    case "expired": return .expired
+    case "approved":
+      guard let key = answer.key, !key.isEmpty else { throw OrbisError.malformed }
+      return .approved(key: key)
+    default: throw OrbisError.malformed
+    }
   }
 
   func health() async throws -> String {
@@ -392,7 +433,11 @@ struct OrbisClient: Sendable {
     }
     var request = URLRequest(url: url)
     request.httpMethod = method
-    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    // A device that has no key yet sends none: the Device Link routes are the only ones that
+    // answer without one.
+    if !token.isEmpty {
+      request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+    }
     request.setValue("application/json", forHTTPHeaderField: "Accept")
     request.timeoutInterval = 15
     if let body {

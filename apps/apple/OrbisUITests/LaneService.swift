@@ -149,6 +149,55 @@ struct LaneService {
     return try set(id: id)?.playbackPositionSeconds ?? 0
   }
 
+  /// What a signed-in device sees of a Device Link before it approves: the name the new device
+  /// gave itself.
+  struct DeviceLink: Decodable { let label: String }
+
+  struct Device: Decodable {
+    let id: String
+    let label: String
+    let lastUsedAt: String?
+  }
+
+  private struct Devices: Decodable { let devices: [Device] }
+
+  func lookupDeviceLink(_ userCode: String) throws -> DeviceLink {
+    try send("POST", "device-links/lookup", ["userCode": userCode])
+  }
+
+  /// Approves a Device Link as this lane's Person, the way the web's Add a device page does.
+  /// Answers the status, so a second approval can be shown to fail.
+  func approveDeviceLink(_ userCode: String) throws -> Int {
+    try status("POST", "device-links/approve", ["userCode": userCode])
+  }
+
+  func devices() throws -> [Device] {
+    let response: Devices = try send("GET", "me/devices", nil)
+    return response.devices
+  }
+
+  func revokeDevice(_ id: String) throws -> Int {
+    try status("DELETE", "me/devices/\(id)", nil)
+  }
+
+  private func status(_ method: String, _ path: String, _ body: [String: Any]?) throws -> Int {
+    var request = URLRequest(url: URL(string: "\(address)/\(path)")!)
+    request.httpMethod = method
+    request.setValue("Bearer \(token)", forHTTPHeaderField: "authorization")
+    if let body {
+      request.setValue("application/json", forHTTPHeaderField: "content-type")
+      request.httpBody = try JSONSerialization.data(withJSONObject: body)
+    }
+    var status = 0
+    let done = DispatchSemaphore(value: 0)
+    URLSession.shared.dataTask(with: request) { _, response, _ in
+      status = (response as? HTTPURLResponse)?.statusCode ?? 0
+      done.signal()
+    }.resume()
+    guard done.wait(timeout: .now() + 20) == .success else { throw URLError(.timedOut) }
+    return status
+  }
+
   private func send<Response: Decodable>(
     _ method: String, _ path: String, _ body: [String: Any]?
   ) throws -> Response {
