@@ -271,7 +271,8 @@ try {
         response.url().startsWith(`${apiUrl}/admin/people/`)
     );
     await dialog.getByRole("button", { exact: true, name: "Remove" }).click();
-    assert.equal((await removed).status(), 200);
+    const removedResponse = await removed;
+    assert.equal(removedResponse.status(), 200);
     await dialog.waitFor({ state: "detached" });
     await manage("alice").waitFor({ state: "detached" });
     const remaining = await callApi("/admin/people", adminKey);
