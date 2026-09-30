@@ -13,6 +13,7 @@ import { Route as AppRouteImport } from './routes/_app'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
+import { Route as AppDevicesRouteImport } from './routes/_app/devices'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -33,15 +34,22 @@ const AppAdminRoute = AppAdminRouteImport.update({
   path: '/admin',
   getParentRoute: () => AppRoute,
 } as any)
+const AppDevicesRoute = AppDevicesRouteImport.update({
+  id: '/devices',
+  path: '/devices',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
   '/sign-in': typeof SignInRoute
   '/admin': typeof AppAdminRoute
+  '/devices': typeof AppDevicesRoute
 }
 export interface FileRoutesByTo {
   '/sign-in': typeof SignInRoute
   '/admin': typeof AppAdminRoute
+  '/devices': typeof AppDevicesRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
@@ -49,14 +57,21 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/sign-in': typeof SignInRoute
   '/_app/admin': typeof AppAdminRoute
+  '/_app/devices': typeof AppDevicesRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/sign-in' | '/admin'
+  fullPaths: '/' | '/sign-in' | '/admin' | '/devices'
   fileRoutesByTo: FileRoutesByTo
-  to: '/sign-in' | '/admin' | '/'
-  id: '__root__' | '/_app' | '/sign-in' | '/_app/admin' | '/_app/'
+  to: '/sign-in' | '/admin' | '/devices' | '/'
+  id:
+    | '__root__'
+    | '/_app'
+    | '/sign-in'
+    | '/_app/admin'
+    | '/_app/devices'
+    | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -94,16 +109,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppAdminRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/devices': {
+      id: '/_app/devices'
+      path: '/devices'
+      fullPath: '/devices'
+      preLoaderRoute: typeof AppDevicesRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRoute
+  AppDevicesRoute: typeof AppDevicesRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRoute,
+  AppDevicesRoute: AppDevicesRoute,
   AppIndexRoute: AppIndexRoute,
 }
 

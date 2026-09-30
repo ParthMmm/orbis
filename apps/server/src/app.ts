@@ -38,9 +38,11 @@ import {
   addKey,
   addPerson,
   AdminError,
+  listDevices,
   listKeys,
   listPeople,
   removePerson,
+  revokeDevice,
   revokeKey,
 } from "./admin.js";
 import { Audio } from "./audio.js";
@@ -1233,27 +1235,61 @@ export const createApp = (
           });
         }
       });
-      const adminCall = <A>(action: (storePath: string) => A) =>
-        Effect.gen(function* authorizedAdminAction() {
-          yield* requireAdminScope;
-          return yield* Effect.try({
-            catch: (error) =>
-              new LibraryError({
-                message:
-                  error instanceof AdminError
-                    ? error.message
-                    : "The trust store is unavailable.",
-                statusCode:
-                  error instanceof AdminError ? error.statusCode : 500,
-              }),
-            try: () => {
-              if (!devicesPath) {
-                throw new AdminError(500, "The trust store is unavailable.");
-              }
-              return action(devicesPath);
-            },
-          });
+      const trustCall = <A>(action: (storePath: string) => A) =>
+        Effect.try({
+          catch: (error) =>
+            new LibraryError({
+              message:
+                error instanceof AdminError
+                  ? error.message
+                  : "The trust store is unavailable.",
+              statusCode: error instanceof AdminError ? error.statusCode : 500,
+            }),
+          try: () => {
+            if (!devicesPath) {
+              throw new AdminError(500, "The trust store is unavailable.");
+            }
+            return action(devicesPath);
+          },
         });
+      const adminCall = <A>(action: (storePath: string) => A) =>
+        Effect.andThen(requireAdminScope, trustCall(action));
+      // Devices act for the Person behind a daily key. The local listener has
+      // no key and an admin key is not a device, so both are refused.
+      const deviceCall = <A>(
+        action: (storePath: string, personId: string, keyId: string) => A
+      ) =>
+        Effect.gen(function* authorizedDeviceAction() {
+          const caller = yield* SetCaller;
+          const { keyId } = caller;
+          if (keyId === null || caller.scope !== "daily") {
+            return yield* new LibraryError({
+              message: "Sign in with a device key.",
+              statusCode: 403,
+            });
+          }
+          return yield* trustCall((storePath) =>
+            action(storePath, caller.person.id, keyId)
+          );
+        });
+      const devicesGroup = HttpApiBuilder.group(
+        OrbisApi,
+        "devices",
+        (handlers) =>
+          handlers
+            .handleRaw("list", () =>
+              withFailureResponse(
+                Effect.map(deviceCall(listDevices), (devices) => ({ devices }))
+              )
+            )
+            .handleRaw("revoke", ({ params }) =>
+              withFailureResponse(
+                deviceCall((storePath, personId, keyId) =>
+                  revokeDevice(storePath, personId, keyId, params.id)
+                )
+              )
+            )
+      );
       const adminGroup = HttpApiBuilder.group(OrbisApi, "admin", (handlers) =>
         handlers
           .handleRaw("people", () =>
@@ -1435,6 +1471,7 @@ export const createApp = (
           Layer.provide(eventsGroup),
           Layer.provide(peopleGroup),
           Layer.provide(adminGroup),
+          Layer.provide(devicesGroup),
           Layer.provide(
             Layer.succeed(SetAccess, {
               bearer: (effect) =>

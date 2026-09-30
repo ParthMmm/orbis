@@ -150,6 +150,20 @@ const sampleFor = (operationId: string) => {
       ],
     };
   }
+  // The Swift client has no Devices screen yet, so these samples live here.
+  const device = {
+    addedAt: "2026-09-29T00:00:00.000Z",
+    current: true,
+    id: "a1b2c3d4e5f6",
+    label: "Laptop",
+    lastUsedAt: null,
+  };
+  if (operationId === "devices.list") {
+    return { devices: [device] };
+  }
+  if (operationId === "devices.revoke") {
+    return device;
+  }
   return samples[sampleKeyFor(operationId)];
 };
 
@@ -205,7 +219,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(37);
+    expect(checked).toBe(39);
   } finally {
     await app.dispose();
   }
