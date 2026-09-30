@@ -202,6 +202,7 @@ final class PlaylistUITests: XCTestCase {
     let service = try LaneService()
     let set = try service.saveSet(title: unique("Page"), url: youtubeURL())
     let playlist = try service.createPlaylist(named: unique("From page"))
+    let confusablePlaylist = try service.createPlaylist(named: "recent-\(playlist.name)")
     var steps: [[String: Any]] = []
 
     let app = try launch(paired: true)
@@ -216,13 +217,16 @@ final class PlaylistUITests: XCTestCase {
 
     app.buttons["detail-actions"].tap()
     app.buttons["detail-playlist"].tap()
-    let allChoices = app.buttons.matching(identifier: "add-to-playlist-\(playlist.name)")
-    let recentChoices = app.buttons.matching(identifier: "add-to-playlist-recent-\(playlist.name)")
+    let allChoices = app.buttons.matching(identifier: "add-to-playlist-all-\(playlist.id)")
+    let recentChoices = app.buttons.matching(identifier: "add-to-playlist-recent-\(playlist.id)")
+    let confusableChoices = app.buttons.matching(identifier: "add-to-playlist-all-\(confusablePlaylist.id)")
     let choice = allChoices.element
     XCTAssertTrue(
       choice.waitForExistence(timeout: 15),
       "the sheet must list every playlist\n\(app.debugDescription)")
     XCTAssertEqual(allChoices.count, 1, "All Playlists must have one identifiable row")
+    XCTAssertTrue(confusableChoices.element.waitForExistence(timeout: 15))
+    XCTAssertEqual(confusableChoices.count, 1, "a confusable name must have its own identifiable row")
     capture("add-to-playlist-sheet")
     choice.tap()
     XCTAssertFalse(choice.waitForExistence(timeout: 5), "choosing a playlist must close the sheet")
@@ -237,11 +241,13 @@ final class PlaylistUITests: XCTestCase {
     let recentCount = recentChoices.count
     steps.append([
       "step": "reopen with Recents and All Playlists",
-      "allRows": allCount, "recentRows": recentCount,
+      "playlistId": playlist.id, "confusablePlaylistId": confusablePlaylist.id,
+      "allRows": allCount, "recentRows": recentCount, "confusableAllRows": confusableChoices.count,
     ])
     capture("add-to-playlist-added")
     XCTAssertEqual(allCount, 1, "All Playlists must have exactly one identifiable row")
     XCTAssertEqual(recentCount, 1, "Recents must have exactly one identifiable row")
+    XCTAssertEqual(confusableChoices.count, 1, "the confusable playlist must keep one All Playlists row")
     guard allCount == 1, recentCount == 1 else {
       try record("add-to-playlist", steps)
       return
@@ -254,6 +260,9 @@ final class PlaylistUITests: XCTestCase {
     let afterRemove = try storedOrder(of: playlist.id, in: service, becomes: [])
     steps.append(["step": "remove through Recents", "expected": [], "stored": afterRemove])
     XCTAssertEqual(afterRemove, [], "removing through Recents must remove the membership")
+    let confusableAfterRemove = try service.members(of: confusablePlaylist.id).map(\.id)
+    steps.append(["step": "confusable playlist after removal", "expected": [], "stored": confusableAfterRemove])
+    XCTAssertEqual(confusableAfterRemove, [], "removing through Recents must leave the other playlist empty")
     let removed = [choice, recentChoice].map {
       XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", ""), object: $0)
     }
@@ -267,17 +276,24 @@ final class PlaylistUITests: XCTestCase {
     let afterReadd = try storedOrder(of: playlist.id, in: service, becomes: [set.id])
     steps.append(["step": "re-add through All Playlists", "expected": [set.id], "stored": afterReadd])
     XCTAssertEqual(afterReadd, [set.id], "re-adding through All Playlists must restore membership once")
+    let confusableAfterReadd = try service.members(of: confusablePlaylist.id).map(\.id)
+    steps.append(["step": "confusable playlist after re-adding", "expected": [], "stored": confusableAfterReadd])
+    XCTAssertEqual(confusableAfterReadd, [], "re-adding through All Playlists must leave the other playlist empty")
 
     app.buttons["detail-actions"].tap()
     app.buttons["detail-playlist"].tap()
     XCTAssertTrue(app.navigationBars["Add to Playlist"].waitForExistence(timeout: 15))
     XCTAssertEqual(allChoices.count, 1, "All Playlists must keep one identifiable row after re-adding")
     XCTAssertEqual(recentChoices.count, 1, "Recents must keep one identifiable row after re-adding")
+    XCTAssertEqual(confusableChoices.count, 1, "the other playlist must keep one identifiable row after re-adding")
+    XCTAssertEqual(confusableChoices.element.value as? String, "", "the other playlist must remain unselected")
     XCTAssertEqual(choice.value as? String, "Added", "All Playlists must show restored membership")
     XCTAssertEqual(recentChoice.value as? String, "Added", "Recents must show restored membership")
     steps.append([
       "step": "both sections show restored membership",
+      "playlistId": playlist.id, "confusablePlaylistId": confusablePlaylist.id,
       "allRows": allChoices.count, "recentRows": recentChoices.count,
+      "confusableAllRows": confusableChoices.count,
       "allValue": choice.value as? String ?? "", "recentValue": recentChoice.value as? String ?? "",
     ])
     capture("add-to-playlist-readded-through-all")
