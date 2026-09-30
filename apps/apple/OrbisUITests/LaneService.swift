@@ -83,6 +83,10 @@ struct LaneService {
     try seed("finish-download/\(id)")
   }
 
+  func seedTracklist(_ id: String) throws {
+    try seed("tracklist/\(id)")
+  }
+
   func audioState(_ id: String) throws -> AudioState {
     try send("GET", "sets/\(id)/audio/state", nil)
   }

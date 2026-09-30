@@ -73,7 +73,7 @@ createServer(async (request, response) => {
       : respond(response, 404);
   }
   const match =
-    /^\/(?<action>ready-audio|slow-download|slow-audio|finish-download)\/(?<setId>[a-zA-Z0-9-]+)$/u.exec(
+    /^\/(?<action>ready-audio|slow-download|slow-audio|finish-download|tracklist)\/(?<setId>[a-zA-Z0-9-]+)$/u.exec(
       route
     );
   if (!match?.groups) {
@@ -111,6 +111,20 @@ createServer(async (request, response) => {
       db.query(
         "UPDATE sets SET download_state = 'ready', retained_audio_format = 'm4a', retained_audio_bytes = ?, duration_seconds = 30 WHERE id = ?"
       ).run(statSync(fixture).size, setId);
+      break;
+    }
+    case "tracklist": {
+      db.transaction(() => {
+        db.query(
+          "UPDATE sets SET tracklist_state = 'ready', tracklist_run_id = NULL, tracklist_run_started_at = NULL WHERE id = ?"
+        ).run(setId);
+        const insert = db.query(
+          "INSERT INTO set_cues (set_id, position, start_seconds, artist, title, apple_music_id, artwork_url) VALUES (?, ?, ?, ?, ?, NULL, NULL)"
+        );
+        insert.run(setId, 0, 0, "First Artist", "First Cue");
+        insert.run(setId, 1, 12, "Second Artist", "Second Cue");
+        insert.run(setId, 2, null, "Untimed Artist", "Untimed Cue");
+      })();
       break;
     }
     default: {
