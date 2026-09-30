@@ -143,7 +143,7 @@ try {
     const page = await context.newPage();
     await page.goto(`${webUrl}/sign-in`);
     await page.getByLabel("API key").fill(key);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
     await page.getByRole("heading", { name: "Library" }).waitFor();
     await page.getByRole("link", { name: "Tracklist journey Set" }).click();
     await page.waitForURL(`${webUrl}/sets/${saved.id}`);
@@ -163,7 +163,7 @@ try {
       .getByRole("button", { name: "Middle, Second Artist, starts at 0:12" })
       .click();
     const audio = page.locator('audio[data-slot="audio-player-element"]');
-    await audio.waitFor();
+    await audio.waitFor({ state: "attached" });
     await page.waitForFunction(() => {
       const element = document.querySelector(
         'audio[data-slot="audio-player-element"]'
@@ -208,6 +208,28 @@ try {
       true
     );
     steps.push("Tracklist fits phone width");
+
+    execFileSync("bun", [
+      "-e",
+      `import { Database } from "bun:sqlite";
+       const db = new Database(process.argv[1]);
+       db.query("UPDATE sets SET tracklist_state = 'failed' WHERE id = ?").run(process.argv[2]);
+       db.close();`,
+      path.join(dataDirectory, "library.sqlite"),
+      saved.id,
+    ]);
+    await page.reload();
+    const retry = page.getByRole("button", { exact: true, name: "Retry" });
+    await retry.waitFor();
+    const retried = page.waitForResponse(
+      (response) =>
+        response.url().endsWith(`/sets/${saved.id}/tracklist/retry`) &&
+        response.request().method() === "POST"
+    );
+    await retry.click();
+    const response = await retried;
+    assert.equal(response.status(), 200);
+    steps.push("a failed Tracklist offers a working retry action");
   } finally {
     await browser.close();
   }

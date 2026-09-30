@@ -28,11 +28,14 @@ const AppShell = ({ session }: { readonly session: Session }) => {
   };
   return (
     <div className="flex min-h-svh flex-col">
-      <header className="flex items-center gap-6 border-b px-6 py-3">
+      <header className="flex flex-wrap items-center gap-x-6 gap-y-3 border-b px-6 py-3">
         <Link className="font-medium" to="/">
           Orbis
         </Link>
-        <nav aria-label="Main" className="flex gap-4 text-sm">
+        <nav
+          aria-label="Main"
+          className="order-3 flex w-full flex-wrap gap-x-4 gap-y-2 text-sm sm:order-none sm:w-auto"
+        >
           {NAV_ITEMS.map((item) => (
             <Link
               activeOptions={{ exact: true }}
@@ -45,7 +48,7 @@ const AppShell = ({ session }: { readonly session: Session }) => {
             </Link>
           ))}
         </nav>
-        <div className="ml-auto flex items-center gap-3 text-sm">
+        <div className="ml-auto flex min-w-0 flex-wrap items-center gap-3 text-sm">
           <span className="text-muted-foreground">
             Signed in as {session.person.username}
           </span>
