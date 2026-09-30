@@ -58,7 +58,7 @@ test("device listener grants one Set's audio and rejects invalid browser credent
     if (!device) {
       throw new Error("Missing device listener");
     }
-    const origin = "https://vanta.tail01d084.ts.net:10000";
+    const origin = "https://orbis.p11a.xyz";
     const headers = { authorization: `Bearer ${token}`, origin };
     const save = async (title: string, url: string) => {
       const response = await fetch(new URL("/sets", device.url), {
@@ -293,19 +293,14 @@ test("device listener accepts the Cloudflare web Origin and the local listener r
     expect(saved.headers.get("access-control-allow-origin")).toBe(origin);
     expect(saved.headers.get("vary")).toBe("origin");
 
-    expect(
-      await statusOf(new URL("/sets", device.url), {
-        headers: { origin: "https://vanta.tail01d084.ts.net:10000" },
-        method: "OPTIONS",
-      })
-    ).toBe(204);
-
     const refused = await Promise.all(
       [
         "https://evil.example",
         "http://orbis.p11a.xyz",
         "https://orbis.p11a.xyz.evil.example",
         "https://evil.orbis.p11a.xyz",
+        // The Funnel served the old web client until the cut-over (#150).
+        "https://vanta.tail01d084.ts.net:10000",
       ].map((refusedOrigin) =>
         statusOf(new URL("/sets", device.url), {
           headers: { authorization: `Bearer ${token}`, origin: refusedOrigin },
@@ -313,7 +308,7 @@ test("device listener accepts the Cloudflare web Origin and the local listener r
         })
       )
     );
-    expect(refused).toEqual([403, 403, 403, 403]);
+    expect(refused).toEqual([403, 403, 403, 403, 403]);
     expect(
       await statusOf(new URL("/sets", listeners.local.url), {
         headers: { origin },

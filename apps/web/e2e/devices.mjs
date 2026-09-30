@@ -12,7 +12,7 @@ import { setTimeout } from "node:timers/promises";
 import { chromium } from "playwright";
 
 const root = path.resolve(import.meta.dirname, "../../..");
-const artifacts = path.join(root, ".cache/web-next-devices");
+const artifacts = path.join(root, ".cache/web-devices");
 const apiPort = 4460;
 const devicePort = 4461;
 const webPort = 3361;
@@ -92,7 +92,7 @@ const web = spawn(
     "--strictPort",
   ],
   {
-    cwd: path.join(root, "apps/web-next"),
+    cwd: path.join(root, "apps/web"),
     env: { ...process.env, ORBIS_API_URL: apiUrl },
     stdio: "ignore",
   }

@@ -253,19 +253,24 @@ kill %1
 
 To recover for real, stop `orbis-server`, copy `library.sqlite` and `devices.json` from the chosen snapshot into `~/orbis-service-data` (keep the broken files aside), and start the unit. `apps/server/src/backup.test.ts` runs the same restore in an automated test.
 
-## Put the web address live on Funnel
+## Put the API live on Funnel
 
-This makes `https://vanta.tail01d084.ts.net:10000` public (ADR 0007). Run it on Vanta only, with root, after the owner approves. Build the web client first (`bun run --filter @orbis/web build`) and note its `dist` path.
+This makes the API at `https://vanta.tail01d084.ts.net:10000/api` public (ADR 0007). Run it on Vanta only, with root, after the owner approves. The web client is not served from Vanta: it runs on Cloudflare at `https://orbis.p11a.xyz` and calls this address (ADR 0015). Its deploy is in [`apps/web/README.md`](../../apps/web/README.md).
 
 ```sh
 sudo tailscale serve --bg --https=10000 --set-path=/api http://127.0.0.1:4311/
-sudo tailscale serve --bg --https=10000 --set-path=/ ~/orbis-service/apps/web/dist
-# `funnel` takes the same flags as `serve`. Repeat both handlers; a bare
-# `tailscale funnel --bg 10000` reads 10000 as the target and tries port 443.
+# `funnel` takes the same flags as `serve`; a bare `tailscale funnel --bg 10000`
+# reads 10000 as the target and tries port 443.
 sudo tailscale funnel --bg --https=10000 --set-path=/api http://127.0.0.1:4311/
-sudo tailscale funnel --bg --https=10000 --set-path=/ ~/orbis-service/apps/web/dist
 tailscale serve status
 tailscale funnel status
+```
+
+`tailscale serve status` must show only `/api` on port 10000. Before the cut-over (#150) the Funnel also served the old web client at `/`; remove that handler if it is still there:
+
+```sh
+sudo tailscale funnel --https=10000 --set-path=/ off
+sudo tailscale serve --https=10000 --set-path=/ off
 ```
 
 The device listener must see `/health`, not `/api/health`. Serve strips the mount path when it proxies (verified on Vanta on 2026-09-29: a request to `/api/health` is logged as `GET /health`). The server checks the key before it routes, so the first check returns 403 on any path; only the second, which must return 200, proves the route. A 404 there means Serve kept `/api`. A 401 means the key was sent but is not enrolled.

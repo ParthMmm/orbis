@@ -1,6 +1,6 @@
 # Orbis web client (Cloudflare)
 
-The web client at `https://orbis.p11a.xyz`, built with TanStack Start and shadcn (preset `b3loz15fu`) and deployed to Cloudflare Workers with Alchemy 2 ([ADR 0015](../../docs/adr/0015-web-on-cloudflare-workers.md)). It replaces `apps/web` at the cut-over.
+The web client at `https://orbis.p11a.xyz`, built with TanStack Start and shadcn (preset `b3loz15fu`) and deployed to Cloudflare Workers with Alchemy 2 ([ADR 0015](../../docs/adr/0015-web-on-cloudflare-workers.md)).
 
 The API, the database, and audio stay on Vanta. The page calls the API at the address in `alchemy.run.ts` (`ORBIS_API_URL`) with the Person's own key, and plays audio from Vanta through stream grants. The Worker never sees a key.
 
@@ -15,7 +15,7 @@ bun alchemy profile refresh --profile default --provider Cloudflare
 ## Deploy
 
 ```sh
-cd apps/web-next
+cd apps/web
 bun run deploy     # alchemy deploy --stage prod
 ```
 

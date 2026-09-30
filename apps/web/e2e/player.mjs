@@ -12,7 +12,7 @@ import { setTimeout } from "node:timers/promises";
 import { chromium } from "playwright";
 
 const root = path.resolve(import.meta.dirname, "../../..");
-const artifacts = path.join(root, ".cache/web-next-player");
+const artifacts = path.join(root, ".cache/web-player");
 const apiPort = 4510;
 const devicePort = 4511;
 const webPort = 3411;
@@ -86,7 +86,7 @@ await writeFile(
   })
 );
 const startApi = () =>
-  spawn("bun", ["apps/web-next/e2e/api-server.ts"], {
+  spawn("bun", ["apps/web/e2e/api-server.ts"], {
     cwd: root,
     env: {
       ...process.env,
@@ -110,7 +110,7 @@ const web = spawn(
     "--strictPort",
   ],
   {
-    cwd: path.join(root, "apps/web-next"),
+    cwd: path.join(root, "apps/web"),
     env: { ...process.env, ORBIS_API_URL: apiUrl },
     stdio: "ignore",
   }
