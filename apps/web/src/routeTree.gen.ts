@@ -21,6 +21,7 @@ import { Route as AppPeopleIndexRouteImport } from './routes/_app/people/index'
 import { Route as AppPeopleIdRouteImport } from './routes/_app/people/$id'
 import { Route as AppPlaylistsIndexRouteImport } from './routes/_app/playlists/index'
 import { Route as AppPlaylistsIdRouteImport } from './routes/_app/playlists/$id'
+import { Route as AppSetsIdRouteImport } from './routes/_app/sets/$id'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -81,6 +82,11 @@ const AppPlaylistsIdRoute = AppPlaylistsIdRouteImport.update({
   path: '/playlists/$id',
   getParentRoute: () => AppRoute,
 } as any)
+const AppSetsIdRoute = AppSetsIdRouteImport.update({
+  id: '/sets/$id',
+  path: '/sets/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -92,6 +98,7 @@ export interface FileRoutesByFullPath {
   '/queue': typeof AppQueueRoute
   '/people/$id': typeof AppPeopleIdRoute
   '/playlists/$id': typeof AppPlaylistsIdRoute
+  '/sets/$id': typeof AppSetsIdRoute
   '/people/': typeof AppPeopleIndexRoute
   '/playlists/': typeof AppPlaylistsIndexRoute
 }
@@ -105,6 +112,7 @@ export interface FileRoutesByTo {
   '/': typeof AppIndexRoute
   '/people/$id': typeof AppPeopleIdRoute
   '/playlists/$id': typeof AppPlaylistsIdRoute
+  '/sets/$id': typeof AppSetsIdRoute
   '/people': typeof AppPeopleIndexRoute
   '/playlists': typeof AppPlaylistsIndexRoute
 }
@@ -120,6 +128,7 @@ export interface FileRoutesById {
   '/_app/': typeof AppIndexRoute
   '/_app/people/$id': typeof AppPeopleIdRoute
   '/_app/playlists/$id': typeof AppPlaylistsIdRoute
+  '/_app/sets/$id': typeof AppSetsIdRoute
   '/_app/people/': typeof AppPeopleIndexRoute
   '/_app/playlists/': typeof AppPlaylistsIndexRoute
 }
@@ -135,6 +144,7 @@ export interface FileRouteTypes {
     | '/queue'
     | '/people/$id'
     | '/playlists/$id'
+    | '/sets/$id'
     | '/people/'
     | '/playlists/'
   fileRoutesByTo: FileRoutesByTo
@@ -148,6 +158,7 @@ export interface FileRouteTypes {
     | '/'
     | '/people/$id'
     | '/playlists/$id'
+    | '/sets/$id'
     | '/people'
     | '/playlists'
   id:
@@ -162,6 +173,7 @@ export interface FileRouteTypes {
     | '/_app/'
     | '/_app/people/$id'
     | '/_app/playlists/$id'
+    | '/_app/sets/$id'
     | '/_app/people/'
     | '/_app/playlists/'
   fileRoutesById: FileRoutesById
@@ -258,6 +270,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPlaylistsIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/sets/$id': {
+      id: '/_app/sets/$id'
+      path: '/sets/$id'
+      fullPath: '/sets/$id'
+      preLoaderRoute: typeof AppSetsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -269,6 +288,7 @@ interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppPeopleIdRoute: typeof AppPeopleIdRoute
   AppPlaylistsIdRoute: typeof AppPlaylistsIdRoute
+  AppSetsIdRoute: typeof AppSetsIdRoute
   AppPeopleIndexRoute: typeof AppPeopleIndexRoute
   AppPlaylistsIndexRoute: typeof AppPlaylistsIndexRoute
 }
@@ -281,6 +301,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppPeopleIdRoute: AppPeopleIdRoute,
   AppPlaylistsIdRoute: AppPlaylistsIdRoute,
+  AppSetsIdRoute: AppSetsIdRoute,
   AppPeopleIndexRoute: AppPeopleIndexRoute,
   AppPlaylistsIndexRoute: AppPlaylistsIndexRoute,
 }

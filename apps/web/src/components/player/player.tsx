@@ -35,13 +35,19 @@ interface Playing {
   readonly attempt: number;
   readonly set: SavedSet;
   readonly src: string;
+  readonly startAt: number;
 }
 
 export interface Player {
+  readonly elapsed: number;
   readonly playing: Playing | null;
   readonly playPlaylist: (playlistId: string) => Promise<ApiResult<unknown>>;
   /** Makes `set` the active queue entry and plays it from its saved position. */
   readonly play: (set: SavedSet) => Promise<ApiResult<unknown>>;
+  readonly playFrom: (
+    set: SavedSet,
+    seconds: number
+  ) => Promise<ApiResult<unknown>>;
   readonly queue: (
     set: SavedSet,
     placement: "next" | "end"
@@ -53,7 +59,9 @@ const unavailable = (): Promise<ApiResult<unknown>> =>
   Promise.resolve({ failure: "failed", ok: false, status: undefined });
 
 const PlayerContext = createContext<Player>({
+  elapsed: 0,
   play: unavailable,
+  playFrom: unavailable,
   playPlaylist: unavailable,
   playing: null,
   queue: unavailable,
@@ -73,27 +81,41 @@ export const PlayerProvider = ({
   readonly credentials: Credentials;
 }) => {
   const [playing, setPlaying] = useState<Playing | null>(null);
+  const [elapsed, setElapsed] = useState(0);
   const [problem, setProblem] = useState<string | null>(null);
   const lastReport = useRef(0);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const playIntent = useRef(0);
 
   const start = async (
     set: SavedSet,
-    attempt: number
+    attempt: number,
+    startAt = set.playbackPositionSeconds,
+    intent = playIntent.current
   ): Promise<ApiResult<unknown>> => {
     const src = await streamUrl(credentials, set.id);
+    if (intent !== playIntent.current) {
+      return { ok: true, value: undefined };
+    }
     if (!src.ok) {
       setProblem(FAILURE_MESSAGES[src.failure]);
       return src;
     }
     lastReport.current = 0;
     setProblem(null);
-    setPlaying({ attempt, set, src: src.value });
+    setElapsed(startAt);
+    setPlaying({ attempt, set, src: src.value, startAt });
     return src;
   };
 
   const activate = (
-    played: Awaited<ReturnType<typeof playSet>>
+    played: Awaited<ReturnType<typeof playSet>>,
+    intent: number,
+    startAt?: number
   ): Promise<ApiResult<unknown>> => {
+    if (intent !== playIntent.current) {
+      return Promise.resolve({ ok: true, value: undefined });
+    }
     if (!played.ok) {
       return Promise.resolve(played);
     }
@@ -103,14 +125,41 @@ export const PlayerProvider = ({
       setPlaying(null);
       return Promise.resolve(played);
     }
-    return start(active, (playing?.attempt ?? 0) + 1);
+    return start(active, (playing?.attempt ?? 0) + 1, startAt, intent);
   };
 
-  const play = async (set: SavedSet) =>
-    activate(await playSet(credentials, set.id));
+  const play = async (set: SavedSet) => {
+    playIntent.current += 1;
+    const intent = playIntent.current;
+    return activate(await playSet(credentials, set.id), intent);
+  };
 
-  const playFromPlaylist = async (playlistId: string) =>
-    activate(await playPlaylist(credentials, playlistId));
+  const playFrom = async (set: SavedSet, seconds: number) => {
+    playIntent.current += 1;
+    const intent = playIntent.current;
+    const audio = audioRef.current;
+    if (playing?.set.id === set.id && audio !== null && audio.readyState > 0) {
+      audio.currentTime = seconds;
+      setElapsed(seconds);
+      try {
+        await audio.play();
+        return { ok: true, value: undefined } as const;
+      } catch {
+        if (intent !== playIntent.current) {
+          return { ok: true, value: undefined } as const;
+        }
+        setProblem("The audio could not play.");
+        return { failure: "failed", ok: false } as const;
+      }
+    }
+    return activate(await playSet(credentials, set.id), intent, seconds);
+  };
+
+  const playFromPlaylist = async (playlistId: string) => {
+    playIntent.current += 1;
+    const intent = playIntent.current;
+    return activate(await playPlaylist(credentials, playlistId), intent);
+  };
 
   const queue = (set: SavedSet, placement: "next" | "end") =>
     queueSet(credentials, set.id, placement);
@@ -126,6 +175,7 @@ export const PlayerProvider = ({
   };
 
   const reportNowAndThen = (event: SyntheticEvent<HTMLAudioElement>) => {
+    setElapsed(Math.floor(event.currentTarget.currentTime));
     const now = Date.now();
     if (now - lastReport.current >= REPORT_EVERY_MS) {
       lastReport.current = now;
@@ -160,7 +210,14 @@ export const PlayerProvider = ({
 
   return (
     <PlayerContext
-      value={{ play, playPlaylist: playFromPlaylist, playing, queue }}
+      value={{
+        elapsed,
+        play,
+        playFrom,
+        playPlaylist: playFromPlaylist,
+        playing,
+        queue,
+      }}
     >
       {/* The page fills the shell, so the player bar rests at the bottom. */}
       <div className="flex flex-1 flex-col">{children}</div>
@@ -178,11 +235,11 @@ export const PlayerProvider = ({
           <AudioPlayer className="w-full max-w-xl" key={playing.attempt}>
             <AudioPlayerElement
               autoPlay
+              ref={audioRef}
               onEnded={finish}
               onError={() => setProblem("The audio could not load.")}
               onLoadedMetadata={(event) => {
-                event.currentTarget.currentTime =
-                  playing.set.playbackPositionSeconds;
+                event.currentTarget.currentTime = playing.startAt;
               }}
               onPause={report}
               onSeeked={report}
