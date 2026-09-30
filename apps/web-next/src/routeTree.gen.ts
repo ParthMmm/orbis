@@ -17,6 +17,8 @@ import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppDevicesRouteImport } from './routes/_app/devices'
 import { Route as AppLinkRouteImport } from './routes/_app/link'
 import { Route as AppQueueRouteImport } from './routes/_app/queue'
+import { Route as AppPeopleIndexRouteImport } from './routes/_app/people/index'
+import { Route as AppPeopleIdRouteImport } from './routes/_app/people/$id'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -57,6 +59,16 @@ const AppQueueRoute = AppQueueRouteImport.update({
   path: '/queue',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPeopleIndexRoute = AppPeopleIndexRouteImport.update({
+  id: '/people/',
+  path: '/people/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPeopleIdRoute = AppPeopleIdRouteImport.update({
+  id: '/people/$id',
+  path: '/people/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -66,6 +78,8 @@ export interface FileRoutesByFullPath {
   '/devices': typeof AppDevicesRoute
   '/link': typeof AppLinkRoute
   '/queue': typeof AppQueueRoute
+  '/people/$id': typeof AppPeopleIdRoute
+  '/people/': typeof AppPeopleIndexRoute
 }
 export interface FileRoutesByTo {
   '/claim': typeof ClaimRoute
@@ -75,6 +89,8 @@ export interface FileRoutesByTo {
   '/link': typeof AppLinkRoute
   '/queue': typeof AppQueueRoute
   '/': typeof AppIndexRoute
+  '/people/$id': typeof AppPeopleIdRoute
+  '/people': typeof AppPeopleIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -86,13 +102,32 @@ export interface FileRoutesById {
   '/_app/link': typeof AppLinkRoute
   '/_app/queue': typeof AppQueueRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/people/$id': typeof AppPeopleIdRoute
+  '/_app/people/': typeof AppPeopleIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/claim' | '/sign-in' | '/admin' | '/devices' | '/link' | '/queue'
+    | '/'
+    | '/claim'
+    | '/sign-in'
+    | '/admin'
+    | '/devices'
+    | '/link'
+    | '/queue'
+    | '/people/$id'
+    | '/people/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/claim' | '/sign-in' | '/admin' | '/devices' | '/link' | '/queue' | '/'
+  to:
+    | '/claim'
+    | '/sign-in'
+    | '/admin'
+    | '/devices'
+    | '/link'
+    | '/queue'
+    | '/'
+    | '/people/$id'
+    | '/people'
   id:
     | '__root__'
     | '/_app'
@@ -103,6 +138,8 @@ export interface FileRouteTypes {
     | '/_app/link'
     | '/_app/queue'
     | '/_app/'
+    | '/_app/people/$id'
+    | '/_app/people/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -169,6 +206,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppQueueRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/people/': {
+      id: '/_app/people/'
+      path: '/people'
+      fullPath: '/people/'
+      preLoaderRoute: typeof AppPeopleIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/people/$id': {
+      id: '/_app/people/$id'
+      path: '/people/$id'
+      fullPath: '/people/$id'
+      preLoaderRoute: typeof AppPeopleIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -178,6 +229,8 @@ interface AppRouteChildren {
   AppLinkRoute: typeof AppLinkRoute
   AppQueueRoute: typeof AppQueueRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppPeopleIdRoute: typeof AppPeopleIdRoute
+  AppPeopleIndexRoute: typeof AppPeopleIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -186,6 +239,8 @@ const AppRouteChildren: AppRouteChildren = {
   AppLinkRoute: AppLinkRoute,
   AppQueueRoute: AppQueueRoute,
   AppIndexRoute: AppIndexRoute,
+  AppPeopleIdRoute: AppPeopleIdRoute,
+  AppPeopleIndexRoute: AppPeopleIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

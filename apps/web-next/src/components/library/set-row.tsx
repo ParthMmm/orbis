@@ -58,7 +58,17 @@ const duration = (seconds: number | null): string | null => {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 };
 
-const DownloadBadge = ({
+/** The line under a Set's title: creator, source, and length. */
+export const setDetails = (set: SavedSet): string =>
+  [
+    set.creator ?? "Unknown creator",
+    SOURCE_LABELS[set.source],
+    duration(set.durationSeconds),
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
+
+export const DownloadBadge = ({
   progress,
   set,
 }: {
@@ -189,7 +199,6 @@ export const SetRow = ({
   );
   const inFlight =
     set.downloadState === "queued" || set.downloadState === "downloading";
-  const length = duration(set.durationSeconds);
   return (
     <li className="flex items-start gap-4 border-b py-4">
       {set.artworkUrl === null ? (
@@ -203,11 +212,7 @@ export const SetRow = ({
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <h2 className="truncate font-medium">{set.title}</h2>
-        <p className="text-muted-foreground text-sm">
-          {[set.creator ?? "Unknown creator", SOURCE_LABELS[set.source], length]
-            .filter((part) => part !== null)
-            .join(" · ")}
-        </p>
+        <p className="text-muted-foreground text-sm">{setDetails(set)}</p>
         <div className="flex flex-wrap gap-1">
           <DownloadBadge progress={progress} set={set} />
           {set.tags.map((tag) => (
