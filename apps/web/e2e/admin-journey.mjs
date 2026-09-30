@@ -265,7 +265,14 @@ try {
     await dialog.waitFor({ state: "detached" });
     await manage("alice").waitFor();
     await selected.getByRole("button", { name: "Remove alice" }).click();
+    const removed = page.waitForResponse(
+      (response) =>
+        response.request().method() === "DELETE" &&
+        response.url().startsWith(`${apiUrl}/admin/people/`)
+    );
     await dialog.getByRole("button", { exact: true, name: "Remove" }).click();
+    assert.equal((await removed).status(), 200);
+    await dialog.waitFor({ state: "detached" });
     await manage("alice").waitFor({ state: "detached" });
     const remaining = await callApi("/admin/people", adminKey);
     assert.deepEqual(
