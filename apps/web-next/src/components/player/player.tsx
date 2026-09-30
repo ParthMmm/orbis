@@ -1,6 +1,19 @@
 import { createContext, use, useRef, useState } from "react";
 import type { ReactNode, SyntheticEvent } from "react";
 
+import {
+  AudioPlayer,
+  AudioPlayerControlBar,
+  AudioPlayerDurationDisplay,
+  AudioPlayerElement,
+  AudioPlayerMuteButton,
+  AudioPlayerPlayButton,
+  AudioPlayerSeekBackwardButton,
+  AudioPlayerSeekForwardButton,
+  AudioPlayerTimeDisplay,
+  AudioPlayerTimeRange,
+  AudioPlayerVolumeRange,
+} from "@/components/ai-elements/audio-player";
 import { Button } from "@/components/ui/button";
 import type { SavedSet } from "@/lib/library";
 import { FAILURE_MESSAGES } from "@/lib/orbis";
@@ -150,22 +163,31 @@ export const PlayerProvider = ({
               {playing.set.creator ?? "Unknown creator"}
             </p>
           </div>
-          <audio
-            autoPlay
-            className="w-full max-w-md"
-            controls
-            key={playing.attempt}
-            onEnded={finish}
-            onError={() => setProblem("The audio could not load.")}
-            onLoadedMetadata={(event) => {
-              event.currentTarget.currentTime =
-                playing.set.playbackPositionSeconds;
-            }}
-            onPause={report}
-            onSeeked={report}
-            onTimeUpdate={reportNowAndThen}
-            src={playing.src}
-          />
+          <AudioPlayer className="w-full max-w-xl" key={playing.attempt}>
+            <AudioPlayerElement
+              autoPlay
+              onEnded={finish}
+              onError={() => setProblem("The audio could not load.")}
+              onLoadedMetadata={(event) => {
+                event.currentTarget.currentTime =
+                  playing.set.playbackPositionSeconds;
+              }}
+              onPause={report}
+              onSeeked={report}
+              onTimeUpdate={reportNowAndThen}
+              src={playing.src}
+            />
+            <AudioPlayerControlBar>
+              <AudioPlayerPlayButton />
+              <AudioPlayerSeekBackwardButton seekOffset={15} />
+              <AudioPlayerSeekForwardButton seekOffset={30} />
+              <AudioPlayerTimeDisplay />
+              <AudioPlayerTimeRange />
+              <AudioPlayerDurationDisplay />
+              <AudioPlayerMuteButton />
+              <AudioPlayerVolumeRange />
+            </AudioPlayerControlBar>
+          </AudioPlayer>
           {problem === null ? null : (
             <div className="flex items-center gap-2">
               <p className="text-destructive text-sm" role="alert">
