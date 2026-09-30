@@ -63,8 +63,29 @@ export const sets = sqliteTable("sets", {
   })
     .notNull()
     .default(true),
+  tracklistState: text("tracklist_state", {
+    enum: ["pending", "ready", "none", "failed"],
+  })
+    .notNull()
+    .default("pending"),
   url: text("url").notNull().unique(),
 });
+
+export const setCues = sqliteTable(
+  "set_cues",
+  {
+    appleMusicId: text("apple_music_id"),
+    artist: text("artist").notNull(),
+    artworkUrl: text("artwork_url"),
+    position: integer("position").notNull(),
+    setId: text("set_id")
+      .notNull()
+      .references(() => sets.id, { onDelete: "cascade" }),
+    startSeconds: integer("start_seconds"),
+    title: text("title").notNull(),
+  },
+  (table) => [primaryKey({ columns: [table.setId, table.position] })]
+);
 
 export const libraryEntries = sqliteTable(
   "library_entries",
@@ -224,5 +245,6 @@ export const schema = {
   playlistSets,
   playlists,
   queueEntries,
+  setCues,
   sets,
 };

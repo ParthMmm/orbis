@@ -5,7 +5,7 @@ import { eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { Database } from "./db/database.js";
-import { downloadJobs, sets } from "./db/schema.js";
+import { downloadJobs, setCues, sets } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import { outputTail } from "./logging.js";
 
@@ -119,9 +119,11 @@ export class MediaStore extends Context.Service<
               downloadState: "none",
               retainedAudioBytes: null,
               retainedAudioFormat: null,
+              tracklistState: "pending",
             })
             .where(eq(sets.id, id));
           yield* tx.delete(downloadJobs).where(eq(downloadJobs.setId, id));
+          yield* tx.delete(setCues).where(eq(setCues.setId, id));
         })
       );
     }).pipe(Effect.mapError(releaseError));
