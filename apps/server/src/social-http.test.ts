@@ -180,3 +180,111 @@ test("People see a friend's full Library only while both sides allow it", async 
     await rm(directory, { force: true, recursive: true });
   }
 });
+
+// Ways this list could go wrong, each checked below: it shows a Person while the
+// caller's Social is off, shows a Person whose Social is off, shows a removed
+// Person or the caller, reveals a Person who hid from the caller (Appear off),
+// drops a Person the caller stopped seeing (so See could never be turned back
+// on), or reports filters other than the caller's own.
+test("A Person lists their See and Appear filters for everyone they could see", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-filters-"));
+  const tokens = { a: "alice-key", b: "bob-key", c: "carol-key" };
+  const devicesPath = path.join(directory, "devices.json");
+  await writeFile(
+    devicesPath,
+    JSON.stringify({
+      keys: Object.entries(tokens).map(([personId, token]) => ({
+        addedAt: "2026-09-29T00:00:00.000Z",
+        id: `${personId}-key`,
+        label: "phone",
+        lastUsedAt: null,
+        personId,
+        scope: "daily",
+        tokenHash: hashToken(token),
+      })),
+      people: [
+        { id: "host", removed: false, username: "host" },
+        { id: "a", removed: false, username: "alice" },
+        { id: "b", removed: false, username: "bob" },
+        { id: "c", removed: false, username: "carol" },
+        { id: "d", removed: true, social: true, username: "dave" },
+      ],
+      version: 2,
+    })
+  );
+  const app = createApp({
+    databasePath: path.join(directory, "library.sqlite"),
+    devicesPath,
+  });
+  const call = (
+    who: "a" | "b" | "c",
+    method: string,
+    url: string,
+    payload?: { [key: string]: boolean }
+  ) =>
+    request(app, {
+      accessMode: "device",
+      headers: { authorization: `Bearer ${tokens[who]}` },
+      host: "vanta.example.ts.net",
+      method,
+      payload,
+      url,
+    });
+  const status = async (...args: Parameters<typeof call>) => {
+    const response = await call(...args);
+    return response.statusCode;
+  };
+  const filters = async (who: "a" | "b" | "c") => {
+    const response = await call(who, "GET", "/people/filters");
+    expect(response.statusCode).toBe(200);
+    return response.json();
+  };
+  try {
+    expect(await filters("a")).toEqual({ people: [] });
+    expect(await status("a", "PATCH", "/me", { social: true })).toBe(200);
+    // Nobody else has Social on yet.
+    expect(await filters("a")).toEqual({ people: [] });
+    expect(await status("b", "PATCH", "/me", { social: true })).toBe(200);
+    expect(await status("c", "PATCH", "/me", { social: true })).toBe(200);
+    expect(await filters("a")).toEqual({
+      people: [
+        { appear: true, id: "b", see: true, username: "bob" },
+        { appear: true, id: "c", see: true, username: "carol" },
+      ],
+    });
+
+    // Alice stops seeing Bob and stops appearing to Carol: both stay listed.
+    expect(await status("a", "PUT", "/people/b/filters", { see: false })).toBe(
+      200
+    );
+    expect(
+      await status("a", "PUT", "/people/c/filters", { appear: false })
+    ).toBe(200);
+    expect(await filters("a")).toEqual({
+      people: [
+        { appear: true, id: "b", see: false, username: "bob" },
+        { appear: false, id: "c", see: true, username: "carol" },
+      ],
+    });
+    // Alice's filters are hers; Bob still lists Alice with his own defaults.
+    expect(await filters("b")).toEqual({
+      people: [
+        { appear: true, id: "a", see: true, username: "alice" },
+        { appear: true, id: "c", see: true, username: "carol" },
+      ],
+    });
+    // Carol cannot tell that Alice exists, since Alice hid from her.
+    expect(await filters("c")).toEqual({
+      people: [{ appear: true, id: "b", see: true, username: "bob" }],
+    });
+
+    expect(await status("c", "PATCH", "/me", { social: false })).toBe(200);
+    expect(await filters("a")).toEqual({
+      people: [{ appear: true, id: "b", see: false, username: "bob" }],
+    });
+    expect(await filters("c")).toEqual({ people: [] });
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});

@@ -150,6 +150,12 @@ const sampleFor = (operationId: string) => {
       ],
     };
   }
+  // The Swift client has no filters screen yet, so this sample lives here.
+  if (operationId === "people.socialFilters") {
+    return {
+      people: [{ appear: true, id: "b", see: false, username: "bob" }],
+    };
+  }
   // The Swift client has no Devices screen yet, so these samples live here.
   const device = {
     addedAt: "2026-09-29T00:00:00.000Z",
@@ -224,7 +230,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(39);
+    expect(checked).toBe(40);
   } finally {
     await app.dispose();
   }

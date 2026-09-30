@@ -94,7 +94,7 @@ import {
 } from "./stream-grant.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
-import { resolveVisiblePerson } from "./visibility.js";
+import { listFilterablePeople, resolveVisiblePerson } from "./visibility.js";
 
 interface RawFilters {
   creatorId?: string | null;
@@ -1182,6 +1182,17 @@ export const createApp = (
                       return [];
                     }
                   }),
+                };
+              })
+            )
+          )
+          .handleRaw("socialFilters", () =>
+            withFailureResponse(
+              Effect.gen(function* listSocialFilters() {
+                const caller = yield* SetCaller;
+                const { people } = readTrustRegistry(devicesPath).store;
+                return {
+                  people: listFilterablePeople(people, caller.person.id),
                 };
               })
             )

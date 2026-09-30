@@ -201,6 +201,14 @@ const VisiblePerson = Schema.Struct({
   id: Schema.String,
   username: Schema.String,
 });
+/**
+ * A Person the caller would see if their own See filter allowed it, with the
+ * caller's See and Appear filters for them (ADR 0009).
+ */
+export const PersonFiltersSchema = Schema.Struct({
+  ...VisiblePerson.fields,
+  ...SocialFilters.fields,
+});
 
 export const SaveSetResultSchema = Schema.Struct({
   ...SavedSetSchema.fields,
@@ -480,6 +488,10 @@ export const OrbisApi = PlaylistApi.add(
         }),
         HttpApiEndpoint.get("list", "/people", {
           success: Schema.Struct({ people: Schema.Array(VisiblePerson) }),
+        }),
+        HttpApiEndpoint.get("socialFilters", "/people/filters", {
+          error: InternalError,
+          success: Schema.Struct({ people: Schema.Array(PersonFiltersSchema) }),
         }),
         HttpApiEndpoint.put("filters", "/people/:id/filters", {
           error: [BadRequest, NotFound, InternalError],
