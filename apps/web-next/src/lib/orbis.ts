@@ -13,18 +13,27 @@ import { HttpApiClient } from "effect/unstable/httpapi";
  * down, or Chrome's Local Network Access prompt was denied on a tailnet device
  * (see README, "Devices on the tailnet").
  */
-export type ApiFailure = "rejected" | "unreachable" | "failed";
+export type ApiFailure =
+  | "rejected"
+  | "unreachable"
+  | "conflict"
+  | "limited"
+  | "failed";
 
 export type ApiResult<A> =
   | { readonly ok: true; readonly value: A }
   | { readonly ok: false; readonly failure: ApiFailure };
 
-const failureFor = (status: number | undefined): ApiFailure => {
-  if (status === undefined) {
-    return "unreachable";
-  }
-  return status === 401 ? "rejected" : "failed";
-};
+const FAILURE_BY_STATUS: ReadonlyMap<number, ApiFailure> = new Map([
+  [401, "rejected"],
+  [409, "conflict"],
+  [429, "limited"],
+]);
+
+const failureFor = (status: number | undefined): ApiFailure =>
+  status === undefined
+    ? "unreachable"
+    : (FAILURE_BY_STATUS.get(status) ?? "failed");
 
 const makeClient = (apiUrl: string, key: string) =>
   HttpApiClient.make(OrbisApi, {
@@ -87,7 +96,9 @@ export type Person = Extract<
 
 /** What the page says for each failure. */
 export const FAILURE_MESSAGES: Readonly<Record<ApiFailure, string>> = {
+  conflict: "That change conflicts with what Orbis already has.",
   failed: "Orbis could not complete the request. Try again.",
+  limited: "Orbis is busy right now. Try again in a minute.",
   rejected: "That API key does not work.",
   // No response at all; on a tailnet device this is often Chrome blocking the
   // call until the Person allows local network access.

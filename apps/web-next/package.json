@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
     "deploy": "alchemy deploy --stage prod",
     "destroy": "alchemy destroy --stage prod",
-    "test": "vite build && node e2e/sign-in.mjs"
+    "test": "vite build && node e2e/sign-in.mjs && node e2e/library.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
