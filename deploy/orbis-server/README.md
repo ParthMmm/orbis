@@ -187,8 +187,11 @@ The worker logs `ytdlp: true` at startup when the binary is configured.
 
 `apps/server/src/canary.ts` downloads a short and a long Set per source through each configured backend, using the worker's own code, and checks that each stored file has the expected duration. It catches a backend that stops working before a user's download does: on 2026-09-29, Cobalt returned empty YouTube streams for long videos while short ones still worked.
 
+Keep the existing canary service and timer during a cutover. Do not recopy the repository templates over them. For a first install, adapt `orbis-canary.service` before installing it and its timer. Set `WorkingDirectory=%h/Developer/orbis-service/apps/server` and `ORBIS_DATA_DIR=%h/Developer/orbis-service-data`. Keep `ExecStart` on the Bun `1.4.1` binary with `src/canary.ts`, and preserve the provider environment file and yt-dlp settings.
+
+For installed units, check and run the timer:
+
 ```sh
-cp ~/Developer/orbis-service/deploy/orbis-server/orbis-canary.{service,timer} ~/.config/systemd/user/
 systemctl --user daemon-reload
 systemctl --user enable --now orbis-canary.timer
 systemctl --user start orbis-canary.service   # first run now; takes a few minutes
@@ -223,19 +226,30 @@ A download's wide event (`job: audio-download`) lists every backend attempt in `
 
 Retained Audio downloads again, so only the database and the trust store need a copy. A nightly user timer runs `apps/server/src/backup.ts`, which writes a consistent snapshot with `VACUUM INTO` (safe while the service writes), then `rsync`s the newest 14 snapshots to a destination the Host chooses. Prefer a different disk or host from the data directory. Set this up before the first friend key is minted.
 
+Keep the installed backup service, timer, destination, and environment file during an update. Do not recopy the repository templates over them.
+
+For a first install, adapt `orbis-backup.service` before installing it and its timer. Set `ExecStart=%h/Developer/orbis-service/deploy/orbis-server/orbis-backup.sh`. The script changes into the checkout that holds it, so this unit needs no separate `WorkingDirectory`. Set `ORBIS_DATA_DIR` explicitly in the environment file, because `orbis-backup.sh` otherwise defaults to `$HOME/orbis-service-data`.
+
+For a first install only, create the environment file with the Host's chosen destination:
+
 ```sh
 cat > ~/.config/orbis-backup.env <<'CONF'
 ORBIS_BACKUP_DEST=user@backup-host:orbis-backups/
+ORBIS_DATA_DIR=/home/parth/Developer/orbis-service-data
 CONF
 chmod 600 ~/.config/orbis-backup.env
-cp ~/Developer/orbis-service/deploy/orbis-server/orbis-backup.{service,timer} ~/.config/systemd/user/
+```
+
+For installed units, check and run the timer:
+
+```sh
 systemctl --user daemon-reload
 systemctl --user enable --now orbis-backup.timer
 systemctl --user start orbis-backup.service   # first run now
 systemctl --user list-timers orbis-backup.timer --no-pager
 ```
 
-The script runs from the checkout that holds it. When the checkout or the data directory is not at the default path, set `ORBIS_DATA_DIR` in `~/.config/orbis-backup.env` and edit the `ExecStart` path in the installed `orbis-backup.service`, as for `orbis-server.service`.
+Use an absolute path for `ORBIS_DATA_DIR` in `~/.config/orbis-backup.env`. Systemd does not expand `~` or `$HOME` in that file. Keep the existing destination when adding the data path.
 
 A remote destination needs a key-based SSH login for the service user. `devices.json` holds only key digests, but treat the copy as private because it lists every Person.
 
