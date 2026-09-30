@@ -43,7 +43,8 @@ test("a creator grants and revokes collaborative Playlist editing, and reading, 
     | { see: boolean }
     | { collaborative: boolean }
     | { editorIds: string[] }
-    | { setIds: string[] };
+    | { setIds: string[] }
+    | { playlistId: string };
   const call = (
     who: "a" | "b",
     method: string,
@@ -138,6 +139,17 @@ test("a creator grants and revokes collaborative Playlist editing, and reading, 
       role: "editor",
       setCount: 2,
     });
+    const editorQueue = await call("b", "PUT", "/queue/playlist", {
+      playlistId,
+    });
+    expect(editorQueue.statusCode).toBe(200);
+    expect(editorQueue.json().queue).toMatchObject({
+      activeSetId: null,
+      entries: [],
+    });
+    expect(
+      await status("b", "PUT", "/queue/playlist", { playlistId: "missing" })
+    ).toBe(404);
     expect(editorView.json().sets.map((set: { id: string }) => set.id)).toEqual(
       [setOne.json().id, setTwo.json().id]
     );
@@ -170,6 +182,9 @@ test("a creator grants and revokes collaborative Playlist editing, and reading, 
     ).toBe(404);
     expect(await sharedWith("b")).toEqual([]);
     expect(await status("b", "GET", `/playlists/${playlistId}`)).toBe(404);
+    expect(await status("b", "PUT", "/queue/playlist", { playlistId })).toBe(
+      404
+    );
     expect(
       await status("a", "PUT", "/people/b/filters", { appear: true })
     ).toBe(200);
@@ -194,6 +209,9 @@ test("a creator grants and revokes collaborative Playlist editing, and reading, 
     ).toBe(200);
     expect(await status("b", "PUT", members, { setIds: [] })).toBe(404);
     expect(await status("b", "GET", `/playlists/${playlistId}`)).toBe(404);
+    expect(await status("b", "PUT", "/queue/playlist", { playlistId })).toBe(
+      404
+    );
     expect(await sharedWith("b")).toEqual([]);
     expect(await status("a", "PUT", editors, { editorIds: [] })).toBe(200);
     expect(
@@ -201,6 +219,9 @@ test("a creator grants and revokes collaborative Playlist editing, and reading, 
     ).toBe(200);
     expect(await sharedWith("b")).toEqual([]);
     expect(await status("b", "GET", `/playlists/${playlistId}`)).toBe(404);
+    expect(await status("b", "PUT", "/queue/playlist", { playlistId })).toBe(
+      404
+    );
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

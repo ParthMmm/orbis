@@ -1,7 +1,3 @@
-// Every Playlist action through the built web client against a real Orbis API
-// (e2e/api-server.ts): create, add Sets, reorder, remove, rename, deep link,
-// Collaborative with an editor in a second browser (ADR 0010), the Library's
-// "Add to Playlist…", and delete, with screenshots and a result.json as the artifact.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -23,6 +19,7 @@ const keys = {
   bob: randomBytes(24).toString("base64url"),
   host: randomBytes(24).toString("base64url"),
 };
+const setIds = {};
 const sets = [
   { title: "Alpha", url: "https://www.youtube.com/watch?v=aaaaaaaaaaa" },
   { title: "Bravo", url: "https://www.youtube.com/watch?v=bbbbbbbbbbb" },
@@ -127,7 +124,6 @@ try {
   ]);
   await mkdir(artifacts, { recursive: true });
 
-  // The Host's three Sets are saved through the API; the Library journey covers the form.
   for (const set of sets) {
     // eslint-disable-next-line no-await-in-loop
     const saved = await fetch(`${apiUrl}/sets`, {
@@ -139,6 +135,17 @@ try {
       method: "POST",
     });
     assert.equal(saved.status, 201);
+    // eslint-disable-next-line no-await-in-loop
+    const { id } = await saved.json();
+    setIds[set.title] = id;
+    if (set.title !== "Alpha") {
+      // eslint-disable-next-line no-await-in-loop
+      const download = await fetch(`${apiUrl}/sets/${id}/audio/download`, {
+        headers: { authorization: `Bearer ${keys.host}` },
+        method: "POST",
+      });
+      assert.equal(download.status, 202);
+    }
   }
   step("the Host has three Sets", { titles: sets.map((set) => set.title) });
 
@@ -249,6 +256,38 @@ try {
     await expectOrder(host, ["Charlie", "Bravo"]);
     await shot(host, "playlist.png");
     step("a reload and a deep link open the same Playlist");
+    const playPlaylist = async (page, who, titles) => {
+      await page
+        .getByRole("button", { exact: true, name: "Play Playlist" })
+        .click();
+      const player = page.getByRole("region", { name: "Audio player" });
+      await player.waitFor();
+      await page.waitForFunction((id) => {
+        const audio = document.querySelector("audio");
+        return (
+          audio !== null &&
+          audio.currentSrc.includes(`/sets/${id}/audio`) &&
+          !audio.paused &&
+          audio.currentTime > 0
+        );
+      }, setIds[titles[0]]);
+      const response = await fetch(`${apiUrl}/queue`, {
+        headers: { authorization: `Bearer ${keys[who]}` },
+      });
+      assert.equal(response.status, 200);
+      const { queue } = await response.json();
+      assert.deepEqual(
+        queue.entries.map((entry) => entry.id),
+        titles.map((title) => setIds[title])
+      );
+      assert.equal(queue.activeSetId, queue.entries[0].id);
+      await shot(page, `${who}-playing-playlist.png`);
+      await page.evaluate(() => document.querySelector("audio")?.pause());
+    };
+    await playPlaylist(host, "host", ["Charlie", "Bravo"]);
+    step(
+      "the creator plays the Playlist in order through real audio and the server queue"
+    );
 
     const collaborative = host.getByRole("switch", { name: "Collaborative" });
     assert.equal(await collaborative.isChecked(), false);
@@ -285,6 +324,8 @@ try {
     await expectOrder(bob, ["Bravo", "Charlie"]);
     await shot(bob, "editor.png");
     step("bob, an editor, reorders but sees no rename, delete, or settings");
+    await playPlaylist(bob, "bob", ["Bravo", "Charlie"]);
+    step("an editor plays the shared Playlist in its new order");
 
     await host.reload();
     await expectOrder(host, ["Bravo", "Charlie"]);
@@ -307,6 +348,8 @@ try {
     await host.goto(playlistUrl);
     await expectOrder(host, ["Bravo", "Charlie", "Alpha"]);
     step("the Library's Add to Playlist puts a Set at the end");
+    await playPlaylist(host, "host", ["Bravo", "Charlie"]);
+    step("Play Playlist skips a Set without Retained Audio");
 
     await host.getByRole("button", { name: "Delete…" }).click();
     await host

@@ -7,6 +7,11 @@ const MAX_POSITION = 604_800;
 export const playSet = (credentials: Credentials, setId: string) =>
   callOrbis(credentials, (client) => client.queue.play({ payload: { setId } }));
 
+export const playPlaylist = (credentials: Credentials, playlistId: string) =>
+  callOrbis(credentials, (client) =>
+    client.queue.replaceWithPlaylist({ payload: { playlistId } })
+  );
+
 export const queueSet = (
   credentials: Credentials,
   setId: string,

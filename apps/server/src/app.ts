@@ -1097,9 +1097,17 @@ export const createApp = (
               Effect.gen(function* replaceQueueFromPlaylist() {
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(QueuePlaylistPayload);
+                const caller = yield* SetCaller;
+                const creatorId = yield* editablePlaylistOwner(
+                  input.playlistId,
+                  caller.person.id
+                );
                 const queue = yield* Queue;
                 return {
-                  queue: yield* queue.replaceWithPlaylist(input.playlistId),
+                  queue: yield* queue.replaceWithPlaylist(
+                    input.playlistId,
+                    creatorId
+                  ),
                 };
               })
             )

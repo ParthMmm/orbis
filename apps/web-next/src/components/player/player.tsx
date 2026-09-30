@@ -20,6 +20,7 @@ import { FAILURE_MESSAGES } from "@/lib/orbis";
 import type { ApiResult, Credentials } from "@/lib/orbis";
 import {
   completeSet,
+  playPlaylist,
   playSet,
   queueSet,
   reportPosition,
@@ -38,6 +39,7 @@ interface Playing {
 
 export interface Player {
   readonly playing: Playing | null;
+  readonly playPlaylist: (playlistId: string) => Promise<ApiResult<unknown>>;
   /** Makes `set` the active queue entry and plays it from its saved position. */
   readonly play: (set: SavedSet) => Promise<ApiResult<unknown>>;
   readonly queue: (
@@ -52,6 +54,7 @@ const unavailable = (): Promise<ApiResult<unknown>> =>
 
 const PlayerContext = createContext<Player>({
   play: unavailable,
+  playPlaylist: unavailable,
   playing: null,
   queue: unavailable,
 });
@@ -88,19 +91,26 @@ export const PlayerProvider = ({
     return src;
   };
 
-  const play = async (set: SavedSet): Promise<ApiResult<unknown>> => {
-    const played = await playSet(credentials, set.id);
+  const activate = (
+    played: Awaited<ReturnType<typeof playSet>>
+  ): Promise<ApiResult<unknown>> => {
     if (!played.ok) {
-      return played;
+      return Promise.resolve(played);
     }
     const { activeSetId, entries } = played.value.queue;
     const active = entries.find((entry) => entry.id === activeSetId);
     if (!active) {
       setPlaying(null);
-      return played;
+      return Promise.resolve(played);
     }
     return start(active, (playing?.attempt ?? 0) + 1);
   };
+
+  const play = async (set: SavedSet) =>
+    activate(await playSet(credentials, set.id));
+
+  const playFromPlaylist = async (playlistId: string) =>
+    activate(await playPlaylist(credentials, playlistId));
 
   const queue = (set: SavedSet, placement: "next" | "end") =>
     queueSet(credentials, set.id, placement);
@@ -149,7 +159,9 @@ export const PlayerProvider = ({
   };
 
   return (
-    <PlayerContext value={{ play, playing, queue }}>
+    <PlayerContext
+      value={{ play, playPlaylist: playFromPlaylist, playing, queue }}
+    >
       {/* The page fills the shell, so the player bar rests at the bottom. */}
       <div className="flex flex-1 flex-col">{children}</div>
       {playing === null ? null : (

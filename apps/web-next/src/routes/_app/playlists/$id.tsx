@@ -7,6 +7,7 @@ import {
 import { useState } from "react";
 import type { FormEvent } from "react";
 
+import { usePlayer } from "@/components/player/player";
 import { CollaborationCard } from "@/components/playlists/collaboration";
 import { Members } from "@/components/playlists/members";
 import { RouteProblem } from "@/components/route-problem";
@@ -195,6 +196,15 @@ const PlaylistPage = ({
   readonly people: readonly VisiblePerson[];
   readonly playlist: PlaylistDetail;
 }) => {
+  const player = usePlayer();
+  const [pending, setPending] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  const play = async () => {
+    setPending(true);
+    const result = await player.playPlaylist(playlist.id);
+    setPending(false);
+    setProblem(result.ok ? null : FAILURE_MESSAGES[result.failure]);
+  };
   const creator = playlist.role === "creator";
   const count = `${playlist.sets.length} ${playlist.sets.length === 1 ? "Set" : "Sets"}`;
   return (
@@ -219,7 +229,21 @@ const PlaylistPage = ({
             </CardAction>
           ) : null}
         </CardHeader>
-        <CardContent>
+        <CardContent className="flex flex-col gap-4">
+          <Button
+            disabled={
+              pending ||
+              !playlist.sets.some((set) => set.downloadState === "ready")
+            }
+            onClick={play}
+          >
+            Play Playlist
+          </Button>
+          {problem === null ? null : (
+            <p className="text-destructive text-sm" role="alert">
+              {problem}
+            </p>
+          )}
           <Members
             credentials={credentials}
             library={library}

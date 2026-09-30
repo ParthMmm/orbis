@@ -1,10 +1,10 @@
 import type { ListeningQueue, QueuePlacement } from "@orbis/contracts";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import type { Stream } from "effect";
 import { Context, Effect, Layer } from "effect";
 
 import { Database } from "./db/database.js";
-import { queueEntries } from "./db/schema.js";
+import { playlistSets, playlists, queueEntries } from "./db/schema.js";
 import { LibraryError } from "./errors.js";
 import { LibraryPerson } from "./library-person.js";
 import { Library } from "./library.js";
@@ -85,7 +85,8 @@ export class Queue extends Context.Service<
       placement: QueuePlacement
     ) => Effect.Effect<ListeningQueue, LibraryError>;
     readonly replaceWithPlaylist: (
-      playlistId: string
+      playlistId: string,
+      creatorId?: string
     ) => Effect.Effect<ListeningQueue, LibraryError>;
     /** Removes the finished Set, resets its position, and starts what followed it. */
     readonly complete: (
@@ -213,14 +214,38 @@ export class Queue extends Context.Service<
       );
 
       const replaceWithPlaylist = Effect.fn("Queue.replaceWithPlaylist")(
-        (playlistId: string) =>
+        (playlistId: string, creatorId: string = personId) =>
           Effect.gen(function* replaceQueueFromPlaylist() {
-            // A Playlist that does not exist fails here with the Library's own 404.
-            const members = yield* library.list({
-              playlistId,
-              q: "",
-              tags: [],
-            });
+            const [playlist] = yield* execute(
+              db
+                .select({ id: playlists.id })
+                .from(playlists)
+                .where(
+                  and(
+                    eq(playlists.id, playlistId),
+                    eq(playlists.creatorId, creatorId)
+                  )
+                )
+                .limit(1)
+            );
+            if (!playlist) {
+              return yield* Effect.fail(
+                new LibraryError({
+                  message: "Playlist not found.",
+                  statusCode: 404,
+                })
+              );
+            }
+            const memberIds = yield* execute(
+              db
+                .select({ setId: playlistSets.setId })
+                .from(playlistSets)
+                .where(eq(playlistSets.playlistId, playlistId))
+                .orderBy(asc(playlistSets.position))
+            );
+            const members = yield* library.byIds(
+              memberIds.map((member) => member.setId)
+            );
             const rows = yield* execute(order());
             const previousActive = activeIn(rows);
             const playableMembers = members.filter(
