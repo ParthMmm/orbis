@@ -7,7 +7,7 @@ import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
 import { request } from "./test-http.js";
 
-test("a creator grants and revokes collaborative Playlist editing through Social visibility", async () => {
+test("a creator grants and revokes collaborative Playlist editing, and reading, through Social visibility", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-collaborative-"));
   const tokens = { a: "creator-key", b: "editor-key" };
   const devicesPath = path.join(directory, "devices.json");
@@ -88,6 +88,24 @@ test("a creator grants and revokes collaborative Playlist editing through Social
     const granted = await call("a", "PUT", editors, { editorIds: ["b"] });
     expect(granted.json()).toEqual({ collaborative: true, editorIds: ["b"] });
 
+    const sharedWith = async (who: "a" | "b") => {
+      const response = await call(who, "GET", "/playlists/shared");
+      expect(response.statusCode).toBe(200);
+      return response.json().playlists;
+    };
+    expect(await sharedWith("b")).toEqual([
+      {
+        createdAt: created.json().createdAt,
+        creator: { id: "a", username: "alice" },
+        id: playlistId,
+        name: "Together",
+        setCount: 0,
+      },
+    ]);
+    expect(await sharedWith("a")).toEqual([]);
+    const editorOwned = await call("b", "GET", "/playlists");
+    expect(editorOwned.json().playlists).toEqual([]);
+
     const added = await call("b", "PUT", members, {
       setIds: [setTwo.json().id, setOne.json().id],
     });
@@ -105,6 +123,26 @@ test("a creator grants and revokes collaborative Playlist editing through Social
       setOne.json().id,
       setTwo.json().id,
     ]);
+    const creatorView = await call("a", "GET", `/playlists/${playlistId}`);
+    expect(creatorView.statusCode).toBe(200);
+    expect(creatorView.json()).toMatchObject({
+      creator: { id: "a", username: "alice" },
+      id: playlistId,
+      name: "Together",
+      role: "creator",
+      setCount: 2,
+    });
+    const editorView = await call("b", "GET", `/playlists/${playlistId}`);
+    expect(editorView.json()).toMatchObject({
+      creator: { id: "a", username: "alice" },
+      role: "editor",
+      setCount: 2,
+    });
+    expect(editorView.json().sets.map((set: { id: string }) => set.id)).toEqual(
+      [setOne.json().id, setTwo.json().id]
+    );
+    expect(await status("b", "GET", "/playlists/missing")).toBe(404);
+
     const removed = await call("b", "PUT", members, {
       setIds: [setOne.json().id],
     });
@@ -130,9 +168,12 @@ test("a creator grants and revokes collaborative Playlist editing through Social
         setIds: [setOne.json().id, setTwo.json().id],
       })
     ).toBe(404);
+    expect(await sharedWith("b")).toEqual([]);
+    expect(await status("b", "GET", `/playlists/${playlistId}`)).toBe(404);
     expect(
       await status("a", "PUT", "/people/b/filters", { appear: true })
     ).toBe(200);
+    expect(await sharedWith("b")).toHaveLength(1);
     expect(
       await status("b", "PUT", members, {
         setIds: [setOne.json().id, setTwo.json().id],
@@ -152,6 +193,14 @@ test("a creator grants and revokes collaborative Playlist editing through Social
       await status("a", "PUT", collaboration, { collaborative: false })
     ).toBe(200);
     expect(await status("b", "PUT", members, { setIds: [] })).toBe(404);
+    expect(await status("b", "GET", `/playlists/${playlistId}`)).toBe(404);
+    expect(await sharedWith("b")).toEqual([]);
+    expect(await status("a", "PUT", editors, { editorIds: [] })).toBe(200);
+    expect(
+      await status("a", "PUT", collaboration, { collaborative: true })
+    ).toBe(200);
+    expect(await sharedWith("b")).toEqual([]);
+    expect(await status("b", "GET", `/playlists/${playlistId}`)).toBe(404);
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

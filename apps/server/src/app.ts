@@ -27,7 +27,7 @@ import {
   UpdateTitlePayload,
   UpdateMePayload,
 } from "@orbis/contracts/http-api";
-import { and, desc, eq, sql } from "drizzle-orm";
+import { and, asc, desc, eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Option, Schema, Scope, Stream } from "effect";
 import {
   Headers,
@@ -55,6 +55,7 @@ import { Database, layer as databaseLayer } from "./db/database.js";
 import {
   listens,
   playlistEditors,
+  playlistSets,
   playlists,
   queueEntries,
 } from "./db/schema.js";
@@ -778,6 +779,11 @@ export const createApp = (
           }
           return editor.creatorId;
         });
+      const personSummary = (id: string) => {
+        const { people } = readTrustRegistry(devicesPath).store;
+        const person = people.find((candidate) => candidate.id === id);
+        return { id, username: person?.username ?? id };
+      };
       const playlistGroup = HttpApiBuilder.group(
         OrbisApi,
         "playlists",
@@ -788,6 +794,96 @@ export const createApp = (
                 Effect.gen(function* listPersonalPlaylists() {
                   const personal = yield* Library;
                   return { playlists: yield* personal.playlists() };
+                })
+              )
+            )
+            .handle("shared", () =>
+              withFailureResponse(
+                Effect.gen(function* listSharedPlaylists() {
+                  const caller = yield* SetCaller;
+                  const rows = yield* db
+                    .select({
+                      createdAt: playlists.createdAt,
+                      creatorId: playlists.creatorId,
+                      id: playlists.id,
+                      name: playlists.name,
+                      setCount: sql<number>`(
+                        SELECT COUNT(*)
+                        FROM ${playlistSets}
+                        WHERE ${playlistSets.playlistId} = ${playlists.id}
+                      )`,
+                    })
+                    .from(playlistEditors)
+                    .innerJoin(
+                      playlists,
+                      eq(playlists.id, playlistEditors.playlistId)
+                    )
+                    .where(
+                      and(
+                        eq(playlistEditors.editorId, caller.person.id),
+                        eq(playlists.creatorId, playlistEditors.creatorId),
+                        eq(playlists.collaborative, true)
+                      )
+                    )
+                    .orderBy(asc(sql`${playlists.name} COLLATE NOCASE`));
+                  const shared = [];
+                  // An editor's rights lapse while the ADR 0009 gate is closed.
+                  for (const { creatorId, ...playlist } of rows) {
+                    const open = yield* Effect.option(
+                      mutuallyVisibleFriend(creatorId)
+                    );
+                    if (Option.isSome(open)) {
+                      shared.push({
+                        ...playlist,
+                        creator: personSummary(creatorId),
+                      });
+                    }
+                  }
+                  return { playlists: shared };
+                })
+              )
+            )
+            .handle("read", ({ params }) =>
+              withFailureResponse(
+                Effect.gen(function* readPlaylist() {
+                  const caller = yield* SetCaller;
+                  const ownerId = yield* editablePlaylistOwner(
+                    params.id,
+                    caller.person.id
+                  );
+                  const [playlist] = yield* db
+                    .select({
+                      createdAt: playlists.createdAt,
+                      id: playlists.id,
+                      name: playlists.name,
+                    })
+                    .from(playlists)
+                    .where(eq(playlists.id, params.id))
+                    .limit(1);
+                  if (!playlist) {
+                    return yield* Effect.fail(missingPlaylist());
+                  }
+                  // Members read as the creator sees them, as a friend's Playlist does.
+                  const members = yield* Effect.provide(
+                    Effect.gen(function* listPlaylistMembers() {
+                      const ownerLibrary = yield* Library;
+                      return yield* ownerLibrary.list({
+                        playlistId: params.id,
+                      });
+                    }),
+                    Library.forPersonLayer(ownerId, libraryOptions).pipe(
+                      Layer.provide(Layer.succeed(Database, db))
+                    )
+                  );
+                  const role: "creator" | "editor" =
+                    ownerId === caller.person.id ? "creator" : "editor";
+                  return {
+                    ...playlist,
+                    creator: personSummary(ownerId),
+                    role,
+                    setCount: members.length,
+                    sets: members,
+                  };
                 })
               )
             )

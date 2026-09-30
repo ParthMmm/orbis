@@ -19,6 +19,8 @@ import { Route as AppLinkRouteImport } from './routes/_app/link'
 import { Route as AppQueueRouteImport } from './routes/_app/queue'
 import { Route as AppPeopleIndexRouteImport } from './routes/_app/people/index'
 import { Route as AppPeopleIdRouteImport } from './routes/_app/people/$id'
+import { Route as AppPlaylistsIndexRouteImport } from './routes/_app/playlists/index'
+import { Route as AppPlaylistsIdRouteImport } from './routes/_app/playlists/$id'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
@@ -69,6 +71,16 @@ const AppPeopleIdRoute = AppPeopleIdRouteImport.update({
   path: '/people/$id',
   getParentRoute: () => AppRoute,
 } as any)
+const AppPlaylistsIndexRoute = AppPlaylistsIndexRouteImport.update({
+  id: '/playlists/',
+  path: '/playlists/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPlaylistsIdRoute = AppPlaylistsIdRouteImport.update({
+  id: '/playlists/$id',
+  path: '/playlists/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -79,7 +91,9 @@ export interface FileRoutesByFullPath {
   '/link': typeof AppLinkRoute
   '/queue': typeof AppQueueRoute
   '/people/$id': typeof AppPeopleIdRoute
+  '/playlists/$id': typeof AppPlaylistsIdRoute
   '/people/': typeof AppPeopleIndexRoute
+  '/playlists/': typeof AppPlaylistsIndexRoute
 }
 export interface FileRoutesByTo {
   '/claim': typeof ClaimRoute
@@ -90,7 +104,9 @@ export interface FileRoutesByTo {
   '/queue': typeof AppQueueRoute
   '/': typeof AppIndexRoute
   '/people/$id': typeof AppPeopleIdRoute
+  '/playlists/$id': typeof AppPlaylistsIdRoute
   '/people': typeof AppPeopleIndexRoute
+  '/playlists': typeof AppPlaylistsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -103,7 +119,9 @@ export interface FileRoutesById {
   '/_app/queue': typeof AppQueueRoute
   '/_app/': typeof AppIndexRoute
   '/_app/people/$id': typeof AppPeopleIdRoute
+  '/_app/playlists/$id': typeof AppPlaylistsIdRoute
   '/_app/people/': typeof AppPeopleIndexRoute
+  '/_app/playlists/': typeof AppPlaylistsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -116,7 +134,9 @@ export interface FileRouteTypes {
     | '/link'
     | '/queue'
     | '/people/$id'
+    | '/playlists/$id'
     | '/people/'
+    | '/playlists/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/claim'
@@ -127,7 +147,9 @@ export interface FileRouteTypes {
     | '/queue'
     | '/'
     | '/people/$id'
+    | '/playlists/$id'
     | '/people'
+    | '/playlists'
   id:
     | '__root__'
     | '/_app'
@@ -139,7 +161,9 @@ export interface FileRouteTypes {
     | '/_app/queue'
     | '/_app/'
     | '/_app/people/$id'
+    | '/_app/playlists/$id'
     | '/_app/people/'
+    | '/_app/playlists/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -220,6 +244,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppPeopleIdRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/playlists/': {
+      id: '/_app/playlists/'
+      path: '/playlists'
+      fullPath: '/playlists/'
+      preLoaderRoute: typeof AppPlaylistsIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/playlists/$id': {
+      id: '/_app/playlists/$id'
+      path: '/playlists/$id'
+      fullPath: '/playlists/$id'
+      preLoaderRoute: typeof AppPlaylistsIdRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -230,7 +268,9 @@ interface AppRouteChildren {
   AppQueueRoute: typeof AppQueueRoute
   AppIndexRoute: typeof AppIndexRoute
   AppPeopleIdRoute: typeof AppPeopleIdRoute
+  AppPlaylistsIdRoute: typeof AppPlaylistsIdRoute
   AppPeopleIndexRoute: typeof AppPeopleIndexRoute
+  AppPlaylistsIndexRoute: typeof AppPlaylistsIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
@@ -240,7 +280,9 @@ const AppRouteChildren: AppRouteChildren = {
   AppQueueRoute: AppQueueRoute,
   AppIndexRoute: AppIndexRoute,
   AppPeopleIdRoute: AppPeopleIdRoute,
+  AppPlaylistsIdRoute: AppPlaylistsIdRoute,
   AppPeopleIndexRoute: AppPeopleIndexRoute,
+  AppPlaylistsIndexRoute: AppPlaylistsIndexRoute,
 }
 
 const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)

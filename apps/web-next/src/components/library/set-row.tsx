@@ -3,6 +3,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
+import { AddToPlaylistDialog } from "@/components/library/add-to-playlist-dialog";
 import { usePlayer } from "@/components/player/player";
 import {
   AlertDialog,
@@ -41,8 +42,9 @@ import {
 import type { SavedSet } from "@/lib/library";
 import { FAILURE_MESSAGES } from "@/lib/orbis";
 import type { ApiResult, Credentials } from "@/lib/orbis";
+import type { Playlist } from "@/lib/playlists";
 
-type Dialogs = "rename" | "tags" | "remove";
+type Dialogs = "rename" | "tags" | "playlists" | "remove";
 
 const SOURCE_LABELS = { soundcloud: "SoundCloud", youtube: "YouTube" } as const;
 
@@ -167,10 +169,12 @@ const TextDialog = ({
 
 export const SetRow = ({
   credentials,
+  playlists,
   progress,
   set,
 }: {
   readonly credentials: Credentials;
+  readonly playlists: readonly Playlist[];
   readonly progress: number | undefined;
   readonly set: SavedSet;
 }) => {
@@ -287,6 +291,9 @@ export const SetRow = ({
           <DropdownMenuItem onClick={() => setDialog("tags")}>
             Edit Tags…
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setDialog("playlists")}>
+            Add to Playlist…
+          </DropdownMenuItem>
           <DropdownMenuSeparator />
           <DropdownMenuItem
             onClick={() => setDialog("remove")}
@@ -312,6 +319,14 @@ export const SetRow = ({
           onSave={(text) => updateTags(credentials, set.id, parseTags(text))}
           title={`Tags for ${set.title}`}
           value={set.tags.join(", ")}
+        />
+      ) : null}
+      {dialog === "playlists" ? (
+        <AddToPlaylistDialog
+          credentials={credentials}
+          onClose={close}
+          playlists={playlists}
+          set={set}
         />
       ) : null}
       <AlertDialog

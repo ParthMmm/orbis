@@ -209,6 +209,20 @@ export const PersonFiltersSchema = Schema.Struct({
   ...VisiblePerson.fields,
   ...SocialFilters.fields,
 });
+/** A Collaborative Playlist the caller may edit, with the Person who created it. */
+export const SharedPlaylistSchema = Schema.Struct({
+  ...PlaylistSchema.fields,
+  creator: VisiblePerson,
+});
+/**
+ * One Playlist as its creator or an editor sees it (ADR 0010). `role` says which
+ * controls apply: only the creator renames, deletes, or manages editors.
+ */
+export const PlaylistDetailSchema = Schema.Struct({
+  ...SharedPlaylistSchema.fields,
+  role: Schema.Literals(["creator", "editor"]),
+  sets: Schema.Array(SavedSetSchema),
+});
 
 export const SaveSetResultSchema = Schema.Struct({
   ...SavedSetSchema.fields,
@@ -375,6 +389,17 @@ const PlaylistApi = SetsApi.add(
       HttpApiEndpoint.get("list", "/playlists", {
         error: InternalError,
         success: Schema.Struct({ playlists: Schema.Array(PlaylistSchema) }),
+      }),
+      HttpApiEndpoint.get("shared", "/playlists/shared", {
+        error: InternalError,
+        success: Schema.Struct({
+          playlists: Schema.Array(SharedPlaylistSchema),
+        }),
+      }),
+      HttpApiEndpoint.get("read", "/playlists/:id", {
+        error: [NotFound, InternalError],
+        params: SetId,
+        success: PlaylistDetailSchema,
       }),
       HttpApiEndpoint.post("create", "/playlists", {
         error: [BadRequest, Conflict, InternalError],
