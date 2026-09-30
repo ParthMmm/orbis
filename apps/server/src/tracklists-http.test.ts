@@ -11,6 +11,7 @@ import { backfillTracklists } from "./backfill-tracklists.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { Metadata } from "./metadata.js";
 import { request } from "./test-http.js";
+import { runClaimedTracklist } from "./tracklists.js";
 import { Versos, VersosError } from "./versos.js";
 import type { SourceDetails } from "./ytdlp-metadata.js";
 
@@ -482,8 +483,18 @@ test("backfill skips a live HTTP run and an expired run cannot replace newer Cue
     expect(whileLive).toEqual({ attempted: 1, completed: 0 });
     expect(backfillRequests).toBe(0);
 
+    let staleToken: string;
     const db = new Sqlite(databasePath);
     try {
+      const row = db
+        .query<{ tracklist_run_id: string | null }, [string]>(
+          "SELECT tracklist_run_id FROM sets WHERE id = ?"
+        )
+        .get(id);
+      if (!row?.tracklist_run_id) {
+        throw new Error("The live run did not claim the Set.");
+      }
+      staleToken = row.tracklist_run_id;
       db.query("UPDATE sets SET tracklist_run_started_at = ? WHERE id = ?").run(
         "2000-01-01T00:00:00.000Z",
         id
@@ -497,10 +508,53 @@ test("backfill skips a live HTTP run and an expired run cannot replace newer Cue
     expect(afterExpiry).toEqual({ attempted: 1, completed: 1 });
     expect(backfillRequests).toBe(1);
 
-    blocked.resolve(null);
-    await Bun.sleep(100);
-    const tracklist = await read(app, id);
-    expect(tracklist.json()).toEqual({ cues: newerCues, state: "ready" });
+    const staleClaim = {
+      description: DETAILS.description,
+      id,
+      source: "youtube" as const,
+      token: staleToken,
+      url: "https://www.youtube.com/watch?v=abcdefghijk",
+    };
+    const database = databaseLayer({
+      databasePath,
+      migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
+    });
+    const staleReady = await Effect.runPromise(
+      runClaimedTracklist(staleClaim).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            database,
+            Versos.layerOf({
+              poll: () => Effect.succeed({ cues: CUES, state: "ready" }),
+              request: () => Effect.succeed({ requestId: "stale-ready" }),
+            })
+          )
+        )
+      )
+    );
+    expect(staleReady).toBe("pending");
+    const afterStaleReady = await read(app, id);
+    expect(afterStaleReady.json()).toEqual({ cues: newerCues, state: "ready" });
+
+    await Effect.runPromise(
+      runClaimedTracklist(staleClaim).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            database,
+            Versos.layerOf({
+              poll: () => Effect.die("request fails before polling"),
+              request: () =>
+                Effect.fail(new VersosError({ reason: "unavailable" })),
+            })
+          )
+        )
+      )
+    );
+    const afterStaleFailure = await read(app, id);
+    expect(afterStaleFailure.json()).toEqual({
+      cues: newerCues,
+      state: "ready",
+    });
   } finally {
     blocked.resolve(null);
     await app.dispose();
