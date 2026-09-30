@@ -286,10 +286,19 @@ export const Route = createFileRoute("/_app/playlists/$id")({
       creator ? readCollaboration(session, params.id) : null,
       creator ? listPeople(session) : null,
     ]);
+    if (!library.ok) {
+      throw new Error(FAILURE_MESSAGES[library.failure]);
+    }
+    if (collaboration !== null && !collaboration.ok) {
+      throw new Error(FAILURE_MESSAGES[collaboration.failure]);
+    }
+    if (people !== null && !people.ok) {
+      throw new Error(FAILURE_MESSAGES[people.failure]);
+    }
     return {
-      collaboration: collaboration?.ok ? collaboration.value : null,
-      library: library.ok ? library.value.sets : [],
-      people: people?.ok ? people.value.people : [],
+      collaboration: collaboration?.value ?? null,
+      library: library.value.sets,
+      people: people?.value.people ?? [],
       playlist: playlist.value,
     };
   },

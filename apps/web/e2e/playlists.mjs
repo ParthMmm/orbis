@@ -55,6 +55,13 @@ await writeFile(
     people: [
       {
         autoDownload: false,
+        id: "alice",
+        removed: false,
+        social: true,
+        username: "alice",
+      },
+      {
+        autoDownload: false,
         id: "host",
         removed: false,
         social: true,
@@ -325,6 +332,89 @@ try {
     await host.reload();
     await expectOrder(host, ["Bravo", "Charlie"]);
     step("the creator sees the editor's order");
+
+    const expectRequestRecovery = async ({
+      page,
+      name,
+      endpoint,
+      url,
+      recovered,
+    }) => {
+      let failedRequests = 0;
+      await page.route(endpoint, async (route) => {
+        failedRequests += 1;
+        const response = await route.fetch();
+        await route.fulfill({ body: "", response, status: 503 });
+      });
+      await page.goto(url);
+      const alert = page.getByRole("alert").filter({
+        hasText: "Orbis could not complete the request. Try again.",
+      });
+      await alert.waitFor();
+      await page.getByRole("button", { name: "Try again" }).waitFor();
+      assert.ok(failedRequests > 0, `${name} request must fail`);
+      await shot(page, `${name}-failed.png`);
+      step(`${name} request fails`, { failedRequests });
+      await page.unroute(endpoint);
+      await page.getByRole("button", { name: "Try again" }).click();
+      await recovered();
+      assert.equal(await alert.count(), 0);
+      await shot(page, `${name}-recovered.png`);
+      step(`${name} request recovers`);
+    };
+    await expectRequestRecovery({
+      endpoint: `${apiUrl}/playlists/shared`,
+      name: "shared-playlists",
+      page: bob,
+      recovered: () =>
+        bob
+          .getByRole("list", { name: "Shared with you" })
+          .getByRole("link", { name: /Late night/u })
+          .waitFor(),
+      url: `${webUrl}/playlists`,
+    });
+    await expectRequestRecovery({
+      endpoint: `${apiUrl}/sets`,
+      name: "playlist-library",
+      page: host,
+      recovered: async () => {
+        await expectOrder(host, ["Bravo", "Charlie"]);
+        await host.getByRole("button", { name: "Add Sets…" }).click();
+        await host
+          .getByRole("dialog")
+          .getByRole("checkbox", { name: "Alpha" })
+          .waitFor();
+        await host.keyboard.press("Escape");
+      },
+      url: playlistUrl,
+    });
+    await expectRequestRecovery({
+      endpoint: `${apiUrl}${new URL(playlistUrl).pathname}/collaboration`,
+      name: "playlist-collaboration",
+      page: host,
+      recovered: async () => {
+        await host.getByRole("switch", { name: "Collaborative" }).waitFor();
+        assert.equal(await collaborative.isChecked(), true);
+        await host
+          .getByRole("list", { name: "Editors" })
+          .getByText("bob", { exact: true })
+          .waitFor();
+      },
+      url: playlistUrl,
+    });
+    await expectRequestRecovery({
+      endpoint: `${apiUrl}/people`,
+      name: "playlist-people",
+      page: host,
+      recovered: async () => {
+        await host
+          .getByRole("list", { name: "Editors" })
+          .getByText("bob", { exact: true })
+          .waitFor();
+        await host.getByLabel("Add editor").selectOption({ label: "alice" });
+      },
+      url: playlistUrl,
+    });
 
     await host
       .getByRole("navigation", { name: "Main" })

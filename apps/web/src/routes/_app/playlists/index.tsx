@@ -178,9 +178,12 @@ export const Route = createFileRoute("/_app/playlists/")({
     if (!owned.ok) {
       throw new Error(FAILURE_MESSAGES[owned.failure]);
     }
+    if (!shared.ok) {
+      throw new Error(FAILURE_MESSAGES[shared.failure]);
+    }
     return {
       owned: owned.value.playlists,
-      shared: shared.ok ? shared.value.playlists : [],
+      shared: shared.value.playlists,
     };
   },
 });
