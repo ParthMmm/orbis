@@ -4,6 +4,7 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 
 import { AddToPlaylistDialog } from "@/components/library/add-to-playlist-dialog";
+import { usePlayer } from "@/components/player/player";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -59,7 +60,17 @@ const duration = (seconds: number | null): string | null => {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 };
 
-const DownloadBadge = ({
+/** The line under a Set's title: creator, source, and length. */
+export const setDetails = (set: SavedSet): string =>
+  [
+    set.creator ?? "Unknown creator",
+    SOURCE_LABELS[set.source],
+    duration(set.durationSeconds),
+  ]
+    .filter((part) => part !== null)
+    .join(" · ");
+
+export const DownloadBadge = ({
   progress,
   set,
 }: {
@@ -168,6 +179,7 @@ export const SetRow = ({
   readonly set: SavedSet;
 }) => {
   const router = useRouter();
+  const player = usePlayer();
   const [dialog, setDialog] = useState<Dialogs | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const settle = async (result: ApiResult<unknown>, limited?: string) => {
@@ -191,7 +203,6 @@ export const SetRow = ({
   );
   const inFlight =
     set.downloadState === "queued" || set.downloadState === "downloading";
-  const length = duration(set.durationSeconds);
   return (
     <li className="flex items-start gap-4 border-b py-4">
       {set.artworkUrl === null ? (
@@ -205,11 +216,7 @@ export const SetRow = ({
       )}
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <h2 className="truncate font-medium">{set.title}</h2>
-        <p className="text-muted-foreground text-sm">
-          {[set.creator ?? "Unknown creator", SOURCE_LABELS[set.source], length]
-            .filter((part) => part !== null)
-            .join(" · ")}
-        </p>
+        <p className="text-muted-foreground text-sm">{setDetails(set)}</p>
         <div className="flex flex-wrap gap-1">
           <DownloadBadge progress={progress} set={set} />
           {set.tags.map((tag) => (
@@ -237,6 +244,26 @@ export const SetRow = ({
           <DotsThreeIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {set.downloadState === "ready" ? (
+            <>
+              <DropdownMenuItem
+                onClick={async () => settle(await player.play(set))}
+              >
+                Play
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={async () => settle(await player.queue(set, "next"))}
+              >
+                Play next
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={async () => settle(await player.queue(set, "end"))}
+              >
+                Add to queue
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
           {downloadable ? (
             <DropdownMenuItem
               onClick={async () =>

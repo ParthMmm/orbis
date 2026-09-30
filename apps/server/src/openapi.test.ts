@@ -163,6 +163,12 @@ const sampleFor = (operationId: string) => {
       ],
     };
   }
+  // The Swift client has no filters screen yet, so this sample lives here.
+  if (operationId === "people.socialFilters") {
+    return {
+      people: [{ appear: true, id: "b", see: false, username: "bob" }],
+    };
+  }
   // The Swift client has no Devices screen yet, so these samples live here.
   const device = {
     addedAt: "2026-09-29T00:00:00.000Z",
@@ -198,10 +204,11 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         if (!["get", "post", "put", "patch", "delete"].includes(method)) {
           continue;
         }
-        // The Swift client has no Device Link types until the Apple apps adopt them.
+        // The Swift client has no Device Link or Invite types until the Apple apps adopt them.
         if (
           operation.operationId.startsWith("admin.") ||
-          operation.operationId.startsWith("deviceLinks.")
+          operation.operationId.startsWith("deviceLinks.") ||
+          operation.operationId.startsWith("invites.")
         ) {
           continue;
         }
@@ -236,7 +243,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(41);
+    expect(checked).toBe(42);
   } finally {
     await app.dispose();
   }

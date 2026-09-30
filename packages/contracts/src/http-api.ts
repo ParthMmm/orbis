@@ -215,6 +215,14 @@ export const PlaylistDetailSchema = Schema.Struct({
   role: Schema.Literals(["creator", "editor"]),
   sets: Schema.Array(SavedSetSchema),
 });
+/**
+ * A Person the caller would see if their own See filter allowed it, with the
+ * caller's See and Appear filters for them (ADR 0009).
+ */
+export const PersonFiltersSchema = Schema.Struct({
+  ...VisiblePerson.fields,
+  ...SocialFilters.fields,
+});
 
 export const SaveSetResultSchema = Schema.Struct({
   ...SavedSetSchema.fields,
@@ -272,6 +280,19 @@ export const DeviceLinkSchema = Schema.Struct({
 });
 export const DeviceLinkPollPayload = Schema.Struct({
   pollSecret: Schema.String.check(Schema.isMaxLength(200)),
+});
+/** An Invite (ADR 0016): a one-time code the Host sends, claimed for a daily key. */
+export const InviteSchema = Schema.Struct({
+  code: Schema.String,
+  expiresAt: Schema.String,
+});
+export const InviteClaimPayload = Schema.Struct({
+  code: Schema.String.check(Schema.isMaxLength(200)),
+  label: Schema.String.check(Schema.isMaxLength(100)),
+});
+export const InviteClaimSchema = Schema.Struct({
+  key: Schema.String,
+  person: VisiblePerson,
 });
 export const DeviceLinkPollSchema = Schema.Union([
   Schema.Struct({ status: Schema.Literal("pending") }),
@@ -493,6 +514,10 @@ export const OrbisApi = PlaylistApi.add(
         HttpApiEndpoint.get("list", "/people", {
           success: Schema.Struct({ people: Schema.Array(VisiblePerson) }),
         }),
+        HttpApiEndpoint.get("socialFilters", "/people/filters", {
+          error: InternalError,
+          success: Schema.Struct({ people: Schema.Array(PersonFiltersSchema) }),
+        }),
         HttpApiEndpoint.put("filters", "/people/:id/filters", {
           error: [BadRequest, NotFound, InternalError],
           params: SetId,
@@ -563,9 +588,31 @@ export const OrbisApi = PlaylistApi.add(
           error: [NotFound, InternalError],
           params: SetId,
           success: AdminKey,
+        }),
+        HttpApiEndpoint.post("createInvite", "/admin/people/:id/invites", {
+          error: [NotFound, InternalError],
+          params: SetId,
+          success: InviteSchema.pipe(HttpApiSchema.status(201)),
         })
       )
       .middleware(SetAccess)
+  )
+  .add(
+    // Claim carries no key; the new device has none yet.
+    HttpApiGroup.make("invites").add(
+      HttpApiEndpoint.post("claim", "/invites/claim", {
+        error: [
+          BadRequest,
+          NotFound,
+          Conflict,
+          Gone,
+          TooManyRequests,
+          InternalError,
+        ],
+        payload: InviteClaimPayload,
+        success: InviteClaimSchema,
+      })
+    )
   )
   .add(
     HttpApiGroup.make("devices")

@@ -10,16 +10,25 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
+import { Route as ClaimRouteImport } from './routes/claim'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppDevicesRouteImport } from './routes/_app/devices'
 import { Route as AppLinkRouteImport } from './routes/_app/link'
+import { Route as AppQueueRouteImport } from './routes/_app/queue'
+import { Route as AppPeopleIndexRouteImport } from './routes/_app/people/index'
+import { Route as AppPeopleIdRouteImport } from './routes/_app/people/$id'
 import { Route as AppPlaylistsIndexRouteImport } from './routes/_app/playlists/index'
 import { Route as AppPlaylistsIdRouteImport } from './routes/_app/playlists/$id'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ClaimRoute = ClaimRouteImport.update({
+  id: '/claim',
+  path: '/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -47,6 +56,21 @@ const AppLinkRoute = AppLinkRouteImport.update({
   path: '/link',
   getParentRoute: () => AppRoute,
 } as any)
+const AppQueueRoute = AppQueueRouteImport.update({
+  id: '/queue',
+  path: '/queue',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPeopleIndexRoute = AppPeopleIndexRouteImport.update({
+  id: '/people/',
+  path: '/people/',
+  getParentRoute: () => AppRoute,
+} as any)
+const AppPeopleIdRoute = AppPeopleIdRouteImport.update({
+  id: '/people/$id',
+  path: '/people/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPlaylistsIndexRoute = AppPlaylistsIndexRouteImport.update({
   id: '/playlists/',
   path: '/playlists/',
@@ -60,66 +84,91 @@ const AppPlaylistsIdRoute = AppPlaylistsIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
+  '/claim': typeof ClaimRoute
   '/sign-in': typeof SignInRoute
   '/admin': typeof AppAdminRoute
   '/devices': typeof AppDevicesRoute
   '/link': typeof AppLinkRoute
+  '/queue': typeof AppQueueRoute
+  '/people/$id': typeof AppPeopleIdRoute
   '/playlists/$id': typeof AppPlaylistsIdRoute
+  '/people/': typeof AppPeopleIndexRoute
   '/playlists/': typeof AppPlaylistsIndexRoute
 }
 export interface FileRoutesByTo {
+  '/claim': typeof ClaimRoute
   '/sign-in': typeof SignInRoute
   '/admin': typeof AppAdminRoute
   '/devices': typeof AppDevicesRoute
   '/link': typeof AppLinkRoute
+  '/queue': typeof AppQueueRoute
   '/': typeof AppIndexRoute
+  '/people/$id': typeof AppPeopleIdRoute
   '/playlists/$id': typeof AppPlaylistsIdRoute
+  '/people': typeof AppPeopleIndexRoute
   '/playlists': typeof AppPlaylistsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
+  '/claim': typeof ClaimRoute
   '/sign-in': typeof SignInRoute
   '/_app/admin': typeof AppAdminRoute
   '/_app/devices': typeof AppDevicesRoute
   '/_app/link': typeof AppLinkRoute
+  '/_app/queue': typeof AppQueueRoute
   '/_app/': typeof AppIndexRoute
+  '/_app/people/$id': typeof AppPeopleIdRoute
   '/_app/playlists/$id': typeof AppPlaylistsIdRoute
+  '/_app/people/': typeof AppPeopleIndexRoute
   '/_app/playlists/': typeof AppPlaylistsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
+    | '/claim'
     | '/sign-in'
     | '/admin'
     | '/devices'
     | '/link'
+    | '/queue'
+    | '/people/$id'
     | '/playlists/$id'
+    | '/people/'
     | '/playlists/'
   fileRoutesByTo: FileRoutesByTo
   to:
+    | '/claim'
     | '/sign-in'
     | '/admin'
     | '/devices'
     | '/link'
+    | '/queue'
     | '/'
+    | '/people/$id'
     | '/playlists/$id'
+    | '/people'
     | '/playlists'
   id:
     | '__root__'
     | '/_app'
+    | '/claim'
     | '/sign-in'
     | '/_app/admin'
     | '/_app/devices'
     | '/_app/link'
+    | '/_app/queue'
     | '/_app/'
+    | '/_app/people/$id'
     | '/_app/playlists/$id'
+    | '/_app/people/'
     | '/_app/playlists/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
+  ClaimRoute: typeof ClaimRoute
   SignInRoute: typeof SignInRoute
 }
 
@@ -130,6 +179,13 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/claim': {
+      id: '/claim'
+      path: '/claim'
+      fullPath: '/claim'
+      preLoaderRoute: typeof ClaimRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -167,6 +223,27 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppLinkRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/queue': {
+      id: '/_app/queue'
+      path: '/queue'
+      fullPath: '/queue'
+      preLoaderRoute: typeof AppQueueRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/people/': {
+      id: '/_app/people/'
+      path: '/people'
+      fullPath: '/people/'
+      preLoaderRoute: typeof AppPeopleIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
+    '/_app/people/$id': {
+      id: '/_app/people/$id'
+      path: '/people/$id'
+      fullPath: '/people/$id'
+      preLoaderRoute: typeof AppPeopleIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/playlists/': {
       id: '/_app/playlists/'
       path: '/playlists'
@@ -188,8 +265,11 @@ interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRoute
   AppDevicesRoute: typeof AppDevicesRoute
   AppLinkRoute: typeof AppLinkRoute
+  AppQueueRoute: typeof AppQueueRoute
   AppIndexRoute: typeof AppIndexRoute
+  AppPeopleIdRoute: typeof AppPeopleIdRoute
   AppPlaylistsIdRoute: typeof AppPlaylistsIdRoute
+  AppPeopleIndexRoute: typeof AppPeopleIndexRoute
   AppPlaylistsIndexRoute: typeof AppPlaylistsIndexRoute
 }
 
@@ -197,8 +277,11 @@ const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRoute,
   AppDevicesRoute: AppDevicesRoute,
   AppLinkRoute: AppLinkRoute,
+  AppQueueRoute: AppQueueRoute,
   AppIndexRoute: AppIndexRoute,
+  AppPeopleIdRoute: AppPeopleIdRoute,
   AppPlaylistsIdRoute: AppPlaylistsIdRoute,
+  AppPeopleIndexRoute: AppPeopleIndexRoute,
   AppPlaylistsIndexRoute: AppPlaylistsIndexRoute,
 }
 
@@ -206,6 +289,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
+  ClaimRoute: ClaimRoute,
   SignInRoute: SignInRoute,
 }
 export const routeTree = rootRouteImport

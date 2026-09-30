@@ -34,6 +34,49 @@ export const resolveVisiblePerson = (
   return target;
 };
 
+/**
+ * The People the viewer would see if their own See filter allowed it, with the
+ * viewer's See and Appear filters for each. Setting See off must not drop a Person
+ * from this list, or the viewer could never turn it back on; everything else in
+ * the gate still applies, so a Person who hid from the viewer stays hidden.
+ */
+export const listFilterablePeople = (
+  people: readonly PersonRecord[],
+  viewerId: string
+) => {
+  const viewer = people.find((person) => person.id === viewerId);
+  if (!viewer) {
+    return [];
+  }
+  const seeingAll = people.map((person) =>
+    person.id === viewerId
+      ? {
+          ...person,
+          filters: (person.filters ?? []).map((filter) => ({
+            ...filter,
+            see: true,
+          })),
+        }
+      : person
+  );
+  return people.flatMap((person) => {
+    try {
+      resolveVisiblePerson(seeingAll, viewerId, person.id);
+    } catch {
+      return [];
+    }
+    const filter = viewer.filters?.find((item) => item.personId === person.id);
+    return [
+      {
+        appear: filter?.appear ?? true,
+        id: person.id,
+        see: filter?.see ?? true,
+        username: person.username,
+      },
+    ];
+  });
+};
+
 const notFound = () =>
   new LibraryError({ message: "Set not found.", statusCode: 404 });
 

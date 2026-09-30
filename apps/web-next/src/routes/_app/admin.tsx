@@ -37,6 +37,7 @@ import {
   storeAdminKey,
 } from "@/lib/admin";
 import type { AdminKey, AdminPerson } from "@/lib/admin";
+import { createInvite, inviteUrl } from "@/lib/invite";
 import { FAILURE_MESSAGES } from "@/lib/orbis";
 import type { ApiFailure, ApiResult, Credentials } from "@/lib/orbis";
 
@@ -154,17 +155,29 @@ const lastUsed = (key: AdminKey): string =>
     ? "Never used"
     : `Last used ${new Date(key.lastUsedAt).toLocaleString()}`;
 
-const IssuedKey = ({
-  token,
+/** A key or an Invite link, which Orbis shows once. */
+type Issued =
+  | { readonly kind: "key"; readonly token: string }
+  | {
+      readonly kind: "invite";
+      readonly url: string;
+      readonly expiresAt: string;
+      readonly username: string;
+    };
+
+const IssuedSecret = ({
+  issued,
   onDone,
 }: {
-  readonly token: string;
+  readonly issued: Issued;
   readonly onDone: () => void;
 }) => {
   const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
-  const copyKey = async () => {
+  const text = issued.kind === "key" ? issued.token : issued.url;
+  const noun = issued.kind === "key" ? "key" : "link";
+  const copySecret = async () => {
     try {
-      await navigator.clipboard.writeText(token);
+      await navigator.clipboard.writeText(text);
       setCopy("copied");
     } catch {
       setCopy("failed");
@@ -172,20 +185,32 @@ const IssuedKey = ({
   };
   return (
     <div className="bg-muted flex flex-col gap-3 rounded-2xl p-4" role="status">
-      <p className="text-sm">
-        Copy this key now. Orbis will not show it again.
-      </p>
-      <code className="bg-background rounded-lg p-2 text-xs break-all select-all">
-        {token}
+      {issued.kind === "key" ? (
+        <p className="text-sm">
+          Copy this key now. Orbis will not show it again.
+        </p>
+      ) : (
+        <p className="text-sm">
+          Send this Invite link to {issued.username} through a channel you
+          trust. It signs in one device, and expires{" "}
+          {new Date(issued.expiresAt).toLocaleString()}. Orbis will not show it
+          again.
+        </p>
+      )}
+      <code
+        aria-label={issued.kind === "key" ? "New key" : "Invite link"}
+        className="bg-background rounded-lg p-2 text-xs break-all select-all"
+      >
+        {text}
       </code>
       {copy === "failed" ? (
         <p className="text-destructive text-sm">
-          Could not copy the key. Select and copy it instead.
+          Could not copy the {noun}. Select and copy it instead.
         </p>
       ) : null}
       <div className="flex gap-2">
-        <Button onClick={copyKey} size="sm">
-          {copy === "copied" ? "Copied" : "Copy key"}
+        <Button onClick={copySecret} size="sm">
+          {copy === "copied" ? "Copied" : `Copy ${noun}`}
         </Button>
         <Button onClick={onDone} size="sm" variant="outline">
           Done
@@ -238,7 +263,7 @@ const GroupAdmin = ({
 }) => {
   const { credentials, people } = access;
   const [selection, setSelection] = useState<Selection>({ kind: "none" });
-  const [issued, setIssued] = useState<string | null>(null);
+  const [issued, setIssued] = useState<Issued | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   // Only the newest selection's key list may land, so a slow reply for one
@@ -321,8 +346,25 @@ const GroupAdmin = ({
       ({ token, ...key }) => {
         form.reset();
         setSelection({ ...selection, keys: [...selection.keys, key] });
-        setIssued(token);
+        setIssued({ kind: "key", token });
       }
+    );
+  };
+
+  const invite = async () => {
+    if (selection.kind !== "ready" || busy) {
+      return;
+    }
+    const { person } = selection;
+    await run(
+      () => createInvite(credentials, person.id),
+      ({ code, expiresAt }) =>
+        setIssued({
+          expiresAt,
+          kind: "invite",
+          url: inviteUrl(window.location.origin, code),
+          username: person.username,
+        })
     );
   };
 
@@ -484,8 +526,25 @@ const GroupAdmin = ({
                     </Button>
                   </div>
                 </form>
+                <div className="flex flex-col gap-2">
+                  <p className="text-muted-foreground text-sm">
+                    An Invite is a link that signs in one device as{" "}
+                    {selection.person.username}, without a key to copy.
+                  </p>
+                  <Button
+                    className="self-start"
+                    disabled={busy}
+                    onClick={invite}
+                    variant="outline"
+                  >
+                    Create Invite
+                  </Button>
+                </div>
                 {issued === null ? null : (
-                  <IssuedKey onDone={() => setIssued(null)} token={issued} />
+                  <IssuedSecret
+                    issued={issued}
+                    onDone={() => setIssued(null)}
+                  />
                 )}
               </CardContent>
             </>

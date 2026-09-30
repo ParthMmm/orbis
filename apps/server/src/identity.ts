@@ -43,11 +43,19 @@ const Key = Schema.Struct({
   scope: Schema.Literals(["daily", "admin"]),
   tokenHash: TokenHash,
 });
+/** An Invite (ADR 0016): the store keeps the code's `sha256`, never the code. */
+const Invite = Schema.Struct({
+  codeHash: TokenHash,
+  expiresAt: Schema.String,
+  personId: Schema.String,
+  used: Schema.Boolean,
+});
 const LegacyTrustFile = Schema.Struct({
   devices: Schema.Array(LegacyDevice),
   version: Schema.Literal(1),
 });
 const TrustFile = Schema.Struct({
+  invites: Schema.optionalKey(Schema.Array(Invite)),
   keys: Schema.Array(Key),
   people: Schema.Array(Person),
   version: Schema.Literal(2),
@@ -55,6 +63,7 @@ const TrustFile = Schema.Struct({
 
 export type PersonRecord = typeof Person.Type;
 export type KeyRecord = typeof Key.Type;
+export type InviteRecord = typeof Invite.Type;
 export type TrustStore = typeof TrustFile.Type;
 export type AccessMode = "local" | "device";
 
