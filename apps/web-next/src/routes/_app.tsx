@@ -6,6 +6,7 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 
+import { LiveEventsProvider } from "@/components/live-events";
 import { RouteProblem } from "@/components/route-problem";
 import { Button } from "@/components/ui/button";
 import { NAV_ITEMS } from "@/lib/nav";
@@ -51,7 +52,9 @@ const AppShell = ({ session }: { readonly session: Session }) => {
           </Button>
         </div>
       </header>
-      <Outlet />
+      <LiveEventsProvider credentials={session}>
+        <Outlet />
+      </LiveEventsProvider>
     </div>
   );
 };
