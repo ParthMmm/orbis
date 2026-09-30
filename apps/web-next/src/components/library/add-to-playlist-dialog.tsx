@@ -17,10 +17,6 @@ import type { Credentials } from "@/lib/orbis";
 import { replaceSetPlaylists } from "@/lib/playlists";
 import type { Playlist } from "@/lib/playlists";
 
-/**
- * Chooses which of the Person's own Playlists hold one Set. Saving replaces the
- * Set's memberships, so unchecking a Playlist takes the Set out of it.
- */
 export const AddToPlaylistDialog = ({
   credentials,
   onClose,

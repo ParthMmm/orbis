@@ -27,7 +27,6 @@ const pickerHint = (emptyLibrary: boolean, candidates: number) => {
     : "Choose Sets from your Library. They go at the end, in the order you choose them.";
 };
 
-/** Library Sets not yet in the Playlist; they join at the end in the order picked. */
 const AddSetsDialog = ({
   candidates,
   emptyLibrary,
@@ -88,10 +87,6 @@ const AddSetsDialog = ({
   );
 };
 
-/**
- * The Playlist's Sets in order. The creator and every editor may add, remove,
- * and reorder them (ADR 0010); each change replaces the whole order at once.
- */
 export const Members = ({
   credentials,
   library,

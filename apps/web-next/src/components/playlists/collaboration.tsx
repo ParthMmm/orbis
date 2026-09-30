@@ -21,11 +21,6 @@ import type { ApiResult, Credentials } from "@/lib/orbis";
 import { setCollaborative, setEditors } from "@/lib/playlists";
 import type { Collaboration, VisiblePerson } from "@/lib/playlists";
 
-/**
- * The creator's Collaborative switch and editors (ADR 0010). Only the creator
- * sees this card; an editor must be a Person the creator can see, and who can
- * see them.
- */
 export const CollaborationCard = ({
   collaboration,
   credentials,

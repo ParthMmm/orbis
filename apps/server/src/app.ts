@@ -827,7 +827,6 @@ export const createApp = (
                     )
                     .orderBy(asc(sql`${playlists.name} COLLATE NOCASE`));
                   const shared = [];
-                  // An editor's rights lapse while the ADR 0009 gate is closed.
                   for (const { creatorId, ...playlist } of rows) {
                     const open = yield* Effect.option(
                       mutuallyVisibleFriend(creatorId)
@@ -863,7 +862,6 @@ export const createApp = (
                   if (!playlist) {
                     return yield* Effect.fail(missingPlaylist());
                   }
-                  // Members read as the creator sees them, as a friend's Playlist does.
                   const members = yield* Effect.provide(
                     Effect.gen(function* listPlaylistMembers() {
                       const ownerLibrary = yield* Library;

@@ -136,7 +136,6 @@ const sampleFor = (operationId: string) => {
   ) {
     return { collaborative: true, editorIds: ["b"] };
   }
-  // The Swift client reads its own Playlists only, so these samples live here.
   const creator = { id: "a", username: "alice" };
   if (operationId === "playlists.shared") {
     return { playlists: [{ ...samples.playlist, creator }] };

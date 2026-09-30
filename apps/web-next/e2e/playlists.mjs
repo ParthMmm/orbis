@@ -32,9 +32,7 @@ const waitFor = async (url) => {
       // eslint-disable-next-line no-await-in-loop
       await fetch(url);
       return;
-    } catch {
-      // Not listening yet.
-    }
+    } catch {}
     // eslint-disable-next-line no-await-in-loop
     await setTimeout(100);
   }
@@ -54,8 +52,6 @@ await writeFile(
       scope: "daily",
       tokenHash: createHash("sha256").update(key).digest("hex"),
     })),
-    // An editor must pass the Social gate with the creator (ADR 0009), so both
-    // have Social on. Auto Download is off so saving starts no Downloads.
     people: [
       {
         autoDownload: false,
@@ -104,7 +100,6 @@ const web = spawn(
   }
 );
 
-// The order, read from each member's "Move … up" button.
 const order = async (page) => {
   const labels = await page
     .getByRole("list", { name: "Sets in this Playlist" })
