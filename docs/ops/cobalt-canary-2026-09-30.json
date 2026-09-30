@@ -1,0 +1,64 @@
+{
+  "at": "2026-09-30T17:23:03.872Z",
+  "backends": [
+    "ytdlp",
+    "cobalt"
+  ],
+  "ok": true,
+  "results": [
+    {
+      "backend": "ytdlp",
+      "bytes": 9593981,
+      "durationSeconds": 597,
+      "elapsedMs": 2410,
+      "fixture": "youtube-short",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "backend": "cobalt",
+      "bytes": 9666483,
+      "durationSeconds": 597,
+      "elapsedMs": 1454,
+      "fixture": "youtube-short",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "backend": "ytdlp",
+      "bytes": 114391161,
+      "durationSeconds": 7173,
+      "elapsedMs": 8942,
+      "fixture": "youtube-long",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "backend": "cobalt",
+      "bytes": 114391161,
+      "durationSeconds": 7173,
+      "elapsedMs": 6683,
+      "fixture": "youtube-long",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "backend": "ytdlp",
+      "bytes": 139241522,
+      "durationSeconds": 6903,
+      "elapsedMs": 32575,
+      "fixture": "soundcloud-long",
+      "ok": true,
+      "reason": null
+    },
+    {
+      "backend": "cobalt",
+      "bytes": 110440068,
+      "durationSeconds": 6902,
+      "elapsedMs": 4497,
+      "fixture": "soundcloud-long",
+      "ok": true,
+      "reason": null
+    }
+  ]
+}
