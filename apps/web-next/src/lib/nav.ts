@@ -2,5 +2,6 @@
 export const NAV_ITEMS = [
   { label: "Library", to: "/" },
   { label: "Devices", to: "/devices" },
+  { label: "Add a device", to: "/link" },
   { label: "Admin", to: "/admin" },
 ] as const;

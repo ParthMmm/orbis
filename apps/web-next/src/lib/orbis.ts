@@ -25,7 +25,12 @@ export type ApiFailure =
 
 export type ApiResult<A> =
   | { readonly ok: true; readonly value: A }
-  | { readonly ok: false; readonly failure: ApiFailure };
+  | {
+      readonly ok: false;
+      readonly failure: ApiFailure;
+      /** The response status, when a response arrived. */
+      readonly status?: number | undefined;
+    };
 
 const FAILURE_BY_STATUS: ReadonlyMap<number, ApiFailure> = new Map([
   [401, "rejected"],
@@ -39,11 +44,14 @@ const failureFor = (status: number | undefined): ApiFailure =>
     ? "unreachable"
     : (FAILURE_BY_STATUS.get(status) ?? "failed");
 
-const makeClient = (apiUrl: string, key: string) =>
+// A null key sends no Authorization header, for a device that has no key yet.
+const makeClient = (apiUrl: string, key: string | null) =>
   HttpApiClient.make(OrbisApi, {
     baseUrl: apiUrl,
-    transformClient: HttpClient.mapRequest(
-      HttpClientRequest.setHeader("authorization", `Bearer ${key}`)
+    transformClient: HttpClient.mapRequest((request) =>
+      key === null
+        ? request
+        : HttpClientRequest.setHeader(request, "authorization", `Bearer ${key}`)
     ),
   });
 type OrbisClient = Success<ReturnType<typeof makeClient>>;
@@ -54,12 +62,9 @@ export interface Credentials {
   readonly key: string;
 }
 
-/**
- * Runs one typed call with a Person's key. It resolves; a failure is a value. Feature
- * modules wrap it, for example `callOrbis(session, (api) => api.sets.list())`.
- */
-export const callOrbis = async <A, E>(
-  { apiUrl, key }: Credentials,
+const run = async <A, E>(
+  apiUrl: string,
+  key: string | null,
   operation: (client: OrbisClient) => EffectType<A, E>,
   signal?: AbortSignal
 ): Promise<ApiResult<A>> => {
@@ -88,9 +93,25 @@ export const callOrbis = async <A, E>(
     );
     return { ok: true, value };
   } catch {
-    return { failure: failureFor(status), ok: false };
+    return { failure: failureFor(status), ok: false, status };
   }
 };
+
+/**
+ * Runs one typed call with a Person's key. It resolves; a failure is a value. Feature
+ * modules wrap it, for example `callOrbis(session, (api) => api.sets.list())`.
+ */
+export const callOrbis = <A, E>(
+  { apiUrl, key }: Credentials,
+  operation: (client: OrbisClient) => EffectType<A, E>,
+  signal?: AbortSignal
+): Promise<ApiResult<A>> => run(apiUrl, key, operation, signal);
+
+/** Runs one typed call without a key, for a device that has none yet. */
+export const callOrbisWithoutKey = <A, E>(
+  apiUrl: string,
+  operation: (client: OrbisClient) => EffectType<A, E>
+): Promise<ApiResult<A>> => run(apiUrl, null, operation);
 
 export const fetchMe = (credentials: Credentials) =>
   callOrbis(credentials, (client) => client.people.me());

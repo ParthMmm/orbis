@@ -6,6 +6,9 @@ import {
   AdminKeyPayload,
   AdminPersonPayload,
   CollaborationPayload,
+  DeviceLinkCodePayload,
+  DeviceLinkPollPayload,
+  DeviceLinkStartPayload,
   SaveSetPayload,
   OrbisApi,
   PlaylistMembersPayload,
@@ -54,6 +57,7 @@ import {
   playlists,
   queueEntries,
 } from "./db/schema.js";
+import { DEVICE_LINK_TTL_MS, makeDeviceLinks } from "./device-link.js";
 import { LibraryError } from "./errors.js";
 import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
 import {
@@ -179,6 +183,33 @@ const grantAccess = (
 };
 
 const PRESENCE_WINDOW_MS = 30_000;
+/** Failed key attempts one client may make in a minute before it gets 429. */
+const FAILED_KEY_LIMIT = 20;
+const tooManyAttempts = () =>
+  Response.json({ message: "Too many invalid keys." }, { status: 429 });
+/**
+ * Routes a new device calls before it has a key (ADR 0016). They pass the Origin
+ * check like every route, and each start or unknown poll secret counts toward the
+ * failed-key limit.
+ */
+const OPEN_ROUTES: ReadonlySet<string> = new Set([
+  "/device-links",
+  "/device-links/poll",
+]);
+const LINK_FAILURES = {
+  approved: { message: "That code is already approved.", statusCode: 409 },
+  expired: {
+    message: "That code has expired. Start again on the new device.",
+    statusCode: 410,
+  },
+  missing: { message: "No device is waiting with that code.", statusCode: 404 },
+} as const;
+const linkFailure = (kind: keyof typeof LINK_FAILURES): LibraryError =>
+  new LibraryError(LINK_FAILURES[kind]);
+const linkBody = (label: string, expiresAt: number) => ({
+  expiresAt: new Date(expiresAt).toISOString(),
+  label,
+});
 const Tags = TagsPayload.fields.tags;
 const Filters = Schema.Struct({
   creatorId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
@@ -300,6 +331,8 @@ export const createApp = (
     metadata?: Layer.Layer<Metadata>;
     /** How long after a Playback Position report a Person still counts as listening. */
     presenceWindowMs?: number;
+    /** How long a Device Link stays open. Tests shorten it to prove expiry. */
+    deviceLinkTtlMs?: number;
     /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
     shortLinkFetch?: (url: string, signal: AbortSignal) => Promise<Response>;
     titleReviser?: Layer.Layer<TitleReviser>;
@@ -319,6 +352,25 @@ export const createApp = (
       : path.join(path.dirname(databasePath), "stream-grant.key")
   );
   const failedKeys = new Map<string, { count: number; until: number }>();
+  /** Counts one failed attempt for a client; true once the client is over the limit. */
+  const recordFailedKey = (client: string): boolean => {
+    const previous = failedKeys.get(client);
+    const count =
+      previous && previous.until > Date.now() ? previous.count + 1 : 1;
+    failedKeys.set(client, { count, until: Date.now() + 60_000 });
+    return count > FAILED_KEY_LIMIT;
+  };
+  const overFailedKeyLimit = (client: string): boolean => {
+    const previous = failedKeys.get(client);
+    return (
+      previous !== undefined &&
+      previous.until > Date.now() &&
+      previous.count > FAILED_KEY_LIMIT
+    );
+  };
+  const deviceLinks = makeDeviceLinks({
+    ttlMs: options.deviceLinkTtlMs ?? DEVICE_LINK_TTL_MS,
+  });
   if (devicesPath) {
     migrateTrustStore(devicesPath);
   }
@@ -1456,6 +1508,126 @@ export const createApp = (
           })
         )
       );
+      // Device Links mint only daily keys, for the Person who approved (ADR 0016).
+      const mintLinkedKey = (personId: string, label: string) =>
+        Effect.try({
+          catch: (error) =>
+            new LibraryError({
+              message:
+                error instanceof AdminError
+                  ? "No device is waiting with that code."
+                  : "The trust store is unavailable.",
+              statusCode: error instanceof AdminError ? 404 : 500,
+            }),
+          try: () => {
+            if (!devicesPath) {
+              throw new Error("The trust store is unavailable.");
+            }
+            const key = addKey(devicesPath, personId, {
+              label,
+              scope: "daily",
+            });
+            const person = readTrustRegistry(devicesPath).store.people.find(
+              (candidate) => candidate.id === personId
+            );
+            return {
+              key: key.token,
+              person: { id: personId, username: person?.username ?? "" },
+              status: "approved" as const,
+            };
+          },
+        });
+      const deviceLinkGroup = HttpApiBuilder.group(
+        OrbisApi,
+        "deviceLinks",
+        (handlers) =>
+          handlers
+            .handleRaw("start", () =>
+              withFailureResponse(
+                Effect.gen(function* startDeviceLink() {
+                  const input = yield* HttpServerRequest.schemaBodyJson(
+                    DeviceLinkStartPayload
+                  );
+                  const label = input.label.trim();
+                  if (label === "") {
+                    return yield* new LibraryError({
+                      message: "Name this device.",
+                      statusCode: 400,
+                    });
+                  }
+                  const started = deviceLinks.start(label);
+                  if (!started) {
+                    return yield* new LibraryError({
+                      message: "Too many devices are waiting. Try again soon.",
+                      statusCode: 503,
+                    });
+                  }
+                  return HttpServerResponse.jsonUnsafe(
+                    {
+                      expiresAt: new Date(started.expiresAt).toISOString(),
+                      pollSecret: started.pollSecret,
+                      userCode: started.userCode,
+                    },
+                    { status: 201 }
+                  );
+                })
+              )
+            )
+            .handleRaw("poll", () =>
+              withFailureResponse(
+                Effect.gen(function* pollDeviceLink() {
+                  const input = yield* HttpServerRequest.schemaBodyJson(
+                    DeviceLinkPollPayload
+                  );
+                  const result = deviceLinks.poll(input.pollSecret);
+                  if (result.kind === "missing") {
+                    return yield* linkFailure("missing");
+                  }
+                  if (result.kind !== "approved") {
+                    return HttpServerResponse.jsonUnsafe({
+                      status: result.kind,
+                    });
+                  }
+                  return HttpServerResponse.jsonUnsafe(
+                    yield* mintLinkedKey(result.personId, result.label)
+                  );
+                })
+              )
+            )
+            .handleRaw("lookup", () =>
+              withFailureResponse(
+                Effect.gen(function* lookupDeviceLink() {
+                  const input = yield* HttpServerRequest.schemaBodyJson(
+                    DeviceLinkCodePayload
+                  );
+                  const found = deviceLinks.lookup(input.userCode);
+                  if (found.kind !== "found") {
+                    return yield* linkFailure(found.kind);
+                  }
+                  return HttpServerResponse.jsonUnsafe(
+                    linkBody(found.label, found.expiresAt)
+                  );
+                })
+              )
+            )
+            .handleRaw("approve", () =>
+              withFailureResponse(
+                Effect.gen(function* approveDeviceLink() {
+                  const { person } = yield* SetCaller;
+                  const input = yield* HttpServerRequest.schemaBodyJson(
+                    DeviceLinkCodePayload
+                  );
+                  const found = deviceLinks.approve(input.userCode, person.id);
+                  if (found.kind !== "found") {
+                    return yield* linkFailure(found.kind);
+                  }
+                  return HttpServerResponse.jsonUnsafe(
+                    linkBody(found.label, found.expiresAt)
+                  );
+                })
+              )
+            )
+      );
       const systemGroup = HttpApiBuilder.group(OrbisApi, "system", (handlers) =>
         handlers.handle("health", () =>
           Effect.succeed({ status: "ok" as const })
@@ -1468,6 +1640,7 @@ export const createApp = (
           Layer.provide(queueGroup),
           Layer.provide(libraryGroup),
           Layer.provide(systemGroup),
+          Layer.provide(deviceLinkGroup),
           Layer.provide(eventsGroup),
           Layer.provide(peopleGroup),
           Layer.provide(adminGroup),
@@ -1532,6 +1705,39 @@ export const createApp = (
       middleware: makeRequestLogMiddleware(options.logging),
     }
   );
+  /**
+   * A start always counts toward the failed-key limit, and so does a poll whose
+   * secret matches no link. A poll of a live link does not, so a device waiting for
+   * approval is never limited. A client over the limit is refused before any lookup.
+   */
+  const openRoute = async (
+    request: Request,
+    mode: AccessMode,
+    client: string,
+    pathname: string
+  ): Promise<Response> => {
+    const limited = mode === "device";
+    if (limited && overFailedKeyLimit(client)) {
+      return tooManyAttempts();
+    }
+    if (limited && pathname === "/device-links" && recordFailedKey(client)) {
+      return tooManyAttempts();
+    }
+    // SAFETY: the open Device Link handlers read no caller-bound service.
+    const response = await app.handler(
+      request,
+      Context.empty() as Context.Context<Library | Queue | SetCaller>
+    );
+    if (
+      limited &&
+      pathname === "/device-links/poll" &&
+      (response.status === 404 || response.status === 400) &&
+      recordFailedKey(client)
+    ) {
+      return tooManyAttempts();
+    }
+    return response;
+  };
   return {
     dispose: app.dispose,
     handler: (
@@ -1559,6 +1765,16 @@ export const createApp = (
       };
       const host = request.headers.get("host") ?? new URL(request.url).host;
       const authorization = request.headers.get("authorization");
+      const { pathname } = new URL(request.url);
+      if (
+        authorization === null &&
+        request.method === "POST" &&
+        OPEN_ROUTES.has(pathname)
+      ) {
+        return openRoute(request, mode, clientAddress, pathname).then(
+          withOrigin
+        );
+      }
       const registry = readTrustRegistry(devicesPath);
       const streamDecision = grantAccess(
         request,
@@ -1589,23 +1805,10 @@ export const createApp = (
         mode === "device" &&
         authorization !== null &&
         decision.kind === "rejected" &&
-        decision.statusCode === 401
+        decision.statusCode === 401 &&
+        recordFailedKey(clientAddress)
       ) {
-        const client = clientAddress;
-        const previous = failedKeys.get(client);
-        const count =
-          previous && previous.until > Date.now() ? previous.count + 1 : 1;
-        failedKeys.set(client, { count, until: Date.now() + 60_000 });
-        if (count > 20) {
-          return Promise.resolve(
-            withOrigin(
-              Response.json(
-                { message: "Too many invalid keys." },
-                { status: 429 }
-              )
-            )
-          );
-        }
+        return Promise.resolve(withOrigin(tooManyAttempts()));
       }
       if (decision.kind === "rejected") {
         const logger = startRequestLog({

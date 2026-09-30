@@ -185,7 +185,11 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         if (!["get", "post", "put", "patch", "delete"].includes(method)) {
           continue;
         }
-        if (operation.operationId.startsWith("admin.")) {
+        // The Swift client has no Device Link types until the Apple apps adopt them.
+        if (
+          operation.operationId.startsWith("admin.") ||
+          operation.operationId.startsWith("deviceLinks.")
+        ) {
           continue;
         }
         if (operation.operationId === "sets.audio") {

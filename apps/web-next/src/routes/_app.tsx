@@ -34,6 +34,7 @@ const AppShell = ({ session }: { readonly session: Session }) => {
         <nav aria-label="Main" className="flex gap-4 text-sm">
           {NAV_ITEMS.map((item) => (
             <Link
+              activeOptions={{ exact: true }}
               activeProps={{ "aria-current": "page", className: "font-medium" }}
               className="text-muted-foreground"
               key={item.to}

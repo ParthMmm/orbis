@@ -75,6 +75,7 @@ const NotFound = ErrorBody.pipe(HttpApiSchema.status(404));
 const Conflict = ErrorBody.pipe(HttpApiSchema.status(409));
 const RangeNotSatisfiable = Schema.Void.pipe(HttpApiSchema.status(416));
 const InternalError = ErrorBody.pipe(HttpApiSchema.status(500));
+const Gone = ErrorBody.pipe(HttpApiSchema.status(410));
 const TooManyRequests = ErrorBody.pipe(HttpApiSchema.status(429));
 const ServiceUnavailable = ErrorBody.pipe(HttpApiSchema.status(503));
 const SearchValue = Schema.Union([Schema.String, Schema.Array(Schema.String)]);
@@ -239,6 +240,34 @@ export const DeviceSchema = Schema.Struct({
   label: Schema.String,
   lastUsedAt: Schema.NullOr(Schema.String),
 });
+/** A Device Link (ADR 0016): a new device's code, approved from a signed-in one. */
+export const DeviceLinkStartPayload = Schema.Struct({
+  label: Schema.String.check(Schema.isMaxLength(100)),
+});
+export const DeviceLinkStartSchema = Schema.Struct({
+  expiresAt: Schema.String,
+  pollSecret: Schema.String,
+  userCode: Schema.String,
+});
+export const DeviceLinkCodePayload = Schema.Struct({
+  userCode: Schema.String.check(Schema.isMaxLength(20)),
+});
+export const DeviceLinkSchema = Schema.Struct({
+  expiresAt: Schema.String,
+  label: Schema.String,
+});
+export const DeviceLinkPollPayload = Schema.Struct({
+  pollSecret: Schema.String.check(Schema.isMaxLength(200)),
+});
+export const DeviceLinkPollSchema = Schema.Union([
+  Schema.Struct({ status: Schema.Literal("pending") }),
+  Schema.Struct({ status: Schema.Literal("expired") }),
+  Schema.Struct({
+    key: Schema.String,
+    person: VisiblePerson,
+    status: Schema.Literal("approved"),
+  }),
+]);
 
 export const SetsApi = HttpApi.make("orbis").add(
   HttpApiGroup.make("sets")
@@ -527,6 +556,32 @@ export const OrbisApi = PlaylistApi.add(
         })
       )
       .middleware(SetAccess)
+  )
+  .add(
+    // Start and poll carry no key; the new device has none yet. Lookup and
+    // approve run as the signed-in Person who approves the device.
+    HttpApiGroup.make("deviceLinks").add(
+      HttpApiEndpoint.post("start", "/device-links", {
+        error: [BadRequest, TooManyRequests, ServiceUnavailable],
+        payload: DeviceLinkStartPayload,
+        success: DeviceLinkStartSchema.pipe(HttpApiSchema.status(201)),
+      }),
+      HttpApiEndpoint.post("poll", "/device-links/poll", {
+        error: [BadRequest, NotFound, TooManyRequests, InternalError],
+        payload: DeviceLinkPollPayload,
+        success: DeviceLinkPollSchema,
+      }),
+      HttpApiEndpoint.post("lookup", "/device-links/lookup", {
+        error: [BadRequest, NotFound, Conflict, Gone],
+        payload: DeviceLinkCodePayload,
+        success: DeviceLinkSchema,
+      }).middleware(SetAccess),
+      HttpApiEndpoint.post("approve", "/device-links/approve", {
+        error: [BadRequest, NotFound, Conflict, Gone],
+        payload: DeviceLinkCodePayload,
+        success: DeviceLinkSchema,
+      }).middleware(SetAccess)
+    )
   )
   .add(
     HttpApiGroup.make("events")

@@ -8,6 +8,7 @@ import { Schema } from "effect";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
+import { CodeSignIn } from "@/components/code-sign-in";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -35,6 +36,7 @@ const SignIn = () => {
   const navigate = useNavigate();
   const [problem, setProblem] = useState(notice === "expired" ? EXPIRED : null);
   const [pending, setPending] = useState(false);
+  const [withCode, setWithCode] = useState(false);
   const signIn = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const key = String(
@@ -62,30 +64,46 @@ const SignIn = () => {
             <h1>Sign in to Orbis</h1>
           </CardTitle>
           <CardDescription>
-            Paste the API key your Host sent you.
+            {withCode
+              ? "Approve this device from one where you are already signed in."
+              : "Paste the API key your Host sent you."}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <form className="flex flex-col gap-4" onSubmit={signIn}>
-            <div className="flex flex-col gap-2">
-              <Label htmlFor="api-key">API key</Label>
-              <Input
-                autoComplete="off"
-                id="api-key"
-                name="key"
-                spellCheck={false}
-                type="password"
-              />
-            </div>
-            {problem === null ? null : (
-              <p className="text-destructive text-sm" role="alert">
-                {problem}
-              </p>
-            )}
-            <Button disabled={pending} type="submit">
-              {pending ? "Signing in…" : "Sign in"}
-            </Button>
-          </form>
+          {withCode ? (
+            <CodeSignIn apiUrl={apiUrl} onCancel={() => setWithCode(false)} />
+          ) : (
+            <form className="flex flex-col gap-4" onSubmit={signIn}>
+              <div className="flex flex-col gap-2">
+                <Label htmlFor="api-key">API key</Label>
+                <Input
+                  autoComplete="off"
+                  id="api-key"
+                  name="key"
+                  spellCheck={false}
+                  type="password"
+                />
+              </div>
+              {problem === null ? null : (
+                <p className="text-destructive text-sm" role="alert">
+                  {problem}
+                </p>
+              )}
+              <Button disabled={pending} type="submit">
+                {pending ? "Signing in…" : "Sign in"}
+              </Button>
+              <Button
+                onClick={() => {
+                  setProblem(null);
+                  setWithCode(true);
+                }}
+                type="button"
+                variant="outline"
+              >
+                Sign in with a code
+              </Button>
+            </form>
+          )}
         </CardContent>
       </Card>
     </main>

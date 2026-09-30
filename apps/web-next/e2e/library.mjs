@@ -132,7 +132,7 @@ try {
 
     await page.goto(`${webUrl}/sign-in`);
     await page.getByLabel("API key").fill(key);
-    await page.getByRole("button", { name: "Sign in" }).click();
+    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
     await page.getByRole("heading", { name: "Library" }).waitFor();
     await expectCount(0);
     await page.getByText("Save a Source Link to start your Library.").waitFor();
