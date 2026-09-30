@@ -5,9 +5,11 @@ import XCTest
 final class LibraryUITests: XCTestCase {
   /// `paired` starts the app already paired, for a journey that is not about the connection
   /// screen. Typing the address and token costs each journey several seconds.
-  private func launch(paired: Bool = false, filteringBy tag: String? = nil) throws
-    -> XCUIApplication
-  {
+  /// `serviceAddress` stands in for the built-in service address, so a fresh install signs in to
+  /// the lane's service.
+  private func launch(
+    paired: Bool = false, filteringBy tag: String? = nil, serviceAddress: String? = nil
+  ) throws -> XCUIApplication {
     let environment = ProcessInfo.processInfo.environment
     guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
       let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
@@ -16,6 +18,7 @@ final class LibraryUITests: XCTestCase {
     }
     let app = XCUIApplication()
     app.launchArguments.append("-orbisResetSettings")
+    app.launchArguments.append(contentsOf: ["-orbisServiceAddress", serviceAddress ?? address])
     if paired {
       app.launchArguments.append(contentsOf: ["-orbisPairedWith", address, token])
     }
@@ -180,8 +183,8 @@ final class LibraryUITests: XCTestCase {
     let app = try launch()
 
     XCTAssertTrue(
-      app.textFields["connection-address"].waitForExistence(timeout: 30),
-      "the connection screen must appear\n\(app.debugDescription)"
+      app.secureTextFields["connection-token"].waitForExistence(timeout: 30),
+      "the sign-in screen must appear\n\(app.debugDescription)"
     )
     capture("01-connection")
     connect(app)
@@ -205,17 +208,11 @@ final class LibraryUITests: XCTestCase {
     capture("04-search-no-results")
   }
 
-  /// Pairs the app the way a person would, so a journey that begins after connecting does
-  /// not restate the connection screen's details.
+  /// Signs the app in with a pasted key the way a person would, so a journey that begins after
+  /// connecting does not restate the sign-in screen's details. The address is the built-in one.
   private func connect(_ app: XCUIApplication) {
-    let address = app.textFields["connection-address"]
-    XCTAssertTrue(address.waitForExistence(timeout: 30), "the connection screen must appear\n\(app.debugDescription)")
-
-    address.tap()
-    address.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_ADDRESS"] ?? "")
-
     let token = app.secureTextFields["connection-token"]
-    XCTAssertTrue(token.waitForExistence(timeout: 10))
+    XCTAssertTrue(token.waitForExistence(timeout: 30), "the sign-in screen must appear\n\(app.debugDescription)")
     token.tap()
     token.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_TOKEN"] ?? "")
 
@@ -684,14 +681,10 @@ final class LibraryUITests: XCTestCase {
   }
 
   func testUnreachableAddressNamesTheRecoveryAction() throws {
-    let app = try launch()
-
-    let address = app.textFields["connection-address"]
-    XCTAssertTrue(address.waitForExistence(timeout: 30))
-    address.tap()
-    address.typeText("http://127.0.0.1:1")
+    let app = try launch(serviceAddress: "http://127.0.0.1:1")
 
     let token = app.secureTextFields["connection-token"]
+    XCTAssertTrue(token.waitForExistence(timeout: 30))
     token.tap()
     token.typeText("not-a-real-token")
 

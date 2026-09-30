@@ -30,6 +30,17 @@ final class AppModel {
   var connectionFailure: OrbisFailure?
   var isTestingConnection = false
 
+  /// The service a fresh install signs in to (ADR 0015). A stored address wins over it, so an
+  /// existing pairing keeps the address it was made with.
+  let builtInAddress: URL
+
+  /// The name the approving device sees for this one.
+  var deviceLinkLabel = ""
+  var deviceLink: DeviceLinkState = .idle
+  /// Why the last Device Link step failed, said under the code.
+  var deviceLinkFailure: OrbisFailure?
+  private var deviceLinkTask: Task<Void, Never>?
+
   var library: Loadable<[SavedSet]> = .idle {
     didSet { refreshDerivedState() }
   }
@@ -192,7 +203,9 @@ final class AppModel {
     {
       activeTag = arguments[flag + 1]
     }
-    connectionAddress = settings.serviceAddress ?? ""
+    builtInAddress = OrbisService.address(for: arguments)
+    connectionAddress = settings.serviceAddress ?? builtInAddress.absoluteString
+    deviceLinkLabel = DeviceLink.defaultLabel
     client = settings.configuredClient()
     hasStoredToken = settings.deviceToken?.isEmpty == false
     refreshDerivedState()
@@ -204,6 +217,7 @@ final class AppModel {
   init(client: OrbisClient, settings: any ClientSettingsStore) {
     self.settings = settings
     self.client = client
+    builtInAddress = OrbisService.address
     connectionAddress = client.address.absoluteString
     hasStoredToken = settings.deviceToken?.isEmpty == false
     refreshDerivedState()
@@ -298,25 +312,11 @@ final class AppModel {
       // The screen that opened this test may be gone, and a newer test may have started;
       // neither may replace what this device trusts.
       guard generation == connectionGeneration, !Task.isCancelled else { return }
-      // The token is stored before anything commits, so a device that would not hold it
-      // changes nothing and says so where the address was typed.
-      guard settings.store(deviceToken: token) else {
+      // A device that would not hold the token changes nothing and says so where it was typed.
+      guard await adopt(candidate) else {
         connectionFailure = OrbisError.storageRefused.failure(at: url)
         return
       }
-      settings.serviceAddress = url.absoluteString
-      client = candidate
-      hasStoredToken = true
-      isEditingConnection = false
-      // A different service is a different set of downloads: nothing here asks the new service
-      // about a Set it has never heard of.
-      stopDownloadWatches()
-      audioStates.removeAll()
-      await loadLibrary()
-      // The sidebar reads playlists separately from the library, so pairing fills both.
-      await loadPlaylists()
-      // Playback is shared state: another device may be the one that is playing.
-      await loadQueue()
     } catch let error as OrbisError {
       guard generation == connectionGeneration else { return }
       connectionFailure = error.failure(at: URL(string: connectionAddress))
@@ -324,6 +324,112 @@ final class AppModel {
       guard generation == connectionGeneration else { return }
       connectionFailure = OrbisError.unreachable.failure(at: URL(string: connectionAddress))
     }
+  }
+
+  /// Makes `candidate` this device's pairing and loads what it holds. The key is stored before
+  /// anything commits, so a device that would not hold it changes nothing and answers false.
+  private func adopt(_ candidate: OrbisClient) async -> Bool {
+    guard settings.store(deviceToken: candidate.token) else { return false }
+    settings.serviceAddress = candidate.address.absoluteString
+    connectionAddress = candidate.address.absoluteString
+    client = candidate
+    hasStoredToken = true
+    isEditingConnection = false
+    // A different service is a different set of downloads: nothing here asks the new service
+    // about a Set it has never heard of.
+    stopDownloadWatches()
+    audioStates.removeAll()
+    await loadLibrary()
+    // The sidebar reads playlists separately from the library, so pairing fills both.
+    await loadPlaylists()
+    // Playback is shared state: another device may be the one that is playing.
+    await loadQueue()
+    return true
+  }
+
+  /// Signs this device in with a Device Link (ADR 0016): asks the service for a code, shows it,
+  /// and asks every couple of seconds until a signed-in device approves it. The key arrives
+  /// once and goes straight to the keychain.
+  func startDeviceLink() {
+    deviceLinkTask?.cancel()
+    deviceLinkFailure = nil
+    let label = deviceLinkLabel.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !label.isEmpty else {
+      deviceLink = .idle
+      deviceLinkFailure = OrbisFailure(
+        title: "Name this device", message: "Name this device to get a code.",
+        symbol: "pencil", isRetryable: false)
+      return
+    }
+    let address = (try? OrbisClient.address(from: connectionAddress)) ?? builtInAddress
+    let signedOut = OrbisClient(address: address, token: "", session: client?.session ?? .shared)
+    deviceLink = .starting
+    deviceLinkTask = Task { await runDeviceLink(signedOut, label: String(label.prefix(100))) }
+  }
+
+  func cancelDeviceLink() {
+    deviceLinkTask?.cancel()
+    deviceLinkTask = nil
+    deviceLink = .idle
+    deviceLinkFailure = nil
+  }
+
+  private func runDeviceLink(_ signedOut: OrbisClient, label: String) async {
+    let started: DeviceLinkStart
+    do {
+      started = try await signedOut.startDeviceLink(label: label)
+    } catch {
+      guard !Task.isCancelled else { return }
+      deviceLink = .idle
+      deviceLinkFailure = Self.failure(error, at: signedOut.address)
+      return
+    }
+    guard !Task.isCancelled else { return }
+    deviceLink = .waiting(userCode: started.userCode)
+    while true {
+      do {
+        try await Task.sleep(for: DeviceLink.pollInterval)
+      } catch {
+        return
+      }
+      let answer: DeviceLinkPoll
+      do {
+        answer = try await signedOut.pollDeviceLink(secret: started.pollSecret)
+      } catch OrbisError.server(let status, _) where status == 404 || status == 410 {
+        // The service no longer knows this link, usually because it restarted.
+        guard !Task.isCancelled else { return }
+        deviceLink = .expired
+        return
+      } catch {
+        guard !Task.isCancelled else { return }
+        // A passing failure: say why, and keep asking.
+        let failure = Self.failure(error, at: signedOut.address)
+        if deviceLinkFailure != failure { deviceLinkFailure = failure }
+        continue
+      }
+      guard !Task.isCancelled else { return }
+      if deviceLinkFailure != nil { deviceLinkFailure = nil }
+      switch answer {
+      case .pending:
+        continue
+      case .expired:
+        deviceLink = .expired
+        return
+      case .approved(let key):
+        let paired = OrbisClient(
+          address: signedOut.address, token: key, session: signedOut.session)
+        deviceLink = .idle
+        deviceLinkTask = nil
+        if await adopt(paired) == false {
+          deviceLinkFailure = OrbisError.storageRefused.failure(at: signedOut.address)
+        }
+        return
+      }
+    }
+  }
+
+  private static func failure(_ error: any Error, at address: URL) -> OrbisFailure {
+    ((error as? OrbisError) ?? .unreachable).failure(at: address)
   }
 
   /// Opens the connection screen with the address in place and the token left out. Leaving the
@@ -361,11 +467,12 @@ final class AppModel {
     stopDownloadWatches()
     stopReportingPosition()
     audioStates.removeAll()
+    cancelDeviceLink()
     settings.serviceAddress = nil
     settings.store(deviceToken: nil)
     client = nil
     connectionToken = ""
-    connectionAddress = ""
+    connectionAddress = builtInAddress.absoluteString
     hasStoredToken = false
     library = .idle
     search = .idle
