@@ -25,6 +25,8 @@ import type {
 } from "@/lib/library";
 import { FAILURE_MESSAGES } from "@/lib/orbis";
 import type { Credentials } from "@/lib/orbis";
+import { listPlaylists } from "@/lib/playlists";
+import type { Playlist } from "@/lib/playlists";
 
 const LibrarySearch = Schema.Struct({
   q: Schema.optionalKey(Schema.String),
@@ -177,11 +179,13 @@ const Filters = ({
 const Library = ({
   credentials,
   filters,
+  playlists,
   sets,
   tags,
 }: {
   readonly credentials: Credentials;
   readonly filters: LibraryFilters;
+  readonly playlists: readonly Playlist[];
   readonly sets: readonly SavedSet[];
   readonly tags: readonly string[];
 }) => {
@@ -207,6 +211,7 @@ const Library = ({
             <SetRow
               credentials={credentials}
               key={set.id}
+              playlists={playlists}
               progress={progress.get(set.id)}
               set={set}
             />
@@ -221,11 +226,12 @@ export const Route = createFileRoute("/_app/")({
   // The route hands its own data down, which keeps the types exact.
   component: () => {
     const { session } = Route.useRouteContext();
-    const { sets, tags } = Route.useLoaderData();
+    const { playlists, sets, tags } = Route.useLoaderData();
     return (
       <Library
         credentials={session}
         filters={Route.useSearch()}
+        playlists={playlists}
         sets={sets}
         tags={tags}
       />
@@ -233,14 +239,19 @@ export const Route = createFileRoute("/_app/")({
   },
   errorComponent: RouteProblem,
   loader: async ({ context, deps }) => {
-    const [sets, tags] = await Promise.all([
+    const [sets, tags, playlists] = await Promise.all([
       listSets(context.session, deps),
       listTags(context.session),
+      listPlaylists(context.session),
     ]);
     if (!sets.ok) {
       throw new Error(FAILURE_MESSAGES[sets.failure]);
     }
-    return { sets: sets.value.sets, tags: tags.ok ? tags.value.tags : [] };
+    return {
+      playlists: playlists.ok ? playlists.value.playlists : [],
+      sets: sets.value.sets,
+      tags: tags.ok ? tags.value.tags : [],
+    };
   },
   loaderDeps: ({ search }) => search,
   validateSearch: Schema.toStandardSchemaV1(LibrarySearch),
