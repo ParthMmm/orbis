@@ -445,6 +445,73 @@ final class LibraryUITests: XCTestCase {
     capture("16-ready-audio-playing")
   }
 
+  func testPlaysAndSeeksFromTracklistCues() throws {
+    let service = try LaneService()
+    let seeded = try service.saveReadySet(
+      title: "Tracklist journey", url: "https://www.youtube.com/watch?v=tracklist01")
+    try service.seedTracklist(seeded.id)
+    let app = try launch(paired: true)
+    openLibrary(in: app)
+    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
+    XCTAssertTrue(row.waitForExistence(timeout: 60))
+    tapAtCentre(of: row, in: app)
+
+    let tracklist = app.descendants(matching: .any)["tracklist"]
+    XCTAssertTrue(tracklist.waitForExistence(timeout: 30))
+    let first = app.buttons["cue-0"]
+    let second = app.buttons["cue-1"]
+    XCTAssertTrue(second.exists)
+    XCTAssertEqual(second.label, "Second Cue, Second Artist, starts at 0:12")
+    XCTAssertFalse(app.buttons["cue-2"].exists)
+    XCTAssertTrue(app.descendants(matching: .any)["cue-2"].exists)
+    for _ in 0..<3 {
+      if second.isHittable { break }
+      app.swipeUp()
+    }
+    XCTAssertTrue(second.isHittable)
+    capture("tracklist-before-play")
+
+    second.tap()
+    let seek = app.sliders["detail-seek"]
+    XCTAssertTrue(seek.waitForExistence(timeout: 15))
+    let startedAtCue = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value BEGINSWITH %@", "0:1"), object: seek)
+    XCTAssertEqual(XCTWaiter.wait(for: [startedAtCue], timeout: 8), .completed)
+    XCTAssertTrue(second.isSelected)
+    capture("tracklist-second-cue-playing")
+
+    for _ in 0..<3 {
+      if seek.isHittable { break }
+      app.swipeDown()
+    }
+    XCTAssertTrue(seek.isHittable)
+    capture("tracklist-elapsed-after-cue")
+
+    let canSeek = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "enabled == true"), object: seek)
+    XCTAssertEqual(XCTWaiter.wait(for: [canSeek], timeout: 8), .completed)
+    first.tap()
+    let returnedToFirst = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value BEGINSWITH %@", "0:0"), object: seek)
+    XCTAssertEqual(XCTWaiter.wait(for: [returnedToFirst], timeout: 5), .completed)
+    XCTAssertTrue(first.isSelected)
+    capture("tracklist-first-cue-playing")
+
+    let pause = app.buttons["detail-play-toggle"]
+    pause.tap()
+    XCTAssertEqual(pause.label, "Play")
+
+    app.navigationBars.buttons.firstMatch.tap()
+    let openNowPlaying = app.buttons.matching(
+      NSPredicate(
+        format: "identifier == %@ AND label == %@", "mini-player", "Now playing, \(seeded.title)")
+    ).firstMatch
+    XCTAssertTrue(openNowPlaying.waitForExistence(timeout: 10))
+    openNowPlaying.tap()
+    XCTAssertEqual(app.staticTexts["now-playing-cue"].label, "First Cue · First Artist")
+    capture("tracklist-now-playing")
+  }
+
   func testMiniPlayerNowPlayingAndStoredPosition() throws {
     let service = try LaneService()
     let seeded = try service.saveReadySet(
