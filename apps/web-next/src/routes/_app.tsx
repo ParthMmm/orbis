@@ -7,6 +7,7 @@ import {
 } from "@tanstack/react-router";
 
 import { LiveEventsProvider } from "@/components/live-events";
+import { PlayerProvider } from "@/components/player/player";
 import { RouteProblem } from "@/components/route-problem";
 import { Button } from "@/components/ui/button";
 import { NAV_ITEMS } from "@/lib/nav";
@@ -54,7 +55,9 @@ const AppShell = ({ session }: { readonly session: Session }) => {
         </div>
       </header>
       <LiveEventsProvider credentials={session}>
-        <Outlet />
+        <PlayerProvider credentials={session}>
+          <Outlet />
+        </PlayerProvider>
       </LiveEventsProvider>
     </div>
   );

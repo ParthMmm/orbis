@@ -3,6 +3,7 @@ import { useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import type { FormEvent } from "react";
 
+import { usePlayer } from "@/components/player/player";
 import {
   AlertDialog,
   AlertDialogCancel,
@@ -164,6 +165,7 @@ export const SetRow = ({
   readonly set: SavedSet;
 }) => {
   const router = useRouter();
+  const player = usePlayer();
   const [dialog, setDialog] = useState<Dialogs | null>(null);
   const [problem, setProblem] = useState<string | null>(null);
   const settle = async (result: ApiResult<unknown>, limited?: string) => {
@@ -233,6 +235,26 @@ export const SetRow = ({
           <DotsThreeIcon />
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
+          {set.downloadState === "ready" ? (
+            <>
+              <DropdownMenuItem
+                onClick={async () => settle(await player.play(set))}
+              >
+                Play
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={async () => settle(await player.queue(set, "next"))}
+              >
+                Play next
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={async () => settle(await player.queue(set, "end"))}
+              >
+                Add to queue
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+            </>
+          ) : null}
           {downloadable ? (
             <DropdownMenuItem
               onClick={async () =>
