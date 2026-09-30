@@ -60,7 +60,8 @@ export interface Credentials {
  */
 export const callOrbis = async <A, E>(
   { apiUrl, key }: Credentials,
-  operation: (client: OrbisClient) => EffectType<A, E>
+  operation: (client: OrbisClient) => EffectType<A, E>,
+  signal?: AbortSignal
 ): Promise<ApiResult<A>> => {
   let status: number | undefined;
   const trackedFetch = Object.assign(
@@ -82,7 +83,8 @@ export const callOrbis = async <A, E>(
         // A `traceparent` header would fail the API's CORS preflight, which allows
         // only the headers the page sends on purpose.
         Effect.provideService(HttpClient.TracerPropagationEnabled, false)
-      )
+      ),
+      signal === undefined ? undefined : { signal }
     );
     return { ok: true, value };
   } catch {
