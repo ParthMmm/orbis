@@ -180,6 +180,9 @@ export const removePerson = (path: string, id: string) => {
       return {
         store: {
           ...store,
+          ...(store.invites && {
+            invites: store.invites.filter((invite) => invite.personId !== id),
+          }),
           keys: store.keys.filter((key) => key.personId !== id),
           people: store.people.map((candidate) =>
             candidate.id === id ? { ...candidate, removed: true } : candidate

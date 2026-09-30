@@ -9,6 +9,7 @@ import {
   DeviceLinkCodePayload,
   DeviceLinkPollPayload,
   DeviceLinkStartPayload,
+  InviteClaimPayload,
   SaveSetPayload,
   OrbisApi,
   PlaylistMembersPayload,
@@ -68,6 +69,7 @@ import {
   updatePerson,
   updatePersonFilters,
 } from "./identity.js";
+import { consumeInvite, createInvite, INVITE_TTL_MS } from "./invite.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
 import {
@@ -189,13 +191,29 @@ const tooManyAttempts = () =>
   Response.json({ message: "Too many invalid keys." }, { status: 429 });
 /**
  * Routes a new device calls before it has a key (ADR 0016). They pass the Origin
- * check like every route, and each start or unknown poll secret counts toward the
- * failed-key limit.
+ * check like every route, and each start, unknown poll secret, or failed Invite
+ * claim counts toward the failed-key limit.
  */
 const OPEN_ROUTES: ReadonlySet<string> = new Set([
   "/device-links",
   "/device-links/poll",
 ]);
+/** Redeems a code whatever the Authorization header says, so a key cannot skip the limit. */
+const INVITE_CLAIM_ROUTE = "/invites/claim";
+const INVITE_FAILURES = {
+  expired: {
+    message: "This Invite has expired. Ask the Host for a new one.",
+    statusCode: 410,
+  },
+  missing: {
+    message: "This Invite link is not valid. Ask the Host for a new one.",
+    statusCode: 404,
+  },
+  used: {
+    message: "This Invite has already been used. Ask the Host for a new one.",
+    statusCode: 409,
+  },
+} as const;
 const LINK_FAILURES = {
   approved: { message: "That code is already approved.", statusCode: 409 },
   expired: {
@@ -333,6 +351,8 @@ export const createApp = (
     presenceWindowMs?: number;
     /** How long a Device Link stays open. Tests shorten it to prove expiry. */
     deviceLinkTtlMs?: number;
+    /** How long an Invite stays claimable. Tests shorten it to prove expiry. */
+    inviteTtlMs?: number;
     /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
     shortLinkFetch?: (url: string, signal: AbortSignal) => Promise<Response>;
     titleReviser?: Layer.Layer<TitleReviser>;
@@ -1459,6 +1479,59 @@ export const createApp = (
               adminCall((storePath) => revokeKey(storePath, params.id))
             )
           )
+          .handleRaw("createInvite", ({ params }) =>
+            withFailureResponse(
+              Effect.map(
+                adminCall((storePath) =>
+                  createInvite(storePath, params.id, {
+                    now: Date.now(),
+                    ttlMs: options.inviteTtlMs ?? INVITE_TTL_MS,
+                  })
+                ),
+                (invite) =>
+                  HttpServerResponse.jsonUnsafe(invite, { status: 201 })
+              )
+            )
+          )
+      );
+      // An Invite mints only a daily key, for the Person it names (ADR 0016).
+      // The code is spent before the key exists, so it yields one key.
+      const inviteGroup = HttpApiBuilder.group(
+        OrbisApi,
+        "invites",
+        (handlers) =>
+          handlers.handleRaw("claim", () =>
+            withFailureResponse(
+              Effect.gen(function* claimInvite() {
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(InviteClaimPayload);
+                const label = input.label.trim();
+                if (label === "") {
+                  return yield* new LibraryError({
+                    message: "Name this device.",
+                    statusCode: 400,
+                  });
+                }
+                const claim = yield* trustCall((storePath) =>
+                  consumeInvite(storePath, input.code, Date.now())
+                );
+                if (claim.kind !== "found") {
+                  return yield* new LibraryError(INVITE_FAILURES[claim.kind]);
+                }
+                const { personId } = claim;
+                const key = yield* trustCall((storePath) =>
+                  addKey(storePath, personId, { label, scope: "daily" })
+                );
+                const person = readTrustRegistry(devicesPath).store.people.find(
+                  (candidate) => candidate.id === personId
+                );
+                return HttpServerResponse.jsonUnsafe({
+                  key: key.token,
+                  person: { id: personId, username: person?.username ?? "" },
+                });
+              })
+            )
+          )
       );
       const eventsGroup = HttpApiBuilder.group(OrbisApi, "events", (handlers) =>
         handlers.handle("subscribe", () =>
@@ -1641,6 +1714,7 @@ export const createApp = (
           Layer.provide(libraryGroup),
           Layer.provide(systemGroup),
           Layer.provide(deviceLinkGroup),
+          Layer.provide(inviteGroup),
           Layer.provide(eventsGroup),
           Layer.provide(peopleGroup),
           Layer.provide(adminGroup),
@@ -1708,7 +1782,8 @@ export const createApp = (
   /**
    * A start always counts toward the failed-key limit, and so does a poll whose
    * secret matches no link. A poll of a live link does not, so a device waiting for
-   * approval is never limited. A client over the limit is refused before any lookup.
+   * approval is never limited. A failed Invite claim counts too. A client over the
+   * limit is refused before any lookup, so it cannot spend an Invite.
    */
   const openRoute = async (
     request: Request,
@@ -1723,17 +1798,17 @@ export const createApp = (
     if (limited && pathname === "/device-links" && recordFailedKey(client)) {
       return tooManyAttempts();
     }
-    // SAFETY: the open Device Link handlers read no caller-bound service.
+    // SAFETY: the open Device Link and Invite handlers read no caller-bound service.
     const response = await app.handler(
       request,
       Context.empty() as Context.Context<Library | Queue | SetCaller>
     );
-    if (
-      limited &&
-      pathname === "/device-links/poll" &&
-      (response.status === 404 || response.status === 400) &&
-      recordFailedKey(client)
-    ) {
+    const failedGuess =
+      (pathname === "/device-links/poll" &&
+        (response.status === 404 || response.status === 400)) ||
+      (pathname === INVITE_CLAIM_ROUTE &&
+        [400, 404, 409, 410].includes(response.status));
+    if (limited && failedGuess && recordFailedKey(client)) {
       return tooManyAttempts();
     }
     return response;
@@ -1767,9 +1842,9 @@ export const createApp = (
       const authorization = request.headers.get("authorization");
       const { pathname } = new URL(request.url);
       if (
-        authorization === null &&
         request.method === "POST" &&
-        OPEN_ROUTES.has(pathname)
+        (pathname === INVITE_CLAIM_ROUTE ||
+          (authorization === null && OPEN_ROUTES.has(pathname)))
       ) {
         return openRoute(request, mode, clientAddress, pathname).then(
           withOrigin

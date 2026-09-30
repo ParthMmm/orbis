@@ -259,6 +259,19 @@ export const DeviceLinkSchema = Schema.Struct({
 export const DeviceLinkPollPayload = Schema.Struct({
   pollSecret: Schema.String.check(Schema.isMaxLength(200)),
 });
+/** An Invite (ADR 0016): a one-time code the Host sends, claimed for a daily key. */
+export const InviteSchema = Schema.Struct({
+  code: Schema.String,
+  expiresAt: Schema.String,
+});
+export const InviteClaimPayload = Schema.Struct({
+  code: Schema.String.check(Schema.isMaxLength(200)),
+  label: Schema.String.check(Schema.isMaxLength(100)),
+});
+export const InviteClaimSchema = Schema.Struct({
+  key: Schema.String,
+  person: VisiblePerson,
+});
 export const DeviceLinkPollSchema = Schema.Union([
   Schema.Struct({ status: Schema.Literal("pending") }),
   Schema.Struct({ status: Schema.Literal("expired") }),
@@ -538,9 +551,31 @@ export const OrbisApi = PlaylistApi.add(
           error: [NotFound, InternalError],
           params: SetId,
           success: AdminKey,
+        }),
+        HttpApiEndpoint.post("createInvite", "/admin/people/:id/invites", {
+          error: [NotFound, InternalError],
+          params: SetId,
+          success: InviteSchema.pipe(HttpApiSchema.status(201)),
         })
       )
       .middleware(SetAccess)
+  )
+  .add(
+    // Claim carries no key; the new device has none yet.
+    HttpApiGroup.make("invites").add(
+      HttpApiEndpoint.post("claim", "/invites/claim", {
+        error: [
+          BadRequest,
+          NotFound,
+          Conflict,
+          Gone,
+          TooManyRequests,
+          InternalError,
+        ],
+        payload: InviteClaimPayload,
+        success: InviteClaimSchema,
+      })
+    )
   )
   .add(
     HttpApiGroup.make("devices")

@@ -185,10 +185,11 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         if (!["get", "post", "put", "patch", "delete"].includes(method)) {
           continue;
         }
-        // The Swift client has no Device Link types until the Apple apps adopt them.
+        // The Swift client has no Device Link or Invite types until the Apple apps adopt them.
         if (
           operation.operationId.startsWith("admin.") ||
-          operation.operationId.startsWith("deviceLinks.")
+          operation.operationId.startsWith("deviceLinks.") ||
+          operation.operationId.startsWith("invites.")
         ) {
           continue;
         }
