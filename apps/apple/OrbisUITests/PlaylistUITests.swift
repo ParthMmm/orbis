@@ -216,11 +216,13 @@ final class PlaylistUITests: XCTestCase {
 
     app.buttons["detail-actions"].tap()
     app.buttons["detail-playlist"].tap()
-    // Once joined, the playlist is listed under Recents and All Playlists alike.
-    let choice = app.buttons.matching(identifier: "add-to-playlist-\(playlist.name)").firstMatch
+    let allChoices = app.buttons.matching(identifier: "add-to-playlist-\(playlist.name)")
+    let recentChoices = app.buttons.matching(identifier: "add-to-playlist-recent-\(playlist.name)")
+    let choice = allChoices.element
     XCTAssertTrue(
       choice.waitForExistence(timeout: 15),
       "the sheet must list every playlist\n\(app.debugDescription)")
+    XCTAssertEqual(allChoices.count, 1, "All Playlists must have one identifiable row")
     capture("add-to-playlist-sheet")
     choice.tap()
     XCTAssertFalse(choice.waitForExistence(timeout: 5), "choosing a playlist must close the sheet")
@@ -230,9 +232,55 @@ final class PlaylistUITests: XCTestCase {
 
     app.buttons["detail-actions"].tap()
     app.buttons["detail-playlist"].tap()
-    XCTAssertTrue(choice.waitForExistence(timeout: 15))
-    XCTAssertEqual(choice.value as? String, "Added", "the sheet must mark the playlist it joined")
+    XCTAssertTrue(app.navigationBars["Add to Playlist"].waitForExistence(timeout: 15))
+    let allCount = allChoices.count
+    let recentCount = recentChoices.count
+    steps.append([
+      "step": "reopen with Recents and All Playlists",
+      "allRows": allCount, "recentRows": recentCount,
+    ])
     capture("add-to-playlist-added")
+    XCTAssertEqual(allCount, 1, "All Playlists must have exactly one identifiable row")
+    XCTAssertEqual(recentCount, 1, "Recents must have exactly one identifiable row")
+    guard allCount == 1, recentCount == 1 else {
+      try record("add-to-playlist", steps)
+      return
+    }
+    let recentChoice = recentChoices.element
+    XCTAssertEqual(choice.value as? String, "Added", "All Playlists must mark the joined playlist")
+    XCTAssertEqual(recentChoice.value as? String, "Added", "Recents must mark the joined playlist")
+
+    recentChoice.tap()
+    let afterRemove = try storedOrder(of: playlist.id, in: service, becomes: [])
+    steps.append(["step": "remove through Recents", "expected": [], "stored": afterRemove])
+    XCTAssertEqual(afterRemove, [], "removing through Recents must remove the membership")
+    let removed = [choice, recentChoice].map {
+      XCTNSPredicateExpectation(predicate: NSPredicate(format: "value == %@", ""), object: $0)
+    }
+    XCTAssertEqual(XCTWaiter.wait(for: removed, timeout: 15), .completed)
+    XCTAssertEqual(allChoices.count, 1, "All Playlists must keep its identifiable row after removal")
+    XCTAssertEqual(recentChoices.count, 1, "Recents must keep its identifiable row after removal")
+    capture("add-to-playlist-removed-through-recents")
+
+    choice.tap()
+    XCTAssertFalse(choice.waitForExistence(timeout: 5), "adding through All Playlists must close the sheet")
+    let afterReadd = try storedOrder(of: playlist.id, in: service, becomes: [set.id])
+    steps.append(["step": "re-add through All Playlists", "expected": [set.id], "stored": afterReadd])
+    XCTAssertEqual(afterReadd, [set.id], "re-adding through All Playlists must restore membership once")
+
+    app.buttons["detail-actions"].tap()
+    app.buttons["detail-playlist"].tap()
+    XCTAssertTrue(app.navigationBars["Add to Playlist"].waitForExistence(timeout: 15))
+    XCTAssertEqual(allChoices.count, 1, "All Playlists must keep one identifiable row after re-adding")
+    XCTAssertEqual(recentChoices.count, 1, "Recents must keep one identifiable row after re-adding")
+    XCTAssertEqual(choice.value as? String, "Added", "All Playlists must show restored membership")
+    XCTAssertEqual(recentChoice.value as? String, "Added", "Recents must show restored membership")
+    steps.append([
+      "step": "both sections show restored membership",
+      "allRows": allChoices.count, "recentRows": recentChoices.count,
+      "allValue": choice.value as? String ?? "", "recentValue": recentChoice.value as? String ?? "",
+    ])
+    capture("add-to-playlist-readded-through-all")
     app.buttons["Close"].tap()
 
     selectTab("Home", in: app)
