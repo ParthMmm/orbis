@@ -267,12 +267,8 @@ final class LibraryUITests: XCTestCase {
     link.typeText("https://youtu.be/tPEMP9oYxTo")
     capture("07-link-pasted")
 
-    // Every query after this point names one element and waits for it. With a second simulator
-    // running journeys beside this one, a single snapshot of the app can outlast XCUITest's
-    // query timeout, and a bare `exists` or `tap()` gets one snapshot and no retry. A wait
-    // polls until its own deadline. The Tag check used to match a label substring across every
-    // static text in the app, the heaviest query in the journey; the Tag field's identifier
-    // proves the same thing.
+    // Wait for the pasted link to enable filing, then wait for the naming controls.
+    // The Tag field's identifier keeps its lookup independent of the footer copy.
     let fileIt = app.buttons["File it"]
     let enabled = XCTNSPredicateExpectation(
       predicate: NSPredicate(format: "exists == true AND enabled == true"), object: fileIt)
