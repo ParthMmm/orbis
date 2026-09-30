@@ -9,12 +9,15 @@ import {
 import { HttpApiClient } from "effect/unstable/httpapi";
 
 /**
- * Why a call failed. `unreachable` means no response arrived at all: the API is
- * down, or Chrome's Local Network Access prompt was denied on a tailnet device
- * (see README, "Devices on the tailnet").
+ * Why a call failed. `rejected` means the API knows no such key (401), and
+ * `forbidden` means the key works but may not make this call (403), such as a
+ * daily key on an `/admin` route. `unreachable` means no response arrived at
+ * all: the API is down, or Chrome's Local Network Access prompt was denied on a
+ * tailnet device (see README, "Devices on the tailnet").
  */
 export type ApiFailure =
   | "rejected"
+  | "forbidden"
   | "unreachable"
   | "conflict"
   | "limited"
@@ -26,6 +29,7 @@ export type ApiResult<A> =
 
 const FAILURE_BY_STATUS: ReadonlyMap<number, ApiFailure> = new Map([
   [401, "rejected"],
+  [403, "forbidden"],
   [409, "conflict"],
   [429, "limited"],
 ]);
@@ -98,6 +102,7 @@ export type Person = Extract<
 export const FAILURE_MESSAGES: Readonly<Record<ApiFailure, string>> = {
   conflict: "That change conflicts with what Orbis already has.",
   failed: "Orbis could not complete the request. Try again.",
+  forbidden: "That API key cannot do this.",
   limited: "Orbis is busy right now. Try again in a minute.",
   rejected: "That API key does not work.",
   // No response at all; on a tailnet device this is often Chrome blocking the
