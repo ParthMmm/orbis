@@ -1,0 +1,46 @@
+# Move the API and its data to one Durable Object, and keep Vanta as the audio node
+
+The API moves from Vanta to Cloudflare at `https://orbis.p11a.xyz/api`. This is the second step that ADR 0015 announced. A Worker on that route passes each request to one Durable Object, the Group, which runs the `HttpApi` from `packages/contracts` and keeps every table in its own SQLite storage. Vanta keeps everything that needs yt-dlp, Cobalt, ffprobe, or the audio directory. It becomes the audio node: it reads source details, runs Downloads, stores and deletes Retained Audio, and streams it through the Funnel.
+
+**What moves.** People, API keys, Invites, Device Links, Sets, Library Entries, Tracklists, Playlists and their editors, the Listening Queue, Playback Positions, Listens, Presence, the social filters, the Download jobs and their round-robin schedule, and the event stream. The YouTube Data API, SoundCloud, Versos, and OpenRouter calls move with them, and their keys become Worker secrets. The trust store in `devices.json` becomes tables in the Group, so a key, an Invite, and the Person it belongs to live in one database.
+
+**What stays on Vanta.** yt-dlp source details, Downloads through yt-dlp and Cobalt, the 2 GiB size cap and the ffprobe check, the audio files, and the audio route. Vanta keeps no database and no API keys. The files in its audio directory are its only state.
+
+**One Durable Object, not D1.** The server runs 12 transactions that read and then write: the Listening Queue, Playlist order, saving a Set, removing a Playlist, and releasing Retained Audio. Effect's D1 client fails on any transaction (`@effect/sql-d1` dies with "transactions are not supported in D1"), so D1 would mean rewriting each one as a batch of conditional statements. A Durable Object's SQLite storage supports transactions, and Drizzle has an `effect-sqlite-do` driver beside the `effect-sqlite-bun` driver the server uses now, so the queries stay as they are. The Group is also one writer, as the Bun process is today. That keeps the Queue signals, the Presence reports, the pending Device Links, and the limit on failed key attempts in memory without change. The whole database is 172 KB, far below a Durable Object's storage limit, and a Group of a few people does not need more than one object's throughput.
+
+**How Vanta and the Group talk.** Vanta opens a WebSocket to the Group at `/api/node` and keeps it open. It authenticates with a node key, a key with the `node` scope that only this route accepts. The Group sends work over that socket: start a Download, cancel a Download, read source details, release a Set's audio. Vanta answers with progress, a finished Download (bytes, format, duration), a failure with its reason, read details, and a release confirmation. The Group still owns the job table and gives Vanta one Download at a time, round-robin across the People who queued jobs (ADRs 0002 and 0010). Every message names a Set id, and handling it twice changes nothing. When Vanta connects, it sends the list of files it holds. The Group compares that list with its records: it marks Sets whose files are missing as without audio, sends a release for files that nothing refers to, and sends the queued and interrupted jobs again. A restart on either side, or a dropped connection, ends in the same state. Vanta connects out, so the Funnel needs no new public route.
+
+**Releasing audio.** The release rule from ADR 0010 stays in one place, the Group. When nothing refers to a Set, the Group clears the Set's audio columns in the same transaction and sends a release for that Set. Vanta deletes the file. If Vanta is offline, the next connection sends the release again.
+
+**Stream grants.** The Group signs grants with the key now in `stream-grant.key`. That key becomes a Worker secret, and Vanta keeps its copy, so grants issued before the move stay valid. Vanta checks the signature, the Set, and the expiry, and serves the file. It no longer accepts a Bearer key on the audio route, because it has no keys. The Worker keeps the route `/api/sets/:id/audio`. A request with a grant, or with a Bearer key for a Set the Person can see, gets a `302` to the same path on the Funnel with a grant. The web client keeps building its audio URL from the API address, and the Apple player keeps sending its key. Neither changes. Cloudflare sees the redirect, never the audio.
+
+**Live events.** `GET /api/events` stays a `fetch`-read stream with the 30-second heartbeat (ADR 0014). The Group serves it, so a stream ends when the key is revoked, as it does now. An open stream keeps the Group awake. The Group cannot hibernate while a client is open, and the duration charge for a few open clients is small.
+
+**Migration.** The import format is SQL: every table from `library.sqlite`, plus the people, keys, and Invites from `devices.json`, with key digests copied unchanged. No device pairs again. The move runs in this order:
+
+1. Deploy the Group with an empty database. Vanta keeps serving the API.
+2. Put the Vanta API into read-only mode, so writes answer `503` with `Retry-After`. Reads and audio keep working.
+3. Export the data, import it through a route that only the node key can call and that refuses an import when the Group already holds data, and compare the row counts and a checksum of each table.
+4. Switch the web client's `ORBIS_API_URL` to `https://orbis.p11a.xyz/api`, and connect Vanta as the audio node.
+5. From then on, the Vanta listener on the Funnel serves audio and forwards every other `/api` request to `https://orbis.p11a.xyz/api`. Apple builds and Raycast preferences that still name the Funnel address keep working.
+
+Writes stop for the length of steps 2 to 4, a few minutes. The rollback before step 4 is to turn off read-only mode on Vanta. After step 4, the Group's export route writes the same SQL format, which restores `library.sqlite` and `devices.json`. The nightly backup on Vanta changes its source from the local SQLite file to that export, so a copy of the data stays off Cloudflare.
+
+**Clients.** The web client becomes same-origin with the API, so the CORS preflight from ADR 0015 goes away. The Apple apps' built-in address (#149) becomes `https://orbis.p11a.xyz/api` in their next build, and Raycast's default address changes the same way. Saved keys keep working, because the keys moved with their digests. The forwarding on Vanta stays until the Host sees that no request has come through it for two weeks. The Electron desktop app is removed. It reads the token-free local listener (`4310`), which acts as the Host and has no database behind it after the move, and the web client covers what it does.
+
+**Recovery.** `bun run trust` now runs where the database is. It no longer edits `devices.json`. It calls `/api/recovery`, which Cloudflare Access protects with the Host's email and a one-time code. Recovery mints the first admin key of a new deployment, and a new admin key when none is left (ADR 0008). It cannot read library data.
+
+**Contract.** Every route keeps its path and shape (ADR 0014). The additions are the node and import routes, the export and recovery routes, and the `node` scope, and no client outside Vanta calls them.
+
+Rejected alternatives:
+
+- **D1.** It has a console and Time Travel restores, but Effect's D1 client has no transactions, and the 12 read-then-write transactions would each become a batch of conditional statements. Presence, Queue signals, and pending Device Links would still need a Durable Object, so D1 would add a second store.
+- **One Durable Object per Person.** It would split writes, but Playlists, visibility, Presence, and shared audio each read across People, and every one of those reads would cross objects.
+- **Vanta keeps the database, and the Worker proxies it.** Cloudflare would see every key and response, and the API would still go down with Vanta. ADR 0015 rejected this shape for the web client.
+- **Vanta polls for jobs.** It is simpler than a socket, but a Download or a cancel waits for the next poll, and frequent polls cost requests while nothing happens.
+- **The Group calls an API on Vanta.** It needs a second public, authenticated API on the Funnel, and Vanta would have to be reachable for every save.
+- **Cloudflare Queues.** Vanta is not a Worker, so it would poll the queue over HTTP, and a cancel has no order relative to its start.
+- **Absolute grant URLs pointing at the Funnel.** The deployed web client accepts only a grant for its own API path, so this would break it.
+- **Keep the Electron app with an API key.** It duplicates the web client and is the only client that needs the local listener.
+
+The trade this accepts is that Cloudflare now holds the Group's library data and sees every API key in transit. ADR 0007 had kept both on Vanta, and ADR 0015 kept them there for one more step. Cloudflare still never stores or carries audio, and the Host keeps a nightly copy of the data. While Vanta is down, every client can browse, edit, and queue, but no Set plays and no Download runs. While Cloudflare is down, nothing works, including the native clients that ADR 0015 kept independent of it. One Durable Object is a single point of contention and lives in one region. For a few people this costs nothing measurable, and it is the first limit to revisit if the Group grows.
