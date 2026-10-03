@@ -346,61 +346,186 @@ test("none stores no Cues and a concurrent retry does not start another run", as
   }
 });
 
-test("disposing an active Tracklist releases its claim for an immediate HTTP retry", async () => {
-  let requests = 0;
+test.each(["request", "poll"] as const)(
+  "disposing during a Tracklist %s releases its claim for immediate concurrent HTTP retries",
+  async (stage) => {
+    let requests = 0;
+    let polls = 0;
+    const server = await start(
+      Versos.layerOf({
+        poll: () => {
+          polls += 1;
+          return Effect.never;
+        },
+        request: () => {
+          requests += 1;
+          return stage === "request"
+            ? Effect.never
+            : Effect.succeed({ requestId: "interrupted-job" });
+        },
+      })
+    );
+    try {
+      const saved = await save(server.app);
+      expect(saved.statusCode).toBe(201);
+      const id = String(saved.json().id);
+      await eventually(() => Promise.resolve(requests === 1 ? true : null));
+      if (stage === "poll") {
+        await eventually(() => Promise.resolve(polls === 1 ? true : null));
+      }
+      await server.app.dispose();
+      const db = new Sqlite(server.databasePath);
+      try {
+        expect(
+          db
+            .query(
+              "SELECT tracklist_state, tracklist_run_id, tracklist_run_started_at FROM sets WHERE id = ?"
+            )
+            .get(id)
+        ).toEqual({
+          tracklist_run_id: null,
+          tracklist_run_started_at: null,
+          tracklist_state: "pending",
+        });
+      } finally {
+        db.close();
+      }
+      let retryRequests = 0;
+      const blocked = Promise.withResolvers<null>();
+      const reloaded = createApp({
+        databasePath: server.databasePath,
+        versos: Versos.layerOf({
+          poll: () => Effect.succeed({ cues: CUES, state: "ready" }),
+          request: () => {
+            retryRequests += 1;
+            return Effect.promise(() => blocked.promise).pipe(
+              Effect.as({ requestId: "restart-job" })
+            );
+          },
+        }),
+      });
+      try {
+        const retries = await Promise.all([
+          request(reloaded, {
+            method: "POST",
+            url: `/sets/${id}/tracklist/retry`,
+          }),
+          request(reloaded, {
+            method: "POST",
+            url: `/sets/${id}/tracklist/retry`,
+          }),
+        ]);
+        expect(retries.map((retry) => retry.statusCode)).toEqual([200, 200]);
+        await eventually(() =>
+          Promise.resolve(retryRequests === 1 ? true : null)
+        );
+        expect(retryRequests).toBe(1);
+        blocked.resolve(null);
+        const ready = await waitForState(reloaded, id, "ready");
+        expect(ready.json()).toEqual({
+          cues: CUES,
+          state: "ready",
+        });
+      } finally {
+        blocked.resolve(null);
+        await reloaded.dispose();
+      }
+    } finally {
+      await server.dispose();
+    }
+  }
+);
+
+test("shutting down a stale HTTP worker preserves a newer active claim and its Cues", async () => {
+  let staleRequests = 0;
   const server = await start(
     Versos.layerOf({
-      poll: () => Effect.die("request never completes"),
+      poll: () => Effect.die("stale request never completes"),
       request: () => {
-        requests += 1;
+        staleRequests += 1;
         return Effect.never;
       },
     })
   );
+  const blocked = Promise.withResolvers<null>();
+  let newerRequests = 0;
+  const newerCues = CUES.map((cue) => ({ ...cue, artist: "Newer Artist" }));
+  const saved = await save(server.app);
+  expect(saved.statusCode).toBe(201);
+  const id = String(saved.json().id);
+  await eventually(() => Promise.resolve(staleRequests === 1 ? true : null));
+  const newer = createApp({
+    databasePath: server.databasePath,
+    versos: Versos.layerOf({
+      poll: () => Effect.succeed({ cues: newerCues, state: "ready" }),
+      request: () => {
+        newerRequests += 1;
+        return Effect.promise(() => blocked.promise).pipe(
+          Effect.as({ requestId: "newer-active-job" })
+        );
+      },
+    }),
+  });
   try {
-    const saved = await save(server.app);
-    expect(saved.statusCode).toBe(201);
-    const id = String(saved.json().id);
-    await eventually(() => Promise.resolve(requests === 1 ? true : null));
-    await server.app.dispose();
+    // Finish the second app's migrations before holding a SQLite inspection connection.
+    const initial = await read(newer, id);
+    expect(initial.statusCode).toBe(200);
     const db = new Sqlite(server.databasePath);
     try {
-      expect(
+      const claim = () =>
         db
-          .query(
-            "SELECT tracklist_state, tracklist_run_id, tracklist_run_started_at FROM sets WHERE id = ?"
+          .query<
+            {
+              tracklist_run_id: string | null;
+              tracklist_run_started_at: string | null;
+              tracklist_state: string;
+            },
+            [string]
+          >(
+            "SELECT tracklist_run_id, tracklist_run_started_at, tracklist_state FROM sets WHERE id = ?"
           )
-          .get(id)
-      ).toEqual({
-        tracklist_run_id: null,
-        tracklist_run_started_at: null,
-        tracklist_state: "pending",
-      });
-    } finally {
-      db.close();
-    }
-    const reloaded = createApp({
-      databasePath: server.databasePath,
-      versos: Versos.layerOf({
-        poll: () => Effect.succeed({ cues: CUES, state: "ready" }),
-        request: () => Effect.succeed({ requestId: "restart-job" }),
-      }),
-    });
-    try {
-      const retry = await request(reloaded, {
+          .get(id);
+      const staleClaim = claim();
+      expect(staleClaim?.tracklist_run_id).toBeString();
+      db.query("UPDATE sets SET tracklist_run_started_at = ? WHERE id = ?").run(
+        "2000-01-01T00:00:00.000Z",
+        id
+      );
+      const retry = await request(newer, {
         method: "POST",
         url: `/sets/${id}/tracklist/retry`,
       });
       expect(retry.statusCode).toBe(200);
-      const ready = await waitForState(reloaded, id, "ready");
-      expect(ready.json()).toEqual({
-        cues: CUES,
-        state: "ready",
+      await eventually(() =>
+        Promise.resolve(newerRequests === 1 ? true : null)
+      );
+      const newerClaim = claim();
+      expect(newerClaim?.tracklist_run_id).toBeString();
+      expect(newerClaim?.tracklist_run_id).not.toBe(
+        staleClaim?.tracklist_run_id
+      );
+      await server.app.dispose();
+      expect(claim()).toEqual(newerClaim);
+      const duplicate = await request(newer, {
+        method: "POST",
+        url: `/sets/${id}/tracklist/retry`,
+      });
+      expect(duplicate.statusCode).toBe(200);
+      expect(newerRequests).toBe(1);
+      blocked.resolve(null);
+      const ready = await waitForState(newer, id, "ready");
+      expect(ready.json()).toEqual({ cues: newerCues, state: "ready" });
+      expect(claim()).toEqual({
+        tracklist_run_id: null,
+        tracklist_run_started_at: null,
+        tracklist_state: "ready",
       });
     } finally {
-      await reloaded.dispose();
+      db.close();
     }
   } finally {
+    blocked.resolve(null);
+    await newer.dispose();
     await server.dispose();
   }
 });
