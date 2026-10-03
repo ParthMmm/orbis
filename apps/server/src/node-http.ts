@@ -16,8 +16,8 @@ export const makeNodeHandler = (options: {
   );
   return (request: Request) => {
     const url = new URL(request.url);
-    if (url.pathname.startsWith("/api/")) {
-      url.pathname = url.pathname.slice(4);
+    if (url.pathname === "/api" || url.pathname.startsWith("/api/")) {
+      url.pathname = url.pathname.slice(4) || "/";
       return handler(new Request(url, request), "device");
     }
     return handler(request, "device");

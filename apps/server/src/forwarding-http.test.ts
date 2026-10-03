@@ -125,6 +125,11 @@ test("an audio node forwards API reads and keeps grant-only Range audio local", 
       ingress: "funnel-forward",
       path: "/api/me",
     });
+    const root = await fetch(new URL("/api?probe=1", node.url));
+    expect(await root.json()).toEqual({
+      ingress: "funnel-forward",
+      path: "/api/",
+    });
     const denied = await fetch(new URL("/api/sets/fixture/audio", node.url), {
       headers: { authorization: "Bearer client-key" },
     });
