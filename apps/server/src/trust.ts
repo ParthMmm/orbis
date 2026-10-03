@@ -15,7 +15,7 @@ const usage = `Usage:
   bun src/trust.ts person add --username <name> [--database <path>]
   bun src/trust.ts person list [--database <path>]
   bun src/trust.ts person remove --id <id> [--database <path>]
-  bun src/trust.ts key add --person <id> --label <name> [--scope daily|admin] [--database <path>]
+  bun src/trust.ts key add --person <id> --label <name> [--scope daily|admin|node] [--database <path>]
   bun src/trust.ts key list [--database <path>]
   bun src/trust.ts key revoke --id <id> [--database <path>]
 
@@ -131,8 +131,8 @@ const personRemove = () => {
 const keyAdd = (legacy = false) => {
   const personId = legacy ? HOST_PERSON_ID : required("person");
   const scope = option("scope") ?? "daily";
-  if (scope !== "daily" && scope !== "admin") {
-    throw new Error("--scope must be daily or admin.");
+  if (scope !== "daily" && scope !== "admin" && scope !== "node") {
+    throw new Error("--scope must be daily, admin, or node.");
   }
   if (scope === "admin" && personId !== HOST_PERSON_ID) {
     throw new Error("Only Host can have an admin key.");

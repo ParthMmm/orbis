@@ -88,6 +88,19 @@ export const initializeTrustDatabase = (input: {
         .get() &&
       db.query("SELECT id FROM trust_migrations WHERE id = 1").get();
     if (initialized) {
+      const definition = db.query<{ sql: string }, []>("SELECT sql FROM sqlite_master WHERE name = 'api_keys'").get();
+      if (definition && !definition.sql.includes("'node'")) {
+        db.transaction(() => {
+          db.run(`CREATE TABLE api_keys_node_scope (
+            id TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
+            scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin', 'node')),
+            person_id TEXT NOT NULL REFERENCES people(id), added_at TEXT NOT NULL, last_used_at TEXT
+          )`);
+          db.run("INSERT INTO api_keys_node_scope SELECT * FROM api_keys");
+          db.run("DROP TABLE api_keys");
+          db.run("ALTER TABLE api_keys_node_scope RENAME TO api_keys");
+        }).immediate();
+      }
       return;
     }
     db.run(`CREATE TABLE IF NOT EXISTS people (
@@ -97,7 +110,7 @@ export const initializeTrustDatabase = (input: {
     )`);
     db.run(`CREATE TABLE IF NOT EXISTS api_keys (
       id TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
-      scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin')), person_id TEXT NOT NULL REFERENCES people(id),
+      scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin', 'node')), person_id TEXT NOT NULL REFERENCES people(id),
       added_at TEXT NOT NULL, last_used_at TEXT
     )`);
     db.run(`CREATE TABLE IF NOT EXISTS invites (
