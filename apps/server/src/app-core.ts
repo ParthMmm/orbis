@@ -72,6 +72,7 @@ import { consumeInvite, createInvite, INVITE_TTL_MS } from "./invite.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
 import {
+  annotateForwardedRequest,
   configureLogging,
   finishRequestLog,
   loggingLayer,
@@ -177,6 +178,28 @@ const grantAccess = (
   return person
     ? { keyId: null, kind: "accepted", person, scope: "daily" }
     : { kind: "rejected", message: "Invalid stream grant.", statusCode: 401 };
+};
+
+const rejectedStreamGrant = (
+  request: Request,
+  decision: AccessDecision | null
+) =>
+  new URL(request.url).searchParams.has("grant") &&
+  decision?.kind !== "accepted";
+
+const forwardedResponse = (
+  request: Request,
+  response: Response,
+  store: TrustStore,
+  keyId: string | null
+) => {
+  if (request.headers.get("x-orbis-ingress") === "funnel-forward") {
+    const key = store.keys.find((record) => record.id === keyId);
+    if (key) {
+      response.headers.set("x-orbis-key-label", encodeURIComponent(key.label));
+    }
+  }
+  return response;
 };
 
 const PRESENCE_WINDOW_MS = 30_000;
@@ -1875,7 +1898,28 @@ export const createPortableApp = (options: {
                         )
                       );
                       return Effect.provide(
-                        Effect.provideService(effect, SetCaller, access),
+                        Effect.provideService(
+                          Effect.gen(function* callerRequest() {
+                            const request =
+                              yield* HttpServerRequest.HttpServerRequest;
+                            if (
+                              request.headers["x-orbis-ingress"] ===
+                              "funnel-forward"
+                            ) {
+                              const key = readTrustRegistry(
+                                trustPath
+                              ).store.keys.find(
+                                (record) => record.id === access.keyId
+                              );
+                              yield* annotateForwardedRequest(
+                                key?.label ?? null
+                              );
+                            }
+                            return yield* effect;
+                          }),
+                          SetCaller,
+                          access
+                        ),
                         Layer.mergeAll(personalLibrary, personalQueue)
                       );
                     },
@@ -1983,10 +2027,7 @@ export const createPortableApp = (options: {
         registry.store,
         streamSecret
       );
-      if (
-        new URL(request.url).searchParams.has("grant") &&
-        streamDecision?.kind !== "accepted"
-      ) {
+      if (rejectedStreamGrant(request, streamDecision)) {
         return withOrigin(
           Response.json({ message: "Invalid stream grant." }, { status: 401 })
         );
@@ -2038,16 +2079,17 @@ export const createPortableApp = (options: {
         ).catch(() => null);
       }
       // SAFETY: SetAccess provides the caller-bound Library and Queue before handlers read them.
-      return app
-        .handler(
-          request,
-          Context.add(
-            Context.make(SetCaller, decision),
-            AcceptedAccess,
-            decision
-          ) as Context.Context<Library | Queue | SetCaller>
-        )
-        .then(withOrigin);
+      const response = await app.handler(
+        request,
+        Context.add(
+          Context.make(SetCaller, decision),
+          AcceptedAccess,
+          decision
+        ) as Context.Context<Library | Queue | SetCaller>
+      );
+      return withOrigin(
+        forwardedResponse(request, response, registry.store, decision.keyId)
+      );
     },
   };
 };

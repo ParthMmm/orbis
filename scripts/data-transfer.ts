@@ -102,7 +102,17 @@ if (command === "export") {
     "GET"
   );
   const sql = await response.text();
-  parseDump(sql);
+  const dump = parseDump(sql);
+  if (
+    dump.tables.every(
+      (table) =>
+        table.name === "__drizzle_migrations" ||
+        table.name === "sqlite_sequence" ||
+        table.rows.length === 0
+    )
+  ) {
+    throw new Error("Refusing to back up an empty Group.");
+  }
   await mkdir(target, { mode: 0o700, recursive: true });
   const stamp = new Date().toISOString().replaceAll(/[:.]/gu, "-");
   await writeFile(path.join(target, `${stamp}.sql`), sql, { mode: 0o600 });

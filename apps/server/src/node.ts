@@ -1,7 +1,8 @@
 import { readFileSync } from "node:fs";
 
 import { startAudioNode } from "./audio-node.js";
-import { makeNodeAudioHandler } from "./node-audio-http.js";
+import { cutoverMode } from "./cutover.js";
+import { makeNodeHandler } from "./node-http.js";
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -19,7 +20,13 @@ if (streamSecret.length !== 32) {
   throw new Error("Invalid stream grant secret");
 }
 const audio = Bun.serve({
-  fetch: makeNodeAudioHandler({ audioDir, streamSecret }),
+  fetch: makeNodeHandler({
+    audioDir,
+    mode: cutoverMode({
+      ORBIS_API_FORWARD_URL: process.env.ORBIS_API_FORWARD_URL,
+    }),
+    streamSecret,
+  }),
   hostname: process.env.ORBIS_NODE_HOST ?? "127.0.0.1",
   port: Number(process.env.ORBIS_NODE_PORT ?? "4311"),
 });
