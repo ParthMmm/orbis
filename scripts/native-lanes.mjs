@@ -104,9 +104,19 @@ const unusedPort = async (excluded) => {
 const dataDirectory = mkdtempSync(path.join(tmpdir(), "orbis-lane-"));
 const devicesPath = path.join(dataDirectory, "devices.json");
 const port = await unusedPort();
-const address = `http://127.0.0.1:${port}`;
+const externalAddress = argument("service-address");
+const externalToken = argument("service-token");
+if (externalAddress && (!externalToken || !onlyTest)) {
+  throw new Error(
+    "--service-address requires --service-token and --only for a fixture journey."
+  );
+}
+const address = externalAddress ?? `http://127.0.0.1:${port}`;
 const seedPort = await unusedPort(port);
-const seedAddress = `http://127.0.0.1:${seedPort}`;
+const seedAddress = argument(
+  "seed-address",
+  externalAddress ?? `http://127.0.0.1:${seedPort}`
+);
 const resultBundle = path.join(native, "DerivedData", "result.xcresult");
 let server;
 let seedServer;
@@ -141,91 +151,96 @@ try {
     console.log(`design package: ${designSummary?.[0] ?? "tests passed"}`);
   }
 
-  // A real service on a real port with its own database and trust store, so a lane never
-  // touches a developer's library.
-  server = spawn("bun", ["apps/server/src/index.ts"], {
-    cwd: root,
-    env: {
-      ...process.env,
-      ORBIS_COBALT_API_KEY: "lane",
-      ORBIS_COBALT_URL: `${seedAddress}/cobalt`,
-      ORBIS_DATA_DIR: dataDirectory,
-      ORBIS_OPENROUTER_API_KEY: "",
-      ORBIS_PORT: String(port),
-      ORBIS_YOUTUBE_API_KEY: "",
-      ORBIS_YTDLP_BIN: "",
-    },
-    stdio: ["ignore", "ignore", "inherit"],
-  });
-  await waitForService(address);
-  console.log(`lane service: ${address}`);
+  let token = externalToken;
+  let settingsToken = externalToken;
+  if (!externalAddress) {
+    server = spawn("bun", ["apps/server/src/index.ts"], {
+      cwd: root,
+      env: {
+        ...process.env,
+        ORBIS_COBALT_API_KEY: "lane",
+        ORBIS_COBALT_URL: `${seedAddress}/cobalt`,
+        ORBIS_DATA_DIR: dataDirectory,
+        ORBIS_OPENROUTER_API_KEY: "",
+        ORBIS_PORT: String(port),
+        ORBIS_YOUTUBE_API_KEY: "",
+        ORBIS_YTDLP_BIN: "",
+      },
+      stdio: ["ignore", "ignore", "inherit"],
+    });
+    await waitForService(address);
+    console.log(`lane service: ${address}`);
 
-  const enrolment = run(
-    [
-      "bun",
-      "apps/server/src/trust.ts",
-      "add",
-      "--label",
-      "lane",
-      "--devices",
-      devicesPath,
-    ],
-    { cwd: root }
-  );
-  const token = /shown once: (?<token>\S+)/u.exec(enrolment)?.groups?.token;
-  if (!token) {
-    throw new Error("the enrolment command printed no token");
-  }
-
-  const preferences = await fetch(`${address}/me`, {
-    body: JSON.stringify({ autoDownload: false }),
-    headers: {
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-    },
-    method: "PATCH",
-  });
-  if (!preferences.ok) {
-    throw new Error(
-      "could not disable automatic downloads for manual-download journeys"
+    const enrolment = run(
+      [
+        "bun",
+        "apps/server/src/trust.ts",
+        "add",
+        "--label",
+        "lane",
+        "--devices",
+        devicesPath,
+      ],
+      { cwd: root }
     );
+    token = /shown once: (?<token>\S+)/u.exec(enrolment)?.groups?.token;
+    if (!token) {
+      throw new Error("the enrolment command printed no token");
+    }
+
+    const preferences = await fetch(`${address}/me`, {
+      body: JSON.stringify({ autoDownload: false }),
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
+      method: "PATCH",
+    });
+    if (!preferences.ok) {
+      throw new Error(
+        "could not disable automatic downloads for manual-download journeys"
+      );
+    }
+    const person = run(
+      [
+        "bun",
+        "apps/server/src/trust.ts",
+        "person",
+        "add",
+        "--username",
+        "lane-settings",
+        "--devices",
+        devicesPath,
+      ],
+      { cwd: root }
+    );
+    const personId = /Added Person (?<id>\S+)/u.exec(person)?.groups?.id;
+    if (!personId) {
+      throw new Error("could not create the settings journey Person");
+    }
+    const settingsEnrolment = run(
+      [
+        "bun",
+        "apps/server/src/trust.ts",
+        "key",
+        "add",
+        "--person",
+        personId,
+        "--label",
+        "settings-journey",
+        "--devices",
+        devicesPath,
+      ],
+      { cwd: root }
+    );
+    settingsToken = /shown once: (?<token>\S+)/u.exec(settingsEnrolment)?.groups
+      ?.token;
+    if (!settingsToken) {
+      throw new Error("could not enrol the settings journey Person");
+    }
   }
-  const person = run(
-    [
-      "bun",
-      "apps/server/src/trust.ts",
-      "person",
-      "add",
-      "--username",
-      "lane-settings",
-      "--devices",
-      devicesPath,
-    ],
-    { cwd: root }
-  );
-  const personId = /Added Person (?<id>\S+)/u.exec(person)?.groups?.id;
-  if (!personId) {
-    throw new Error("could not create the settings journey Person");
-  }
-  const settingsEnrolment = run(
-    [
-      "bun",
-      "apps/server/src/trust.ts",
-      "key",
-      "add",
-      "--person",
-      personId,
-      "--label",
-      "settings-journey",
-      "--devices",
-      devicesPath,
-    ],
-    { cwd: root }
-  );
-  const settingsToken = /shown once: (?<token>\S+)/u.exec(settingsEnrolment)
-    ?.groups?.token;
-  if (!settingsToken) {
-    throw new Error("could not enrol the settings journey Person");
+  if (!token) {
+    throw new Error("The lane requires a fixture token.");
   }
 
   // Seed one Set through the service's own HTTP path so a journey has something to find.
@@ -245,17 +260,19 @@ try {
     throw new Error(`seeding the lane library failed with ${seeded.status}`);
   }
 
-  seedServer = spawn(
-    "bun",
-    [
-      "scripts/seed-lane-audio.mjs",
-      dataDirectory,
-      path.join(root, "scripts", "fixtures", "ready-set.m4a"),
-      String(seedPort),
-    ],
-    { cwd: root, stdio: ["ignore", "ignore", "inherit"] }
-  );
-  await waitForService(seedAddress);
+  if (!externalAddress) {
+    seedServer = spawn(
+      "bun",
+      [
+        "scripts/seed-lane-audio.mjs",
+        dataDirectory,
+        path.join(root, "scripts", "fixtures", "ready-set.m4a"),
+        String(seedPort),
+      ],
+      { cwd: root, stdio: ["ignore", "ignore", "inherit"] }
+    );
+    await waitForService(seedAddress);
+  }
 
   run(["xcodegen", "generate"], { cwd: native });
 
