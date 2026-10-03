@@ -220,7 +220,7 @@ journalctl --user -u orbis-canary --since today -o cat |
   jq -cR 'fromjson? | select(.job == "download-canary")'
 ```
 
-A download's wide event (`job: audio-download`) lists every backend attempt in `logs`: bytes received, yt-dlp's exit code and the end of its error output, Cobalt's tunnel status and content length, and ffprobe's error output. The canary's event (`job: download-canary`) holds the same evidence for each check. The startup line `youtube downloads use cobalt only` means `ORBIS_YTDLP_BIN` is missing; see [Give the service yt-dlp](#give-the-service-yt-dlp).
+A download's wide event (`job: audio-download`) lists every backend attempt in `logs`: bytes received, yt-dlp's exit code with the start and end of its error output, Cobalt's tunnel status and content length, and ffprobe's error output. The `stderrHead` annotation names yt-dlp's identifying error; `stderr` keeps the end, where its hint is. The canary's event (`job: download-canary`) holds the same evidence for each check. The startup line `youtube downloads use cobalt only` means `ORBIS_YTDLP_BIN` is missing; see [Give the service yt-dlp](#give-the-service-yt-dlp).
 
 ## Back up the Group
 

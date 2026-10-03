@@ -466,6 +466,14 @@ export const withWideEvent =
       );
     });
 
+/** The start of a tool's error output, where the identifying line usually is, within the value bound. */
+export const outputHead = (text: string): string => {
+  const trimmed = text.trim();
+  return trimmed.length > MAX_LOGGED_VALUE_CHARACTERS
+    ? `${trimmed.slice(0, MAX_LOGGED_VALUE_CHARACTERS - 1)}…`
+    : trimmed;
+};
+
 /** The end of a tool's error output, where the cause usually is, within the value bound. */
 export const outputTail = (text: string): string => {
   const trimmed = text.trim();

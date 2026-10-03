@@ -3,7 +3,8 @@ import { rename, rm } from "node:fs/promises";
 import { Context, Effect, Exit, Layer } from "effect";
 
 import { LibraryError } from "./errors.js";
-import { outputTail } from "./logging.js";
+import { outputHead, outputTail } from "./logging.js";
+import { youTubeVideoId } from "./source-url.js";
 
 export interface YtdlpRunResult {
   readonly code: number;
@@ -51,7 +52,8 @@ export const ytdlpArgs = (
   bin: string,
   destination: string,
   url: string,
-  cookies?: string
+  cookies?: string,
+  playerClient?: string
 ): readonly string[] => [
   bin,
   "--ignore-config",
@@ -67,10 +69,18 @@ export const ytdlpArgs = (
   "bestaudio",
   "-o",
   destination,
+  ...(playerClient
+    ? ["--extractor-args", `youtube:player_client=${playerClient}`]
+    : []),
   ...(cookies ? ["--cookies", cookies] : []),
   "--",
   url,
 ];
+
+interface DownloadAttempt {
+  readonly cookies?: string;
+  readonly playerClient?: string;
+}
 
 export class Ytdlp extends Context.Service<
   Ytdlp,
@@ -114,7 +124,8 @@ export class Ytdlp extends Context.Service<
           destination: string,
           onProgress: (received: number, total: number | null) => void,
           signal: AbortSignal,
-          cookies?: string
+          cookies?: string,
+          playerClient?: string
         ) => {
           // yt-dlp strips a trailing `.part` from `-o`, so it writes here and the file moves after.
           const output = `${destination}.ytdl`;
@@ -134,7 +145,7 @@ export class Ytdlp extends Context.Service<
               }, PROGRESS_POLL_MS);
               try {
                 return await run(
-                  ytdlpArgs(bin, output, sourceUrl, cookies),
+                  ytdlpArgs(bin, output, sourceUrl, cookies, playerClient),
                   signal
                 );
               } finally {
@@ -149,8 +160,10 @@ export class Ytdlp extends Context.Service<
                     Effect.annotateLogs({
                       bytes: Bun.file(output).size,
                       exitCode: ran.code,
+                      playerClient: playerClient ?? "default",
                       signedIn: cookies !== undefined,
                       stderr: outputTail(ran.stderr ?? ""),
+                      stderrHead: outputHead(ran.stderr ?? ""),
                     }),
                     Effect.andThen(
                       Effect.fail(
@@ -176,34 +189,42 @@ export class Ytdlp extends Context.Service<
             );
             // Cookies are a fallback for content that refuses anonymous access.
             const cookies = options.ytdlpCookies;
-            const anonymous = attempt(
-              sourceUrl,
-              destination,
-              onProgress,
-              signal
-            );
-            const tried =
-              cookies && cookies.length > 0
-                ? anonymous.pipe(
-                    Effect.matchEffect({
-                      onFailure: (error) =>
-                        signal.aborted
-                          ? Effect.fail(error)
-                          : removePartial.pipe(
-                              Effect.andThen(
-                                attempt(
-                                  sourceUrl,
-                                  destination,
-                                  onProgress,
-                                  signal,
-                                  cookies
-                                )
-                              )
-                            ),
-                      onSuccess: () => Effect.void,
-                    })
-                  )
-                : anonymous;
+            // YouTube's default anonymous clients can be refused with a sign-in challenge
+            // while the supported web_embedded client still serves the same audio, so one
+            // alternate-client attempt follows the default before credentials are tried.
+            const alternateClient = youTubeVideoId(sourceUrl)
+              ? "web_embedded"
+              : undefined;
+            const plan: readonly DownloadAttempt[] = [
+              {},
+              ...(alternateClient ? [{ playerClient: alternateClient }] : []),
+              ...(cookies && cookies.length > 0 ? [{ cookies }] : []),
+            ];
+            // The plan always starts with the anonymous default attempt.
+            const [primary = {}, ...fallbacks] = plan;
+            const runAttempt = (step: DownloadAttempt) =>
+              attempt(
+                sourceUrl,
+                destination,
+                onProgress,
+                signal,
+                step.cookies,
+                step.playerClient
+              );
+            let tried = runAttempt(primary);
+            for (const fallback of fallbacks) {
+              tried = tried.pipe(
+                Effect.matchEffect({
+                  onFailure: (error) =>
+                    signal.aborted
+                      ? Effect.fail(error)
+                      : removePartial.pipe(
+                          Effect.andThen(runAttempt(fallback))
+                        ),
+                  onSuccess: () => Effect.void,
+                })
+              );
+            }
             yield* tried.pipe(
               Effect.onExit((exit) =>
                 Exit.isSuccess(exit) ? Effect.void : removePartial
