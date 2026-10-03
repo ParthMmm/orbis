@@ -346,6 +346,64 @@ test("none stores no Cues and a concurrent retry does not start another run", as
   }
 });
 
+test("disposing an active Tracklist releases its claim for an immediate HTTP retry", async () => {
+  let requests = 0;
+  const server = await start(
+    Versos.layerOf({
+      poll: () => Effect.die("request never completes"),
+      request: () => {
+        requests += 1;
+        return Effect.never;
+      },
+    })
+  );
+  try {
+    const saved = await save(server.app);
+    expect(saved.statusCode).toBe(201);
+    const id = String(saved.json().id);
+    await eventually(() => Promise.resolve(requests === 1 ? true : null));
+    await server.app.dispose();
+    const db = new Sqlite(server.databasePath);
+    try {
+      expect(
+        db
+          .query(
+            "SELECT tracklist_state, tracklist_run_id, tracklist_run_started_at FROM sets WHERE id = ?"
+          )
+          .get(id)
+      ).toEqual({
+        tracklist_run_id: null,
+        tracklist_run_started_at: null,
+        tracklist_state: "pending",
+      });
+    } finally {
+      db.close();
+    }
+    const reloaded = createApp({
+      databasePath: server.databasePath,
+      versos: Versos.layerOf({
+        poll: () => Effect.succeed({ cues: CUES, state: "ready" }),
+        request: () => Effect.succeed({ requestId: "restart-job" }),
+      }),
+    });
+    try {
+      const retry = await request(reloaded, {
+        method: "POST",
+        url: `/sets/${id}/tracklist/retry`,
+      });
+      expect(retry.statusCode).toBe(200);
+      expect((await waitForState(reloaded, id, "ready")).json()).toEqual({
+        cues: CUES,
+        state: "ready",
+      });
+    } finally {
+      await reloaded.dispose();
+    }
+  } finally {
+    await server.dispose();
+  }
+});
+
 test("two HTTP retries arriving together start only one Versos run", async () => {
   const directory = await mkdtemp(
     path.join(tmpdir(), "orbis-tracklists-race-")
