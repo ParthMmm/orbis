@@ -1,6 +1,12 @@
 export { Group } from "./group.js";
 
 export interface Environment {
+  readonly STREAM_GRANT_SECRET: string;
+  readonly AUDIO_NODE_URL: string;
+  readonly YOUTUBE_API_KEY?: string;
+  readonly OPENROUTER_API_KEY?: string;
+  readonly VERSOS_URL?: string;
+  readonly VERSOS_API_KEY?: string;
   readonly GROUP: DurableObjectNamespace;
 }
 

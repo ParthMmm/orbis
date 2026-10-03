@@ -1,8 +1,21 @@
 # Orbis API Worker and Group
 
-The Worker at `https://orbis.p11a.xyz/api/*` forwards requests to one SQLite Durable Object named `group`. The Group currently serves only `GET /api/health`, using the health group from `@orbis/contracts`. Other routes return 404. The web client continues to use Vanta until the remaining ADR 0018 tickets and the data cutover are complete.
+The Worker at `https://orbis.p11a.xyz/api/*` forwards requests to one SQLite Durable Object named `group`. The Group serves every route from `@orbis/contracts`. Health is public; library and administration routes use the existing key and social visibility rules. The web client continues to use Vanta until the remaining ADR 0018 tickets and the data cutover are complete.
 
-The portable `Database` service accepts either Drizzle Effect SQLite driver. `createApp({ database })` accepts an injected layer. Existing server callers keep the Bun default. The Group imports only the portable service, the contracts, and the Durable Object driver. It does not load the server app or audio services.
+`createPortableApp` composes the HTTP routes with an injected database, Audio service, audio response, audio release operation, and stream signing secret. The Bun `createApp` wrapper supplies the local implementations. The Group supplies its SQLite driver and trust adapter, persists Download requests without running a local worker, and redirects audio to the audio node. Its bundle excludes Bun, filesystem access, and local download backends.
+
+Presence, Queue signals, Device Links, and the failed-key limit live in the Group. The limit uses `CF-Connecting-IP`. Events retain the 30-second heartbeat and end when the caller's key is revoked. Requests produce JSON logs.
+
+## Worker configuration
+
+Alchemy enables `nodejs_compat` for the portable crypto APIs. Configure these values in the deploy environment before deploying:
+
+- `STREAM_GRANT_SECRET` is the 64-character hex encoding of the existing 32-byte `stream-grant.key`. Preserve that key so existing grants remain valid.
+- `AUDIO_NODE_URL` is the audio node's HTTPS origin.
+- `YOUTUBE_API_KEY` and `OPENROUTER_API_KEY` configure metadata and title revision.
+- `VERSOS_URL` and `VERSOS_API_KEY` configure Tracklist discovery.
+
+Alchemy stores API keys and the stream secret as Worker secrets. Optional provider keys default to empty and disable that provider. SoundCloud uses its public metadata endpoint and requires no key. No credentials are embedded in the Worker bundle.
 
 ## Migrations
 
@@ -37,7 +50,7 @@ curl --fail https://orbis.p11a.xyz/api/health
 curl --fail --output /dev/null https://orbis.p11a.xyz/
 ```
 
-Health must return `{"status":"ok"}` and the web page must load. This foundation does not switch the web client's API URL.
+Health must return `{"status":"ok"}` and the web page must load. Deploying this API does not switch the web client's API URL.
 
 To destroy the whole stack:
 
@@ -49,6 +62,8 @@ bun run destroy
 Destroy removes the web and API Workers, custom domain, API route, and Group namespace with all Group data. Export and preserve that data before destroying after the application cutover. Vanta is outside this stack.
 
 ## Verify locally
+
+The workerd journey runs in Miniflare with a disposable SQLite Group. It signs in, saves a Set, edits a Playlist, checks queued Downloads, reads an event and its heartbeat, revokes the event key, checks rate limits by address, and restarts the Group. It also compares the Group schema with Bun and composes the same portable application and queue-only Audio service with a real Bun database. The journey writes `.cache/api-group/<run>/result.json` at the repository root. Its test-only seed and inspection routes are excluded from the production bundle.
 
 ```sh
 bun run --filter @orbis/contracts build

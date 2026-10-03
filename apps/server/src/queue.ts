@@ -3,8 +3,8 @@ import { and, asc, eq } from "drizzle-orm";
 import type { Stream } from "effect";
 import { Context, Effect, Layer } from "effect";
 
-import { Database } from "./db/database.js";
 import { playlistSets, playlists, queueEntries } from "./db/schema.js";
+import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import { LibraryPerson } from "./library-person.js";
 import { Library } from "./library.js";

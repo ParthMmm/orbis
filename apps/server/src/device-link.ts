@@ -78,7 +78,7 @@ export const makeDeviceLinks = (options: {
     while (byCode.has(userCode)) {
       userCode = newUserCode();
     }
-    const pollSecret = randomBytes(32).toString("base64url");
+    const pollSecret = Buffer.from(randomBytes(32)).toString("base64url");
     const link: DeviceLink = {
       approvedBy: null,
       expiresAt: now() + options.ttlMs,

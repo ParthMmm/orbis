@@ -1,8 +1,8 @@
 import { eq, sql } from "drizzle-orm";
 import { Effect, Option } from "effect";
 
-import { Database } from "./db/database.js";
 import { libraryEntries, sets } from "./db/schema.js";
+import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import type { PersonRecord } from "./identity.js";
 
