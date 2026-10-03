@@ -1,0 +1,21 @@
+{
+  "name": "@orbis/api",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bun scripts/migrations.ts --check && bun build src/index.ts --target=browser --external=cloudflare:workers --outdir=dist",
+    "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
+    "test": "bun run build && bun e2e/group.ts"
+  },
+  "dependencies": {
+    "@effect/sql-sqlite-do": "4.0.0-rc.117",
+    "@orbis/contracts": "workspace:*",
+    "drizzle-orm": "1.0.0-rc.5-5935859",
+    "effect": "4.0.0-rc.117"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20260926.1",
+    "@types/bun": "^1.3.0",
+    "miniflare": "4.20260730.0"
+  }
+}

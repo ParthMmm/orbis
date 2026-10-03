@@ -349,6 +349,7 @@ export const createApp = (
     allowDevelopmentOrigins?: boolean;
     audio?: AudioOptions;
     databasePath?: string;
+    database?: Layer.Layer<Database, unknown>;
     devicesPath?: string;
     logging?: LoggingOptions;
     metadata?: Layer.Layer<Metadata>;
@@ -401,10 +402,12 @@ export const createApp = (
   if (devicesPath) {
     migrateTrustStore(devicesPath);
   }
-  const database = databaseLayer({
-    databasePath,
-    migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
-  });
+  const database =
+    options.database ??
+    databaseLayer({
+      databasePath,
+      migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
+    });
   // The Database layer is one value used by every service that writes.
   const libraryOptions = {
     audioDir: options.audio?.audioDir ?? path.join(".", "audio"),

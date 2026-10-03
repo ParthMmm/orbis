@@ -366,3 +366,7 @@ sudo tailscale serve --https=8444 off
 ```
 
 Removing the Serve rule does not affect the jellyfin Funnel on `8443`. The database and trust store stay in `~/Developer/orbis-service-data`. Do not point the rule back at the local port 4310, which would restore token-free access from the tailnet.
+
+## Group foundation on Cloudflare
+
+The `OrbisWeb` Alchemy stack now also owns an API Worker on `orbis.p11a.xyz/api/*` and one SQLite Group Durable Object. Only health is available in this foundation. The web client's API URL, active database, and audio remain on Vanta until the ADR 0018 cutover. Deploy, destroy, migration generation, local schema verification, and post-deploy HTTP checks are in the [API deploy README](../../apps/api/README.md). Destroying the stack also destroys Group data.

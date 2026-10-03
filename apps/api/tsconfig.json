@@ -1,0 +1,12 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "lib": ["ES2022", "DOM"],
+    "types": ["@cloudflare/workers-types"],
+    "rootDir": "../..",
+    "outDir": "dist"
+  },
+  "include": ["src/**/*.ts", "src/**/*.json", "../server/src/db/service.ts"]
+}
