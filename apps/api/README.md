@@ -1,6 +1,6 @@
 # Orbis API Worker and Group
 
-The Worker at `https://orbis.p11a.xyz/api/*` forwards requests to one SQLite Durable Object named `group`. The Group serves every route from `@orbis/contracts`. Health is public; library and administration routes use the existing key and social visibility rules. The web client continues to use Vanta until the remaining ADR 0018 tickets and the data cutover are complete.
+The Worker at `https://orbis.p11a.xyz/api/*` forwards requests to one SQLite Durable Object named `group`. The Group serves every route from `@orbis/contracts`. Health is public; library and administration routes use the existing key and social visibility rules. The Group has owned production data since the 2026-10-03 cutover. Vanta runs the audio node and forwards requests from the old API address. [#195](https://github.com/ParthMmm/orbis/issues/195) tracks the remaining production acceptance checks.
 
 `createPortableApp` composes the HTTP routes with an injected database, Audio service, audio response, audio release operation, and stream signing secret. The Bun `createApp` wrapper supplies the local implementations. The Group supplies its SQLite driver and trust adapter, persists Download requests without running a local worker, and redirects audio to the audio node. Its bundle excludes Bun, filesystem access, and local download backends.
 

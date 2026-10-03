@@ -1,6 +1,8 @@
 # Orbis API on Vanta
 
-The API runs as a systemd user service that binds loopback only. Tailscale Serve bridges the tailnet address to that loopback port. The device listener also serves the public `/api` path through Funnel on port `10000`. The web client runs on Cloudflare.
+The production API and database moved to the Cloudflare Group on 2026-10-03. Vanta runs the database-free audio node as the existing systemd user service at `127.0.0.1:4311`. The Funnel on port `10000` serves audio and forwards old `/api` requests to the Group. The web client runs on Cloudflare. The earlier API installation instructions below describe the pre-cutover service and its rollback; use [Run the audio node](#run-the-audio-node) for the current entrypoint.
+
+The cutover retained existing key digests and stopped writes for at most 50.441 seconds in the request logs. A Group backup restored successfully, and an Apple build using the old Funnel address played and sought production audio. Production acceptance remains open in [#195](https://github.com/ParthMmm/orbis/issues/195): the first canary after cutover passed four of six checks because both YouTube yt-dlp downloads required authentication. Forwarding and both nightly timers remain enabled. [#199](https://github.com/ParthMmm/orbis/issues/199) requires 14 complete days without forwarded requests before retirement.
 
 ## Why a user service and a Serve bridge
 
@@ -375,7 +377,7 @@ Removing the Serve rule does not affect the jellyfin Funnel on `8443`. The datab
 
 ## Group foundation on Cloudflare
 
-The `OrbisWeb` Alchemy stack now also owns an API Worker on `orbis.p11a.xyz/api/*` and one SQLite Group Durable Object. The Group implements the portable API, but production client traffic stays on Vanta until cutover. The web client's API URL, active database, and audio remain on Vanta until the ADR 0018 cutover. Deploy, destroy, migration generation, local schema verification, and post-deploy HTTP checks are in the [API deploy README](../../apps/api/README.md). Destroying the stack also destroys Group data.
+The `OrbisWeb` Alchemy stack owns an API Worker on `orbis.p11a.xyz/api/*` and one SQLite Group Durable Object. The Group serves production API traffic and owns live data. Vanta retains audio and forwards the old API address. Deploy, destroy, migration generation, local schema verification, and post-deploy HTTP checks are in the [API deploy README](../../apps/api/README.md). Destroying the stack also destroys Group data.
 
 ## Trust data in SQLite
 
