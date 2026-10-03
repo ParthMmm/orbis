@@ -157,11 +157,7 @@ const grantAccess = (
   store: TrustStore,
   secret: Buffer
 ): AccessDecision | null => {
-  if (
-    mode !== "device" ||
-    request.method !== "GET" ||
-    request.headers.has("authorization")
-  ) {
+  if (mode !== "device" || request.method !== "GET") {
     return null;
   }
   const url = new URL(request.url);
@@ -285,13 +281,15 @@ export const createPortableApp = (options: {
     file: AudioFile,
     range: string | undefined,
     setId: string,
-    personId: string
+    personId: string,
+    grant: string | null
   ) => HttpServerResponse.HttpServerResponse;
   releaseAudio: (id: string) => Effect.Effect<void, LibraryError, Database>;
   streamSecret: Buffer;
   database: Layer.Layer<Database, unknown>;
   trustPath?: string | undefined;
   logging?: LoggingOptions;
+  recordKeyUse?: boolean;
   metadata?: Layer.Layer<Metadata>;
   /** How long after a Playback Position report a Person still counts as listening. */
   presenceWindowMs?: number;
@@ -552,7 +550,10 @@ export const createPortableApp = (options: {
                         Headers.get(request.headers, "range")
                       ),
                       params.id,
-                      caller.person.id
+                      caller.person.id,
+                      new URL(request.url, "http://localhost").searchParams.get(
+                        "grant"
+                      )
                     )
                   ),
                   Effect.tapError(logLibraryFailure)
@@ -2031,9 +2032,11 @@ export const createPortableApp = (options: {
           )
         );
       }
-      await retryTrustOperation(() =>
-        markKeyUsed(trustPath, decision.keyId)
-      ).catch(() => null);
+      if (options.recordKeyUse !== false) {
+        await retryTrustOperation(() =>
+          markKeyUsed(trustPath, decision.keyId)
+        ).catch(() => null);
+      }
       // SAFETY: SetAccess provides the caller-bound Library and Queue before handlers read them.
       return app
         .handler(

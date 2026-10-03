@@ -85,6 +85,7 @@ export const createApp = (
     database?: Layer.Layer<Database, unknown>;
     devicesPath?: string;
     logging?: LoggingOptions;
+    recordKeyUse?: boolean;
     metadata?: Layer.Layer<Metadata>;
     /** How long after a Playback Position report a Person still counts as listening. */
     presenceWindowMs?: number;

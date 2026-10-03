@@ -25,14 +25,14 @@ export class Group extends DurableObject<Environment> {
     const streamSecret = Buffer.from(env.STREAM_GRANT_SECRET, "hex");
     this.app = createPortableApp({
       audio: audioLayer,
-      audioResponse: (_file, _range, setId, personId) => {
+      audioResponse: (_file, _range, setId, personId, grant) => {
         const url = new URL(
           `/api/sets/${encodeURIComponent(setId)}/audio`,
           env.AUDIO_NODE_URL
         );
         url.searchParams.set(
           "grant",
-          issueStreamGrant(streamSecret, setId, personId)
+          grant ?? issueStreamGrant(streamSecret, setId, personId)
         );
         return HttpServerResponse.redirect(url.toString(), { status: 302 });
       },

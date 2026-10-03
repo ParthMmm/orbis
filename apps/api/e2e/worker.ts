@@ -9,6 +9,20 @@ export class Group extends ProductionGroup {
       return ready;
     }
     const { pathname } = new URL(request.url);
+    if (pathname === "/__ready") {
+      this.ctx.storage.sql.exec(
+        "UPDATE sets SET download_state = 'ready', retained_audio_format = 'm4a', retained_audio_bytes = 1234"
+      );
+      this.ctx.storage.sql.exec(
+        "INSERT INTO people (id, username, removed, social, auto_download, filters) VALUES ('outsider', 'outsider', 0, 0, 0, '[]')"
+      );
+      this.ctx.storage.sql.exec(
+        "INSERT INTO api_keys (id, digest, label, scope, person_id, added_at, last_used_at) VALUES ('outsider-key', ?, 'outsider', 'daily', 'outsider', ?, NULL)",
+        hashToken("outsider-token"),
+        new Date().toISOString()
+      );
+      return new Response("ready");
+    }
     if (pathname === "/__seed") {
       this.ctx.storage.sql.exec(
         "INSERT INTO people (id, username, removed, social, auto_download, filters) VALUES ('host', 'host', 0, 0, 1, '[]')"
