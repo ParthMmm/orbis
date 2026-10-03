@@ -1,4 +1,4 @@
-import { mkdir, rename, rm } from "node:fs/promises";
+import { mkdir, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
 import { Context, Effect, Layer, Schema } from "effect";
@@ -55,6 +55,9 @@ const downloadFailed = (reason: string) =>
 export class MediaStore extends Context.Service<
   MediaStore,
   {
+    readonly inventory: (
+      onlySetId?: string
+    ) => Effect.Effect<readonly (StoredAudio & { readonly setId: string })[]>;
     readonly fileFor: (id: string, format: string) => string;
     readonly partialPath: (id: string) => string;
     readonly ensureDirectory: () => Effect.Effect<void>;
@@ -311,13 +314,43 @@ export class MediaStore extends Context.Service<
     });
     const removeFiles = Effect.fn("MediaStore.removeFiles")((id: string) =>
       Effect.promise(() =>
-        Promise.allSettled(
-          ["part", "ogg", "mp3", "m4a"].map((suffix) =>
+        Promise.all(
+          ["part", "part.ytdl", "ogg", "mp3", "m4a"].map((suffix) =>
             rm(path.join(audioDir, `${id}.${suffix}`), { force: true })
           )
         )
       )
     );
+    const inventory = Effect.fn("MediaStore.inventory")(function* inventory(
+      onlySetId?: string
+    ) {
+      const names = yield* Effect.promise(() => readdir(audioDir));
+      const files: (StoredAudio & { readonly setId: string })[] = [];
+      for (const name of names) {
+        const match = /^(?<id>[a-zA-Z0-9_-]+)\.(?<format>mp3|ogg|m4a)$/u.exec(
+          name
+        );
+        if (!match?.groups) {
+          continue;
+        }
+        const { id: setId, format } = match.groups;
+        if (!setId || !format || (onlySetId && onlySetId !== setId)) {
+          continue;
+        }
+        const metadata = yield* probe(fileFor(setId, format)).pipe(
+          Effect.option
+        );
+        if (metadata._tag === "Some") {
+          files.push({
+            bytes: Bun.file(fileFor(setId, format)).size,
+            durationSeconds: metadata.value.durationSeconds,
+            format,
+            setId,
+          });
+        }
+      }
+      return files;
+    });
     const ensureDirectory = Effect.fn("MediaStore.ensureDirectory")(() =>
       Effect.promise(() => mkdir(audioDir, { recursive: true }))
     );
@@ -326,6 +359,7 @@ export class MediaStore extends Context.Service<
       MediaStore.of({
         ensureDirectory,
         fileFor,
+        inventory,
         partialPath,
         readReady,
         removeFiles,

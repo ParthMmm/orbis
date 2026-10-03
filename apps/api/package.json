@@ -5,7 +5,8 @@
   "scripts": {
     "build": "bun scripts/migrations.ts --check && bun build src/index.ts --target=browser --external=cloudflare:workers --external=node:* --outdir=dist",
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
-    "test": "bun run build && bun e2e/group.ts"
+    "test": "bun run build && bun e2e/group.ts && bun e2e/node.ts",
+    "test:node": "bun e2e/node.ts"
   },
   "dependencies": {
     "@effect/sql-sqlite-do": "4.0.0-rc.117",

@@ -16,11 +16,13 @@ const releaseError = <E>(error: E) =>
 export const releaseAudio = (
   id: string,
   removeFiles: (id: string) => Effect.Effect<void, LibraryError> = () =>
+    Effect.void,
+  afterRelease: (id: string) => Effect.Effect<void, LibraryError> = () =>
     Effect.void
 ) =>
   Effect.gen(function* releaseStoredAudio() {
     const db = yield* Database;
-    yield* db.transaction((tx) =>
+    const released = yield* db.transaction((tx) =>
       Effect.gen(function* releaseUnreferencedAudio() {
         const [reference] = yield* tx.all<{ readonly present: number }>(sql`
           SELECT 1 AS present FROM library_entries WHERE set_id = ${id}
@@ -45,6 +47,10 @@ export const releaseAudio = (
           .where(eq(sets.id, id));
         yield* tx.delete(downloadJobs).where(eq(downloadJobs.setId, id));
         yield* tx.delete(setCues).where(eq(setCues.setId, id));
+        return true;
       })
     );
+    if (released) {
+      yield* afterRelease(id);
+    }
   }).pipe(Effect.mapError(releaseError));

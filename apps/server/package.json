@@ -16,7 +16,9 @@
     "eval": "evalite run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "trust": "bun src/trust.ts"
+    "trust": "bun src/trust.ts",
+    "node": "bun src/node.ts",
+    "build:node": "bun build src/node.ts --target=bun --packages=external --outdir=dist"
   },
   "dependencies": {
     "@effect/ai-openrouter": "4.0.0-rc.117",

@@ -385,3 +385,15 @@ To roll back to the previous build:
 4. Restore the previous build and start the service.
 
 The restored JSON contains trust data from before the migration. Keys, People, and Invites added or changed after migration do not carry back to the old build. Keep the SQLite copy so those changes remain available if you return to this build.
+
+### Run the audio node
+
+After moving the library database to the Group, run `bun run node` from `apps/server`. Build its entrypoint with `bun run build:node` and start the result with `bun dist/node.js`.
+
+Set `ORBIS_GROUP_URL` to the API base URL, such as `https://orbis.p11a.xyz/api`, and `ORBIS_NODE_KEY` to a key minted with `bun run trust key add --person host --label vanta --scope node`. The Group accepts that key on `/api/node`; it does not grant client API access. Set `ORBIS_AUDIO_DIR` to the existing audio directory and `ORBIS_STREAM_SECRET_FILE` to the existing 32-byte `stream-grant.key` file. The node refuses to start if that secret is missing or has the wrong size. `ORBIS_NODE_HOST` and `ORBIS_NODE_PORT` default to `127.0.0.1` and `4311`. The listener serves grant-authorized audio. Keep the existing provider settings, yt-dlp binary, cookies, ffprobe, and ffmpeg.
+
+The node opens an outbound WebSocket and reconnects with exponential backoff, capped at 30 seconds. Its files are its only persistent state. Each connection reports validated audio files. The Group reconciles missing and unreferenced files and resumes interrupted Downloads using the existing job rows. Download commands and replies carry a Set ID and a request ID; a result from a canceled attempt cannot finish a later attempt.
+
+Keep the nightly canary service and timer. Its three fixtures across two configured backends still produce six checks through `DownloadBackends` and `MediaStore`, which the node also uses.
+
+Run `bun run --cwd apps/api test:node` to exercise the local Group with a fake node and the built node process. The journey writes a protocol transcript and process log under `.cache/audio-node/<run>/`, including a forced process stop, recovery of the same job, progress through the API, and file deletion after removing the Library Entry. It needs ffmpeg and ffprobe on `PATH`.
