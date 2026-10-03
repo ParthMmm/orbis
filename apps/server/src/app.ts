@@ -441,6 +441,7 @@ export const createApp = (
                 return;
               }
               yield* runClaimedTracklist(claim).pipe(
+                Effect.interruptible,
                 Effect.provideService(Database, db),
                 Effect.provideService(Versos, versos),
                 Effect.ensuring(
@@ -448,10 +449,11 @@ export const createApp = (
                     runningTracklists.delete(id);
                   })
                 ),
-                Effect.forkIn(scope)
+                Effect.forkIn(scope, { startImmediately: true })
               );
               handedOff = true;
             }).pipe(
+              Effect.uninterruptible,
               Effect.ensuring(
                 Effect.sync(() => {
                   if (!handedOff) {
