@@ -405,9 +405,12 @@ export const createApp = (
     ttlMs: options.deviceLinkTtlMs ?? DEVICE_LINK_TTL_MS,
   });
   if (devicesPath) {
-    migrateTrustStore(devicesPath, databasePath);
+    migrateTrustStore(
+      devicesPath,
+      databasePath === ":memory:" ? devicesPath : databasePath
+    );
   }
-  const trustPath = databasePath === ":memory:" ? undefined : databasePath;
+  const trustPath = databasePath === ":memory:" ? devicesPath : databasePath;
   const database =
     options.database ??
     databaseLayer({
