@@ -370,3 +370,18 @@ Removing the Serve rule does not affect the jellyfin Funnel on `8443`. The datab
 ## Group foundation on Cloudflare
 
 The `OrbisWeb` Alchemy stack now also owns an API Worker on `orbis.p11a.xyz/api/*` and one SQLite Group Durable Object. Only health is available in this foundation. The web client's API URL, active database, and audio remain on Vanta until the ADR 0018 cutover. Deploy, destroy, migration generation, local schema verification, and post-deploy HTTP checks are in the [API deploy README](../../apps/api/README.md). Destroying the stack also destroys Group data.
+
+## Trust data in SQLite
+
+The service and `bun run trust` store People, API key digests, and Invites in `library.sqlite`. On the first start, the service imports `devices.json` in one SQLite transaction. It copies key and Invite digests unchanged, then renames the file to `devices.json.migrated`. A malformed file or a failed transaction leaves the source file in place and prevents startup. Later starts use the tables and ignore any new `devices.json`. Unexpired Invites survive a restart.
+
+`ORBIS_DATA_DIR` selects the directory for both commands. To select a database explicitly, use `bun run trust key list --database /path/to/library.sqlite`. The old `--devices` option still selects a legacy file and imports it into `library.sqlite` in the same directory. The nightly SQLite snapshot includes all trust tables. Keep the renamed JSON file until you no longer need rollback.
+
+To roll back to the previous build:
+
+1. Stop the service.
+2. Preserve a copy of the current `library.sqlite` and its WAL files.
+3. Restore `devices.json.migrated` as `devices.json`.
+4. Restore the previous build and start the service.
+
+The restored JSON contains trust data from before the migration. Keys, People, and Invites added or changed after migration do not carry back to the old build. Keep the SQLite copy so those changes remain available if you return to this build.

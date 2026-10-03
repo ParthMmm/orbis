@@ -1,10 +1,11 @@
 import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { createApp } from "./app.js";
+import { readTrustStrict } from "./identity.js";
 import { request } from "./test-http.js";
 
 const call = (
@@ -176,7 +177,7 @@ test("admin keys manage People and revoke all of a removed Person's data", async
       `/admin/people/${person.id}/keys`
     );
     expect(after.keys[0]?.lastUsedAt).toBe(before);
-    const storeText = await readFile(devicesPath, "utf-8");
+    const storeText = JSON.stringify(readTrustStrict(devicesPath));
     expect(storeText.includes(key.token)).toBe(false);
     expect(await status(app, admin, "DELETE", `/admin/keys/${key.id}`)).toBe(
       200

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { createApp } from "./app.js";
-import { hashToken } from "./identity.js";
+import { hashToken, mutateTrustStore, readTrustStrict } from "./identity.js";
 import { request } from "./test-http.js";
 
 const TAILNET_HOST = "vanta.example.ts.net";
@@ -118,7 +118,11 @@ test("device ingress rejects spoofed loopback authorities and invalid credential
       origins.map(() => 403)
     );
 
-    await writeFile(devicesPath, JSON.stringify({ devices: [], version: 1 }));
+    mutateTrustStore(
+      devicesPath,
+      () => readTrustStrict(devicesPath),
+      (store) => ({ store: { ...store, keys: [] }, value: undefined })
+    );
     const revoked = await request(app, {
       ...deviceGet,
       headers: { authorization: `Bearer ${token}` },
@@ -132,7 +136,7 @@ test("device ingress rejects spoofed loopback authorities and invalid credential
     });
     expect(corrupt.statusCode).toBe(401);
 
-    await rm(devicesPath);
+    await rm(`${devicesPath}.migrated`);
     const missing = await request(app, {
       ...deviceGet,
       headers: { authorization: `Bearer ${token}` },
@@ -261,24 +265,26 @@ test("accepts either enrolled device and reflects an enrolment without a restart
     });
     expect(beforeEnrolment.statusCode).toBe(401);
 
-    await writeFile(
+    mutateTrustStore(
       devicesPath,
-      JSON.stringify({
-        devices: [
-          {
-            addedAt: "2026-09-11T00:00:00.000Z",
-            id: "iphone",
-            label: "iPhone 17 Pro",
-            tokenHash: hashToken("token-for-iphone"),
-          },
-          {
-            addedAt: "2026-09-11T00:01:00.000Z",
-            id: "mac",
-            label: "MacBook Pro",
-            tokenHash: hashToken("token-for-mac"),
-          },
-        ],
-        version: 1,
+      () => readTrustStrict(devicesPath),
+      (store) => ({
+        store: {
+          ...store,
+          keys: [
+            ...store.keys,
+            {
+              addedAt: "2026-09-11T00:01:00.000Z",
+              id: "mac",
+              label: "MacBook Pro",
+              lastUsedAt: null,
+              personId: "host",
+              scope: "daily",
+              tokenHash: hashToken("token-for-mac"),
+            },
+          ],
+        },
+        value: undefined,
       })
     );
 
@@ -289,6 +295,34 @@ test("accepts either enrolled device and reflects an enrolment without a restart
       url: "/sets",
     });
     expect(afterEnrolment.statusCode).toBe(200);
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("migration preserves digests and identities and ignores a recreated JSON file", async () => {
+  const { app, devicesPath, directory } = await withTrustStore([
+    { id: "iphone", label: "iPhone", token: "migration-token" },
+  ]);
+  try {
+    const stored = readTrustStrict(devicesPath);
+    expect(stored.keys[0]).toMatchObject({
+      personId: "host",
+      scope: "daily",
+      tokenHash: hashToken("migration-token"),
+    });
+    expect(await Bun.file(`${devicesPath}.migrated`).exists()).toBe(true);
+    expect(await Bun.file(devicesPath).exists()).toBe(false);
+    await writeFile(devicesPath, JSON.stringify({ devices: [], version: 1 }));
+    const response = await request(app, {
+      accessMode: "device",
+      headers: { authorization: "Bearer migration-token" },
+      method: "GET",
+      url: "/me",
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ id: "host" });
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

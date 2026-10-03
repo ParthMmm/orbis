@@ -101,6 +101,8 @@ import {
   readTracklist,
   runClaimedTracklist,
 } from "./tracklists.js";
+import { useNonblockingTrustStorage } from "./trust-storage-bun.js";
+import { retryTrustOperation } from "./trust-storage.js";
 import { Versos } from "./versos.js";
 import { listFilterablePeople, resolveVisiblePerson } from "./visibility.js";
 
@@ -358,6 +360,7 @@ export const createApp = (
     presenceWindowMs?: number;
     /** How long a Device Link stays open. Tests shorten it to prove expiry. */
     deviceLinkTtlMs?: number;
+    deviceLinkNow?: () => number;
     /** How long an Invite stays claimable. Tests shorten it to prove expiry. */
     inviteTtlMs?: number;
     /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
@@ -367,6 +370,7 @@ export const createApp = (
   } = {}
 ) => {
   configureLogging(options.logging);
+  useNonblockingTrustStorage();
   const databasePath = options.databasePath ?? ":memory:";
   const devicesPath =
     options.devicesPath ??
@@ -397,11 +401,13 @@ export const createApp = (
     );
   };
   const deviceLinks = makeDeviceLinks({
+    now: options.deviceLinkNow ?? Date.now,
     ttlMs: options.deviceLinkTtlMs ?? DEVICE_LINK_TTL_MS,
   });
   if (devicesPath) {
-    migrateTrustStore(devicesPath);
+    migrateTrustStore(devicesPath, databasePath);
   }
+  const trustPath = databasePath === ":memory:" ? undefined : databasePath;
   const database =
     options.database ??
     databaseLayer({
@@ -411,7 +417,7 @@ export const createApp = (
   // The Database layer is one value used by every service that writes.
   const libraryOptions = {
     audioDir: options.audio?.audioDir ?? path.join(".", "audio"),
-    people: () => readTrustRegistry(devicesPath).store.people,
+    people: () => readTrustRegistry(trustPath).store.people,
   };
   const libraryLayer = Library.forPersonLayer("host", libraryOptions).pipe(
     Layer.provide(database)
@@ -768,7 +774,7 @@ export const createApp = (
       const visibleFriend = (id: string) =>
         Effect.gen(function* resolveFriend() {
           const caller = yield* SetCaller;
-          const { people } = readTrustRegistry(devicesPath).store;
+          const { people } = readTrustRegistry(trustPath).store;
           return yield* Effect.try({
             catch: (error) =>
               error instanceof LibraryError
@@ -784,7 +790,7 @@ export const createApp = (
         Effect.gen(function* resolveMutualVisibility() {
           const caller = yield* SetCaller;
           const target = yield* visibleFriend(id);
-          const { people } = readTrustRegistry(devicesPath).store;
+          const { people } = readTrustRegistry(trustPath).store;
           yield* Effect.try({
             catch: (error) =>
               error instanceof LibraryError ? error : missingPlaylist(),
@@ -860,7 +866,7 @@ export const createApp = (
           return editor.creatorId;
         });
       const personSummary = (id: string) => {
-        const { people } = readTrustRegistry(devicesPath).store;
+        const { people } = readTrustRegistry(trustPath).store;
         const person = people.find((candidate) => candidate.id === id);
         return { id, username: person?.username ?? id };
       };
@@ -1255,7 +1261,7 @@ export const createApp = (
         );
       const presenceFor = (viewerId: string) =>
         Effect.gen(function* readPresence() {
-          const { people } = readTrustRegistry(devicesPath).store;
+          const { people } = readTrustRegistry(trustPath).store;
           const found = [];
           for (const person of people) {
             let target;
@@ -1320,10 +1326,10 @@ export const createApp = (
                 const caller = yield* SetCaller;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(UpdateMePayload);
-                const result = updatePerson(
-                  devicesPath,
-                  caller.person.id,
-                  input
+                const result = yield* Effect.promise(() =>
+                  retryTrustOperation(() =>
+                    updatePerson(trustPath, caller.person.id, input)
+                  )
                 );
                 if (result.kind === "updated") {
                   return HttpServerResponse.jsonUnsafe({
@@ -1350,7 +1356,7 @@ export const createApp = (
             withFailureResponse(
               Effect.gen(function* listVisiblePeople() {
                 const caller = yield* SetCaller;
-                const { people } = readTrustRegistry(devicesPath).store;
+                const { people } = readTrustRegistry(trustPath).store;
                 return {
                   people: people.flatMap((person) => {
                     try {
@@ -1372,7 +1378,7 @@ export const createApp = (
             withFailureResponse(
               Effect.gen(function* listSocialFilters() {
                 const caller = yield* SetCaller;
-                const { people } = readTrustRegistry(devicesPath).store;
+                const { people } = readTrustRegistry(trustPath).store;
                 return {
                   people: listFilterablePeople(people, caller.person.id),
                 };
@@ -1385,11 +1391,15 @@ export const createApp = (
                 const caller = yield* SetCaller;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(SocialFiltersPayload);
-                const result = updatePersonFilters(
-                  devicesPath,
-                  caller.person.id,
-                  params.id,
-                  input
+                const result = yield* Effect.promise(() =>
+                  retryTrustOperation(() =>
+                    updatePersonFilters(
+                      trustPath,
+                      caller.person.id,
+                      params.id,
+                      input
+                    )
+                  )
                 );
                 if (result.kind === "updated") {
                   return { appear: result.appear, see: result.see };
@@ -1501,7 +1511,7 @@ export const createApp = (
         }
       });
       const trustCall = <A>(action: (storePath: string) => A) =>
-        Effect.try({
+        Effect.tryPromise({
           catch: (error) =>
             new LibraryError({
               message:
@@ -1510,12 +1520,13 @@ export const createApp = (
                   : "The trust store is unavailable.",
               statusCode: error instanceof AdminError ? error.statusCode : 500,
             }),
-          try: () => {
-            if (!devicesPath) {
-              throw new AdminError(500, "The trust store is unavailable.");
-            }
-            return action(devicesPath);
-          },
+          try: () =>
+            retryTrustOperation(() => {
+              if (!trustPath) {
+                throw new AdminError(500, "The trust store is unavailable.");
+              }
+              return action(trustPath);
+            }),
         });
       const adminCall = <A>(action: (storePath: string) => A) =>
         Effect.andThen(requireAdminScope, trustCall(action));
@@ -1715,7 +1726,7 @@ export const createApp = (
                 const key = yield* trustCall((storePath) =>
                   addKey(storePath, personId, { label, scope: "daily" })
                 );
-                const person = readTrustRegistry(devicesPath).store.people.find(
+                const person = readTrustRegistry(trustPath).store.people.find(
                   (candidate) => candidate.id === personId
                 );
                 return HttpServerResponse.jsonUnsafe({
@@ -1735,7 +1746,7 @@ export const createApp = (
               if (caller.keyId === null) {
                 return true;
               }
-              const { store } = readTrustRegistry(devicesPath);
+              const { store } = readTrustRegistry(trustPath);
               return (
                 store.keys.some(
                   (key) =>
@@ -1776,7 +1787,7 @@ export const createApp = (
       );
       // Device Links mint only daily keys, for the Person who approved (ADR 0016).
       const mintLinkedKey = (personId: string, label: string) =>
-        Effect.try({
+        Effect.tryPromise({
           catch: (error) =>
             new LibraryError({
               message:
@@ -1785,23 +1796,24 @@ export const createApp = (
                   : "The trust store is unavailable.",
               statusCode: error instanceof AdminError ? 404 : 500,
             }),
-          try: () => {
-            if (!devicesPath) {
-              throw new Error("The trust store is unavailable.");
-            }
-            const key = addKey(devicesPath, personId, {
-              label,
-              scope: "daily",
-            });
-            const person = readTrustRegistry(devicesPath).store.people.find(
-              (candidate) => candidate.id === personId
-            );
-            return {
-              key: key.token,
-              person: { id: personId, username: person?.username ?? "" },
-              status: "approved" as const,
-            };
-          },
+          try: () =>
+            retryTrustOperation(() => {
+              if (!trustPath) {
+                throw new Error("The trust store is unavailable.");
+              }
+              const key = addKey(trustPath, personId, {
+                label,
+                scope: "daily",
+              });
+              const person = readTrustRegistry(trustPath).store.people.find(
+                (candidate) => candidate.id === personId
+              );
+              return {
+                key: key.token,
+                person: { id: personId, username: person?.username ?? "" },
+                status: "approved" as const,
+              };
+            }),
         });
       const deviceLinkGroup = HttpApiBuilder.group(
         OrbisApi,
@@ -2009,7 +2021,7 @@ export const createApp = (
   };
   return {
     dispose: app.dispose,
-    handler: (
+    handler: async (
       request: Request,
       mode: AccessMode = "local",
       clientAddress = "unknown"
@@ -2017,7 +2029,7 @@ export const createApp = (
       const origin = request.headers.get("origin");
       const browserResponse = browserIngress(request, mode, development);
       if (browserResponse) {
-        return Promise.resolve(browserResponse);
+        return browserResponse;
       }
       const withOrigin = (response: Response): Response => {
         if (
@@ -2044,7 +2056,7 @@ export const createApp = (
           withOrigin
         );
       }
-      const registry = readTrustRegistry(devicesPath);
+      const registry = readTrustRegistry(trustPath);
       const streamDecision = grantAccess(
         request,
         mode,
@@ -2055,10 +2067,8 @@ export const createApp = (
         new URL(request.url).searchParams.has("grant") &&
         streamDecision?.kind !== "accepted"
       ) {
-        return Promise.resolve(
-          withOrigin(
-            Response.json({ message: "Invalid stream grant." }, { status: 401 })
-          )
+        return withOrigin(
+          Response.json({ message: "Invalid stream grant." }, { status: 401 })
         );
       }
       const decision =
@@ -2077,7 +2087,7 @@ export const createApp = (
         decision.statusCode === 401 &&
         recordFailedKey(clientAddress)
       ) {
-        return Promise.resolve(withOrigin(tooManyAttempts()));
+        return withOrigin(tooManyAttempts());
       }
       if (decision.kind === "rejected") {
         const logger = startRequestLog({
@@ -2095,17 +2105,17 @@ export const createApp = (
           { outcome: "rejected", status: decision.statusCode },
           options.logging
         );
-        return Promise.resolve(
-          withOrigin(
-            Response.json(
-              { message: decision.message },
-              { status: decision.statusCode }
-            )
+        return withOrigin(
+          Response.json(
+            { message: decision.message },
+            { status: decision.statusCode }
           )
         );
       }
       if (options.recordKeyUse !== false) {
-        markKeyUsed(devicesPath, decision.keyId);
+        await retryTrustOperation(() =>
+          markKeyUsed(trustPath, decision.keyId)
+        ).catch(() => null);
       }
       // SAFETY: SetAccess provides the caller-bound Library and Queue before handlers read them.
       return app

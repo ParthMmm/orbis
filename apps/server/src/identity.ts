@@ -1,15 +1,8 @@
-import { dlopen, FFIType } from "bun:ffi";
-import { createHash, randomBytes, timingSafeEqual } from "node:crypto";
-import {
-  closeSync,
-  existsSync,
-  openSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
+import { createHash, timingSafeEqual } from "node:crypto";
 
 import { Schema } from "effect";
+
+import { trustStorage, isTrustBusy } from "./trust-storage.js";
 
 const TokenHash = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/u));
 const LegacyDevice = Schema.Struct({
@@ -112,92 +105,40 @@ const fromLegacy = (legacy: typeof LegacyTrustFile.Type): TrustStore => ({
   version: 2,
 });
 
-export const readTrustStrict = (storePath: string): TrustStore => {
-  const raw: unknown = JSON.parse(readFileSync(storePath, "utf-8"));
+export const decodeTrust = (raw: typeof Schema.Unknown.Type): TrustStore => {
   const parsed = Schema.decodeUnknownSync(
     Schema.Union([LegacyTrustFile, TrustFile])
   )(raw);
   return parsed.version === 1 ? fromLegacy(parsed) : parsed;
 };
 
-const writeTrustStore = (storePath: string, store: TrustStore): void => {
-  const temporary = `${storePath}.${process.pid}.${randomBytes(6).toString("hex")}.tmp`;
-  writeFileSync(temporary, `${JSON.stringify(store, null, 2)}\n`, {
-    mode: 0o600,
+export const migrateTrustStore = (
+  storePath: string,
+  target = storePath
+): void => {
+  trustStorage().initialize({
+    decode: decodeTrust,
+    empty: emptyTrustStore,
+    legacyPath: storePath.endsWith(".json") ? storePath : undefined,
+    target,
   });
-  renameSync(temporary, storePath);
 };
 
-const isMissingFile = (error: Error): boolean =>
-  "code" in error && error.code === "ENOENT";
-
-const LOCK_EXCLUSIVE_NONBLOCKING = 6;
-const LOCK_WAIT_MS = 10;
-const LOCK_TIMEOUT_MS = 5000;
-const lockWaiter = new Int32Array(new SharedArrayBuffer(4));
-const libc = dlopen(
-  process.platform === "darwin" ? "libSystem.B.dylib" : "libc.so.6",
-  {
-    flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
-  }
-);
-
-const withTrustStoreLock = <T>(storePath: string, action: () => T): T => {
-  const lockPath = `${storePath}.lock`;
-  const fd = openSync(lockPath, "a", 0o600);
-  try {
-    const deadline = Date.now() + LOCK_TIMEOUT_MS;
-    while (libc.symbols.flock(fd, LOCK_EXCLUSIVE_NONBLOCKING) !== 0) {
-      if (Date.now() >= deadline) {
-        throw new Error(`Timed out waiting for trust store lock: ${lockPath}`);
-      }
-      Atomics.wait(lockWaiter, 0, 0, LOCK_WAIT_MS);
-    }
-    return action();
-  } finally {
-    closeSync(fd);
-  }
+export const readTrustStrict = (storePath: string): TrustStore => {
+  migrateTrustStore(storePath);
+  return trustStorage().read(storePath, decodeTrust);
 };
 
 export const mutateTrustStore = <T>(
   storePath: string,
-  read: () => TrustStore,
+  _read: () => TrustStore,
   change: (store: TrustStore) => {
     readonly store?: TrustStore;
     readonly value: T;
   }
-): T =>
-  withTrustStoreLock(storePath, () => {
-    const { store, value } = change(read());
-    if (store) {
-      writeTrustStore(storePath, store);
-    }
-    return value;
-  });
-
-export const migrateTrustStore = (storePath: string): void => {
-  if (!existsSync(storePath)) {
-    return;
-  }
-  withTrustStoreLock(storePath, () => {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(readFileSync(storePath, "utf-8"));
-    } catch {
-      return;
-    }
-    let parsed: typeof LegacyTrustFile.Type | typeof TrustFile.Type;
-    try {
-      parsed = Schema.decodeUnknownSync(
-        Schema.Union([LegacyTrustFile, TrustFile])
-      )(raw);
-    } catch {
-      return;
-    }
-    if (parsed.version === 1) {
-      writeTrustStore(storePath, fromLegacy(parsed));
-    }
-  });
+): T => {
+  migrateTrustStore(storePath);
+  return trustStorage().mutate(storePath, decodeTrust, change);
 };
 
 export interface TrustRegistry {
@@ -213,10 +154,7 @@ export const readTrustRegistry = (
   }
   try {
     return { store: readTrustStrict(storePath) };
-  } catch (error) {
-    if (error instanceof Error && isMissingFile(error)) {
-      return { store: emptyTrustStore() };
-    }
+  } catch {
     return { store: emptyTrustStore(), storeError: "unreadable" };
   }
 };
@@ -305,7 +243,10 @@ export const markKeyUsed = (
         };
       }
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && isTrustBusy(error)) {
+      throw error;
+    }
     // Usage time is advisory; authentication already checked the current store.
   }
 };
@@ -376,7 +317,10 @@ export const updatePerson = (
         };
       }
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && isTrustBusy(error)) {
+      throw error;
+    }
     return { kind: "unavailable" };
   }
 };
@@ -448,7 +392,10 @@ export const updatePersonFilters = (
         };
       }
     );
-  } catch {
+  } catch (error) {
+    if (error instanceof Error && isTrustBusy(error)) {
+      throw error;
+    }
     return { kind: "unavailable" };
   }
 };
