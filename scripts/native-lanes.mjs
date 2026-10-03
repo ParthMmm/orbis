@@ -9,7 +9,7 @@
 //   node scripts/native-lanes.mjs               # both
 //   node scripts/native-lanes.mjs --unit --macos # unit tests on the macOS host
 //
-// Options: --name <simulator name>  --out <screenshot directory>
+// Options: --name <simulator name>  --udid <simulator UUID>  --out <screenshot directory>
 // --macos runs the unit tests on the macOS destination instead of the simulator.
 
 import { spawn, spawnSync } from "node:child_process";
@@ -42,6 +42,7 @@ const journeysOnly = process.argv.includes("--journeys");
 // bundle is iOS-only, so --macos always means the unit tests.
 const macos = process.argv.includes("--macos");
 const simulator = argument("name", "Orbis Lanes");
+const simulatorUdid = argument("udid");
 const shots = path.resolve(
   argument("out", path.join(tmpdir(), "orbis-lane-shots"))
 );
@@ -286,7 +287,9 @@ try {
       "-scheme",
       "Orbis",
       "-destination",
-      macos ? "platform=macOS" : `platform=iOS Simulator,name=${simulator}`,
+      macos
+        ? "platform=macOS"
+        : `platform=iOS Simulator,${simulatorUdid ? `id=${simulatorUdid}` : `name=${simulator}`}`,
       // Ad-hoc signing gives the simulator build the entitlement its keychain needs, while
       // leaving the committed project device-ready. The macOS host cannot ad-hoc sign that
       // entitlement, so the macOS run uses automatic signing with the local development
@@ -402,6 +405,7 @@ try {
         elapsedSeconds,
         requestedWorkers: workerCount,
         simulator,
+        simulatorUdid,
         workers: [...workers.values()],
       },
       null,
