@@ -211,12 +211,14 @@ export const runClaimedTracklist = Effect.fn("Tracklists.runClaimed")(
         Effect.annotateLogs({ set: claim.id })
       );
       return "failed" as const;
-    })
+    }).pipe(Effect.onInterrupt(() => releaseClaim(claim, "pending")))
 );
 
 export const runTracklist = Effect.fn("Tracklists.run")((id: string) =>
-  Effect.gen(function* runTracklistEffect() {
-    const claim = yield* claimTracklist(id);
-    return claim ? yield* runClaimedTracklist(claim) : "pending";
-  })
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* runTracklistEffect() {
+      const claim = yield* claimTracklist(id);
+      return claim ? yield* restore(runClaimedTracklist(claim)) : "pending";
+    })
+  )
 );

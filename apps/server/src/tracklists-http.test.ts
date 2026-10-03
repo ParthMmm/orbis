@@ -392,7 +392,8 @@ test("disposing an active Tracklist releases its claim for an immediate HTTP ret
         url: `/sets/${id}/tracklist/retry`,
       });
       expect(retry.statusCode).toBe(200);
-      expect((await waitForState(reloaded, id, "ready")).json()).toEqual({
+      const ready = await waitForState(reloaded, id, "ready");
+      expect(ready.json()).toEqual({
         cues: CUES,
         state: "ready",
       });
