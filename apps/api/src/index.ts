@@ -7,6 +7,7 @@ export interface Environment {
   readonly OPENROUTER_API_KEY?: string;
   readonly VERSOS_URL?: string;
   readonly VERSOS_API_KEY?: string;
+  readonly IMPORT_NODE_KEY_DIGEST?: string;
   readonly GROUP: DurableObjectNamespace;
 }
 

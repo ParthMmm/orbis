@@ -10,6 +10,7 @@ import { issueStreamGrant } from "../../server/src/stream-grant-core.js";
 import { TitleReviser } from "../../server/src/title-reviser.js";
 import { Versos } from "../../server/src/versos.js";
 import { makeAudioLayer } from "./audio.js";
+import { transferRequest } from "./data-transfer.js";
 import { databaseLayer } from "./database.js";
 import type { Environment } from "./index.js";
 import { GroupAudioNode } from "./node.js";
@@ -105,6 +106,15 @@ export class Group extends DurableObject<Environment> {
       new URL(request.url).pathname === "/health"
     ) {
       return this.app.handler(new Request("http://localhost/health"), "local");
+    }
+    const path = new URL(request.url).pathname;
+    if (path === "/import" || path === "/export") {
+      return transferRequest({
+        bootstrapDigest: this.env.IMPORT_NODE_KEY_DIGEST,
+        request,
+        storage: this.ctx.storage,
+        trustPath: this.ctx.id.toString(),
+      });
     }
     return this.app.handler(
       request,

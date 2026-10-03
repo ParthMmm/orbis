@@ -23,6 +23,10 @@ export default Alchemy.Stack(
       env: {
         AUDIO_NODE_URL: Config.String("AUDIO_NODE_URL"),
         GROUP: Cloudflare.DurableObject("Group", { className: "Group" }),
+        IMPORT_NODE_KEY_DIGEST: Config.String("IMPORT_NODE_KEY_DIGEST").pipe(
+          Config.withDefault(""),
+          Config.map(Redacted.make)
+        ),
         OPENROUTER_API_KEY: Config.String("OPENROUTER_API_KEY").pipe(
           Config.withDefault(""),
           Config.map(Redacted.make)
