@@ -84,10 +84,7 @@ const run = async <A, E>(
         return yield* operation(client);
       }).pipe(
         Effect.provide(FetchHttpClient.layer),
-        Effect.provideService(FetchHttpClient.Fetch, trackedFetch),
-        // A `traceparent` header would fail the API's CORS preflight, which allows
-        // only the headers the page sends on purpose.
-        Effect.provideService(HttpClient.TracerPropagationEnabled, false)
+        Effect.provideService(FetchHttpClient.Fetch, trackedFetch)
       ),
       signal === undefined ? undefined : { signal }
     );
