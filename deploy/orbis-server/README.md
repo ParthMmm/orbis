@@ -274,6 +274,27 @@ To recover for real, stop `orbis-server`, copy `library.sqlite` and `devices.jso
 
 ## Cut over to Cloudflare and an API-only Funnel
 
+### Prepare the Group cutover
+
+ADR 0018 replaces the API on Vanta with the Group. Issues [#192](https://github.com/ParthMmm/orbis/issues/192), [#193](https://github.com/ParthMmm/orbis/issues/193), and [#194](https://github.com/ParthMmm/orbis/issues/194) must pass their acceptance checks before moving live data in [#195](https://github.com/ParthMmm/orbis/issues/195).
+
+The Vanta process has three modes. With both switches unset, it serves the API as before. `ORBIS_READ_ONLY=true` refuses `POST`, `PUT`, `PATCH`, and `DELETE` with `503` and `Retry-After: 60`; reads and audio continue. The process stops starting Download work and recording key usage in this mode. Restart into this mode before export so work from the previous process has stopped.
+
+`ORBIS_API_FORWARD_URL=https://orbis.p11a.xyz/api` forwards every request except `/sets/:id/audio` to the Group. It preserves the key, body, query, redirects, and event stream. The local listener also forwards, so it cannot write a second copy of the Library after cutover. Audio stays on Vanta. The process refuses to start if forwarding and read-only mode are both enabled.
+
+Forwarded requests emit `ingress: "funnel-forward"` with the key's label, request path, and status. Keys and query strings stay out of the log. Read these events with:
+
+```sh
+	journalctl --user -u orbis-server --since '14 days ago' -o cat |
+	  jq -cR 'fromjson? | select(.ingress == "funnel-forward") | {timestamp, keyLabel, method, path, status}'
+```
+
+An empty result is evidence only when the journal covers the whole interval and forwarding was active throughout it. Keep forwarding until the Host confirms 14 days without requests, per [#199](https://github.com/ParthMmm/orbis/issues/199).
+
+Set these switches in a dedicated service drop-in. Preserve the existing unit, provider settings, data directory, and backup and canary timers. To cancel a read-only window before switching clients, remove the dedicated switch and restart the same revision. After the Group has accepted writes, restore its current export before returning to the Vanta API; the earlier Vanta copy is stale. Neither switch changes a Tailscale rule.
+
+Verify the controls locally with `bun test src/cutover-http.test.ts` from `apps/server`. This repository check does not move live data or perform a deployment.
+
 Friends open `https://orbis.p11a.xyz`. Alchemy deploys the web client from `apps/web` to Cloudflare Workers. The browser sends its key directly to `https://vanta.tail01d084.ts.net:10000/api`, and Retained Audio stays on Vanta. The Funnel on port `10000` serves only `/api`. See [ADR 0015](../../docs/adr/0015-web-on-cloudflare-workers.md).
 
 Run the local browser journeys in [`apps/web/README.md`](../../apps/web/README.md#verify-the-migration) first. Keep the previous service revision and the Serve status output for recovery. This repository change does not perform a live rollout.

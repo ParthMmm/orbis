@@ -352,6 +352,7 @@ export const createApp = (
     devicesPath?: string;
     logging?: LoggingOptions;
     metadata?: Layer.Layer<Metadata>;
+    recordKeyUse?: boolean;
     /** How long after a Playback Position report a Person still counts as listening. */
     presenceWindowMs?: number;
     /** How long a Device Link stays open. Tests shorten it to prove expiry. */
@@ -2098,7 +2099,9 @@ export const createApp = (
           )
         );
       }
-      markKeyUsed(devicesPath, decision.keyId);
+      if (options.recordKeyUse !== false) {
+        markKeyUsed(devicesPath, decision.keyId);
+      }
       // SAFETY: SetAccess provides the caller-bound Library and Queue before handlers read them.
       return app
         .handler(
