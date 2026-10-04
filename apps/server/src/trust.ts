@@ -12,6 +12,7 @@ import {
 import type { KeyRecord, TrustStore } from "./identity.js";
 
 const usage = `Usage:
+  bun src/trust.ts recover --url <API URL> --label <name>
   bun src/trust.ts person add --username <name> [--database <path>]
   bun src/trust.ts person list [--database <path>]
   bun src/trust.ts person remove --id <id> [--database <path>]
@@ -189,7 +190,13 @@ const keyRevoke = () => {
 
 const [group, action] = process.argv.slice(2);
 try {
-  if (group === "person" && action === "add") {
+  if (group === "recover") {
+    const { recoverRemoteAdmin } = await import("./trust-recovery.js");
+    await recoverRemoteAdmin({
+      label: required("label"),
+      url: required("url"),
+    });
+  } else if (group === "person" && action === "add") {
     personAdd();
   } else if (group === "person" && action === "list") {
     personList();

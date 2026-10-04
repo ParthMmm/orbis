@@ -124,6 +124,7 @@ export const cutoverHandler =
     target.pathname = `${target.pathname}${path}`;
     target.search = new URL(request.url).search;
     const headers = new Headers(request.headers);
+    headers.set("x-orbis-ingress", "funnel-forward");
     for (const name of hopHeaders) {
       headers.delete(name);
     }
@@ -133,6 +134,11 @@ export const cutoverHandler =
         new Request(forwarded, { headers, redirect: "manual" }),
         { decompress: false }
       );
+      const keyLabel = response.headers.get("x-orbis-key-label");
+      if (keyLabel) {
+        logger.set({ keyLabel: decodeURIComponent(keyLabel) });
+      }
+      response.headers.delete("x-orbis-key-label");
       let outcome: "failure" | "rejected" | "success" = "success";
       if (response.status >= 500) {
         outcome = "failure";

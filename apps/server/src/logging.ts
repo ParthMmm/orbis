@@ -215,6 +215,12 @@ const CurrentWideEvent = Context.Reference<RequestLogger | null>(
   { defaultValue: () => null }
 );
 
+export const annotateForwardedRequest = (keyLabel: string | null) =>
+  Effect.gen(function* forwardedRequestAnnotation() {
+    const logger = yield* CurrentWideEvent;
+    logger?.set({ ingress: "funnel-forward", keyLabel });
+  });
+
 const lineCounts = new WeakMap<RequestLogger, number>();
 
 const levelOf = (logLevel: LogLevel.LogLevel): "info" | "warn" | "error" => {

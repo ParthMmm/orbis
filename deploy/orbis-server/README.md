@@ -272,6 +272,35 @@ Set these switches in a dedicated service drop-in. Preserve the existing unit, p
 
 Verify the controls locally with `bun test src/cutover-http.test.ts` from `apps/server`. This repository check does not move live data or perform a deployment.
 
+### Run the ADR 0018 cutover
+
+Do not open the read-only window until the local Group, real audio node, SQL transfer, grant, web player, and Cortex Apple checks pass. Record their artifact paths and the exact revision. Keep #195 open if any production acceptance check remains unverified.
+
+Prepare these items while Vanta still serves writes:
+
+1. Record the current service revision, `InvocationID`, installed unit and drop-in paths, active timers, and Serve and Funnel status. Preserve a consistent SQLite snapshot, the legacy trust file, and the stream secret in a private rollback directory. Copy the secret without changing it.
+2. Update the production checkout to the verified revision without replacing local changes or the installed unit. Install frozen dependencies and build contracts and the audio node before restarting anything.
+3. Deploy the Group with the existing stream secret and provider credentials. Keep the web API URL on Vanta. Verify public Group health and the web page. Keep recovery disabled until its actual Access issuer and Host email are configured. Do not mint recovery keys in the empty migration target.
+4. Migrate trust on Vanta with the API build, with read-only and forwarding unset. Verify the renamed JSON file and every existing key's Person and scope. Preserve the migrated database as well as the pre-migration snapshot.
+5. Mint one node key in Vanta SQLite. Store its token in a private environment file with mode `0600`. Configure `IMPORT_NODE_KEY_DIGEST` from that same token for the empty Group. Never connect the live audio directory before import validation, because inventory reconciliation can release files.
+6. Rehearse export, import, checksum comparison, Host HTTP readback, export, and restore against a scratch Group. Build the web client and prepare the service and backup settings before the timed window. Keep legacy SQLite backup snapshots separate from SQL retention.
+
+Use one dedicated `group-cutover.conf` drop-in for migration settings. Preserve the existing provider drop-ins and timer units. Record timestamps in UTC and check both reads and a refused write in the request logs.
+
+1. Set `ORBIS_READ_ONLY=true` in the dedicated drop-in, reload systemd, and restart the current API entrypoint. Record the new `InvocationID`. Confirm a write returns `503` with `Retry-After` and reads still work. This restart stops the old Download worker before export. If preparation or validation cannot finish within ten minutes, remove the read-only setting and restart this API revision before clients switch.
+2. Export the final `library.sqlite` with `scripts/data-transfer.ts export`, then import it with `scripts/data-transfer.ts import`. Compare every table count and checksum. Read the Host's Library, Playlists, Queue, positions, and titles from the Group. Compare copied trust digests, Person IDs, and scopes. Do not switch clients on a mismatch. A failed import rolls back. Keep the Vanta API read-only until a retry or rollback finishes.
+3. After validation, remove `ORBIS_READ_ONLY`. Override only the service entrypoint to `src/node.ts` and load the private node environment file. Set `ORBIS_GROUP_URL=https://orbis.p11a.xyz/api`, `ORBIS_AUDIO_DIR` to the existing audio directory, `ORBIS_STREAM_SECRET_FILE` to the preserved stream key, and `ORBIS_API_FORWARD_URL=https://orbis.p11a.xyz/api`. Keep the node listener at `127.0.0.1:4311`. Reload systemd and restart the same service. Record its new `InvocationID` and successful node connection.
+4. Verify an existing key through both addresses and an older Apple build through forwarding. Verify grant-only audio, a Range response, playback, seeking, and forwarded key labels in the Vanta journal. Check that a node key cannot use a client route. The database-free node does not listen on the old token-free port `4310`.
+5. Set the web client's `ORBIS_API_URL` to `https://orbis.p11a.xyz/api` and deploy the same Alchemy stack. Keep `ORBIS_AUDIO_URL` on the Funnel audio origin. Run the four production browser journey groups with a temporary test Person, preserve screenshots, and remove that Person. Measure the write outage from the last refused Vanta write to the first successful Group write.
+6. Add the Group export URL and node key to the existing private backup environment file. Preserve the destination and timers. The backup script writes and mirrors only its `group/` or `sqlite/` subdirectory. It leaves legacy snapshots in the destination root and the other backup format untouched. Verify both before enabling the timer. Run a backup and restore it to a fresh scratch database. Keep the nightly six-check canary and record its next result.
+7. Remove the bootstrap import digest from the Worker configuration. Keep forwarding, Serve mappings, and the Jellyfin Funnel until their separate retirement criteria pass. Do not close #199 until the Vanta node journal proves 14 complete days without forwarded requests. Group ingress headers are client supplied and cannot establish this retirement evidence.
+
+Before the Group accepts writes, rollback removes the dedicated cutover settings and restarts the migrated Vanta API. Keep the Group isolated from clients and keep both exported copies for diagnosis. Do not reconnect the audio directory to an empty or mismatched Group.
+
+After the Group accepts writes, the old Vanta database is stale. Quiesce Group writes, take a current node-authenticated Group export, restore it to a new SQLite file, and compare its manifest and Host HTTP readback in scratch. Preserve the existing Vanta database and its WAL files before installing the verified restore. Restore the API entrypoint and web URL together, then verify existing keys and playback. If the Group cannot export, keep it as the data authority and repair access rather than replacing it with the old Vanta snapshot. No rollback resets Tailscale, Caddy, or unrelated services.
+
+### Earlier web deployment procedure
+
 Friends open `https://orbis.p11a.xyz`. Alchemy deploys the web client from `apps/web` to Cloudflare Workers. The browser sends its key directly to `https://vanta.tail01d084.ts.net:10000/api`, and Retained Audio stays on Vanta. The Funnel on port `10000` serves only `/api`. See [ADR 0015](../../docs/adr/0015-web-on-cloudflare-workers.md).
 
 Run the local browser journeys in [`apps/web/README.md`](../../apps/web/README.md#verify-the-migration) first. Keep the previous service revision and the Serve status output for recovery. This repository change does not perform a live rollout.
@@ -346,7 +375,7 @@ Removing the Serve rule does not affect the jellyfin Funnel on `8443`. The datab
 
 ## Group foundation on Cloudflare
 
-The `OrbisWeb` Alchemy stack now also owns an API Worker on `orbis.p11a.xyz/api/*` and one SQLite Group Durable Object. Only health is available in this foundation. The web client's API URL, active database, and audio remain on Vanta until the ADR 0018 cutover. Deploy, destroy, migration generation, local schema verification, and post-deploy HTTP checks are in the [API deploy README](../../apps/api/README.md). Destroying the stack also destroys Group data.
+The `OrbisWeb` Alchemy stack now also owns an API Worker on `orbis.p11a.xyz/api/*` and one SQLite Group Durable Object. The Group implements the portable API, but production client traffic stays on Vanta until cutover. The web client's API URL, active database, and audio remain on Vanta until the ADR 0018 cutover. Deploy, destroy, migration generation, local schema verification, and post-deploy HTTP checks are in the [API deploy README](../../apps/api/README.md). Destroying the stack also destroys Group data.
 
 ## Trust data in SQLite
 
@@ -367,7 +396,7 @@ The restored JSON contains trust data from before the migration. Keys, People, a
 
 After moving the library database to the Group, run `bun run node` from `apps/server`. Build its entrypoint with `bun run build:node` and start the result with `bun dist/node.js`.
 
-Set `ORBIS_GROUP_URL` to the API base URL, such as `https://orbis.p11a.xyz/api`, and `ORBIS_NODE_KEY` to a key minted with `bun run trust key add --person host --label vanta --scope node`. The Group accepts that key on `/api/node`; it does not grant client API access. Set `ORBIS_AUDIO_DIR` to the existing audio directory and `ORBIS_STREAM_SECRET_FILE` to the existing 32-byte `stream-grant.key` file. The node refuses to start if that secret is missing or has the wrong size. `ORBIS_NODE_HOST` and `ORBIS_NODE_PORT` default to `127.0.0.1` and `4311`. The listener serves grant-authorized audio. Keep the existing provider settings, yt-dlp binary, cookies, ffprobe, and ffmpeg.
+Set `ORBIS_GROUP_URL` to the API base URL, such as `https://orbis.p11a.xyz/api`, and `ORBIS_NODE_KEY` to a key minted with `bun run trust key add --person host --label vanta --scope node`. The Group accepts that key on `/api/node`; it does not grant client API access. Set `ORBIS_AUDIO_DIR` to the existing audio directory and `ORBIS_STREAM_SECRET_FILE` to the existing 32-byte `stream-grant.key` file. The node refuses to start if that secret is missing or has the wrong size. `ORBIS_NODE_HOST` and `ORBIS_NODE_PORT` default to `127.0.0.1` and `4311`. Set `ORBIS_API_FORWARD_URL=https://orbis.p11a.xyz/api` during cutover to retain API forwarding for older clients. The listener serves grant-authorized audio and forwards every other API request without a local database or trust store. Keep this switch until #199 has 14 days without forwarded requests. Keep the existing provider settings, yt-dlp binary, cookies, ffprobe, and ffmpeg.
 
 The node opens an outbound WebSocket and reconnects with exponential backoff, capped at 30 seconds. Its files are its only persistent state. Each connection reports validated audio files. The Group reconciles missing and unreferenced files and resumes interrupted Downloads using the existing job rows. Download commands and replies carry a Set ID and a request ID; a result from a canceled attempt cannot finish a later attempt.
 

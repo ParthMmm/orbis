@@ -74,6 +74,34 @@ cd apps/server
 bun test
 ```
 
-The smoke test runs the Worker and Group in workerd through Miniflare. It checks health, singleton routing, unavailable routes, exact schema equality with a fresh Bun database, injected database use through the server's save route, and persistence after a runtime restart. Its fixture adds schema and persistence routes only to the test bundle. The production bundle has only health. The test also rejects Bun, filesystem, and audio references in the production bundle.
+The API test command also runs the audio node, grant, and recovery journeys against disposable Group storage. Their artifacts live under `.cache/audio-node`, `.cache/api-grants`, and `.cache/api-recovery`. Live rollout requires separate production checks.
 
-Each run writes `result.json` and its two SQLite databases beneath `.cache/api-group/<run-id>` at the repository root. This is a repeatable local artifact. Live rollout is separate and was not performed by this repository change.
+## Recover Host access
+
+Set `RECOVERY_ENABLED=true` after verifying the Host email and Access team URL. Until enabled, recovery returns `401` and Alchemy creates no Access resources. Alchemy creates an Access application for exactly `orbis.p11a.xyz/api/recovery`. Its allow policy names `RECOVERY_HOST_EMAIL`, permits only the email one-time PIN provider, and expires sessions after 15 minutes. Other API paths keep Bearer-key authentication. Set `ACCESS_ISSUER` to the account's exact `https://<team>.cloudflareaccess.com` origin. Alchemy passes the recovery application's audience to the Worker as `ACCESS_AUDIENCE` and exports `recoveryAudience` in the deployment outputs.
+
+By default the stack looks up the account's existing one-time PIN provider without managing it. If the account has none, explicitly set `RECOVERY_CREATE_OTP=true` to create one. Keep that setting while the stack manages the provider. A created provider has a retain policy, so removing the declaration or destroying this stack cannot delete an account login method that another application may use. Existing providers never require adoption.
+
+Review the plan with the actual Host email, issuer, and existing API configuration before deployment:
+
+```sh
+cd apps/web
+bun run deploy --dry-run
+```
+
+After deployment, sign in with the Host email and emailed code, then mint an admin key:
+
+```sh
+cloudflared access login https://orbis.p11a.xyz/api/recovery
+bun run --cwd apps/server trust recover --url https://orbis.p11a.xyz/api --label "Host recovery"
+```
+
+On a headless machine, open the login URL that `cloudflared` prints on another device. The recovery command reads the cached application token with `cloudflared access token`, calls the protected endpoint, and prints the new admin key once. Store that key in the password manager and paste it into the web admin page. For an existing headless Access session, the command also accepts `ORBIS_ACCESS_TOKEN` through the environment. Do not put it in command arguments or logs; unset it after use.
+
+Recovery creates the Host when the Group is empty and mints a replacement if an old admin key's plaintext is lost. It preserves existing keys, so revoke lost keys from the admin page after signing in. The recovery command does not open or write a local database. `GET /api/recovery` cannot read data.
+
+The Worker rejects missing or invalid Access JWTs before calling the Group. The Group independently verifies the signature, issuer, audience, expiry, application-token type, and Host email before minting a key. The `Cf-Access-Authenticated-User-Email` header alone grants no access. These checks also apply through a `workers.dev` address that has no Access application in front of it. They follow Cloudflare's [JWT validation guidance](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/) and [CLI authentication flow](https://developers.cloudflare.com/cloudflare-one/tutorials/cli/).
+
+`bun apps/api/e2e/recovery.ts` runs a real workerd HTTP journey with a temporary signing key and intercepted public-key endpoint. It checks rejected claims, origin protection, first and replacement admin keys, normal-route isolation, and the CLI without a local database. The result is `.cache/api-recovery/<run>/result.json`; it contains no JWTs or key tokens. A local success does not verify the live email-code flow or deployed Access policy.
+
+The web deployment also passes `AUDIO_NODE_URL` as `ORBIS_AUDIO_URL`, so its media Content Security Policy can follow Group audio redirects to the node.
