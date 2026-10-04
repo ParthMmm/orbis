@@ -178,7 +178,11 @@ const authenticate = (input: {
   readonly mode: AccessMode;
   readonly store: TrustStore;
   readonly requiredScope?: "node";
-}): Exclude<AccessDecision, { kind: "accepted" }> | (Omit<Extract<AccessDecision, { kind: "accepted" }>, "scope"> & { readonly scope: KeyRecord["scope"] }) => {
+}):
+  | Exclude<AccessDecision, { kind: "accepted" }>
+  | (Omit<Extract<AccessDecision, { kind: "accepted" }>, "scope"> & {
+      readonly scope: KeyRecord["scope"];
+    }) => {
   if (input.hasOrigin) {
     return rejected(LOCAL_ONLY, 403);
   }
@@ -192,14 +196,23 @@ const authenticate = (input: {
     const person = input.store.people.find(
       (candidate) => candidate.id === key?.personId && !candidate.removed
     );
-    if (key && (input.requiredScope === "node" ? key.scope !== "node" : key.scope === "node")) {
+    if (
+      key &&
+      (input.requiredScope === "node"
+        ? key.scope !== "node"
+        : key.scope === "node")
+    ) {
       return rejected("This key cannot access this route.", 403);
     }
     return key && person
       ? { keyId: key.id, kind: "accepted", person, scope: key.scope }
       : rejected(NOT_PAIRED, 401);
   }
-  if (!input.requiredScope && input.mode === "local" && LOOPBACK_HOST.test(input.host)) {
+  if (
+    !input.requiredScope &&
+    input.mode === "local" &&
+    LOOPBACK_HOST.test(input.host)
+  ) {
     const person = input.store.people.find(
       (candidate) => candidate.id === HOST_PERSON_ID && !candidate.removed
     );
@@ -213,12 +226,20 @@ const authenticate = (input: {
   return rejected(LOCAL_ONLY, 403);
 };
 
-export const decideNodeAccess = (input: Omit<Parameters<typeof authenticate>[0], "requiredScope">) => authenticate({ ...input, requiredScope: "node" });
+export const decideNodeAccess = (
+  input: Omit<Parameters<typeof authenticate>[0], "requiredScope">
+) => authenticate({ ...input, requiredScope: "node" });
 
-export const decideAccess = (input: Omit<Parameters<typeof authenticate>[0], "requiredScope">): AccessDecision => {
+export const decideAccess = (
+  input: Omit<Parameters<typeof authenticate>[0], "requiredScope">
+): AccessDecision => {
   const decision = authenticate(input);
-  if (decision.kind === "rejected") return decision;
-  if (decision.scope === "node") return rejected("This key cannot access this route.", 403);
+  if (decision.kind === "rejected") {
+    return decision;
+  }
+  if (decision.scope === "node") {
+    return rejected("This key cannot access this route.", 403);
+  }
   return { ...decision, scope: decision.scope };
 };
 
