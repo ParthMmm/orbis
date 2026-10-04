@@ -1,3 +1,2 @@
-import { Group } from "../src/group.js";
-export { Group };
+export { Group } from "../src/group.js";
 export { default } from "../src/index.js";

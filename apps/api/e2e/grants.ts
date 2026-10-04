@@ -18,7 +18,7 @@ const bundle = await Bun.build({
   target: "browser",
 });
 assert.equal(bundle.success, true, String(bundle.logs));
-const output = bundle.outputs[0];
+const [output] = bundle.outputs;
 assert.ok(output);
 const secret = Buffer.from("ab".repeat(32), "hex");
 const runtime = new Miniflare({
@@ -34,14 +34,12 @@ const runtime = new Miniflare({
   script: await output.text(),
 });
 try {
-  assert.equal(
-    (await runtime.dispatchFetch("http://orbis/api/__seed")).status,
-    200
-  );
+  const seeded = await runtime.dispatchFetch("http://orbis/api/__seed");
+  assert.equal(seeded.status, 200);
   const savedResponse = await runtime.dispatchFetch("http://orbis/api/sets", {
     body: JSON.stringify({
-      title: "Grant fixture",
       tags: [],
+      title: "Grant fixture",
       url: "https://youtu.be/abcdefghijk",
     }),
     headers: {
@@ -52,10 +50,8 @@ try {
   });
   assert.equal(savedResponse.status, 201, await savedResponse.clone().text());
   const saved = await savedResponse.json();
-  assert.equal(
-    (await runtime.dispatchFetch("http://orbis/api/__ready")).status,
-    200
-  );
+  const ready = await runtime.dispatchFetch("http://orbis/api/__ready");
+  assert.equal(ready.status, 200);
   const grant = issueStreamGrant(secret, saved.id, "host");
   const audio = (value: string, authorization?: string) =>
     runtime.dispatchFetch(
@@ -90,17 +86,18 @@ try {
   ]) {
     // Each request checks that a valid key cannot repair an invalid grant.
     // eslint-disable-next-line no-await-in-loop
-    assert.equal((await audio(invalid, "Bearer smoke-token")).status, 401);
+    const rejected = await audio(invalid, "Bearer smoke-token");
+    assert.equal(rejected.status, 401);
   }
   await writeFile(
     path.join(artifact, "result.json"),
     JSON.stringify(
       {
-        status: "passed",
-        grantPrecedence: true,
-        expiryPreserved: true,
-        invalidGrantRejected: true,
         bearerRedirect: true,
+        expiryPreserved: true,
+        grantPrecedence: true,
+        invalidGrantRejected: true,
+        status: "passed",
       },
       null,
       2

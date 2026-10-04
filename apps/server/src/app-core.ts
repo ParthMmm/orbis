@@ -179,6 +179,13 @@ const grantAccess = (
     : { kind: "rejected", message: "Invalid stream grant.", statusCode: 401 };
 };
 
+const rejectedStreamGrant = (
+  request: Request,
+  decision: AccessDecision | null
+) =>
+  new URL(request.url).searchParams.has("grant") &&
+  decision?.kind !== "accepted";
+
 const PRESENCE_WINDOW_MS = 30_000;
 /** Failed key attempts one client may make in a minute before it gets 429. */
 const FAILED_KEY_LIMIT = 20;
@@ -1983,10 +1990,7 @@ export const createPortableApp = (options: {
         registry.store,
         streamSecret
       );
-      if (
-        new URL(request.url).searchParams.has("grant") &&
-        streamDecision?.kind !== "accepted"
-      ) {
+      if (rejectedStreamGrant(request, streamDecision)) {
         return withOrigin(
           Response.json({ message: "Invalid stream grant." }, { status: 401 })
         );
