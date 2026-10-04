@@ -125,7 +125,15 @@ try {
     await page.getByRole("alert").getByText("Paste the API key").waitFor();
     step("an empty key asks for one");
 
+    const keyRequest = page.waitForRequest(
+      (request) =>
+        new URL(request.url()).pathname === "/me" && request.method() === "GET"
+    );
     await signIn("not-a-real-key");
+    const sentKeyRequest = await keyRequest;
+    const keyRequestHeaders = sentKeyRequest.headers();
+    assert.equal(keyRequestHeaders.traceparent, undefined);
+    assert.equal(keyRequestHeaders.tracestate, undefined);
     await page
       .getByRole("alert")
       .getByText("That API key does not work.")

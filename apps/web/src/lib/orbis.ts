@@ -84,7 +84,9 @@ const run = async <A, E>(
         return yield* operation(client);
       }).pipe(
         Effect.provide(FetchHttpClient.layer),
-        Effect.provideService(FetchHttpClient.Fetch, trackedFetch)
+        Effect.provideService(FetchHttpClient.Fetch, trackedFetch),
+        // The API's CORS policy does not allow tracing headers.
+        Effect.provideService(HttpClient.TracerPropagationEnabled, false)
       ),
       signal === undefined ? undefined : { signal }
     );

@@ -100,12 +100,19 @@ test("an audio node forwards API reads and keeps grant-only Range audio local", 
     path.join(directory, "fixture.m4a"),
     Buffer.from("0123456789")
   );
+  const audioRequests: Headers[] = [];
   const upstream = Bun.serve({
-    fetch: (request) =>
-      Response.json({
+    fetch: (request) => {
+      const { pathname } = new URL(request.url);
+      if (pathname === "/api/sets/fixture/audio") {
+        audioRequests.push(new Headers(request.headers));
+        return Response.json({ message: "Invalid API key." }, { status: 401 });
+      }
+      return Response.json({
         ingress: request.headers.get("x-orbis-ingress"),
-        path: new URL(request.url).pathname,
-      }),
+        path: pathname,
+      });
+    },
     hostname: "127.0.0.1",
     port: 0,
   });
@@ -134,12 +141,16 @@ test("an audio node forwards API reads and keeps grant-only Range audio local", 
       headers: { authorization: "Bearer client-key" },
     });
     expect(denied.status).toBe(401);
+    expect(audioRequests).toHaveLength(1);
+    expect(audioRequests[0]?.get("authorization")).toBe("Bearer client-key");
+    expect(audioRequests[0]?.get("x-orbis-ingress")).toBe("funnel-forward");
     const url = new URL("/api/sets/fixture/audio", node.url);
     url.searchParams.set("grant", issueStreamGrant(secret, "fixture", "host"));
     const response = await fetch(url, { headers: { range: "bytes=2-5" } });
     expect(response.status).toBe(206);
     expect(response.headers.get("content-range")).toBe("bytes 2-5/10");
     expect(await response.text()).toBe("2345");
+    expect(audioRequests).toHaveLength(1);
   } finally {
     await node.stop(true);
     await upstream.stop(true);
