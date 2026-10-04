@@ -88,10 +88,13 @@ export const cutoverHandler =
       }
       return response;
     };
-    const path = new URL(request.url).pathname;
+    const url = new URL(request.url);
+    const path = url.pathname;
     if (
       mode.kind === "serve" ||
-      (mode.kind === "forward" && audioPath.test(path))
+      (mode.kind === "forward" &&
+        audioPath.test(path) &&
+        url.searchParams.has("grant"))
     ) {
       return handler(request, accessMode, clientAddress);
     }

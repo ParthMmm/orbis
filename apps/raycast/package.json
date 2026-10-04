@@ -42,10 +42,11 @@
     {
       "name": "serviceUrl",
       "title": "Orbis Service URL",
-      "description": "The HTTPS address of your Orbis service, such as https://orbis.example.ts.net.",
+      "description": "The HTTPS address of your Orbis service.",
       "type": "textfield",
       "required": true,
-      "placeholder": "https://orbis.example.ts.net"
+      "default": "https://orbis.p11a.xyz/api",
+      "placeholder": "https://orbis.p11a.xyz/api"
     },
     {
       "name": "deviceToken",

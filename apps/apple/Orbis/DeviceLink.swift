@@ -5,10 +5,10 @@ import Foundation
   import UIKit
 #endif
 
-/// The Orbis service this app is built for (ADR 0015). The address is not a secret: every
+/// The Orbis service this app is built for (ADR 0018). The address is not a secret: every
 /// request carries it, so the app knows it and a fresh install asks only for a sign-in.
 enum OrbisService {
-  static let address = URL(string: "https://vanta.tail01d084.ts.net:10000/api")!
+  static let address = URL(string: "https://orbis.p11a.xyz/api")!
 
   /// Where a signed-in device approves a Device Link (ADR 0016).
   static let approvalPage = "https://orbis.p11a.xyz/link"

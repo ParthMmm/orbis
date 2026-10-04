@@ -2,7 +2,7 @@
 
 The web client at `https://orbis.p11a.xyz`, built with TanStack Start and shadcn (preset `b3loz15fu`) and deployed to Cloudflare Workers with Alchemy 2 ([ADR 0015](../../docs/adr/0015-web-on-cloudflare-workers.md)).
 
-The application API, the active database, and audio stay on Vanta during the Group foundation rollout. The same Alchemy stack also deploys the [API Worker and Group](../api/README.md), which currently serve only `/api/health`. The page calls the API at the address in `alchemy.run.ts` (`ORBIS_API_URL`) with the Person's own key, and plays audio from Vanta through stream grants. The Worker never sees a key.
+The [API Worker and Group](../api/README.md) own the application API and production data after the 2026-10-03 cutover. The page calls `https://orbis.p11a.xyz/api`, configured in `alchemy.run.ts` (`ORBIS_API_URL`), with the Person's own key. Audio stays on Vanta and plays through stream grants. The web Worker never sees a key. [#195](https://github.com/ParthMmm/orbis/issues/195) tracks the remaining production acceptance checks.
 
 ## Sign in to Cloudflare
 

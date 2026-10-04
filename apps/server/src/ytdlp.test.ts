@@ -81,6 +81,19 @@ test("the argument list is fixed and the URL follows --", () => {
   ]);
   expect(argv).not.toContain("--cookies");
   expect(ytdlpArgs(bin, "/m/a.part", url, "/c.txt")).toContain("--cookies");
+  const clientArgv = ytdlpArgs(
+    bin,
+    "/m/a.part",
+    url,
+    undefined,
+    "web_embedded"
+  );
+  expect(clientArgv[clientArgv.indexOf("--extractor-args") + 1]).toBe(
+    "youtube:player_client=web_embedded"
+  );
+  expect(clientArgv.indexOf("--extractor-args")).toBeLessThan(
+    clientArgv.indexOf("--")
+  );
 });
 
 test("a failed run deletes the partial file", async () => {
@@ -101,7 +114,62 @@ test("a failed run deletes the partial file", async () => {
   }
 });
 
-test("cookies are tried only after an anonymous run fails", async () => {
+test("a YouTube sign-in challenge retries with the web_embedded client", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "orbis-ytdlp-"));
+  const destination = path.join(root, "a.part");
+  const calls: (readonly string[])[] = [];
+  const run: YtdlpRunner = async (argv) => {
+    if (argv.includes("--version")) {
+      return { code: 0, stdout: "x" };
+    }
+    calls.push(argv);
+    if (!argv.includes("--extractor-args")) {
+      return {
+        code: 1,
+        stderr: "ERROR: [youtube] x: Sign in to confirm you're not a bot.",
+        stdout: "",
+      };
+    }
+    await Bun.write(outputOf(argv), "audio");
+    return { code: 0, stdout: "" };
+  };
+  try {
+    await download(run, destination);
+    expect(calls.length).toBe(2);
+    const [, retry] = calls;
+    expect(calls[0]).not.toContain("--extractor-args");
+    expect(retry?.[retry.indexOf("--extractor-args") + 1]).toBe(
+      "youtube:player_client=web_embedded"
+    );
+    expect(await Bun.file(destination).text()).toBe("audio");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("a SoundCloud failure gets no YouTube client retry", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "orbis-ytdlp-"));
+  const destination = path.join(root, "a.part");
+  const calls: (readonly string[])[] = [];
+  const run: YtdlpRunner = (argv) => {
+    if (argv.includes("--version")) {
+      return Promise.resolve({ code: 0, stdout: "x" });
+    }
+    calls.push(argv);
+    return Promise.resolve({ code: 1, stdout: "" });
+  };
+  try {
+    await expect(
+      download(run, destination, soundCloudUrl)
+    ).rejects.toBeDefined();
+    expect(calls.length).toBe(1);
+    expect(calls[0]).not.toContain("--extractor-args");
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});
+
+test("cookies are tried only after the anonymous attempts fail", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "orbis-ytdlp-"));
   const destination = path.join(root, "a.part");
   const calls: (readonly string[])[] = [];
@@ -118,9 +186,12 @@ test("cookies are tried only after an anonymous run fails", async () => {
   };
   try {
     await download(run, destination, youTubeUrl, "/c.txt");
-    expect(calls.length).toBe(2);
+    expect(calls.length).toBe(3);
     expect(calls[0]).not.toContain("--cookies");
-    expect(calls[1]).toContain("--cookies");
+    expect(calls[0]).not.toContain("--extractor-args");
+    expect(calls[1]).not.toContain("--cookies");
+    expect(calls[1]).toContain("--extractor-args");
+    expect(calls[2]).toContain("--cookies");
     expect(await Bun.file(destination).exists()).toBe(true);
   } finally {
     await rm(root, { force: true, recursive: true });
@@ -171,7 +242,8 @@ const orderFor = async (url: string) => {
 };
 
 test("YouTube tries yt-dlp first and SoundCloud tries Cobalt first", async () => {
-  expect(await orderFor(youTubeUrl)).toEqual(["ytdlp", "cobalt"]);
+  // The YouTube yt-dlp attempt retries with the alternate client before Cobalt.
+  expect(await orderFor(youTubeUrl)).toEqual(["ytdlp", "ytdlp", "cobalt"]);
   expect(await orderFor(soundCloudUrl)).toEqual(["cobalt", "ytdlp"]);
 });
 
