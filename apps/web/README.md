@@ -2,7 +2,7 @@
 
 The web client at `https://orbis.p11a.xyz`, built with TanStack Start and shadcn (preset `b3loz15fu`) and deployed to Cloudflare Workers with Alchemy 2 ([ADR 0015](../../docs/adr/0015-web-on-cloudflare-workers.md)).
 
-The API, the database, and audio stay on Vanta. The page calls the API at the address in `alchemy.run.ts` (`ORBIS_API_URL`) with the Person's own key, and plays audio from Vanta through stream grants. The Worker never sees a key.
+The application API, the active database, and audio stay on Vanta during the Group foundation rollout. The same Alchemy stack also deploys the [API Worker and Group](../api/README.md), which currently serve only `/api/health`. The page calls the API at the address in `alchemy.run.ts` (`ORBIS_API_URL`) with the Person's own key, and plays audio from Vanta through stream grants. The Worker never sees a key.
 
 ## Sign in to Cloudflare
 
@@ -19,7 +19,7 @@ cd apps/web
 bun run deploy     # alchemy deploy --stage prod
 ```
 
-Alchemy builds with Vite, uploads one Worker with its static assets, and attaches `orbis.p11a.xyz`. Deploy state lives on Cloudflare (`Cloudflare.state()`), so any machine with the profile deploys the same stack. `bun alchemy deploy --stage prod --dry-run` shows the plan without applying it.
+Alchemy builds with Vite, uploads the web Worker with its static assets and the API Worker with its SQLite Group, and attaches `orbis.p11a.xyz`. Deploy state lives on Cloudflare (`Cloudflare.state()`), so any machine with the profile deploys the same stack. `bun alchemy deploy --stage prod --dry-run` shows the plan without applying it.
 
 ## Destroy
 
@@ -27,7 +27,7 @@ Alchemy builds with Vite, uploads one Worker with its static assets, and attache
 bun run destroy    # alchemy destroy --stage prod
 ```
 
-This removes the Worker and the custom domain. The API on Vanta is not part of this stack.
+This removes both Workers, the custom domain, the `/api/*` route, and the Group namespace with its stored data. The active API on Vanta is not part of this stack. Export Group data before destroying a stack once the API migration has cut over.
 
 ## Develop
 

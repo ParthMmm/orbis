@@ -1,8 +1,8 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 
-import { Database } from "./db/database.js";
 import { listens } from "./db/schema.js";
+import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import { LibraryPerson } from "./library-person.js";
 

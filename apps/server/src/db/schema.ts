@@ -250,3 +250,39 @@ export const schema = {
   setCues,
   sets,
 };
+
+export const people = sqliteTable("people", {
+  autoDownload: integer("auto_download", { mode: "boolean" })
+    .notNull()
+    .default(true),
+  filters: text("filters").notNull().default("[]"),
+  id: text("id").primaryKey(),
+  removed: integer("removed", { mode: "boolean" }).notNull(),
+  social: integer("social", { mode: "boolean" }).notNull().default(false),
+  username: text("username").notNull(),
+});
+
+export const apiKeys = sqliteTable("api_keys", {
+  addedAt: text("added_at").notNull(),
+  digest: text("digest").notNull().unique(),
+  id: text("id").primaryKey(),
+  label: text("label").notNull(),
+  lastUsedAt: text("last_used_at"),
+  personId: text("person_id")
+    .notNull()
+    .references(() => people.id),
+  scope: text("scope", { enum: ["daily", "admin", "node"] }).notNull(),
+});
+
+export const invites = sqliteTable("invites", {
+  digest: text("digest").primaryKey(),
+  expiresAt: text("expires_at").notNull(),
+  personId: text("person_id")
+    .notNull()
+    .references(() => people.id),
+  used: integer("used", { mode: "boolean" }).notNull(),
+});
+
+export const trustMigrations = sqliteTable("trust_migrations", {
+  id: integer("id").primaryKey(),
+});

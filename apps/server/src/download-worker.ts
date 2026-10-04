@@ -13,6 +13,7 @@ import { MediaStore } from "./media-store.js";
 
 export interface DownloadWorkerOptions {
   readonly logging?: LoggingOptions | undefined;
+  readonly recoverInterruptedDownloads?: boolean;
   readonly startWorker?: boolean;
 }
 
@@ -87,9 +88,10 @@ export class DownloadWorker extends Context.Service<
         const wakeQueue = yield* Queue.unbounded<true>();
         const progress = new Map<string, DownloadProgress>();
         const aborts = new Map<string, AbortController>();
-        const requeued = yield* library
-          .resetStuckDownloads()
-          .pipe(Effect.orDie);
+        const requeued =
+          options.recoverInterruptedDownloads === false
+            ? 0
+            : yield* library.resetStuckDownloads().pipe(Effect.orDie);
         yield* Effect.logInfo("download worker started").pipe(
           Effect.annotateLogs({
             requeued,

@@ -25,7 +25,7 @@ export const createInvite = (
   personId: string,
   options: { readonly ttlMs: number; readonly now: number }
 ) => {
-  const code = randomBytes(32).toString("base64url");
+  const code = Buffer.from(randomBytes(32)).toString("base64url");
   const expiresAt = new Date(options.now + options.ttlMs).toISOString();
   return mutateTrustStore(
     path,

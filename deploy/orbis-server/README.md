@@ -222,57 +222,55 @@ journalctl --user -u orbis-canary --since today -o cat |
 
 A download's wide event (`job: audio-download`) lists every backend attempt in `logs`: bytes received, yt-dlp's exit code and the end of its error output, Cobalt's tunnel status and content length, and ffprobe's error output. The canary's event (`job: download-canary`) holds the same evidence for each check. The startup line `youtube downloads use cobalt only` means `ORBIS_YTDLP_BIN` is missing; see [Give the service yt-dlp](#give-the-service-yt-dlp).
 
-## Back up the database
+## Back up the Group
 
-Retained Audio downloads again, so only the database and the trust store need a copy. A nightly user timer runs `apps/server/src/backup.ts`, which writes a consistent snapshot with `VACUUM INTO` (safe while the service writes), then `rsync`s the newest 14 snapshots to a destination the Host chooses. Prefer a different disk or host from the data directory. Set this up before the first friend key is minted.
+After cutover, the nightly timer calls `scripts/data-transfer.ts backup`, which fetches the Group's SQL export with the node key and retains the newest 14 SQL files. The existing script then rsyncs the staging directory to `ORBIS_BACKUP_DEST`. SQL includes library and trust tables, so new backups do not need `devices.json`.
 
-Keep the installed backup service, timer, destination, and environment file during an update. Do not recopy the repository templates over them.
-
-For a first install, adapt `orbis-backup.service` before installing it and its timer. Set `ExecStart=%h/Developer/orbis-service/deploy/orbis-server/orbis-backup.sh`. The script changes into the checkout that holds it, so this unit needs no separate `WorkingDirectory`. Set `ORBIS_DATA_DIR` explicitly in the environment file, because `orbis-backup.sh` otherwise defaults to `$HOME/orbis-service-data`.
-
-For a first install only, create the environment file with the Host's chosen destination:
+Keep the installed service, timer, destination, and environment file. Do not recopy the repository templates over them. At cutover, add these values to the existing private environment file without changing its destination:
 
 ```sh
-cat > ~/.config/orbis-backup.env <<'CONF'
-ORBIS_BACKUP_DEST=user@backup-host:orbis-backups/
-ORBIS_DATA_DIR=/home/parth/Developer/orbis-service-data
-CONF
-chmod 600 ~/.config/orbis-backup.env
+ORBIS_GROUP_API_URL=https://orbis.p11a.xyz/api
+ORBIS_NODE_KEY=<the imported node key>
 ```
 
-For installed units, check and run the timer:
+Keep `~/.config/orbis-backup.env` at mode `0600`. Keep the current `ORBIS_BACKUP_STAGING` if one exists. A remote destination requires key-based SSH for the service user. The script does not change the installed units or network configuration.
 
-```sh
-systemctl --user daemon-reload
-systemctl --user enable --now orbis-backup.timer
-systemctl --user start orbis-backup.service   # first run now
-systemctl --user list-timers orbis-backup.timer --no-pager
-```
-
-Use an absolute path for `ORBIS_DATA_DIR` in `~/.config/orbis-backup.env`. Systemd does not expand `~` or `$HOME` in that file. Keep the existing destination when adding the data path.
-
-A remote destination needs a key-based SSH login for the service user. `devices.json` holds only key digests, but treat the copy as private because it lists every Person.
+Before cutover, `apps/server/src/backup.ts` remains available for local SQLite snapshots. Preserve the installed backup configuration until the Group owns the data.
 
 ### Restore
 
-Restore into a scratch directory first, and start the service against it once before trusting a backup:
+Restore into a new scratch database before replacing service data:
 
 ```sh
-mkdir -p ~/orbis-restore-test
-rsync -a user@backup-host:orbis-backups/ ~/orbis-backups-restored/
-LATEST="$(ls -1 ~/orbis-backups-restored | tail -1)"
-cp ~/orbis-backups-restored/$LATEST/{library.sqlite,devices.json} ~/orbis-restore-test/
-cd ~/Developer/orbis-service/apps/server
-ORBIS_DATA_DIR=~/orbis-restore-test ORBIS_PORT=4320 ORBIS_DEVICE_PORT=4321 \
-  "$HOME/.local/share/mise/installs/bun/1.4.1/bin/bun" src/index.ts &
-sleep 3
-curl -s -H "Authorization: Bearer $ORBIS_DEVICE_TOKEN" http://127.0.0.1:4321/sets | head -c 200
-kill %1
+bun scripts/data-transfer.ts restore /private/backups/chosen.sql /private/restore/library.sqlite
 ```
 
-To recover for real, stop `orbis-server`, copy `library.sqlite` and `devices.json` from the chosen snapshot into `~/Developer/orbis-service-data` (keep the broken files aside), and start the unit. `apps/server/src/backup.test.ts` runs the same restore in an automated test.
+Set `ORBIS_DATA_DIR` to the scratch directory and start the Bun API against it. Check the Host's Library, Playlists, Listening Queue, positions, and edited titles. For a rollback after Group writes, use a current Group export. The Vanta copy from before cutover is stale.
+
+See [Transfer and restore Group data](../../docs/data-transfer.md) for import, node authentication, and the repeatable workerd and Bun verification command.
 
 ## Cut over to Cloudflare and an API-only Funnel
+
+### Prepare the Group cutover
+
+ADR 0018 replaces the API on Vanta with the Group. Issues [#192](https://github.com/ParthMmm/orbis/issues/192), [#193](https://github.com/ParthMmm/orbis/issues/193), and [#194](https://github.com/ParthMmm/orbis/issues/194) must pass their acceptance checks before moving live data in [#195](https://github.com/ParthMmm/orbis/issues/195).
+
+The Vanta process has three modes. With both switches unset, it serves the API as before. `ORBIS_READ_ONLY=true` refuses `POST`, `PUT`, `PATCH`, and `DELETE` with `503` and `Retry-After: 60`; reads and audio continue. The process stops starting Download work and recording key usage in this mode. Restart into this mode before export so work from the previous process has stopped.
+
+`ORBIS_API_FORWARD_URL=https://orbis.p11a.xyz/api` forwards every request except `/sets/:id/audio` to the Group. It preserves the key, body, query, redirects, and event stream. The local listener also forwards, so it cannot write a second copy of the Library after cutover. Audio stays on Vanta. The process refuses to start if forwarding and read-only mode are both enabled.
+
+Forwarded requests emit `ingress: "funnel-forward"` with the key's label, request path, and status. Keys and query strings stay out of the log. Read these events with:
+
+```sh
+	journalctl --user -u orbis-server --since '14 days ago' -o cat |
+	  jq -cR 'fromjson? | select(.ingress == "funnel-forward") | {timestamp, keyLabel, method, path, status}'
+```
+
+An empty result is evidence only when the journal covers the whole interval and forwarding was active throughout it. Keep forwarding until the Host confirms 14 days without requests, per [#199](https://github.com/ParthMmm/orbis/issues/199).
+
+Set these switches in a dedicated service drop-in. Preserve the existing unit, provider settings, data directory, and backup and canary timers. To cancel a read-only window before switching clients, remove the dedicated switch and restart the same revision. After the Group has accepted writes, restore its current export before returning to the Vanta API; the earlier Vanta copy is stale. Neither switch changes a Tailscale rule.
+
+Verify the controls locally with `bun test src/cutover-http.test.ts` from `apps/server`. This repository check does not move live data or perform a deployment.
 
 Friends open `https://orbis.p11a.xyz`. Alchemy deploys the web client from `apps/web` to Cloudflare Workers. The browser sends its key directly to `https://vanta.tail01d084.ts.net:10000/api`, and Retained Audio stays on Vanta. The Funnel on port `10000` serves only `/api`. See [ADR 0015](../../docs/adr/0015-web-on-cloudflare-workers.md).
 
@@ -345,3 +343,34 @@ sudo tailscale serve --https=8444 off
 ```
 
 Removing the Serve rule does not affect the jellyfin Funnel on `8443`. The database and trust store stay in `~/Developer/orbis-service-data`. Do not point the rule back at the local port 4310, which would restore token-free access from the tailnet.
+
+## Group foundation on Cloudflare
+
+The `OrbisWeb` Alchemy stack now also owns an API Worker on `orbis.p11a.xyz/api/*` and one SQLite Group Durable Object. Only health is available in this foundation. The web client's API URL, active database, and audio remain on Vanta until the ADR 0018 cutover. Deploy, destroy, migration generation, local schema verification, and post-deploy HTTP checks are in the [API deploy README](../../apps/api/README.md). Destroying the stack also destroys Group data.
+
+## Trust data in SQLite
+
+The service and `bun run trust` store People, API key digests, and Invites in `library.sqlite`. On the first start, the service imports `devices.json` in one SQLite transaction. It copies key and Invite digests unchanged, then renames the file to `devices.json.migrated`. A malformed file or a failed transaction leaves the source file in place and prevents startup. Later starts use the tables and ignore any new `devices.json`. Unexpired Invites survive a restart.
+
+`ORBIS_DATA_DIR` selects the directory for both commands. To select a database explicitly, use `bun run trust key list --database /path/to/library.sqlite`. The old `--devices` option still selects a legacy file and imports it into `library.sqlite` in the same directory. The nightly SQLite snapshot includes all trust tables. Keep the renamed JSON file until you no longer need rollback.
+
+To roll back to the previous build:
+
+1. Stop the service.
+2. Preserve a copy of the current `library.sqlite` and its WAL files.
+3. Restore `devices.json.migrated` as `devices.json`.
+4. Restore the previous build and start the service.
+
+The restored JSON contains trust data from before the migration. Keys, People, and Invites added or changed after migration do not carry back to the old build. Keep the SQLite copy so those changes remain available if you return to this build.
+
+### Run the audio node
+
+After moving the library database to the Group, run `bun run node` from `apps/server`. Build its entrypoint with `bun run build:node` and start the result with `bun dist/node.js`.
+
+Set `ORBIS_GROUP_URL` to the API base URL, such as `https://orbis.p11a.xyz/api`, and `ORBIS_NODE_KEY` to a key minted with `bun run trust key add --person host --label vanta --scope node`. The Group accepts that key on `/api/node`; it does not grant client API access. Set `ORBIS_AUDIO_DIR` to the existing audio directory and `ORBIS_STREAM_SECRET_FILE` to the existing 32-byte `stream-grant.key` file. The node refuses to start if that secret is missing or has the wrong size. `ORBIS_NODE_HOST` and `ORBIS_NODE_PORT` default to `127.0.0.1` and `4311`. The listener serves grant-authorized audio. Keep the existing provider settings, yt-dlp binary, cookies, ffprobe, and ffmpeg.
+
+The node opens an outbound WebSocket and reconnects with exponential backoff, capped at 30 seconds. Its files are its only persistent state. Each connection reports validated audio files. The Group reconciles missing and unreferenced files and resumes interrupted Downloads using the existing job rows. Download commands and replies carry a Set ID and a request ID; a result from a canceled attempt cannot finish a later attempt.
+
+Keep the nightly canary service and timer. Its three fixtures across two configured backends still produce six checks through `DownloadBackends` and `MediaStore`, which the node also uses.
+
+Run `bun run --cwd apps/api test:node` to exercise the local Group with a fake node and the built node process. The journey writes a protocol transcript and process log under `.cache/audio-node/<run>/`, including a forced process stop, recovery of the same job, progress through the API, and file deletion after removing the Library Entry. It needs ffmpeg and ffprobe on `PATH`.

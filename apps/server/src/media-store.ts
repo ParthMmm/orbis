@@ -1,21 +1,11 @@
-import { mkdir, rename, rm } from "node:fs/promises";
+import { mkdir, readdir, rename, rm } from "node:fs/promises";
 import path from "node:path";
 
-import { eq, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { Database } from "./db/database.js";
-import { downloadJobs, setCues, sets } from "./db/schema.js";
+import { releaseAudio } from "./audio-release.js";
 import { LibraryError } from "./errors.js";
 import { outputTail } from "./logging.js";
-
-const releaseError = <E>(error: E) =>
-  error instanceof LibraryError
-    ? error
-    : new LibraryError({
-        message: "Could not release audio.",
-        statusCode: 500,
-      });
 
 export interface MediaStoreOptions {
   readonly audioDir?: string;
@@ -65,6 +55,9 @@ const downloadFailed = (reason: string) =>
 export class MediaStore extends Context.Service<
   MediaStore,
   {
+    readonly inventory: (
+      onlySetId?: string
+    ) => Effect.Effect<readonly (StoredAudio & { readonly setId: string })[]>;
     readonly fileFor: (id: string, format: string) => string;
     readonly partialPath: (id: string) => string;
     readonly ensureDirectory: () => Effect.Effect<void>;
@@ -86,49 +79,23 @@ export class MediaStore extends Context.Service<
   }
 >()("@orbis/MediaStore") {
   static release(id: string, options: MediaStoreOptions = {}) {
-    return Effect.gen(function* releaseAudio() {
-      const db = yield* Database;
-      yield* db.transaction((tx) =>
-        Effect.gen(function* releaseUnreferencedAudio() {
-          const [reference] = yield* tx.all<{ readonly present: number }>(sql`
-          SELECT 1 AS present FROM library_entries WHERE set_id = ${id}
-          UNION ALL SELECT 1 AS present FROM playlist_sets WHERE set_id = ${id}
-          UNION ALL SELECT 1 AS present FROM queue_entries WHERE set_id = ${id}
-          LIMIT 1
-        `);
-          if (reference) {
-            return;
-          }
-          const directory = options.audioDir ?? path.join(".", "audio");
-          yield* Effect.tryPromise({
-            catch: () =>
-              new LibraryError({
-                message: "Could not release audio.",
-                statusCode: 500,
-              }),
-            try: () =>
-              Promise.all(
-                ["ogg", "mp3", "m4a"].map((suffix) =>
-                  rm(path.join(directory, `${id}.${suffix}`), { force: true })
-                )
-              ),
-          });
-          yield* tx
-            .update(sets)
-            .set({
-              downloadState: "none",
-              retainedAudioBytes: null,
-              retainedAudioFormat: null,
-              tracklistRunId: null,
-              tracklistRunStartedAt: null,
-              tracklistState: "pending",
-            })
-            .where(eq(sets.id, id));
-          yield* tx.delete(downloadJobs).where(eq(downloadJobs.setId, id));
-          yield* tx.delete(setCues).where(eq(setCues.setId, id));
-        })
-      );
-    }).pipe(Effect.mapError(releaseError));
+    return releaseAudio(id, () => {
+      const directory = options.audioDir ?? path.join(".", "audio");
+      return Effect.tryPromise({
+        catch: () =>
+          new LibraryError({
+            message: "Could not release audio.",
+            statusCode: 500,
+          }),
+        try: async () => {
+          await Promise.all(
+            ["ogg", "mp3", "m4a"].map((suffix) =>
+              rm(path.join(directory, `${id}.${suffix}`), { force: true })
+            )
+          );
+        },
+      });
+    });
   }
 
   static layer(options: MediaStoreOptions = {}): Layer.Layer<MediaStore> {
@@ -347,13 +314,43 @@ export class MediaStore extends Context.Service<
     });
     const removeFiles = Effect.fn("MediaStore.removeFiles")((id: string) =>
       Effect.promise(() =>
-        Promise.allSettled(
-          ["part", "ogg", "mp3", "m4a"].map((suffix) =>
+        Promise.all(
+          ["part", "part.ytdl", "ogg", "mp3", "m4a"].map((suffix) =>
             rm(path.join(audioDir, `${id}.${suffix}`), { force: true })
           )
         )
       )
     );
+    const inventory = Effect.fn("MediaStore.inventory")(function* inventory(
+      onlySetId?: string
+    ) {
+      const names = yield* Effect.promise(() => readdir(audioDir));
+      const files: (StoredAudio & { readonly setId: string })[] = [];
+      for (const name of names) {
+        const match = /^(?<id>[a-zA-Z0-9_-]+)\.(?<format>mp3|ogg|m4a)$/u.exec(
+          name
+        );
+        if (!match?.groups) {
+          continue;
+        }
+        const { id: setId, format } = match.groups;
+        if (!setId || !format || (onlySetId && onlySetId !== setId)) {
+          continue;
+        }
+        const metadata = yield* probe(fileFor(setId, format)).pipe(
+          Effect.option
+        );
+        if (metadata._tag === "Some") {
+          files.push({
+            bytes: Bun.file(fileFor(setId, format)).size,
+            durationSeconds: metadata.value.durationSeconds,
+            format,
+            setId,
+          });
+        }
+      }
+      return files;
+    });
     const ensureDirectory = Effect.fn("MediaStore.ensureDirectory")(() =>
       Effect.promise(() => mkdir(audioDir, { recursive: true }))
     );
@@ -362,6 +359,7 @@ export class MediaStore extends Context.Service<
       MediaStore.of({
         ensureDirectory,
         fileFor,
+        inventory,
         partialPath,
         readReady,
         removeFiles,

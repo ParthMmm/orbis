@@ -8,7 +8,7 @@ import type {
 import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { Database } from "./db/database.js";
+import { releaseAudio } from "./audio-release.js";
 import {
   downloadJobs,
   downloadRequesters,
@@ -19,6 +19,7 @@ import {
   playlists,
   sets,
 } from "./db/schema.js";
+import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import type { PersonRecord } from "./identity.js";
 import {
@@ -26,14 +27,15 @@ import {
   MAX_SETS_PER_PLAYLIST,
 } from "./library-limits.js";
 import { LibraryPerson } from "./library-person.js";
-import { MediaStore } from "./media-store.js";
 import type { EnrichedMetadata, SourceExtras } from "./metadata.js";
 import { normalizeSourceUrl } from "./source-url.js";
 import { resolveVisibleSet } from "./visibility.js";
 import type { SourceDetails } from "./ytdlp-metadata.js";
 
 interface LibraryOptions {
-  readonly audioDir?: string;
+  readonly releaseAudio?: (
+    id: string
+  ) => Effect.Effect<void, LibraryError, Database>;
   readonly people?: () => readonly PersonRecord[];
 }
 
@@ -204,7 +206,7 @@ export class Library extends Context.Service<
           personId,
         }).pipe(Effect.provideService(Database, db));
       const release = (id: string) =>
-        MediaStore.release(id, options).pipe(
+        (options.releaseAudio ?? releaseAudio)(id).pipe(
           Effect.provideService(Database, db)
         );
 

@@ -2,7 +2,6 @@ import type { Cue, Tracklist } from "@orbis/contracts";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { Duration, Effect } from "effect";
 
-import { Database } from "./db/database.js";
 import {
   libraryEntries,
   playlistSets,
@@ -10,6 +9,7 @@ import {
   setCues,
   sets,
 } from "./db/schema.js";
+import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import { Versos } from "./versos.js";
 
@@ -211,12 +211,14 @@ export const runClaimedTracklist = Effect.fn("Tracklists.runClaimed")(
         Effect.annotateLogs({ set: claim.id })
       );
       return "failed" as const;
-    })
+    }).pipe(Effect.onInterrupt(() => releaseClaim(claim, "pending")))
 );
 
 export const runTracklist = Effect.fn("Tracklists.run")((id: string) =>
-  Effect.gen(function* runTracklistEffect() {
-    const claim = yield* claimTracklist(id);
-    return claim ? yield* runClaimedTracklist(claim) : "pending";
-  })
+  Effect.uninterruptibleMask((restore) =>
+    Effect.gen(function* runTracklistEffect() {
+      const claim = yield* claimTracklist(id);
+      return claim ? yield* restore(runClaimedTracklist(claim)) : "pending";
+    })
+  )
 );
