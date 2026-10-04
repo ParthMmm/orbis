@@ -88,7 +88,11 @@ export const initializeTrustDatabase = (input: {
         .get() &&
       db.query("SELECT id FROM trust_migrations WHERE id = 1").get();
     if (initialized) {
-      const definition = db.query<{ sql: string }, []>("SELECT sql FROM sqlite_master WHERE name = 'api_keys'").get();
+      const definition = db
+        .query<{ sql: string }, []>(
+          "SELECT sql FROM sqlite_master WHERE name = 'api_keys'"
+        )
+        .get();
       if (definition && !definition.sql.includes("'node'")) {
         db.transaction(() => {
           db.run(`CREATE TABLE api_keys_node_scope (

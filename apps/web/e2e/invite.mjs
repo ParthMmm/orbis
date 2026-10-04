@@ -4,12 +4,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
+
+import { readTrustStore } from "./trust-store.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-invite");
@@ -167,7 +169,7 @@ try {
     const link = shown.trim();
     assert.match(link, new RegExp(`^${webUrl}/claim#[A-Za-z0-9_-]{40,}$`, "u"));
     const code = link.slice(link.indexOf("#") + 1);
-    const storeAfterCreate = await readFile(devicesPath, "utf-8");
+    const storeAfterCreate = JSON.stringify(readTrustStore(dataDirectory));
     assert.ok(!storeAfterCreate.includes(code));
     assert.ok(storeAfterCreate.includes(sha256(code)));
     await issued.getByRole("button", { name: "Copy link" }).click();
@@ -200,7 +202,7 @@ try {
     const me = await callApi("/me", friendKey);
     assert.equal(me.status, 200);
     assert.equal(me.body.username, "alice");
-    const store = JSON.parse(await readFile(devicesPath, "utf-8"));
+    const store = readTrustStore(dataDirectory);
     const minted = store.keys.find(
       (record) => record.tokenHash === sha256(friendKey)
     );
@@ -234,7 +236,7 @@ try {
     });
     step("reopening the same link fails with a clear message and mints no key");
 
-    const after = JSON.parse(await readFile(devicesPath, "utf-8"));
+    const after = readTrustStore(dataDirectory);
     assert.equal(
       after.keys.filter((record) => record.personId === alice.id).length,
       1
