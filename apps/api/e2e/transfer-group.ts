@@ -211,14 +211,14 @@ try {
         new Request(`http://localhost${route}`, {
           headers: { authorization: `Bearer ${hostToken}` },
         }),
-        "local"
+        "device"
       );
       const group = await send(route.slice(1), undefined, hostToken);
       const bun = await restoredApp.handler(
         new Request(`http://localhost${route}`, {
           headers: { authorization: `Bearer ${hostToken}` },
         }),
-        "local"
+        "device"
       );
       assert.equal(original.status, 200, `Source ${route}`);
       assert.equal(group.status, 200, `Group ${route}`);
