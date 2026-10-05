@@ -12,6 +12,7 @@
     "start": "bun dist/node.js",
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
     "test": "bun test",
+    "trust": "bun src/trust.ts",
     "diagnostics": "effect-tsgo diagnostics --project tsconfig.json --format text",
     "eval": "evalite run",
     "db:generate": "drizzle-kit generate",
