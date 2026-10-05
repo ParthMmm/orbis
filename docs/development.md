@@ -1,6 +1,25 @@
 # Development
 
-How to run, check, and package Orbis locally.
+Source ownership, local setup, and verification.
+
+## Find the implementation
+
+| Task | Start here |
+| --- | --- |
+| Routes, request shapes, and derived clients | [`packages/contracts/src/http-api.ts`](../packages/contracts/src/http-api.ts) |
+| Shared HTTP handlers | [`apps/server/src/app-core.ts`](../apps/server/src/app-core.ts) |
+| Local Bun API dependencies | [`apps/server/src/app.ts`](../apps/server/src/app.ts) |
+| Production Cloudflare Group | [`apps/api/src/group.ts`](../apps/api/src/group.ts) and [API README](../apps/api/README.md) |
+| Vanta audio-node startup and protocol | [`apps/server/src/node.ts`](../apps/server/src/node.ts), [`audio-node.ts`](../apps/server/src/audio-node.ts), and [operation guide](../deploy/orbis-server/README.md) |
+| Audio HTTP listener and API forwarding | [`node-http.ts`](../apps/server/src/node-http.ts) |
+| Download selection and retained files | [`download-backends.ts`](../apps/server/src/download-backends.ts) and [`media-store.ts`](../apps/server/src/media-store.ts) |
+| Identity, trust storage, and administration | [`identity.ts`](../apps/server/src/identity.ts), [`trust-storage.ts`](../apps/server/src/trust-storage.ts), and [`admin.ts`](../apps/server/src/admin.ts) |
+| Web routes and player | [`apps/web/src/routes`](../apps/web/src/routes) and [`player.tsx`](../apps/web/src/components/player/player.tsx) |
+| Apple client and project specification | [`apps/apple/Orbis`](../apps/apple/Orbis) and [`project.yml`](../apps/apple/project.yml) |
+| Native fixture setup and HTTP client | [`scripts/native-lanes.mjs`](../scripts/native-lanes.mjs), [`seed-lane-audio.mjs`](../scripts/seed-lane-audio.mjs), and [`LaneService.swift`](../apps/apple/OrbisUITests/LaneService.swift) |
+| Domain terms and decisions | [CONTEXT.md](../CONTEXT.md) and [ADRs](adr) |
+
+Resolve a filename with `rg --files <directory>` before reading it. Server HTTP tests live beside the implementation in `apps/server/src`; native fixture setup lives in the lane runner. Historical plans in `docs/plans` record earlier build sequences and are not current setup instructions.
 
 ## Setup
 
@@ -11,7 +30,9 @@ bun install
 bun run dev
 ```
 
-The desktop connects to `http://127.0.0.1:4310`. Run only the API with `bun run --filter @orbis/server dev`. Run only the desktop with `bun run --filter @orbis/desktop dev`.
+`bun run dev` runs the workspace development tasks, including the local Bun API, web client, and legacy desktop client. Select one workspace with `bun run --filter @orbis/server dev`, `bun run --filter @orbis/web dev`, or `bun run --filter @orbis/desktop dev`.
+
+The desktop connects to the local API at `http://127.0.0.1:4310`. Web API configuration is in the [web README](../apps/web/README.md#develop). Local Bun storage is a development adapter; the [Cloudflare Group](../apps/api/README.md) owns production library data.
 
 The server stores `library.sqlite` under `data/` in its working directory (`apps/server/data/` with the workspace scripts). Set `ORBIS_DATA_DIR` to an absolute path for a stable custom location. `ORBIS_PORT` overrides the loopback port; set the same value for both processes. This development setup does not launch a bundled server from the packaged desktop app.
 
@@ -45,18 +66,44 @@ Run the build before the smoke check. The smoke check launches Electron and a se
 
 Desktop builds package the current host platform into `apps/desktop/out/`. Signing, installers, and cross-platform release automation are not configured. Server builds need Bun and installed workspace dependencies.
 
+## Verification lanes
+
+Build shared contracts before running a focused lane from the repository root:
+
+```sh
+	bun run --filter @orbis/contracts build
+```
+
+| Change | Command from repo root | Evidence and prerequisites |
+| --- | --- | --- |
+| Bun HTTP handlers | `bun run --filter @orbis/server test` | Real database HTTP tests in `apps/server/src`; retain command output for failures |
+| Cloudflare Group and audio node | `bun run --filter @orbis/api test` | Workerd journeys write `.cache/api-group`, `.cache/audio-node`, `.cache/api-grants`, and `.cache/api-recovery`; requires ffmpeg and ffprobe |
+| Group data transfer | `bun run --filter @orbis/api test:transfer` | See [data transfer](data-transfer.md) for restore and comparison artifacts |
+| Web client | `bun run --filter @orbis/web test` | Production browser journeys and artifacts listed in [web verification](../apps/web/README.md#verify-the-migration); install Chromium with `bun x playwright install chromium` |
+| Apple client | `bun run native:lanes --journeys` | Simulator journeys; see [native clients](#native-clients) for outputs and required tools |
+
+These local checks use disposable storage. Record production acceptance separately on the issue.
+
+### Retain verification evidence
+
+Before rerunning a lane, copy its logs, result JSON, screenshots, and result bundles to a unique directory for that run. Native runs replace `apps/apple/DerivedData/result.xcresult` and the screenshot output directory. Preserve the xcresult and console output even when a failed run exports no screenshots.
+
+Record the commit, exact command, target platform and simulator ID, result, and artifact path together. For a failure, include the failed test and source line from the log or result bundle. Link this record from the issue or PR so the next agent can find it without reading the session history. Keep credentials out of artifacts.
+
 ## Native clients
 
-`apps/apple/Orbis` builds one SwiftUI app for iOS and macOS from an xcodegen specification. The generated project and derived data are not tracked.
+`apps/apple/Orbis` builds one SwiftUI app for iOS and macOS from an xcodegen specification. The generated project and derived data are not tracked. Native lanes require macOS, Xcode, xcodegen, and an available simulator. Use the configured device host when working from Linux.
 
 ```sh
 bun run native:lanes          # unit tests and native journeys against a temporary service
 bun run native:lanes --unit   # unit tests only
 ```
 
-A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Copy the xcodegen output path from `apps/apple/DerivedData` when opening the project in Xcode.
+A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Open the generated `apps/apple/Orbis.xcodeproj` in Xcode. Build output and `result.xcresult` live under `apps/apple/DerivedData`.
 
-Every lane runs `bun run native:format` first, which checks every tracked Swift file with the Xcode toolchain's swift-format against `apps/apple/.swift-format`. swift-format ships with Xcode, so the native style gate needs no install. The check writes nothing; to fix drift, run `xcrun swift-format format --in-place` on the changed files.
+Full and unit lanes run `bun run native:format` first. Journeys-only and `--only` runs leave that check to unit lanes and CI. The style command checks Swift sources with the Xcode toolchain's swift-format against `apps/apple/.swift-format`. swift-format ships with Xcode, so the native style gate needs no install. The check writes nothing; to fix drift, run `xcrun swift-format format --in-place` on the changed files.
+
+The runner prints its screenshot directory, defaulting to `orbis-lane-shots` in the host's system temporary directory. Set `--out <unique-directory>` to choose it. Successful exports include `xcodebuild.log`, `lane.json`, attachments, and worker manifests. Follow [evidence retention](#retain-verification-evidence) before another run replaces the result bundle. For manual checks, read [UI verification](agents/ui-verification.md).
 
 ## Releases
 
