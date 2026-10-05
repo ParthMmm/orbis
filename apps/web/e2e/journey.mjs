@@ -13,7 +13,6 @@ import { chromium } from "playwright";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-library");
-const apiPort = 4470;
 const devicePort = 4471;
 const webPort = 3371;
 const apiUrl = `http://127.0.0.1:${devicePort}`;
@@ -64,8 +63,8 @@ const api = spawn("bun", ["apps/web/e2e/api-server.ts"], {
   env: {
     ...process.env,
     ORBIS_DATA_DIR: dataDirectory,
-    ORBIS_DEVICE_PORT: String(devicePort),
-    ORBIS_PORT: String(apiPort),
+    ORBIS_FIXTURE_ORIGIN: webUrl,
+    ORBIS_FIXTURE_PORT: String(devicePort),
   },
   stdio: "ignore",
 });
@@ -91,10 +90,7 @@ const web = spawn(
 const steps = [];
 const step = (name, detail = {}) => steps.push({ name, ...detail });
 try {
-  await Promise.all([
-    waitFor(`http://127.0.0.1:${apiPort}/health`),
-    waitFor(webUrl),
-  ]);
+  await Promise.all([waitFor(`${apiUrl}/health`), waitFor(webUrl)]);
   await mkdir(artifacts, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {

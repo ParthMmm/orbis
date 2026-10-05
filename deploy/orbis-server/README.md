@@ -2,7 +2,7 @@
 
 The production API and database moved to the Cloudflare Group on 2026-10-03. Vanta runs the database-free audio node as the existing systemd user service at `127.0.0.1:4311`. The Funnel on port `10000` serves audio and forwards old `/api` requests to the Group. The web client runs on Cloudflare.
 
-For Cloudflare deployment, use the [API deploy README](../../apps/api/README.md). For Group backup recovery, use [Transfer and restore Group data](../../docs/data-transfer.md). For the earlier Bun API installation, pairing, or cutover rollback, use the [legacy API archive](legacy-api.md).
+For Cloudflare deployment, use the [API deploy README](../../apps/api/README.md). For Group backup recovery, use [Transfer and restore Group data](../../docs/data-transfer.md).
 
 ## Production files and services
 
@@ -11,13 +11,12 @@ For Cloudflare deployment, use the [API deploy README](../../apps/api/README.md)
 | `~/Developer/orbis-service` | Production checkout. |
 | `~/Developer/orbis-service-data` | Retained Audio, stream secret, and canary records. The pre-cutover SQLite database and trust files are rollback records, not live Group data. |
 | `~/.config/systemd/user/orbis-server.service` | Installed service and its drop-ins. The production entrypoint is `src/node.ts`. |
-| `deploy/orbis-server/orbis-server.service` | Pre-cutover API template using `src/index.ts`. Preserve the installed audio-node unit during updates. |
 
 Keep the installed service, provider settings, backup and canary timers, and private environment files. Caddy reserves Tailscale port `443`. Keep the Jellyfin Funnel on `8443`.
 
 ## Run the audio node
 
-For a standalone audio-node process, run `bun run node` from `apps/server`. Build its entrypoint with `bun run build:node` and start the result with `bun dist/node.js`.
+For a standalone audio-node process, run `bun run node` from `apps/server`. Build its entrypoint with `bun run build` and start the result with `bun dist/node.js`.
 
 Set `ORBIS_GROUP_URL` to the API base URL, such as `https://orbis.p11a.xyz/api`, and retain the imported node key in `ORBIS_NODE_KEY`. [Transfer and restore Group data](../../docs/data-transfer.md#import-into-an-empty-group) covers node-key creation for migration. The Group accepts that key on `/api/node`. It does not grant client API access.
 
@@ -31,7 +30,7 @@ Run `bun run --cwd apps/api test:node` to exercise the local Group with a fake n
 
 ## Update the installed service
 
-Use the approved Vanta update window. Preserve the installed unit and drop-ins; the repository unit template still starts the legacy API.
+Use the approved Vanta update window. Preserve the installed unit and drop-ins.
 
 1. Check the installed unit's `WorkingDirectory` and `ExecStart` with `systemctl --user cat orbis-server`. Confirm the production checkout and audio-node entrypoint without printing private environment files.
 2. Update that checkout to the approved revision. Use the unit's exact Bun executable for the frozen install and shared-contract build. Complete both before restarting.
@@ -101,7 +100,7 @@ A download's wide event (`job: audio-download`) lists every backend attempt in `
 
 YouTube downloads try yt-dlp first and fall back to Cobalt. Without `ORBIS_YTDLP_BIN`, every YouTube download goes to Cobalt, whose tunnel returned zero bytes for long videos on 2026-09-29. yt-dlp needs Deno, and the service's default PATH does not include `~/.local/bin`, where `uv tool install` puts both.
 
-Preserve the installed provider drop-ins, `ORBIS_YTDLP_BIN`, PATH, and cookies. The worker logs `ytdlp: true` at startup when the binary is configured. The [legacy yt-dlp setup](legacy-api.md#give-the-service-yt-dlp) records the earlier drop-in procedure.
+Preserve the installed provider drop-ins, `ORBIS_YTDLP_BIN`, PATH, and cookies. The worker logs `ytdlp: true` at startup when the binary is configured.
 
 ## Back up the Group
 

@@ -1941,9 +1941,11 @@ export const createPortableApp = (options: {
     }
     return response;
   };
+  // oxlint-disable-next-line eslint/sort-keys -- Lifecycle methods precede the request boundary.
   return {
     dispose: app.dispose,
     initialize: () =>
+      // SAFETY: The health route reads no caller-bound service.
       app.handler(
         new Request("http://orbis.internal/health"),
         Context.empty() as Context.Context<Library | Queue | SetCaller>
@@ -1953,6 +1955,7 @@ export const createPortableApp = (options: {
       mode: AccessMode,
       clientAddress = "unknown"
     ): Promise<Response> => {
+      // oxlint-disable-next-line unicorn/consistent-function-scoping -- Kept at the boundary that owns stream headers.
       const withOrigin = (response: Response): Response => {
         if (
           response.headers.get("content-type")?.startsWith("text/event-stream")

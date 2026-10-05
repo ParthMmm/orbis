@@ -7,11 +7,7 @@ BUN="${BUN:-$HOME/.local/share/mise/installs/bun/1.4.1/bin/bun}"
 STAGING="${ORBIS_BACKUP_STAGING:-$HOME/orbis-backups}"
 # Run from the checkout that holds this script, wherever it lives.
 cd "$(dirname "$0")/../.."
-if [ -n "${ORBIS_GROUP_API_URL:-}" ]; then
-  KIND=group
-  "$BUN" scripts/data-transfer.ts backup "$ORBIS_GROUP_API_URL" "$STAGING/$KIND"
-else
-  KIND=sqlite
-  ORBIS_DATA_DIR="${ORBIS_DATA_DIR:-$HOME/Developer/orbis-service-data}" "$BUN" apps/server/src/backup.ts "$STAGING/$KIND"
-fi
+KIND=group
+: "${ORBIS_GROUP_API_URL:?Set ORBIS_GROUP_API_URL to the Group API address.}"
+"$BUN" scripts/data-transfer.ts backup "$ORBIS_GROUP_API_URL" "$STAGING/$KIND"
 rsync -a --delete "$STAGING/$KIND/" "${ORBIS_BACKUP_DEST%/}/$KIND/"

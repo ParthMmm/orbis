@@ -59,9 +59,6 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
       username: "host",
     });
 
-    const local = await request(app, { method: "GET", url: "/me" });
-    expect(local.json()).toEqual(host.json());
-
     const added = trust(devicesPath, "person", "add", "--username", "alice");
     expect(added.status).toBe(0);
     const storeAfterAdd = readTrustStrict(devicesPath);

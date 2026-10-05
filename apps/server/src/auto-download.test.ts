@@ -6,9 +6,9 @@ import path from "node:path";
 
 import { Schema } from "effect";
 
-import { createApp } from "./app.js";
-import { hashToken } from "./identity.js";
 import { startFixtureServer } from "./fixture-server.js";
+import { hashToken } from "./identity.js";
+import { createTestApp as createApp } from "./test-app.js";
 
 const Saved = Schema.Struct({
   autoDownloadResult: Schema.String,

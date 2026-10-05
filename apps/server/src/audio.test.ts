@@ -3,8 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createApp } from "./app.js";
 import type { AudioOptions } from "./audio.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 const youTubeUrl = "https://www.youtube.com/watch?v=aqzKEbpKQAA";
@@ -102,12 +102,17 @@ const rawRequest = (
   method: string,
   url: string,
   headers: Record<string, string> = {},
-  accessMode: "device" = "device"
-) =>
-  app.handler(
+  accessMode = "device" as const,
+  authenticated = true
+) => {
+  if (authenticated) {
+    headers["x-orbis-test-auth"] = "fixture";
+  }
+  return app.handler(
     new Request(`http://127.0.0.1:4310${url}`, { headers, method }),
     accessMode
   );
+};
 
 // Polling is inherent: the worker runs on its own fiber, so the test waits for a
 // terminal state with a deadline rather than sleeping a fixed duration.
@@ -483,7 +488,7 @@ test("device ingress without a token is rejected on every audio route", async ()
     ] as const;
     for (const [method, url] of routes) {
       // eslint-disable-next-line no-await-in-loop
-      const response = await rawRequest(app, method, url, {}, "device");
+      const response = await rawRequest(app, method, url, {}, "device", false);
       expect(response.status).toBe(403);
     }
   } finally {

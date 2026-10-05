@@ -72,20 +72,16 @@ const forwardApiRequest = async (
       logger.set({ keyLabel: decodeURIComponent(keyLabel) });
     }
     response.headers.delete("x-orbis-key-label");
-    const outcome =
-      response.status >= 500
-        ? "failure"
-        : response.status >= 400
-          ? "rejected"
-          : "success";
+    let outcome: "failure" | "rejected" | "success" = "success";
+    if (response.status >= 500) {
+      outcome = "failure";
+    } else if (response.status >= 400) {
+      outcome = "rejected";
+    }
     finishRequestLog(logger, { outcome, status: response.status }, logging);
     return response;
   } catch {
-    finishRequestLog(
-      logger,
-      { outcome: "failure", status: 502 },
-      logging
-    );
+    finishRequestLog(logger, { outcome: "failure", status: 502 }, logging);
     return Response.json(
       { message: "The Orbis API is unavailable. Try again shortly." },
       { headers: { "retry-after": "60" }, status: 502 }
@@ -95,20 +91,15 @@ const forwardApiRequest = async (
 
 export const makeNodeHttpHandler = (options: NodeHttpOptions) => {
   const audio = makeNodeAudioHandler(options);
-  const requestFetch = options.fetch ?? globalThis.fetch;
+  const { apiUrl, fetch: requestFetch = globalThis.fetch, logging } = options;
   return (request: Request): Promise<Response> => {
-    const pathname = new URL(request.url).pathname;
+    const { pathname } = new URL(request.url);
     if (
       isGrantedAudioRequest(request) ||
       (audioPath.test(pathname) && !pathname.startsWith("/api/"))
     ) {
       return audio(request);
     }
-    return forwardApiRequest(
-      request,
-      options.apiUrl,
-      requestFetch,
-      options.logging
-    );
+    return forwardApiRequest(request, apiUrl, requestFetch, logging);
   };
 };

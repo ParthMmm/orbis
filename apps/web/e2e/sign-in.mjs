@@ -12,7 +12,6 @@ import { chromium } from "playwright";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-sign-in");
-const apiPort = 4420;
 const devicePort = 4421;
 const webPort = 3321;
 const apiUrl = `http://127.0.0.1:${devicePort}`;
@@ -87,10 +86,7 @@ const web = spawn(
 const steps = [];
 const step = (name, detail = {}) => steps.push({ name, ...detail });
 try {
-  await Promise.all([
-    waitFor(`${apiUrl}/health`),
-    waitFor(webUrl),
-  ]);
+  await Promise.all([waitFor(`${apiUrl}/health`), waitFor(webUrl)]);
   await mkdir(artifacts, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
@@ -183,7 +179,7 @@ try {
     step("an unreachable API keeps the key and says why");
 
     api = startApi();
-    await waitFor(`http://127.0.0.1:${apiPort}/health`);
+    await waitFor(`${apiUrl}/health`);
     await page.getByRole("button", { name: "Try again" }).click();
     await page.getByRole("heading", { name: "Library" }).waitFor();
     step("Try again signs back in once the API is back");

@@ -4,7 +4,6 @@ import { Effect, Layer } from "effect";
 import { HttpRouter, HttpServerResponse } from "effect/unstable/http";
 import type { WideEvent } from "evlog";
 
-import { createApp } from "./app.js";
 import type { LoggingOptions } from "./logging.js";
 import {
   configureLogging,
@@ -12,6 +11,7 @@ import {
   makeRequestLogMiddleware,
   startRequestLog,
 } from "./logging.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 /** A record that points at itself, so the sanitizer has to stop on depth alone. */

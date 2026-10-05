@@ -71,7 +71,7 @@ The migration spec [#137](https://github.com/ParthMmm/orbis/issues/137) has thir
 | Child | Verification |
 | --- | --- |
 | [#138](https://github.com/ParthMmm/orbis/issues/138), Cloudflare scaffold | Production build and Alchemy production dry-run. Stack `OrbisWeb`, resource `Web`, stage `prod`, and domain `orbis.p11a.xyz` keep their identity after the directory rename. |
-| [#139](https://github.com/ParthMmm/orbis/issues/139), web Origin | `apps/server/src/web-ingress.test.ts` accepts the Cloudflare Origin and refuses the old Funnel Origin and every Origin on the local listener. |
+| [#139](https://github.com/ParthMmm/orbis/issues/139), web Origin | Production web traffic is same-origin. `apps/server/src/fixture-server.test.ts` limits disposable browser fixtures to one exact Origin. |
 | [#140](https://github.com/ParthMmm/orbis/issues/140), key sign-in | `e2e/sign-in.mjs`, `.cache/web-sign-in`. |
 | [#141](https://github.com/ParthMmm/orbis/issues/141), admin | `e2e/admin-journey.mjs`, `.cache/web-admin`. |
 | [#142](https://github.com/ParthMmm/orbis/issues/142), Invites | `e2e/invite.mjs`, `.cache/web-invite`, and server Invite HTTP tests. |
@@ -82,6 +82,6 @@ The migration spec [#137](https://github.com/ParthMmm/orbis/issues/137) has thir
 | [#147](https://github.com/ParthMmm/orbis/issues/147), Playlists | `e2e/playlists.mjs`, `.cache/web-playlists`, and server Collaborative HTTP tests. Deploy the matching API before the new Playlist client. |
 | [#148](https://github.com/ParthMmm/orbis/issues/148), Social | `e2e/shared-audio.mjs`, `.cache/web-social`. |
 | [#149](https://github.com/ParthMmm/orbis/issues/149), Apple Device Link | Separate Apple change. Run `node scripts/native-lanes.mjs --journeys` on that branch. This cutover does not verify an Apple build. |
-| [#150](https://github.com/ParthMmm/orbis/issues/150), cutover | Four original browser groups above and old-Origin HTTP rejection. Follow the [live cutover procedure](../../deploy/orbis-server/legacy-api.md#cut-over-to-cloudflare-and-an-api-only-funnel). |
+| [#150](https://github.com/ParthMmm/orbis/issues/150), cutover | Four original browser groups above and production acceptance recorded on the issue. |
 
 Live rollout not performed by this repository change. The production dry-run reads the existing Cloudflare deployment without applying changes. Record the approved Vanta update, handler removal, live browser playback, and status output separately before closing the cutover issue.

@@ -7,11 +7,11 @@ import path from "node:path";
 import { SavedSetSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
-import { createApp } from "./app.js";
 import {
   MAX_PLAYLISTS_PER_SET,
   MAX_SETS_PER_PLAYLIST,
 } from "./library-limits.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 const savedSet = Schema.decodeUnknownSync(SavedSetSchema);
@@ -731,40 +731,6 @@ test("removes a Library Entry while keeping its playlist membership", async () =
       url: `/sets/${set.id}`,
     });
     expect(missing.statusCode).toBe(404);
-  } finally {
-    await app.dispose();
-  }
-});
-
-test("rejects browser origins and non-loopback hosts before accessing the private library", async () => {
-  const app = createApp();
-  try {
-    await Promise.all(
-      [
-        { origin: "https://untrusted.example" },
-        { origin: "null" },
-        { host: "untrusted.example" },
-      ].map(async (headers) => {
-        const response = await app.handler(
-          new Request("http://127.0.0.1:4310/sets", { headers }),
-          "device"
-        );
-        expect(response.status).toBe(403);
-      })
-    );
-    const write = await request(app, {
-      headers: { origin: "https://untrusted.example" },
-      method: "POST",
-      payload: {
-        tags: [],
-        title: "Unwanted",
-        url: "https://soundcloud.com/dj/set",
-      },
-      url: "/sets",
-    });
-    expect(write.statusCode).toBe(403);
-    const library = await request(app, { method: "GET", url: "/sets" });
-    expect(library.json().sets).toEqual([]);
   } finally {
     await app.dispose();
   }

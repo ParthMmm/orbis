@@ -6,7 +6,7 @@ import path from "node:path";
 
 import type { SavedSet } from "@orbis/contracts";
 
-import { createApp } from "./app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 export const SET_SECONDS = 600;

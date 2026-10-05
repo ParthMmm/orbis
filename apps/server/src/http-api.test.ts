@@ -8,7 +8,7 @@ import {
 } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
-import { createApp } from "./app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { ready, withSeededApp } from "./test-library.js";
 
 type PlaylistRequestBody =
@@ -31,7 +31,13 @@ const json = (method: string, body: PlaylistRequestBody): RequestInit => ({
 test("the Sets contract decodes live HTTP responses", async () => {
   const app = createApp();
   const send = (path: string, init?: RequestInit) =>
-    app.handler(new Request(`http://localhost${path}`, init), "device");
+    app.handler(
+      new Request(`http://localhost${path}`, {
+        ...init,
+        headers: { ...init?.headers, "x-orbis-test-auth": "fixture" },
+      }),
+      "device"
+    );
 
   try {
     const savedResponse = await send("/sets", {
@@ -97,7 +103,13 @@ test("the Sets contract decodes live HTTP responses", async () => {
 test("the Playlist contract decodes live HTTP responses", async () => {
   const app = createApp();
   const send = (path: string, init?: RequestInit) =>
-    app.handler(new Request(`http://localhost${path}`, init), "device");
+    app.handler(
+      new Request(`http://localhost${path}`, {
+        ...init,
+        headers: { ...init?.headers, "x-orbis-test-auth": "fixture" },
+      }),
+      "device"
+    );
   try {
     const setResponse = await send(
       "/sets",
@@ -173,7 +185,13 @@ test("the Playlist contract decodes live HTTP responses", async () => {
 test("the queue, position, and Tag contract decodes live HTTP responses", async () => {
   await withSeededApp(ready(["a", "b"]), async (app) => {
     const send = (path: string, init?: RequestInit) =>
-      app.handler(new Request(`http://localhost${path}`, init), "device");
+      app.handler(
+        new Request(`http://localhost${path}`, {
+          ...init,
+          headers: { ...init?.headers, "x-orbis-test-auth": "fixture" },
+        }),
+        "device"
+      );
     const queue = async (path: string, init?: RequestInit) => {
       const response = await send(path, init);
       const body = Schema.decodeUnknownSync(

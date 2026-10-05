@@ -20,9 +20,9 @@ const corsHeaders = (origin: string) => ({
   vary: "origin",
 });
 
-export const startFixtureServer = async (
+export const startFixtureServer = (
   options: FixtureServerOptions
-): Promise<FixtureServer> => {
+): FixtureServer => {
   const adminToken = options.token;
   const server = Bun.serve({
     fetch: async (request, listener) => {
@@ -34,7 +34,10 @@ export const startFixtureServer = async (
         );
       }
       if (request.method === "OPTIONS" && origin === options.allowedOrigin) {
-        return new Response(null, { headers: corsHeaders(origin), status: 204 });
+        return new Response(null, {
+          headers: corsHeaders(origin),
+          status: 204,
+        });
       }
       const response = await options.app.handler(
         request,
@@ -57,9 +60,9 @@ export const startFixtureServer = async (
   return {
     adminToken,
     stop: () => {
-      stopping ??= Promise.all([server.stop(), options.app.dispose()]).then(
-        () => undefined
-      );
+      stopping ??= (async () => {
+        await Promise.all([server.stop(), options.app.dispose()]);
+      })();
       return stopping;
     },
     url: server.url,

@@ -1,6 +1,10 @@
 import type { createApp } from "./app.js";
 import type { AccessMode } from "./identity.js";
 
+interface TestHeaders extends Record<string, string> {
+  "x-orbis-test-auth": string;
+}
+
 export const request = async (
   app: ReturnType<typeof createApp>,
   options: {
@@ -13,7 +17,7 @@ export const request = async (
     clientAddress?: string;
   }
 ) => {
-  const headers: Record<string, string> = {};
+  const headers: TestHeaders = { "x-orbis-test-auth": "fixture" };
   const init: RequestInit = { headers, method: options.method };
   if (options.payload !== undefined) {
     headers["content-type"] = "application/json";

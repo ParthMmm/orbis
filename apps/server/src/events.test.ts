@@ -9,9 +9,9 @@ import { ListeningQueueSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
 import { revokeKey } from "./admin.js";
-import { createApp } from "./app.js";
-import { hashToken } from "./identity.js";
 import { startFixtureServer } from "./fixture-server.js";
+import { hashToken } from "./identity.js";
+import { createTestApp as createApp } from "./test-app.js";
 
 // Presence has its own test; these frames are about the Queue.
 const Event = Schema.Union([

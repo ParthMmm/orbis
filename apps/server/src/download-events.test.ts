@@ -5,7 +5,7 @@ import path from "node:path";
 
 import type { WideEvent } from "evlog";
 
-import { createApp } from "./app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 const youTubeUrl = "https://www.youtube.com/watch?v=aqzKEbpKQAA";

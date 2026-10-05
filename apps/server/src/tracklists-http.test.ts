@@ -6,10 +6,10 @@ import path from "node:path";
 
 import { Effect, Layer, Redacted } from "effect";
 
-import { createApp } from "./app.js";
 import { backfillTracklists } from "./backfill-tracklists.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { Metadata } from "./metadata.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 import { runClaimedTracklist } from "./tracklists.js";
 import { Versos, VersosError } from "./versos.js";

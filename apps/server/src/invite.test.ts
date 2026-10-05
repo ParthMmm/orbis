@@ -321,14 +321,6 @@ test("a blank device name or malformed body keeps the Invite", async () => {
         call(app, "POST", "/invites/claim", { payload: { code: invite.code } })
       )
     ).toBe(400);
-    expect(
-      await statusOf(
-        call(app, "POST", "/invites/claim", {
-          origin: "https://evil.example",
-          payload: { code: invite.code, label: "Phish" },
-        })
-      )
-    ).toBe(403);
     expect(await statusOf(claim(app, invite.code))).toBe(200);
   } finally {
     await app.dispose();

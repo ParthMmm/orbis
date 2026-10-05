@@ -8,9 +8,9 @@ import path from "node:path";
 import { SavedSetSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
-import { createApp } from "./app.js";
-import { hashToken } from "./identity.js";
 import { startFixtureServer } from "./fixture-server.js";
+import { hashToken } from "./identity.js";
+import { createTestApp as createApp } from "./test-app.js";
 
 type Payload =
   | { url: string; title?: string; tags?: string[] }

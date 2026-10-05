@@ -6,8 +6,8 @@ import path from "node:path";
 
 import { Effect } from "effect";
 
-import { createApp } from "./app.js";
 import { Metadata } from "./metadata.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 const LEGACY_SCHEMA = `PRAGMA journal_mode = WAL;

@@ -6,12 +6,12 @@ import path from "node:path";
 
 import { Effect, Layer } from "effect";
 
-import { createApp } from "./app.js";
 import { backfillDetails } from "./backfill-details.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { Library } from "./library.js";
 import { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 import type { SourceDetails } from "./ytdlp-metadata.js";
 

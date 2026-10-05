@@ -13,7 +13,6 @@ import { chromium } from "playwright";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-devices");
-const apiPort = 4460;
 const devicePort = 4461;
 const webPort = 3361;
 const apiUrl = `http://127.0.0.1:${devicePort}`;
@@ -107,10 +106,7 @@ const meStatus = async (token) => {
 const steps = [];
 const step = (name, detail = {}) => steps.push({ name, ...detail });
 try {
-  await Promise.all([
-    waitFor(`${apiUrl}/health`),
-    waitFor(webUrl),
-  ]);
+  await Promise.all([waitFor(`${apiUrl}/health`), waitFor(webUrl)]);
   await mkdir(artifacts, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {

@@ -15,7 +15,6 @@ import { readTrustStore } from "./trust-store.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-invite");
-const apiPort = 4480;
 const devicePort = 4481;
 const webPort = 3381;
 const apiUrl = `http://127.0.0.1:${devicePort}`;
@@ -107,10 +106,7 @@ const storedKey = (page) =>
 const steps = [];
 const step = (name, detail = {}) => steps.push({ name, ...detail });
 try {
-  await Promise.all([
-    waitFor(`${apiUrl}/health`),
-    waitFor(webUrl),
-  ]);
+  await Promise.all([waitFor(`${apiUrl}/health`), waitFor(webUrl)]);
   await mkdir(artifacts, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {

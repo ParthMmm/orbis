@@ -6,8 +6,8 @@ import path from "node:path";
 
 import { readMigrationFiles } from "drizzle-orm/migrator";
 
-import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 const token = "person-b-queue-test";

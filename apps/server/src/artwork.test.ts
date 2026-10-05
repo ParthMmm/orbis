@@ -6,11 +6,11 @@ import path from "node:path";
 
 import { Effect } from "effect";
 
-import { createApp } from "./app.js";
 import { backfillArtwork } from "./artwork.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 const OLD_SET_URL = "https://www.youtube.com/watch?v=oldoldoldol";

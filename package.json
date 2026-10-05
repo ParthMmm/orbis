@@ -17,7 +17,6 @@
     "format": "ultracite fix",
     "format:check": "oxfmt --check .",
     "lint": "oxlint .",
-    "smoke:desktop": "node scripts/smoke-desktop.mjs",
     "tokens:generate": "node scripts/design-tokens.mjs",
     "tokens:check": "node scripts/design-tokens.mjs --check",
     "check": "turbo run lint format:check tokens:check typecheck test diagnostics --concurrency=100% --continue=dependencies-successful",

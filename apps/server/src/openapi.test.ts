@@ -11,7 +11,7 @@ import {
 import { Ajv } from "ajv";
 import { Schema } from "effect";
 
-import { createApp } from "./app.js";
+import { createTestApp as createApp } from "./test-app.js";
 
 const Samples = Schema.Struct({
   audioGrant: Schema.Struct({ url: Schema.String }),
@@ -204,7 +204,9 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
   const app = createApp();
   try {
     const response = await app.handler(
-      new Request("http://localhost/openapi.json"),
+      new Request("http://localhost/openapi.json", {
+        headers: { "x-orbis-test-auth": "fixture" },
+      }),
       "device"
     );
     expect(response.status).toBe(200);

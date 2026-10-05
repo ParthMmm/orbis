@@ -4,21 +4,19 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "bun --watch src/index.ts",
+    "dev": "bun --watch src/node.ts",
     "backfill:artwork": "bun src/backfill-artwork.ts",
     "backfill:details": "bun src/backfill-details.ts",
     "backfill:tracklists": "bun src/backfill-tracklists.ts",
-    "build": "bun build src/index.ts --target=bun --packages=external --outdir=dist",
-    "start": "bun dist/index.js",
+    "build": "bun build src/node.ts --target=bun --packages=external --outdir=dist",
+    "start": "bun dist/node.js",
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
     "test": "bun test",
     "diagnostics": "effect-tsgo diagnostics --project tsconfig.json --format text",
     "eval": "evalite run",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "trust": "bun src/trust.ts",
-    "node": "bun src/node.ts",
-    "build:node": "bun build src/node.ts --target=bun --packages=external --outdir=dist"
+    "node": "bun src/node.ts"
   },
   "dependencies": {
     "@effect/ai-openrouter": "4.0.0-rc.117",
