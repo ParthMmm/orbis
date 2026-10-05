@@ -129,6 +129,6 @@ jobs:
       - name: Run React Doctor
         uses: millionco/react-doctor@v2
         with:
-          directory: apps/desktop
+          directory: apps/web
           scope: changed
           blocking: error
