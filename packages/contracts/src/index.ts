@@ -5,7 +5,11 @@ import type {
   LibraryResponseSchema,
   ListeningQueueSchema,
   PlaylistSchema,
+  PresenceActionPayload,
+  PresenceActionResultSchema,
+  PresenceConflictSchema,
   PresenceSchema,
+  PresenceSessionSchema,
   QueueEntryPayload,
   SaveSetPayload,
   SavedSetSchema,
@@ -38,6 +42,10 @@ export type LibraryResponse = typeof LibraryResponseSchema.Type;
 
 export type Playlist = typeof PlaylistSchema.Type;
 export type Presence = typeof PresenceSchema.Type;
+export type PresenceAction = typeof PresenceActionPayload.Type;
+export type PresenceSession = typeof PresenceSessionSchema.Type;
+export type PresenceActionResult = typeof PresenceActionResultSchema.Type;
+export type PresenceConflict = typeof PresenceConflictSchema.Type;
 export type ListeningQueue = typeof ListeningQueueSchema.Type;
 
 /** Where a queued Set goes. `next` starts after the active Set; `end` goes last. */

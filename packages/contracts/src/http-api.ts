@@ -191,6 +191,69 @@ export const QueueEventSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("heartbeat") }),
 ]);
 
+/**
+ * Explicit Presence actions (ADR 0019). A client owns a session per activated Set and
+ * numbers its actions, so a delayed or retried message cannot undo a newer one.
+ */
+const PresenceId = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(100),
+  Schema.isPattern(/^[A-Za-z0-9._:-]+$/u)
+);
+const Counter = Schema.Int.check(
+  Schema.isGreaterThanOrEqualTo(0),
+  Schema.isLessThanOrEqualTo(Number.MAX_SAFE_INTEGER)
+);
+const ActionFields = {
+  actionId: PresenceId,
+  actionNumber: Counter,
+  sessionId: PresenceId,
+};
+const OwnedActionFields = { ...ActionFields, ownerGeneration: Counter };
+export const PresenceActionPayload = Schema.Union([
+  Schema.Struct({
+    ...ActionFields,
+    kind: Schema.Literal("play"),
+    setId: QueueSetId,
+  }),
+  Schema.Struct({ ...OwnedActionFields, kind: Schema.Literal("pause") }),
+  Schema.Struct({ ...OwnedActionFields, kind: Schema.Literal("stop") }),
+  Schema.Struct({ ...OwnedActionFields, kind: Schema.Literal("renew") }),
+]);
+const SessionFields = {
+  actionNumber: Counter,
+  ownerGeneration: Counter,
+  sessionId: Schema.String,
+  setId: Schema.String,
+};
+/** Only a playing session carries a lease. */
+export const PresenceSessionSchema = Schema.Union([
+  Schema.Struct({
+    ...SessionFields,
+    leaseExpiresAt: Schema.String,
+    state: Schema.Literal("playing"),
+  }),
+  Schema.Struct({
+    ...SessionFields,
+    state: Schema.Literals(["paused", "stopped", "superseded"]),
+  }),
+]);
+export const PresenceActionResultSchema = Schema.Struct({
+  outcome: Schema.Literals(["accepted", "duplicate"]),
+  session: PresenceSessionSchema,
+});
+/** A refused action that changed nothing. `stale` covers a wrong generation or an old action number. */
+export const PresenceConflictSchema = Schema.Struct({
+  message: Schema.String,
+  reason: Schema.Literals([
+    "stale",
+    "queue-changed",
+    "action-reused",
+    "session-set",
+    "session-limit",
+  ]),
+}).pipe(HttpApiSchema.status(409));
+
 export const MeSchema = Schema.Struct({
   autoDownload: Schema.Boolean,
   id: Schema.String,
@@ -686,6 +749,23 @@ export const OrbisApi = PlaylistApi.add(
             data: QueueEventSchema,
             error: Schema.Never,
           }),
+        })
+      )
+      .middleware(SetAccess)
+  )
+  .add(
+    HttpApiGroup.make("presence")
+      .add(
+        HttpApiEndpoint.post("act", "/presence/actions", {
+          error: [
+            BadRequest,
+            Forbidden,
+            NotFound,
+            PresenceConflictSchema,
+            InternalError,
+          ],
+          payload: PresenceActionPayload,
+          success: PresenceActionResultSchema,
         })
       )
       .middleware(SetAccess)
