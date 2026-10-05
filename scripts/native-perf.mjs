@@ -5,7 +5,7 @@
 // Usage: node scripts/native-perf.mjs [--sets 500] [--samples 20] [--budget-ms 250]
 
 import { spawn } from "node:child_process";
-import { once } from "node:events";
+import { randomBytes } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -24,12 +24,14 @@ const budget = argument("budget-ms", 250);
 const dataDirectory = mkdtempSync(path.join(tmpdir(), "orbis-perf-"));
 const port = 48_000 + Math.floor(Math.random() * 1000);
 const base = `http://127.0.0.1:${port}`;
-const server = spawn("bun", ["apps/server/src/index.ts"], {
+const token = randomBytes(32).toString("base64url");
+const server = spawn("bun", ["scripts/fixture.ts"], {
   cwd: root,
   env: {
     ...process.env,
-    ORBIS_DATA_DIR: dataDirectory,
-    ORBIS_PORT: String(port),
+    ORBIS_FIXTURE_DATA_DIR: dataDirectory,
+    ORBIS_FIXTURE_PORT: String(port),
+    ORBIS_FIXTURE_TOKEN: token,
   },
   stdio: "ignore",
 });
@@ -45,31 +47,6 @@ const waitForService = async (deadline = Date.now() + 30_000) => {
     await sleep(200);
     await waitForService(deadline);
   }
-};
-
-const pairDevice = async () => {
-  const enrolment = spawn(
-    "bun",
-    [
-      "apps/server/src/trust.ts",
-      "add",
-      "--label",
-      "perf",
-      "--devices",
-      path.join(dataDirectory, "devices.json"),
-    ],
-    { cwd: root, stdio: ["ignore", "pipe", "inherit"] }
-  );
-  let output = "";
-  enrolment.stdout.on("data", (chunk) => {
-    output += chunk;
-  });
-  await once(enrolment, "exit");
-  const token = /shown once: (?<token>\S+)/u.exec(output)?.groups?.token;
-  if (!token) {
-    throw new Error("the enrolment command printed no token");
-  }
-  return token;
 };
 
 /// Sequential on purpose. The measured quantity is the latency of one request, so issuing
@@ -94,7 +71,7 @@ const percentile = (sorted, fraction) =>
 try {
   await waitForService();
   const headers = {
-    authorization: `Bearer ${await pairDevice()}`,
+    authorization: `Bearer ${token}`,
     "content-type": "application/json",
   };
 

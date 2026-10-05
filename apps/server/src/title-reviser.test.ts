@@ -6,9 +6,9 @@ import path from "node:path";
 import { ConfigProvider, Effect, Layer, Stream } from "effect";
 import { AiError, LanguageModel } from "effect/unstable/ai";
 
-import { createApp } from "./app.js";
 import type { EnrichedMetadata } from "./metadata.js";
 import { Metadata } from "./metadata.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 import { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";

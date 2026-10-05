@@ -26,7 +26,7 @@ const token =
 
 if (!address || !token) {
   console.error(
-    "Needs an address and a token. Pair a device with apps/server/src/trust.ts, then pass\n" +
+    "Needs an address and a token. Pair a device through the authenticated admin API, then pass\n" +
       "  --address <url> --token-file <path>, or set ORBIS_SERVICE_ADDRESS and ORBIS_DEVICE_TOKEN."
   );
   process.exitCode = 1;

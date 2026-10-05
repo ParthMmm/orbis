@@ -1,4 +1,6 @@
 import { Database as BunDatabase } from "bun:sqlite";
+
+import "../../server/src/trust-storage-bun.js";
 import assert from "node:assert/strict";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -10,6 +12,7 @@ import { Miniflare } from "miniflare";
 import { createPortableApp } from "../../server/src/app-core.js";
 import { releaseAudio } from "../../server/src/audio-release.js";
 import { layer } from "../../server/src/db/database.js";
+import { hashToken } from "../../server/src/identity.js";
 import { audioLayer } from "../src/audio.js";
 
 const artifact = path.resolve(
@@ -182,6 +185,26 @@ try {
     .all();
   db.close();
   assert.deepEqual(schema, bunSchema);
+  const bunToken = "bun-parity-host-key";
+  const trustPath = path.join(artifact, "bun-devices.json");
+  await writeFile(
+    trustPath,
+    JSON.stringify({
+      keys: [
+        {
+          addedAt: "2026-01-01T00:00:00.000Z",
+          id: "bun-parity-key",
+          label: "Bun parity",
+          lastUsedAt: null,
+          personId: "host",
+          scope: "admin",
+          tokenHash: hashToken(bunToken),
+        },
+      ],
+      people: [{ id: "host", removed: false, username: "host" }],
+      version: 2,
+    })
+  );
   const app = createPortableApp({
     audio: audioLayer,
     audioResponse: () => HttpServerResponse.empty({ status: 404 }),
@@ -192,6 +215,7 @@ try {
     logging: { pretty: false, silent: true },
     releaseAudio,
     streamSecret: Buffer.from("ab".repeat(32), "hex"),
+    trustPath,
   });
   try {
     const bunSaved = await app.handler(
@@ -201,7 +225,10 @@ try {
           title: "Injected database",
           url: "https://youtu.be/abcdefghijk",
         }),
-        headers: { "content-type": "application/json" },
+        headers: {
+          authorization: `Bearer ${bunToken}`,
+          "content-type": "application/json",
+        },
         method: "POST",
       })
     );

@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { Effect } from "effect";
 
-import { createApp } from "./app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 import type { YtdlpRunner } from "./ytdlp.js";
 import { Ytdlp, ytdlpArgs } from "./ytdlp.js";

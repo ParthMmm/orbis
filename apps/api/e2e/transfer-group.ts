@@ -1,3 +1,4 @@
+import "../../server/src/trust-storage-bun.js";
 import { Database } from "bun:sqlite";
 import assert from "node:assert/strict";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -103,6 +104,7 @@ const localApp = (databasePath: string) =>
     }),
     logging: { silent: true },
     streamSecret: Buffer.from("11".repeat(32), "hex"),
+    trustPath: databasePath,
   });
 try {
   const deniedExport = await send("export");
@@ -206,13 +208,17 @@ try {
     // oxlint-disable eslint/no-await-in-loop -- Each journey checks all three databases before advancing.
     for (const route of routes) {
       const original = await sourceApp.handler(
-        new Request(`http://localhost${route}`),
-        "local"
+        new Request(`http://localhost${route}`, {
+          headers: { authorization: `Bearer ${hostToken}` },
+        }),
+        "device"
       );
       const group = await send(route.slice(1), undefined, hostToken);
       const bun = await restoredApp.handler(
-        new Request(`http://localhost${route}`),
-        "local"
+        new Request(`http://localhost${route}`, {
+          headers: { authorization: `Bearer ${hostToken}` },
+        }),
+        "device"
       );
       assert.equal(original.status, 200, `Source ${route}`);
       assert.equal(group.status, 200, `Group ${route}`);

@@ -105,19 +105,6 @@ test("device ingress rejects spoofed loopback authorities and invalid credential
     });
     expect(paired.statusCode).toBe(200);
 
-    const origins = ["", "null", "https://example.com"];
-    const browserOrigins = await Promise.all(
-      origins.map((origin) =>
-        request(app, {
-          ...deviceGet,
-          headers: { authorization: `Bearer ${token}`, origin },
-        })
-      )
-    );
-    expect(browserOrigins.map((response) => response.statusCode)).toEqual(
-      origins.map(() => 403)
-    );
-
     mutateTrustStore(
       devicesPath,
       () => readTrustStrict(devicesPath),
@@ -237,7 +224,7 @@ test("fails closed when the trust store is missing or unreadable", async () => {
     expect(remote.statusCode).toBe(401);
 
     const local = await request(app, { method: "GET", url: "/sets" });
-    expect(local.statusCode).toBe(200);
+    expect(local.statusCode).toBe(403);
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });

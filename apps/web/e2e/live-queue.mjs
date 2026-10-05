@@ -13,7 +13,6 @@ import { chromium } from "playwright";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-player");
-const apiPort = 4510;
 const devicePort = 4511;
 const webPort = 3411;
 const apiUrl = `http://127.0.0.1:${devicePort}`;
@@ -102,8 +101,8 @@ const startApi = () =>
     env: {
       ...process.env,
       ORBIS_DATA_DIR: dataDirectory,
-      ORBIS_DEVICE_PORT: String(devicePort),
-      ORBIS_PORT: String(apiPort),
+      ORBIS_FIXTURE_ORIGIN: webUrl,
+      ORBIS_FIXTURE_PORT: String(devicePort),
     },
     stdio: "ignore",
   });
@@ -130,10 +129,7 @@ const web = spawn(
 const steps = [];
 const step = (name, detail = {}) => steps.push({ name, ...detail });
 try {
-  await Promise.all([
-    waitFor(`http://127.0.0.1:${apiPort}/health`),
-    waitFor(webUrl),
-  ]);
+  await Promise.all([waitFor(`${apiUrl}/health`), waitFor(webUrl)]);
   await mkdir(artifacts, { recursive: true });
 
   // Two Sets with kept audio, saved from "another device".
@@ -325,7 +321,7 @@ try {
     server.kill("SIGTERM");
     await page.getByText("Reconnecting…").waitFor();
     server = startApi();
-    await waitFor(`http://127.0.0.1:${apiPort}/health`);
+    await waitFor(`${apiUrl}/health`);
     await api("PUT", "/queue/active", { setId: sets["First set"] });
     await queue.getByText("Now: First set").waitFor({ timeout: 15_000 });
     await page.getByText("Reconnecting…").waitFor({ state: "hidden" });

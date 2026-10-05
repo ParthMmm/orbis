@@ -58,7 +58,7 @@ export type PersonRecord = typeof Person.Type;
 export type KeyRecord = typeof Key.Type;
 export type InviteRecord = typeof Invite.Type;
 export type TrustStore = typeof TrustFile.Type;
-export type AccessMode = "local" | "device";
+export type AccessMode = "device";
 
 export const HOST_PERSON_ID = "host";
 const HOST_PERSON: PersonRecord = {
@@ -87,7 +87,6 @@ export type AccessDecision =
 
 const LOCAL_ONLY = "Only local app requests are allowed.";
 const NOT_PAIRED = "This device is not paired with your library.";
-const LOOPBACK_HOST = /^(?:127\.0\.0\.1|localhost)(?::\d+)?$/u;
 const BEARER = /^Bearer[ \t]+(?<token>.+)$/iu;
 const USAGE_INTERVAL_MS = 60 * 60 * 1000;
 
@@ -207,21 +206,6 @@ const authenticate = (input: {
     return key && person
       ? { keyId: key.id, kind: "accepted", person, scope: key.scope }
       : rejected(NOT_PAIRED, 401);
-  }
-  if (
-    !input.requiredScope &&
-    input.mode === "local" &&
-    LOOPBACK_HOST.test(input.host)
-  ) {
-    const person = input.store.people.find(
-      (candidate) => candidate.id === HOST_PERSON_ID && !candidate.removed
-    );
-    return {
-      keyId: null,
-      kind: "accepted",
-      person: person ?? HOST_PERSON,
-      scope: "admin",
-    };
   }
   return rejected(LOCAL_ONLY, 403);
 };

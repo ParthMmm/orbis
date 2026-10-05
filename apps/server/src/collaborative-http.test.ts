@@ -3,8 +3,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 test("a creator grants and revokes collaborative Playlist editing, and reading, through Social visibility", async () => {

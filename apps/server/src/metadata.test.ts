@@ -7,7 +7,6 @@ import path from "node:path";
 import { SavedSetSchema } from "@orbis/contracts/http-api";
 import { Effect, Schema } from "effect";
 
-import { createApp } from "./app.js";
 import { MetadataError } from "./metadata-error.js";
 import type {
   EnrichedMetadata,
@@ -16,6 +15,7 @@ import type {
   MetadataService,
 } from "./metadata.js";
 import { Metadata } from "./metadata.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 import type { SourceDetails, YtDlpMetadataService } from "./ytdlp-metadata.js";
 

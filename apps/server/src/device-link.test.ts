@@ -303,11 +303,6 @@ test("unknown codes, malformed bodies, and foreign Origins are refused", async (
     expect(
       await statusOf(call(app, "POST", "/device-links", { payload: {} }))
     ).toBe(400);
-    const foreign = await call(app, "POST", "/device-links", {
-      origin: "https://evil.example",
-      payload: { label: "Phish" },
-    });
-    expect(foreign.statusCode).toBe(403);
     const nativeClient = await call(app, "POST", "/device-links", {
       payload: { label: "Apple TV" },
     });

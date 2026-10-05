@@ -8,9 +8,9 @@ import path from "node:path";
 import { SavedSetSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
-import { createApp } from "./app.js";
+import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
-import { startListeners } from "./listeners.js";
+import { createTestApp as createApp } from "./test-app.js";
 
 type Payload =
   | { url: string; title?: string; tags?: string[] }
@@ -80,8 +80,8 @@ test("visible Sets share audio and storage releases only the last reference over
     hostname: "127.0.0.1",
     port: 0,
   });
-  const listeners = await startListeners(
-    createApp({
+  const listeners = await startFixtureServer({
+    app: createApp({
       audio: {
         audioDir,
         cobaltApiKey: "test",
@@ -91,8 +91,9 @@ test("visible Sets share audio and storage releases only the last reference over
       databasePath,
       logging: { silent: true },
     }),
-    { devicePort: 0, localPort: 0 }
-  );
+    port: 0,
+    token: "seeded-test-fixture",
+  });
   const db = new Database(databasePath);
   const send = (
     key: string,
@@ -100,9 +101,6 @@ test("visible Sets share audio and storage releases only the last reference over
     method = "GET",
     payload?: Payload
   ) => {
-    if (!listeners.device) {
-      throw new Error("Missing device listener");
-    }
     const init: RequestInit = {
       headers: {
         authorization: `Bearer ${key}`,
@@ -113,7 +111,7 @@ test("visible Sets share audio and storage releases only the last reference over
     if (payload !== undefined) {
       init.body = JSON.stringify(payload);
     }
-    return fetch(new URL(route, listeners.device.url), init);
+    return fetch(new URL(route, listeners.url), init);
   };
   const status = async (...args: Parameters<typeof send>) => {
     const response = await send(...args);

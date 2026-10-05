@@ -8,9 +8,9 @@ import path from "node:path";
 import type { SaveSetInput } from "@orbis/contracts";
 import { Schema } from "effect";
 
-import { createApp } from "./app.js";
+import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
-import { startListeners } from "./listeners.js";
+import { createTestApp as createApp } from "./test-app.js";
 
 const statusOf = async (response: Promise<Response>) => {
   const result = await response;
@@ -83,8 +83,8 @@ const fixture = async (startWorker: boolean) => {
   });
   let workerEnabled = startWorker;
   const open = () =>
-    startListeners(
-      createApp({
+    startFixtureServer({
+      app: createApp({
         audio: {
           audioDir: path.join(root, "audio"),
           cobaltApiKey: "test",
@@ -94,8 +94,9 @@ const fixture = async (startWorker: boolean) => {
         databasePath: path.join(root, "library.sqlite"),
         logging: { silent: true },
       }),
-      { devicePort: 0, localPort: 0 }
-    );
+      port: 0,
+      token: "seeded-test-fixture",
+    });
   let listeners = await open();
   const request = (
     person: string,
@@ -103,9 +104,6 @@ const fixture = async (startWorker: boolean) => {
     method = "GET",
     body?: SaveSetInput
   ) => {
-    if (!listeners.device) {
-      throw new Error("Missing device listener");
-    }
     const init: RequestInit = {
       headers: {
         authorization: `Bearer ${person}`,
@@ -116,7 +114,7 @@ const fixture = async (startWorker: boolean) => {
     if (body !== undefined) {
       init.body = JSON.stringify(body);
     }
-    return fetch(new URL(route, listeners.device.url), init);
+    return fetch(new URL(route, listeners.url), init);
   };
   const save = async (person: string, number: number) => {
     const url = `https://www.youtube.com/watch?v=fair${String(number).padStart(7, "0")}`;

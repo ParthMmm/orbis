@@ -365,6 +365,7 @@ try {
         detached: true,
         env: {
           ...process.env,
+          ORBIS_API_FORWARD_URL: new URL("/api", api).toString(),
           ORBIS_AUDIO_DIR: audioDir,
           ORBIS_GROUP_URL: new URL("/api", api).toString(),
           ORBIS_NODE_KEY: "node-token",

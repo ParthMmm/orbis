@@ -36,15 +36,14 @@ Saving a link creates a Person's Library Entry. Auto Download starts a Download 
 
 | Path | What it is |
 | --- | --- |
-| [`apps/server`](apps/server) | Shared Effect HTTP handlers, local Bun API adapter, and production audio node |
+| [`apps/server`](apps/server) | Shared Effect HTTP handlers, disposable SQLite test adapter, and production audio node |
 | [`apps/api`](apps/api) | Cloudflare API Worker and SQLite Group Durable Object |
 | [`apps/web`](apps/web) | TanStack Start web client and Alchemy deployment for web and API |
 | [`apps/apple/Orbis`](apps/apple/Orbis) | One SwiftUI app for iOS and macOS, with Now Playing, CarPlay, and a share extension. The Xcode project is generated with xcodegen |
 | [`apps/apple/OrbisDesign`](apps/apple/OrbisDesign) | Swift package with the design tokens, styles, and components |
 | [`apps/raycast`](apps/raycast) | Raycast commands: Save Current Tab and Save Clipboard |
-| [`apps/desktop`](apps/desktop) | Legacy Electron, Vite, and React client. Retirement is tracked in GitHub Issues |
 | [`packages/contracts`](packages/contracts) | Typed HTTP contract, derived client, and audio-node protocol |
-| [`deploy`](deploy) | Vanta operation and rollback guides, systemd templates, and Cobalt Compose file |
+| [`deploy`](deploy) | Vanta audio-node operation guides, systemd templates, and Cobalt Compose file |
 
 ## Choices worth a look
 

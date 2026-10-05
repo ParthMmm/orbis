@@ -74,8 +74,8 @@ const api = spawn("bun", ["apps/web/e2e/api-server.ts"], {
   env: {
     ...process.env,
     ORBIS_DATA_DIR: dataDirectory,
-    ORBIS_DEVICE_PORT: String(ports.device),
-    ORBIS_PORT: String(ports.api),
+    ORBIS_FIXTURE_ORIGIN: webUrl,
+    ORBIS_FIXTURE_PORT: String(ports.device),
   },
   stdio: "ignore",
 });
@@ -99,10 +99,7 @@ const web = spawn(
 );
 
 try {
-  await Promise.all([
-    waitFor(`http://127.0.0.1:${ports.api}/health`),
-    waitFor(webUrl),
-  ]);
+  await Promise.all([waitFor(`${apiUrl}/health`), waitFor(webUrl)]);
   await mkdir(artifacts, { recursive: true });
   const saved = await call("POST", "/sets", {
     title: "Tracklist journey Set",

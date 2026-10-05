@@ -112,46 +112,6 @@ class AcceptedAccess extends Context.Service<
   Exclude<AccessDecision, { readonly kind: "rejected" }>
 >()("Orbis/AcceptedAccess") {}
 
-const browserOrigins: ReadonlySet<string> = new Set(["https://orbis.p11a.xyz"]);
-const allowedBrowserOrigin = (
-  origin: string | null,
-  mode: AccessMode,
-  development: boolean
-): origin is string =>
-  mode === "device" &&
-  origin !== null &&
-  (browserOrigins.has(origin) ||
-    (development && /^http:\/\/(?:localhost|127\.0\.0\.1):\d+$/u.test(origin)));
-
-const browserIngress = (
-  request: Request,
-  mode: AccessMode,
-  development: boolean
-): Response | null => {
-  const origin = request.headers.get("origin");
-  if (origin === null) {
-    return null;
-  }
-  if (!allowedBrowserOrigin(origin, mode, development)) {
-    return Response.json(
-      { message: "Only local app requests are allowed." },
-      { status: 403 }
-    );
-  }
-  if (request.method !== "OPTIONS") {
-    return null;
-  }
-  return new Response(null, {
-    headers: {
-      "access-control-allow-headers": "authorization, content-type, range",
-      "access-control-allow-methods": "GET, POST, PATCH, PUT, DELETE, OPTIONS",
-      "access-control-allow-origin": origin,
-      vary: "origin",
-    },
-    status: 204,
-  });
-};
-
 const grantAccess = (
   request: Request,
   mode: AccessMode,
@@ -298,7 +258,6 @@ const withFailureResponse = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   });
 
 export const createPortableApp = (options: {
-  allowDevelopmentOrigins?: boolean;
   audio: Layer.Layer<Audio, never, Library>;
   audioResponse: (
     file: AudioFile,
@@ -328,7 +287,6 @@ export const createPortableApp = (options: {
 }) => {
   configureLogging(options.logging);
   const { trustPath } = options;
-  const development = options.allowDevelopmentOrigins === true;
   const { streamSecret } = options;
   const failedKeys = new Map<string, { count: number; until: number }>();
   /** Counts one failed attempt for a client; true once the client is over the limit. */
@@ -1983,28 +1941,27 @@ export const createPortableApp = (options: {
     }
     return response;
   };
+  // oxlint-disable-next-line eslint/sort-keys -- Lifecycle methods precede the request boundary.
   return {
     dispose: app.dispose,
+    initialize: () =>
+      // SAFETY: The health route reads no caller-bound service.
+      app.handler(
+        new Request("http://orbis.internal/health"),
+        Context.empty() as Context.Context<Library | Queue | SetCaller>
+      ),
     handler: async (
       request: Request,
-      mode: AccessMode = "local",
+      mode: AccessMode,
       clientAddress = "unknown"
     ): Promise<Response> => {
-      const origin = request.headers.get("origin");
-      const browserResponse = browserIngress(request, mode, development);
-      if (browserResponse) {
-        return browserResponse;
-      }
+      // oxlint-disable-next-line unicorn/consistent-function-scoping -- Kept at the boundary that owns stream headers.
       const withOrigin = (response: Response): Response => {
         if (
           response.headers.get("content-type")?.startsWith("text/event-stream")
         ) {
           response.headers.set("cache-control", "no-cache, no-transform");
           response.headers.set("x-accel-buffering", "no");
-        }
-        if (allowedBrowserOrigin(origin, mode, development)) {
-          response.headers.set("access-control-allow-origin", origin);
-          response.headers.set("vary", "origin");
         }
         return response;
       };

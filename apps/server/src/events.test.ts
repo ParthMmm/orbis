@@ -9,9 +9,9 @@ import { ListeningQueueSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
 import { revokeKey } from "./admin.js";
-import { createApp } from "./app.js";
+import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
-import { startListeners } from "./listeners.js";
+import { createTestApp as createApp } from "./test-app.js";
 
 // Presence has its own test; these frames are about the Queue.
 const Event = Schema.Union([
@@ -84,14 +84,12 @@ test("live Queue snapshots stay personal and reconnect to current state", async 
       version: 2,
     })
   );
-  const listeners = await startListeners(
-    createApp({ databasePath, logging: { silent: true } }),
-    { devicePort: 0, localPort: 0 }
-  );
-  const address = listeners.device?.url;
-  if (!address) {
-    throw new Error("Device listener missing");
-  }
+  const listeners = await startFixtureServer({
+    app: createApp({ databasePath, logging: { silent: true } }),
+    port: 0,
+    token: "seeded-test-fixture",
+  });
+  const address = listeners.url;
   const call = (
     key: string,
     route: string,

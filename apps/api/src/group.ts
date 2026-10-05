@@ -71,9 +71,7 @@ export class Group extends DurableObject<Environment> {
           : Versos.unconfigured(),
     });
     ctx.blockConcurrencyWhile(async () => {
-      const response = await this.app.handler(
-        new Request("http://localhost/health")
-      );
+      const response = await this.app.initialize();
       if (!response.ok) {
         throw new Error("Group database initialization failed.");
       }
@@ -109,7 +107,7 @@ export class Group extends DurableObject<Environment> {
       request.method === "GET" &&
       new URL(request.url).pathname === "/health"
     ) {
-      return this.app.handler(new Request("http://localhost/health"), "local");
+      return this.app.initialize();
     }
     const path = new URL(request.url).pathname;
     if (path === "/import" || path === "/export") {

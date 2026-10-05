@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { createApp } from "./app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 import {
   addToQueue,

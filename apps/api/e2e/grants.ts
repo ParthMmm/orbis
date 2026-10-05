@@ -4,7 +4,7 @@ import path from "node:path";
 
 import { Miniflare } from "miniflare";
 
-import { makeNodeHandler } from "../../server/src/node-http.js";
+import { makeNodeHttpHandler } from "../../server/src/node-http.js";
 import { issueStreamGrant } from "../../server/src/stream-grant-core.js";
 
 const artifact = path.resolve(
@@ -25,9 +25,9 @@ const secret = Buffer.from("ab".repeat(32), "hex");
 const groupUrl = new URL("http://127.0.0.1:0/api");
 const audioDirectory = path.join(artifact, "audio");
 const node = Bun.serve({
-  fetch: makeNodeHandler({
+  fetch: makeNodeHttpHandler({
+    apiUrl: groupUrl,
     audioDir: audioDirectory,
-    mode: { apiUrl: groupUrl, kind: "forward" },
     streamSecret: secret,
   }),
   hostname: "127.0.0.1",

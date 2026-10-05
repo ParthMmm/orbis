@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 
-import { createApp } from "./app.js";
+import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
 test("saves a SoundCloud short link as the track it redirects to", async () => {

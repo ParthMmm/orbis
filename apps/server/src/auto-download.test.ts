@@ -6,9 +6,9 @@ import path from "node:path";
 
 import { Schema } from "effect";
 
-import { createApp } from "./app.js";
+import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
-import { startListeners } from "./listeners.js";
+import { createTestApp as createApp } from "./test-app.js";
 
 const Saved = Schema.Struct({
   autoDownloadResult: Schema.String,
@@ -81,8 +81,8 @@ const fixture = async (startWorker: boolean, hold = false) => {
     port: 0,
   });
   const open = () =>
-    startListeners(
-      createApp({
+    startFixtureServer({
+      app: createApp({
         audio: {
           audioDir: path.join(root, "audio"),
           cobaltApiKey: "test",
@@ -92,8 +92,9 @@ const fixture = async (startWorker: boolean, hold = false) => {
         databasePath: path.join(root, "library.sqlite"),
         logging: { silent: true },
       }),
-      { devicePort: 0, localPort: 0 }
-    );
+      port: 0,
+      token: "seeded-test-fixture",
+    });
   let listeners = await open();
   const send = (
     key: string,
@@ -102,9 +103,6 @@ const fixture = async (startWorker: boolean, hold = false) => {
     payload?: Payload,
     userAgent = "Orbis test"
   ) => {
-    if (!listeners.device) {
-      throw new Error("Missing device listener");
-    }
     const init: RequestInit = {
       headers: {
         authorization: `Bearer ${key}`,
@@ -116,7 +114,7 @@ const fixture = async (startWorker: boolean, hold = false) => {
     if (payload) {
       init.body = JSON.stringify(payload);
     }
-    return fetch(new URL(route, listeners.device.url), init);
+    return fetch(new URL(route, listeners.url), init);
   };
   const me = async (key: string) => {
     const response = await send(key, "/me");

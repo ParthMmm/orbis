@@ -8,7 +8,7 @@ Source ownership, local setup, and verification.
 | --- | --- |
 | Routes, request shapes, and derived clients | [`packages/contracts/src/http-api.ts`](../packages/contracts/src/http-api.ts) |
 | Shared HTTP handlers | [`apps/server/src/app-core.ts`](../apps/server/src/app-core.ts) |
-| Local Bun API dependencies | [`apps/server/src/app.ts`](../apps/server/src/app.ts) |
+| Disposable SQLite API dependencies | [`apps/server/src/app.ts`](../apps/server/src/app.ts) and [`scripts/fixture.ts`](../scripts/fixture.ts) |
 | Production Cloudflare Group | [`apps/api/src/group.ts`](../apps/api/src/group.ts) and [API README](../apps/api/README.md) |
 | Vanta audio-node startup and protocol | [`apps/server/src/node.ts`](../apps/server/src/node.ts), [`audio-node.ts`](../apps/server/src/audio-node.ts), and [operation guide](../deploy/orbis-server/README.md) |
 | Audio HTTP listener and API forwarding | [`node-http.ts`](../apps/server/src/node-http.ts) |
@@ -23,18 +23,14 @@ Resolve a filename with `rg --files <directory>` before reading it. Server HTTP 
 
 ## Setup
 
-Requires Bun 1.4.1 and Node.js 24 (Electron Forge and smoke tooling). TypeScript 7 is pinned and patched with Effect diagnostics by the install preparation script. The server runs on Bun, not Node.js.
+Requires Bun 1.4.1 and Node.js 24. TypeScript 7 is pinned and patched with Effect diagnostics by the install preparation script. The audio node and disposable HTTP fixtures run on Bun.
 
 ```sh
 bun install
 bun run dev
 ```
 
-`bun run dev` runs the workspace development tasks, including the local Bun API, web client, and legacy desktop client. Select one workspace with `bun run --filter @orbis/server dev`, `bun run --filter @orbis/web dev`, or `bun run --filter @orbis/desktop dev`.
-
-The desktop connects to the local API at `http://127.0.0.1:4310`. Web API configuration is in the [web README](../apps/web/README.md#develop). Local Bun storage is a development adapter; the [Cloudflare Group](../apps/api/README.md) owns production library data.
-
-The server stores `library.sqlite` under `data/` in its working directory (`apps/server/data/` with the workspace scripts). Set `ORBIS_DATA_DIR` to an absolute path for a stable custom location. `ORBIS_PORT` overrides the loopback port; set the same value for both processes. This development setup does not launch a bundled server from the packaged desktop app.
+`bun run dev` runs workspace development tasks. The server workspace starts the production audio node and requires its node environment. Web API configuration is in the [web README](../apps/web/README.md#develop). Browser and native journeys start `scripts/fixture.ts` with disposable SQLite and keyed loopback HTTP.
 
 ### Server logs
 
@@ -58,13 +54,8 @@ Individual checks and packaging remain available:
 bun run typecheck
 bun run test
 bun run build
-bun run smoke:desktop
 bun run format:check
 ```
-
-Run the build before the smoke check. The smoke check launches Electron and a separate Bun server on an ephemeral port, uses a temporary database, and cleans up both processes and data. It leaves a screenshot in the system temporary directory. It needs a desktop session, not a headless shell. Desktop renderer changes that affect saving, filtering, empty states, title editing, or deletion are not complete until `bun run smoke:desktop` has passed locally; that gate is documented rather than a macOS CI job because the check requires a real desktop session.
-
-Desktop builds package the current host platform into `apps/desktop/out/`. Signing, installers, and cross-platform release automation are not configured. Server builds need Bun and installed workspace dependencies.
 
 ## Verification lanes
 

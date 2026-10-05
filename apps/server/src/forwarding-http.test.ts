@@ -6,9 +6,8 @@ import path from "node:path";
 import type { WideEvent } from "evlog";
 
 import { createApp } from "./app.js";
-import { cutoverHandler } from "./cutover.js";
 import { hashToken } from "./identity.js";
-import { makeNodeHandler } from "./node-http.js";
+import { makeNodeHttpHandler } from "./node-http.js";
 import { issueStreamGrant } from "./stream-grant.js";
 
 test("forwarded requests log the authenticated key label at the API without copying trust to the node", async () => {
@@ -44,18 +43,17 @@ test("forwarded requests log the authenticated key label at the API without copy
     hostname: "127.0.0.1",
     port: 0,
   });
-  const forward = cutoverHandler(
-    () => Promise.resolve(new Response(null, { status: 404 })),
-    { apiUrl: new URL("/api", upstream.url), kind: "forward" },
-    {
-      logging: {
-        onEvent: (event) => forwardedEvents.push(event),
-        silent: true,
-      },
-    }
-  );
+  const forward = makeNodeHttpHandler({
+    apiUrl: new URL("/api", upstream.url),
+    audioDir: directory,
+    logging: {
+      onEvent: (event) => forwardedEvents.push(event),
+      silent: true,
+    },
+    streamSecret: Buffer.alloc(32),
+  });
   const node = Bun.serve({
-    fetch: (request) => forward(request, "device"),
+    fetch: forward,
     hostname: "127.0.0.1",
     port: 0,
   });
@@ -117,10 +115,10 @@ test("an audio node forwards API reads and keeps grant-only Range audio local", 
     port: 0,
   });
   const node = Bun.serve({
-    fetch: makeNodeHandler({
+    fetch: makeNodeHttpHandler({
+      apiUrl: new URL("/api", upstream.url),
       audioDir: directory,
       logging: { silent: true },
-      mode: { apiUrl: new URL("/api", upstream.url), kind: "forward" },
       streamSecret: secret,
     }),
     hostname: "127.0.0.1",
