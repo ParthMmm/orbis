@@ -25,7 +25,7 @@ export const request = async (
     : "http://127.0.0.1:4310";
   const response = await app.handler(
     new Request(`${base}${options.url}`, init),
-    options.accessMode,
+    options.accessMode ?? "device",
     options.clientAddress
   );
   const body = await response.json();

@@ -204,7 +204,8 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
   const app = createApp();
   try {
     const response = await app.handler(
-      new Request("http://localhost/openapi.json")
+      new Request("http://localhost/openapi.json"),
+      "device"
     );
     expect(response.status).toBe(200);
     const document = Schema.decodeUnknownSync(OpenApiDocument)(

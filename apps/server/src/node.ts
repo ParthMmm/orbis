@@ -1,9 +1,8 @@
 import { readFileSync } from "node:fs";
 
 import { startAudioNode } from "./audio-node.js";
-import { cutoverMode } from "./cutover.js";
 import { configureLogging } from "./logging.js";
-import { makeNodeHandler } from "./node-http.js";
+import { makeNodeHttpHandler } from "./node-http.js";
 
 const required = (name: string) => {
   const value = process.env[name];
@@ -22,12 +21,9 @@ if (streamSecret.length !== 32) {
 }
 configureLogging({ environment: process.env.NODE_ENV ?? "development" });
 const audio = Bun.serve({
-  fetch: makeNodeHandler({
+  fetch: makeNodeHttpHandler({
+    apiUrl: new URL(required("ORBIS_API_FORWARD_URL")),
     audioDir,
-    mode: cutoverMode({
-      ORBIS_API_FORWARD_URL: process.env.ORBIS_API_FORWARD_URL,
-      ORBIS_READ_ONLY: process.env.ORBIS_READ_ONLY,
-    }),
     streamSecret,
   }),
   hostname: process.env.ORBIS_NODE_HOST ?? "127.0.0.1",

@@ -102,7 +102,7 @@ const rawRequest = (
   method: string,
   url: string,
   headers: Record<string, string> = {},
-  accessMode: "local" | "device" = "local"
+  accessMode: "device" = "device"
 ) =>
   app.handler(
     new Request(`http://127.0.0.1:4310${url}`, { headers, method }),

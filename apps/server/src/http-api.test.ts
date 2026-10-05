@@ -31,7 +31,7 @@ const json = (method: string, body: PlaylistRequestBody): RequestInit => ({
 test("the Sets contract decodes live HTTP responses", async () => {
   const app = createApp();
   const send = (path: string, init?: RequestInit) =>
-    app.handler(new Request(`http://localhost${path}`, init));
+    app.handler(new Request(`http://localhost${path}`, init), "device");
 
   try {
     const savedResponse = await send("/sets", {
@@ -97,7 +97,7 @@ test("the Sets contract decodes live HTTP responses", async () => {
 test("the Playlist contract decodes live HTTP responses", async () => {
   const app = createApp();
   const send = (path: string, init?: RequestInit) =>
-    app.handler(new Request(`http://localhost${path}`, init));
+    app.handler(new Request(`http://localhost${path}`, init), "device");
   try {
     const setResponse = await send(
       "/sets",
@@ -173,7 +173,7 @@ test("the Playlist contract decodes live HTTP responses", async () => {
 test("the queue, position, and Tag contract decodes live HTTP responses", async () => {
   await withSeededApp(ready(["a", "b"]), async (app) => {
     const send = (path: string, init?: RequestInit) =>
-      app.handler(new Request(`http://localhost${path}`, init));
+      app.handler(new Request(`http://localhost${path}`, init), "device");
     const queue = async (path: string, init?: RequestInit) => {
       const response = await send(path, init);
       const body = Schema.decodeUnknownSync(

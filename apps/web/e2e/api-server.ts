@@ -4,7 +4,7 @@
 import path from "node:path";
 
 import { createApp } from "../../server/src/app.ts";
-import { startListeners } from "../../server/src/listeners.ts";
+import { startFixtureServer } from "../../server/src/fixture-server.ts";
 
 const root = path.resolve(import.meta.dir, "../../..");
 const dataDirectory = process.env.ORBIS_DATA_DIR ?? "";
@@ -16,8 +16,6 @@ const cobaltUrl = "http://cobalt.journey.test/";
 const tunnelUrl = "http://cdn.journey.test/ready-set.m4a";
 
 const app = createApp({
-  // The preview serves from a loopback Origin, which only development allows.
-  allowDevelopmentOrigins: true,
   audio: {
     audioDir: path.join(dataDirectory, "audio"),
     cobaltApiKey: "journey",
@@ -33,7 +31,9 @@ const app = createApp({
   databasePath: path.join(dataDirectory, "library.sqlite"),
   logging: { silent: true },
 });
-await startListeners(app, {
-  devicePort: Number(process.env.ORBIS_DEVICE_PORT),
-  localPort: Number(process.env.ORBIS_PORT),
+await startFixtureServer({
+  allowedOrigin: process.env.ORBIS_FIXTURE_ORIGIN,
+  app,
+  port: Number(process.env.ORBIS_FIXTURE_PORT),
+  token: "seeded-browser-fixture",
 });

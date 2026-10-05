@@ -13,6 +13,7 @@
 // --macos runs the unit tests on the macOS destination instead of the simulator.
 
 import { spawn, spawnSync } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { once } from "node:events";
 import {
   mkdirSync,
@@ -103,7 +104,6 @@ const unusedPort = async (excluded) => {
 };
 
 const dataDirectory = mkdtempSync(path.join(tmpdir(), "orbis-lane-"));
-const devicesPath = path.join(dataDirectory, "devices.json");
 const port = await unusedPort();
 const externalAddress = argument("service-address");
 const externalToken = argument("service-token");
@@ -155,90 +155,35 @@ try {
   let token = externalToken;
   let settingsToken = externalToken;
   if (!externalAddress) {
-    server = spawn("bun", ["apps/server/src/index.ts"], {
+    token = randomBytes(32).toString("base64url");
+    settingsToken = randomBytes(32).toString("base64url");
+    server = spawn("bun", ["scripts/fixture.ts"], {
       cwd: root,
       env: {
         ...process.env,
         ORBIS_COBALT_API_KEY: "lane",
         ORBIS_COBALT_URL: `${seedAddress}/cobalt`,
-        ORBIS_DATA_DIR: dataDirectory,
+        ORBIS_FIXTURE_DATA_DIR: dataDirectory,
+        ORBIS_FIXTURE_PORT: String(port),
+        ORBIS_FIXTURE_SETTINGS_TOKEN: settingsToken,
+        ORBIS_FIXTURE_TOKEN: token,
         ORBIS_OPENROUTER_API_KEY: "",
-        ORBIS_PORT: String(port),
         ORBIS_YOUTUBE_API_KEY: "",
         ORBIS_YTDLP_BIN: "",
       },
-      stdio: ["ignore", "ignore", "inherit"],
+      stdio: ["ignore", "pipe", "inherit"],
     });
+    const [readyChunk] = await once(server.stdout, "data");
+    const ready = JSON.parse(readyChunk.toString().split(/\r?\n/u)[0]);
+    if (
+      ready.address !== address ||
+      ready.token !== token ||
+      ready.settingsToken !== settingsToken
+    ) {
+      throw new Error("the fixture printed an invalid ready record");
+    }
     await waitForService(address);
     console.log(`lane service: ${address}`);
-
-    const enrolment = run(
-      [
-        "bun",
-        "apps/server/src/trust.ts",
-        "add",
-        "--label",
-        "lane",
-        "--devices",
-        devicesPath,
-      ],
-      { cwd: root }
-    );
-    token = /shown once: (?<token>\S+)/u.exec(enrolment)?.groups?.token;
-    if (!token) {
-      throw new Error("the enrolment command printed no token");
-    }
-
-    const preferences = await fetch(`${address}/me`, {
-      body: JSON.stringify({ autoDownload: false }),
-      headers: {
-        authorization: `Bearer ${token}`,
-        "content-type": "application/json",
-      },
-      method: "PATCH",
-    });
-    if (!preferences.ok) {
-      throw new Error(
-        "could not disable automatic downloads for manual-download journeys"
-      );
-    }
-    const person = run(
-      [
-        "bun",
-        "apps/server/src/trust.ts",
-        "person",
-        "add",
-        "--username",
-        "lane-settings",
-        "--devices",
-        devicesPath,
-      ],
-      { cwd: root }
-    );
-    const personId = /Added Person (?<id>\S+)/u.exec(person)?.groups?.id;
-    if (!personId) {
-      throw new Error("could not create the settings journey Person");
-    }
-    const settingsEnrolment = run(
-      [
-        "bun",
-        "apps/server/src/trust.ts",
-        "key",
-        "add",
-        "--person",
-        personId,
-        "--label",
-        "settings-journey",
-        "--devices",
-        devicesPath,
-      ],
-      { cwd: root }
-    );
-    settingsToken = /shown once: (?<token>\S+)/u.exec(settingsEnrolment)?.groups
-      ?.token;
-    if (!settingsToken) {
-      throw new Error("could not enrol the settings journey Person");
-    }
   }
   if (!token) {
     throw new Error("The lane requires a fixture token.");

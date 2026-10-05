@@ -79,7 +79,6 @@ const audioFileResponse = (file: AudioFile, range: AudioRange | null) => {
 
 export const createApp = (
   options: {
-    allowDevelopmentOrigins?: boolean;
     audio?: AudioOptions;
     databasePath?: string;
     database?: Layer.Layer<Database, unknown>;

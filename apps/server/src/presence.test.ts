@@ -10,7 +10,7 @@ import { Schema } from "effect";
 
 import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
-import { startListeners } from "./listeners.js";
+import { startFixtureServer } from "./fixture-server.js";
 
 const decode = Schema.decodeUnknownSync(
   Schema.fromJsonString(QueueEventSchema)
@@ -88,18 +88,16 @@ test("Presence reaches only viewers who pass the gate and lapses when reports st
       version: 2,
     })
   );
-  const listeners = await startListeners(
-    createApp({
+  const listeners = await startFixtureServer({
+    app: createApp({
       databasePath,
       logging: { silent: true },
       presenceWindowMs: 3000,
     }),
-    { devicePort: 0, localPort: 0 }
-  );
-  const address = listeners.device?.url;
-  if (!address) {
-    throw new Error("Device listener missing");
-  }
+    port: 0,
+    token: "seeded-test-fixture",
+  });
+  const address = listeners.url;
   const call = (
     key: string,
     route: string,

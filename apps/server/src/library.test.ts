@@ -746,7 +746,8 @@ test("rejects browser origins and non-loopback hosts before accessing the privat
         { host: "untrusted.example" },
       ].map(async (headers) => {
         const response = await app.handler(
-          new Request("http://127.0.0.1:4310/sets", { headers })
+          new Request("http://127.0.0.1:4310/sets", { headers }),
+          "device"
         );
         expect(response.status).toBe(403);
       })
