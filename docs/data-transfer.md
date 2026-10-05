@@ -4,11 +4,10 @@ Run these commands from the repository root with Bun 1.4.1. The SQL format inclu
 
 ## Import into an empty Group
 
-1. Migrate the source database with the current server. Import the legacy `devices.json` into SQLite through the trust CLI if it has not moved yet.
-2. Mint a node key in the source database. Keep the printed token private. Export after minting the key.
+1. Start the current server once to apply migrations and import any legacy `devices.json`. Enroll the audio node through the authenticated admin API if the source does not already have a node key.
+2. Stop the server and export the database.
 
 ```sh
-bun apps/server/src/trust.ts key add --person host --label audio-node --scope node --database /path/to/library.sqlite
 bun scripts/data-transfer.ts export /path/to/library.sqlite /private/group.sql
 ```
 
@@ -43,7 +42,7 @@ bun run --cwd packages/contracts build
 bun apps/api/e2e/transfer-verify.ts /home/parth/Developer/orbis-service-data
 ```
 
-The driver opens the source SQLite database read-only and uses `VACUUM INTO` to take a consistent private snapshot. It copies legacy trust data, migrates only the copy, and mints scratch node and Host keys with the CLI. It imports into a local workerd Group, compares every table, exports, restores to Bun, and compares the Host's HTTP Library, Playlists, Queue, positions, titles, and Tracklists. It also checks a private fixture with a nonempty ordered Playlist, named Cues, edited Unicode titles, and a constraint failure during import.
+The driver opens the source SQLite database read-only and uses `VACUUM INTO` to take a consistent private snapshot. It copies legacy trust data, migrates only the copy, and mints scratch node and Host keys in its private database copy. It imports into a local workerd Group, compares every table, exports, restores to Bun, and compares the Host's HTTP Library, Playlists, Queue, positions, titles, and Tracklists. It also checks a private fixture with a nonempty ordered Playlist, named Cues, edited Unicode titles, and a constraint failure during import.
 
 The final path points to a JSON report with counts, checksums, and HTTP routes checked. It does not include key tokens, digests, or data rows. SQL and database files remain inside directories with mode `0700`; SQL files use `0600`.
 

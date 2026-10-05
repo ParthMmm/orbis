@@ -1,13 +1,19 @@
 import "../../server/src/trust-storage-bun.js";
 import { Database } from "bun:sqlite";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
 import { chmod, copyFile, mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Effect, Layer, Schema } from "effect";
 
 import { layer } from "../../server/src/db/database.js";
-import { migrateTrustStore } from "../../server/src/identity.js";
+import {
+  hashToken,
+  migrateTrustStore,
+  mutateTrustStore,
+  readTrustStrict,
+} from "../../server/src/identity.js";
 
 const [sourceDirectory] = process.argv.slice(2);
 assert.ok(
@@ -47,33 +53,34 @@ await Effect.runPromise(
 if (await Bun.file(path.join(privateDirectory, "devices.json")).exists()) {
   migrateTrustStore(path.join(privateDirectory, "devices.json"), databasePath);
 }
-const mint = async (scope: "node" | "daily") => {
-  const child = Bun.spawn(
-    [
-      process.execPath,
-      path.resolve("apps/server/src/trust.ts"),
-      "key",
-      "add",
-      "--person",
-      "host",
-      "--label",
-      `transfer-${scope}`,
-      "--scope",
-      scope,
-      "--database",
-      databasePath,
-    ],
-    { stderr: "pipe", stdout: "pipe" }
+const mint = (scope: "node" | "daily") => {
+  const token = randomBytes(32).toString("base64url");
+  mutateTrustStore(
+    databasePath,
+    () => readTrustStrict(databasePath),
+    (store) => ({
+      store: {
+        ...store,
+        keys: [
+          ...store.keys,
+          {
+            addedAt: new Date().toISOString(),
+            id: randomBytes(6).toString("hex"),
+            label: `transfer-${scope}`,
+            lastUsedAt: null,
+            personId: "host",
+            scope,
+            tokenHash: hashToken(token),
+          },
+        ],
+      },
+      value: undefined,
+    })
   );
-  const output = await new Response(child.stdout).text();
-  assert.equal(await child.exited, 0, await new Response(child.stderr).text());
-  const token = /Key token, shown once: (?<token>[^\s]+)/u.exec(output)?.groups
-    ?.token;
-  assert.ok(token, "Trust CLI did not return a node key.");
   return token;
 };
-const node = await mint("node");
-const host = await mint("daily");
+const node = mint("node");
+const host = mint("daily");
 const run = async (source: string) => {
   const child = Bun.spawn(
     [process.execPath, path.join(import.meta.dir, "transfer-group.ts")],
