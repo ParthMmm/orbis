@@ -3,7 +3,6 @@ import path from "node:path";
 
 import { Context, Effect, Layer, Schema } from "effect";
 
-import { releaseAudio } from "./audio-release.js";
 import { LibraryError } from "./errors.js";
 import { outputTail } from "./logging.js";
 
@@ -78,23 +77,21 @@ export class MediaStore extends Context.Service<
     ) => Effect.Effect<MediaFile, LibraryError>;
   }
 >()("@orbis/MediaStore") {
-  static release(id: string, options: MediaStoreOptions = {}) {
-    return releaseAudio(id, () => {
-      const directory = options.audioDir ?? path.join(".", "audio");
-      return Effect.tryPromise({
-        catch: () =>
-          new LibraryError({
-            message: "Could not release audio.",
-            statusCode: 500,
-          }),
-        try: async () => {
-          await Promise.all(
-            ["ogg", "mp3", "m4a"].map((suffix) =>
-              rm(path.join(directory, `${id}.${suffix}`), { force: true })
-            )
-          );
-        },
-      });
+  static removeFiles(id: string, options: MediaStoreOptions = {}) {
+    const directory = options.audioDir ?? path.join(".", "audio");
+    return Effect.tryPromise({
+      catch: () =>
+        new LibraryError({
+          message: "Could not release audio.",
+          statusCode: 500,
+        }),
+      try: async () => {
+        await Promise.all(
+          ["ogg", "mp3", "m4a"].map((suffix) =>
+            rm(path.join(directory, `${id}.${suffix}`), { force: true })
+          )
+        );
+      },
     });
   }
 

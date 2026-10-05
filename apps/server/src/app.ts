@@ -4,6 +4,7 @@ import type { Layer } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 
 import { createPortableApp } from "./app-core.js";
+import { releaseAudio } from "./audio-release.js";
 import { Audio } from "./audio.js";
 import type { AudioFile, AudioOptions } from "./audio.js";
 import type { Database } from "./db/database.js";
@@ -124,7 +125,8 @@ export const createApp = (
         databasePath,
         migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
       }),
-    releaseAudio: (id) => MediaStore.release(id, options.audio),
+    releaseAudio: (id) =>
+      releaseAudio(id, () => MediaStore.removeFiles(id, options.audio)),
     streamSecret: grantSecret(
       databasePath === ":memory:"
         ? undefined
