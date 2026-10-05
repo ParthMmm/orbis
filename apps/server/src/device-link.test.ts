@@ -10,14 +10,14 @@
 // - A browser on a foreign Origin reaches the routes that need no key.
 // - A malformed label or code is accepted.
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Schema } from "effect";
 
 import { createApp } from "./app.js";
-import { hashToken } from "./identity.js";
+import { hashToken, readTrustStrict } from "./identity.js";
 import { request } from "./test-http.js";
 
 const HOST_DAILY = "device-link-host-daily";
@@ -61,7 +61,9 @@ const seedKey = (
   tokenHash: hashToken(token),
 });
 
-const setup = async (options: { deviceLinkTtlMs?: number } = {}) => {
+const setup = async (
+  options: { deviceLinkTtlMs?: number; deviceLinkNow?: () => number } = {}
+) => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-device-link-"));
   const devicesPath = path.join(directory, "devices.json");
   await writeFile(
@@ -85,10 +87,8 @@ const setup = async (options: { deviceLinkTtlMs?: number } = {}) => {
       devicesPath,
       ...options,
     });
-  const storedKeys = async () =>
-    Schema.decodeUnknownSync(StoredKeys)(
-      JSON.parse(await readFile(devicesPath, "utf-8"))
-    ).keys;
+  const storedKeys = () =>
+    Schema.decodeUnknownSync(StoredKeys)(readTrustStrict(devicesPath)).keys;
   const cleanup = () => rm(directory, { force: true, recursive: true });
   return { cleanup, open, storedKeys };
 };
@@ -319,13 +319,17 @@ test("unknown codes, malformed bodies, and foreign Origins are refused", async (
 });
 
 test("an expired Device Link cannot be approved and yields no key", async () => {
-  const { cleanup, open } = await setup({ deviceLinkTtlMs: 50 });
+  let now = Date.now();
+  const { cleanup, open } = await setup({
+    deviceLinkNow: () => now,
+    deviceLinkTtlMs: 50,
+  });
   const app = open();
   try {
     const unapproved = await start(app);
     const approvedLate = await start(app, "Slow phone");
     expect(await statusOf(approve(app, approvedLate.userCode))).toBe(200);
-    await Bun.sleep(80);
+    now += 80;
     expect(await statusOf(lookup(app, unapproved.userCode))).toBe(410);
     expect(await statusOf(approve(app, unapproved.userCode))).toBe(410);
     expect(await jsonOf(poll(app, unapproved.pollSecret))).toEqual({

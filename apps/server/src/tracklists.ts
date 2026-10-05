@@ -2,7 +2,6 @@ import type { Cue, Tracklist } from "@orbis/contracts";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { Duration, Effect } from "effect";
 
-import { Database } from "./db/database.js";
 import {
   libraryEntries,
   playlistSets,
@@ -10,6 +9,7 @@ import {
   setCues,
   sets,
 } from "./db/schema.js";
+import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import { Versos } from "./versos.js";
 

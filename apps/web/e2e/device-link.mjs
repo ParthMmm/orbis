@@ -4,12 +4,14 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
-import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
+
+import { readTrustStore } from "./trust-store.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-device-link");
@@ -186,7 +188,7 @@ try {
     const me = await callApi("/me", { key: keyB });
     assert.equal(me.status, 200);
     assert.equal(me.body.id, "host");
-    const store = JSON.parse(await readFile(devicesPath, "utf-8"));
+    const store = readTrustStore(dataDirectory);
     const minted = store.keys.find(
       (record) =>
         record.tokenHash === createHash("sha256").update(keyB).digest("hex")

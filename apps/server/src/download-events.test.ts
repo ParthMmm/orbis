@@ -10,6 +10,9 @@ import { request } from "./test-http.js";
 
 const youTubeUrl = "https://www.youtube.com/watch?v=aqzKEbpKQAA";
 
+// The identifying line is at the start; the generic cookie hint is the long tail.
+const longYtdlpStderr = `ERROR: [youtube] aqzKEbpKQAA: Sign in to confirm you're not a bot. ${"x".repeat(400)}`;
+
 // The worker runs on its own fiber, so the test polls for the job's event.
 const waitForJob = async (
   events: readonly WideEvent[],
@@ -51,7 +54,7 @@ test("a failed download emits one event that names each backend's cause", async 
             ? { code: 0, stdout: "2026.08.19\n" }
             : {
                 code: 1,
-                stderr: "ERROR: [youtube] aqzKEbpKQAA: Sign in to confirm",
+                stderr: longYtdlpStderr,
                 stdout: "",
               }
         ),
@@ -81,7 +84,9 @@ test("a failed download emits one event that names each backend's cause", async 
       source: "youtube",
     });
     const logs = JSON.stringify(job?.logs);
+    // The identifying line is at the start of stderr, beyond the logged tail.
     expect(logs).toContain("Sign in to confirm");
+    expect(logs).toContain('"stderrHead"');
     expect(logs).toContain('"message":"cobalt tunnel opened"');
     expect(logs).toContain('"backend":"cobalt","bytes":0');
     const state = await request(app, {

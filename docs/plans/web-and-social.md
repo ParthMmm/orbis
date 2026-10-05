@@ -1,5 +1,7 @@
 # Orbis web and social plan
 
+Historical plan. This records the original build sequence, paths, and verification tools. Use [development](../development.md) for current source ownership and verification, [ADR 0018](../adr/0018-api-on-a-durable-object.md) for the current deployment decision, and [GitHub Issues](https://github.com/ParthMmm/orbis/issues) for remaining acceptance checks.
+
 This plan turns the single-owner service into a private Group with a web client. The decisions are ADRs 0007 through 0010, 0013, and 0014. Vanta keeps the library server, download worker, and Retained Audio; Tailscale Funnel on port 10000 makes the API and the web client public at one address.
 
 ## Order

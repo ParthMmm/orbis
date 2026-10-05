@@ -79,7 +79,7 @@ export const addPerson = (path: string, input: string) => {
         throw new AdminError(409, "That username is already in use.");
       }
       const person = {
-        id: randomBytes(8).toString("hex"),
+        id: Buffer.from(randomBytes(8)).toString("hex"),
         removed: false,
         username,
       };
@@ -104,7 +104,7 @@ export const addKey = (
   if (scope === "admin" && personId !== HOST_PERSON_ID) {
     throw new AdminError(400, "Only Host can have an admin key.");
   }
-  const token = randomBytes(32).toString("base64url");
+  const token = Buffer.from(randomBytes(32)).toString("base64url");
   return mutateTrustStore(
     path,
     () => read(path),
@@ -112,7 +112,7 @@ export const addKey = (
       requirePerson(store, personId);
       const key: KeyRecord = {
         addedAt: new Date().toISOString(),
-        id: randomBytes(6).toString("hex"),
+        id: Buffer.from(randomBytes(6)).toString("hex"),
         label,
         lastUsedAt: null,
         personId,

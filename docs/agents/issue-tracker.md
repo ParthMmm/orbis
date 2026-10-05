@@ -3,7 +3,7 @@
 Specs and tickets live in [ParthMmm/orbis](https://github.com/ParthMmm/orbis). Use the `gh` CLI.
 
 - Create: `gh issue create --repo ParthMmm/orbis --title "..." --body-file <file>`
-- Read: `gh issue view <number> --repo ParthMmm/orbis --comments`
+- Read: `gh issue view <number> --repo ParthMmm/orbis --json number,title,body,comments`
 - List: `gh issue list --repo ParthMmm/orbis --state open --json number,title,labels,assignees`
 - Comment: `gh issue comment <number> --repo ParthMmm/orbis --body-file <file>`
 - Label: `gh issue edit <number> --repo ParthMmm/orbis --add-label <label>`; use `--remove-label` to remove.
@@ -12,6 +12,23 @@ Specs and tickets live in [ParthMmm/orbis](https://github.com/ParthMmm/orbis). U
 Publish specs as issues. Refer to issues by linked title.
 
 **PRs as a request surface: no.**
+
+## Readiness and completion
+
+Before marking a ticket ready, resolve every required repository path and ADR link on its target branch. If a required decision is still in a PR, record that PR as a blocker. ADRs state the intended design; issue acceptance checks record what is implemented and verified.
+
+Keep implementation and live acceptance as separate checks on parent issues. Record each remaining external blocker and link the latest evidence. Close a parent only when all its acceptance checks pass, including live checks.
+
+Link the [verification record](../development.md#retain-verification-evidence) from the resolution comment. Retain failed-run artifacts before retrying.
+
+## Read issues when the CLI fails
+
+Explicit JSON fields avoid the deprecated Projects query used by some `gh issue view` versions. If that read still fails, fetch the body and comments separately:
+
+```sh
+	gh api repos/ParthMmm/orbis/issues/<number>
+	gh api --paginate repos/ParthMmm/orbis/issues/<number>/comments
+```
 
 ## Wayfinding operations
 

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { createApp } from "./app.js";
-import { hashToken } from "./identity.js";
+import { hashToken, mutateTrustStore, readTrustStrict } from "./identity.js";
 import { listenerPorts, startListeners } from "./listeners.js";
 
 const fixture = async () => {
@@ -161,7 +161,11 @@ test("separate loopback listeners authenticate devices and share one library", a
     ]);
     await Promise.all(bodyLimits.map((response) => response.text()));
 
-    await writeFile(devicesPath, JSON.stringify({ devices: [], version: 1 }));
+    mutateTrustStore(
+      devicesPath,
+      () => readTrustStrict(devicesPath),
+      (store) => ({ store: { ...store, keys: [] }, value: undefined })
+    );
     const revokedDevice = await status(device, headers);
     expect(revokedDevice).toBe(401);
     const revokedLocal = await status(local);

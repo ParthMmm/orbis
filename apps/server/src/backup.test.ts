@@ -73,9 +73,8 @@ test("a backup restores to a service that serves the same Library", async () => 
       path.join(scratch, "library.sqlite"),
       Bun.file(path.join(latest, "library.sqlite"))
     );
-    await Bun.write(
-      path.join(scratch, "devices.json"),
-      Bun.file(path.join(latest, "devices.json"))
+    expect(await Bun.file(path.join(latest, "devices.json")).exists()).toBe(
+      false
     );
     const restored = serve(scratch);
     try {

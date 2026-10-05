@@ -1,3 +1,4 @@
+import "./trust-storage-bun.js";
 import { randomBytes } from "node:crypto";
 import path from "node:path";
 
@@ -11,14 +12,15 @@ import {
 import type { KeyRecord, TrustStore } from "./identity.js";
 
 const usage = `Usage:
-  bun src/trust.ts person add --username <name> [--devices <path>]
-  bun src/trust.ts person list [--devices <path>]
-  bun src/trust.ts person remove --id <id> [--devices <path>]
-  bun src/trust.ts key add --person <id> --label <name> [--scope daily|admin] [--devices <path>]
-  bun src/trust.ts key list [--devices <path>]
-  bun src/trust.ts key revoke --id <id> [--devices <path>]
+  bun src/trust.ts recover --url <API URL> --label <name>
+  bun src/trust.ts person add --username <name> [--database <path>]
+  bun src/trust.ts person list [--database <path>]
+  bun src/trust.ts person remove --id <id> [--database <path>]
+  bun src/trust.ts key add --person <id> --label <name> [--scope daily|admin|node] [--database <path>]
+  bun src/trust.ts key list [--database <path>]
+  bun src/trust.ts key revoke --id <id> [--database <path>]
 
-The default store is devices.json beside the library database. ORBIS_DATA_DIR
+The default store is library.sqlite. Legacy devices.json is imported once. ORBIS_DATA_DIR
 sets its directory for the server and this tool. Key tokens print once.`;
 
 const option = (name: string): string | undefined => {
@@ -35,8 +37,9 @@ const required = (name: string): string => {
 };
 
 const target = path.resolve(
-  option("devices") ??
-    path.join(process.env.ORBIS_DATA_DIR ?? "data", "devices.json")
+  option("database") ??
+    option("devices") ??
+    path.join(process.env.ORBIS_DATA_DIR ?? "data", "library.sqlite")
 );
 
 const readStore = (): TrustStore => {
@@ -129,8 +132,8 @@ const personRemove = () => {
 const keyAdd = (legacy = false) => {
   const personId = legacy ? HOST_PERSON_ID : required("person");
   const scope = option("scope") ?? "daily";
-  if (scope !== "daily" && scope !== "admin") {
-    throw new Error("--scope must be daily or admin.");
+  if (scope !== "daily" && scope !== "admin" && scope !== "node") {
+    throw new Error("--scope must be daily, admin, or node.");
   }
   if (scope === "admin" && personId !== HOST_PERSON_ID) {
     throw new Error("Only Host can have an admin key.");
@@ -187,7 +190,13 @@ const keyRevoke = () => {
 
 const [group, action] = process.argv.slice(2);
 try {
-  if (group === "person" && action === "add") {
+  if (group === "recover") {
+    const { recoverRemoteAdmin } = await import("./trust-recovery.js");
+    await recoverRemoteAdmin({
+      label: required("label"),
+      url: required("url"),
+    });
+  } else if (group === "person" && action === "add") {
     personAdd();
   } else if (group === "person" && action === "list") {
     personList();

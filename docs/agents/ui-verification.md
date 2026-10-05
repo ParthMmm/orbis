@@ -1,174 +1,41 @@
-# Verifying the Orbis UI with agent-device
+# Verify the Apple UI
 
-`bun run native-lanes` owns automated verification for the Apple client. This note covers the complementary pass an agent makes by hand: driving a real build on a real simulator, and the traps that cost time or, worse, produce a wrong conclusion.
+Automated journeys run through [native lanes](../development.md#native-clients). Use this procedure when checking a real build by hand. [Historical September notes](../audits/2026-09-native-verification-notes.md) retain the measured findings and tool behavior from those builds.
 
-Recorded 2026-09-14 from a full iPhone pass on iOS 26.5 against `a8af6cc`. Tool version `agent-device 0.20.10`.
+## Choose the build and target
 
-## A screenshot is evidence only if the environment is clean
+1. Build and install the revision being checked. Record its commit and the installed app's binary digest. A build on disk is not evidence of what the device runs.
+2. Name the platform, simulator ID, and session before opening the app. Confirm the target before trusting a snapshot. Simulators can share display names across runtimes.
+3. In T3, use `device_list` and `device_open` for simulator checks. Keep the exact launcher, host configuration, and session flags returned by `device_open` on each agent-device command.
 
-The most expensive thing that happened in that pass was a false product bug. After filing a link, the Set never appeared in the Library, and the Library still said **Start your collection**. The service held the Set, and two `GET /sets` calls had returned `200` with it. That reads as a real defect.
-
-It was not. An iCloud **Apple Account Verification** alert was up and swallowing taps. Once the alert was dismissed, the Set was there after a plain refresh.
-
-An iOS simulator raises these unprompted: **Apple Account Verification**, and **Save Password?** after any form with a `SecureField` is submitted. `agent-device alert dismiss` clears the first. The second is a sheet rather than an alert, so it needs a snapshot and a press on **Not Now** — and `find "Not Now"` matches three elements, so take the ref from `snapshot -i` instead.
-
-Two habits follow, and both are cheap:
-
-- Before reporting that a control did nothing, dismiss any system UI and retry. A settled tap that changes nothing is a product finding only after the environment is known clean.
-- Read the screenshot, not just the accessibility tree, before believing a state. `15-library-one-set.png` in the 2026-09-14 pass was discarded because the capture silently included the iCloud alert over the app's own UI.
-
-## Pin the platform and the session
-
-Orbis ships as a macOS app and a simulator app under one bundle id, `app.orbis.client`. A bare `agent-device open app.orbis.client` in this repository attached to the **installed macOS app** at `~/Applications/Orbis.app`, and reported only `Opened: app.orbis.client`. The mistake is invisible until something looks wrong, and `appstate` printed nothing at all for that session.
-
-Always name both:
+For a Mac-hosted CLI session outside T3, select an explicit target:
 
 ```sh
-agent-device open app.orbis.client --platform ios --device "iPhone 17 Pro" --session orbis-ios --foreground
+	agent-device open app.orbis.client --platform ios --device "<simulator name>" --session orbis-ios --foreground
 ```
 
-Confirm the target with `agent-device session` or `agent-device device status` before trusting a snapshot. The session is keyed to the working directory, so leaving the default session unnamed means the next agent inherits whatever the last one left.
+## Use isolated data
 
-## Refs do not survive a mutation
+For filing, renaming, and removal, use the native lane's disposable service and pairing. [Development](../development.md#find-the-implementation) identifies the fixture runner and client. The production library is in the Group, not the local development SQLite database.
 
-Every settled interaction emits a fresh frame whose refs carry a pin (`@e14~s199512`). A plain ref from an earlier snapshot is rejected, with one of two messages depending on age:
+For a production acceptance check, use the issue's approved scope and existing key handling. Record the original pairing and restore it afterwards. Verify the restored connection before finishing.
 
-- `Ref @e56 needs a complete snapshot — the current frame only authorizes its emitted refs`
-- `Ref @e4 belongs to an expired ref frame — a device action since the snapshot invalidated it`
+## Check the environment before the product
 
-So read refs from the settled diff, not from a snapshot taken before the interaction, and never carry a ref across one. When a diff is not enough, `snapshot -i` costs a call and removes the class of error.
+Dismiss system alerts and credential sheets before judging an interaction. An Apple Account Verification alert or password prompt can intercept taps while the app still updates underneath it. Inspect the screenshot as well as the accessibility tree.
 
-## Prefer refs over `find`, and know why
+Take a fresh `snapshot -i` before selecting a ref. After an interaction, use refs from its settled frame or a new snapshot. Take a fresh snapshot for each timed reading too; a stale read can return an old value without an error.
 
-`find` matches loosely, and the obvious words collide on these screens: `Library` (tab and heading), `Refresh` (menu cell and its label), `Not Now` (sheet cell and button) each returned `AMBIGUOUS_MATCH`. The error prints a `Candidates:` heading with an empty list, so it names the problem without resolving it. `snapshot -i` plus an exact ref is faster than guessing.
+Use exact refs when labels match several nodes. Confirm the expected heading, value, or navigation destination after the action. A non-empty tree diff records change, not completion of the intended action.
 
-`find` also accepts no `--settle`, so `find <text> press` returns without a settled diff. That is fine for a confident single step and wrong for anything whose result is the point of the check.
+## Measure the claim
 
-## Three commands that carry their weight
+Read the control's frame, enabled state, and hittability before reporting clipping or occlusion. Compare its bounds with the window and neighboring controls. Check the end of a scrollable list before judging its footer.
 
-- `screenshot --pixel-density 3 --normalize-status-bar` gives clean 3x design artifacts with deterministic chrome. This is the right shape for reviewing spacing and hierarchy.
-- `screenshot --overlay-refs` draws each ref's rectangle onto the capture. It is what turned "maybe I tapped the wrong place" into a defect: the overlay showed the tap landing exactly on the drawn `techno` pill while the filter never engaged.
-- `get attrs @ref` returns `rect` (`x`, `y`, `width`, `height`), `hittable`, `enabled`, `type`, and `identifier`. It also accepts a selector. This is the one that settles a layout claim.
+For a control that appears unresponsive, exercise a known working control on the same build and screen. For a toggle, test both states and the return transition. When XCUITest cannot compute a hit point, compare its element frame with a manual tap before concluding the layout is broken.
 
-## Measure, do not read
+Use screenshots to show the state and geometry reads to support the claim. Record which scroll position and playback state the measurement covers.
 
-A screenshot suggests. `get attrs` decides. Every layout claim in the 2026-09-14 pass came out of a screenshot first, and three of them had to be withdrawn once the geometry was read, so take the measurement before writing the finding:
+## Preserve the result
 
-- **Does it fit?** Compare the transport's time label against the window: `x 298 + width 104 = 402`, the window width. It touches the edge with zero inset and never overflows. In the screenshot it looked as though it ran off the edge.
-- **Is it occluded?** Compare bands. The transport's bottom edge is `y = 791` and the tab bar's top edge is `y = 791`: they abut, they do not cross. `hittable: true` on the controls settles it.
-- **Is the target big enough?** `height: 20.33` on the play control answers that in one number.
-
-The window is a ref too: `get attrs @e1` gives the application frame to measure everything against.
-
-`is <predicate> <selector>` takes a selector rather than a ref, and is the right shape for a pass or fail assertion. `get` accepts either a ref or a selector.
-
-## A scroll position is not a layout
-
-Two withdrawn claims came from captures of a scrollable list part-way down, where the last row and the footer sat under the floating bar. That is simply what scrolling under a floating bar looks like. At the end of the scroll both are clear — last row `y 645–745`, footer `y 760–775`, bar at `y 791` — in the filtered and unfiltered lists alike. Scroll to the edge before judging occlusion, and state which scroll position a claim applies to.
-
-## A delta is not an assertion
-
-A non-empty settled diff means something changed, not that the thing you wanted changed. Pressing the dead tag pill reported `+3 -4`, and every changed node was incidental tree normalisation: a `"0 pages"` placeholder leaving as the tree settled. The heading was still `Everything`.
-
-Assert the expected state by name — the heading text, the predicate, the frame — and treat a diff as a hint about where to look. Two presses reporting `+0 -0` beside an unchanged heading is the finding; `+3 -4` on the first press would have been read as success.
-
-## Make the negative controlled
-
-"This control does nothing" is only persuasive beside something on the same screen that works. In one pass, on one build at one scroll position: pressing a row opened the Set page, while pressing the filter pill twice left the heading at `Everything`. Keep a known-responsive control in the same pass, and record the commit and the binary digest the pass ran against.
-
-## Pairing a simulator to the real service
-
-The simulator shares the Mac's network stack, so a Tailscale address resolves and connects with no extra setup: MagicDNS resolved `vanta.example.ts.net` and `Test connection` succeeded on the first try. `~/.orbis/config.json` holds the pair this Mac already uses, but the iOS app cannot read it — that fallback is compiled for macOS only — so the address and token are typed on the connection screen like any first launch.
-
-Read the address and token from that file rather than printing them:
-
-```sh
-agent-device fill @e8 "https://vanta.example.ts.net:8444" --session orbis-ios --settle
-agent-device fill @e53 "$(python3 -c "import json,os;print(json.load(open(os.path.expanduser('~/.orbis/config.json')))['deviceToken'])")" --session orbis-ios --settle
-```
-
-Do not start a local server against the development database to read a real library. `apps/server/data/library.sqlite` is empty; the library on Vanta is the one with Sets in it. For states that need writes — filing, renaming, removing — start a throwaway service instead, with its own data directory and its own enrolment, so the real library is never touched:
-
-```sh
-ORBIS_DATA_DIR=/tmp/orbis-scratch ORBIS_PORT=4310 bun apps/server/src/index.ts
-bun apps/server/src/trust.ts add --label scratch --devices /tmp/orbis-scratch/devices.json
-```
-
-Repair the pairing afterwards, then confirm the real Sets are back before ending the session.
-
-## Where the journey suite stops
-
-`bun run native-lanes` verifies text, identifiers, and navigation, and it does that well. It does not currently assert geometry. The gap the 2026-09-14 pass found in the filter and the empty states is now closed by journeys:
-
-- `testFiltersTheLibraryByTag` taps the filter pill in both directions and asserts the heading changes, so the pill is exercised instead of reached through `-orbisStartTagFiltered`.
-- `testAFilterThatAdmitsNothingIsNotAnEmptyLibrary` still launches pre-filtered, with a tag no Set carries, and asserts the hides-everything state keeps the heading, the filter row, and its own copy.
-- `testClearsANoMatchSearch` and `testOpensASetFromASearchResult` cover the two ways a search ends.
-
-What no journey asserts yet is geometry: with a Set playing, that the transport's controls are `hittable`, keep the page's horizontal margin, and clear the tab bar's top edge. `get attrs` supplies all three, and only a manual pass reads them today.
-
-## A tap XCUITest cannot compute
-
-XCUITest sometimes cannot turn an element into a tap. It reports `Computed hit point {-1, -1} after scrolling to visible`, which reads like a layout defect and is not one: the same element reports a real frame, and a tap at the centre of that frame, taken from the window, works. The element's own coordinate space does not.
-
-Measured 2026-09-21 on Orbis Lanes. The Playlists tab was `Button {{206.3, 795.0}, {100.7, 54.0}}` inside `TabBar {{0.0, 791.0}, {402.0, 83.0}}`, and `tap()` reported `{-1, -1}`. The same miss hits the paste field, a filter pill, and a row. `tapAtCentre(of:in:)` is that window-coordinate tap.
-
-Home is the first tab after pairing. The centre of a tab button's frame sometimes hits the scroll view under the floating bar and leaves Home selected. The symbol, about 18 points below the top of the frame, selects Library and Playlists. The list has no "Everything" heading: the large title says Library, and an active filter is named on the pill.
-
-Three `--journeys` runs on Orbis Lanes (`F26942CA-EAA9-46A9-BAC7-FEEB6560133D`) passed in a row on 2026-09-21, nine tests each. The tree was `737f99e` plus the uncommitted journey edits. The app binary was `2327e34c043726aa972fcb2096ead3809869abf74e726996dcc7a60061ef7a21`.
-
-Check the claim before filing it. `get attrs` on the element gives the frame, the accessibility tree gives `hittable`, and a tap at that frame's centre is the third measurement. All three tools are in `orbis-verify` and `agent-device`.
-
-**The Library's hides-everything state takes no tap at all from XCUITest.** On 2026-09-15, with one Set in the lane and `-orbisStartTagFiltered <tag>`, none of the content of that state accepted a tap: not its `Clear filters` action, and not the filter pill in the header above it. The same taps, at the same points, on the same build, clear the filter when the app is driven by hand — screenshotted before and after, with the taps delivered at the button's own frame. Rows and the pill accept taps from XCUITest in every other state of the same screen.
-
-So the journey asserts that the state appears with its own copy, its heading, its filter row, and its action; the press that clears the filter is a hand check, and the model change behind it is covered by `LibraryFilterTests`. Changing the presentation did not move this: the state was tried inside a scroll view and outside one, with an element-relative tap and with a window-relative one, and with the container's accessibility identifier removed.
-
-Two habits that avoid the other class of error:
-
-- **Install the build before driving it.** `orbis-verify doctor` reports an installed build that differs from the build on disk, and driving a stale install reproduces yesterday's behaviour against today's code. A run on 2026-09-15 read the pre-change empty state for half an hour because `orbis-verify build` had run without `orbis-verify launch`.
-- **Check which simulator is booted.** Several simulators share the name `iPhone 17 Pro`, across runtimes. A device that is shut down and replaced by another of the same name inside one session changes what is installed where.
-
-## A stale read is not a measurement
-
-`press` on a stale ref fails loudly. `get text` on a stale ref does not: it returns the value from the frame that ref belonged to. Two `get text` readings of the playback clock six seconds apart both returned `0:09 / 1:15:25` while playback was in fact advancing at about one second per second. That is indistinguishable from a stalled stream, and it very nearly became a filed bug.
-
-Take readings from fresh `snapshot -i` calls, never from a ref held across other reads. The doubled cost is the price of the measurement meaning anything.
-
-## Test both directions of a toggle
-
-A control that turns something off but not on fails in a way that only looks like death. The tag filter pill was pressed five times across two sessions from an unfiltered Library and did nothing; issue #41 was filed as "the pill accepts no tap at all". Pressing it once from a _filtered_ Library cleared the filter immediately. The control worked the whole time, in one direction.
-
-So drive a toggle to each state and back, and prefer reaching a state by a second route (a launch argument, a service-side change) before concluding the control that sets it is broken. `--overlay-refs` proved the taps landed on the pill, which was consistent with both explanations and did not distinguish them.
-
-## A receipt from the 2026-09-14 re-verification
-
-Every finding in the pass was re-checked against a clean `a8af6cc` build on the same simulator, with the app binary at `840613a46643d5bdc92da63f339b51a3e65638fbc498e715abd2febb9178135d`. Recording the commit and the digest is what makes the result reproducible after a rebase.
-
-| Claim | Outcome |
-| --- | --- |
-| The tag filter pill accepts no tap | Reproduced. Two presses, heading stayed `Everything`, `+0 -0` |
-| A row opens the Set page | Reproduced. The control for the negative |
-| The transport is occluded and unusable | **Withdrawn.** `hittable: true`; slider bottom `791` abuts bar top `791` |
-| `Pause` is cut by the left edge | **Withdrawn.** Drawn complete at `x = 0`; inset-free, not clipped |
-| The time label overflows the right edge | **Withdrawn.** Right edge exactly `402` = window width, at both durations |
-| The last row and footer render under the bar | **Withdrawn.** At end of scroll, `y 645–745` and `y 760–775`, bar at `791`, filtered and unfiltered |
-| The transport ignores the page margins | **Added** by measurement: `x = 0`, right edge `402`, zero gap to the bar, `20.33pt` play target |
-| The first row loses its label | Reproduced, and broader than recorded: unfiltered too |
-
-Four of nine findings survived contact with the geometry unchanged. The four that did not had all been written from screenshots, which is the reason this section exists.
-
-### The maintenance pass, same day
-
-The feature map in `.agents/skills/verify-orbis/` was checked in two waves against the same `a8af6cc` client: one read-only recon per feature file, then a live pass driven serially on one instance.
-
-| Claim | Outcome |
-| --- | --- |
-| The tag pill accepts no tap | **Corrected.** It turns the filter off but never on |
-| Progress advances while playing | Verified: `43.5 → 48 → 52.5`, and only after a stale `get text` reading was caught |
-| Pause holds the position | Verified: label flipped to `Play`, value held across three reads |
-| Drag seeks | Verified: the time jumped to `1:14:10` |
-| Tap seeks | **Refuted.** Pressing the track's midpoint while paused changed nothing |
-| `Clear search` clears the query | **Refuted.** The query stays and the area shows `Loading` indefinitely |
-| A search result opens its Set | **Refuted.** `+0 -0`, the app stays on Search |
-| The untagged-Set filter case renders as empty | Confirmed again |
-
-Not covered in that pass: `file.md` and the mutating half of `set-page.md`, which need the scratch service. They are recorded as unverified rather than passed.
+Retain the [verification record and artifacts](../development.md#retain-verification-evidence). Include the steps, expected state, and observed state. Mark checks that were not exercised as unverified.

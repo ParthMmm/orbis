@@ -13,14 +13,14 @@
 // - Guessing codes is not limited, or a key on the request skips the limit.
 // - A browser on a foreign Origin reaches the claim route.
 import { expect, test } from "bun:test";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Schema } from "effect";
 
 import { createApp } from "./app.js";
-import { hashToken } from "./identity.js";
+import { hashToken, readTrustStrict } from "./identity.js";
 import { request } from "./test-http.js";
 
 const HOST_DAILY = "invite-host-daily";
@@ -87,7 +87,8 @@ const setup = async (options: { inviteTtlMs?: number } = {}) => {
       devicesPath,
       ...options,
     });
-  const storeText = () => readFile(devicesPath, "utf-8");
+  const storeText = () =>
+    Promise.resolve(JSON.stringify(readTrustStrict(devicesPath)));
   const storedKeys = async () =>
     Schema.decodeUnknownSync(StoredKeys)(JSON.parse(await storeText())).keys;
   const cleanup = () => rm(directory, { force: true, recursive: true });

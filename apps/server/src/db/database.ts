@@ -5,7 +5,12 @@ import { sql } from "drizzle-orm";
 import * as SQLiteDrizzle from "drizzle-orm/effect-sqlite-bun";
 import { migrate } from "drizzle-orm/effect-sqlite-bun/migrator";
 import { readMigrationFiles } from "drizzle-orm/migrator";
-import { Context, Effect, Layer } from "effect";
+import { Effect, Layer } from "effect";
+
+import { Database } from "./service.js";
+import type { DatabaseClient } from "./service.js";
+
+export { Database } from "./service.js";
 
 const CURRENT_SCHEMA_VERSION = 2;
 
@@ -32,12 +37,6 @@ const LEGACY_MIGRATIONS: readonly (readonly string[])[] = [
   ],
   [CREATE_MEMBERSHIP_INDEX],
 ];
-
-type DatabaseClient = SQLiteDrizzle.EffectSQLiteBunDatabase;
-
-export class Database extends Context.Service<Database, DatabaseClient>()(
-  "@orbis/Database"
-) {}
 
 const runLegacyMigration = (
   db: DatabaseClient,

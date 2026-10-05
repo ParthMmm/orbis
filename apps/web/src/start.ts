@@ -10,6 +10,7 @@ import { apiUrl } from "@/lib/api-url";
 const securityHeaders = createMiddleware().server(({ next }) => {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const api = new URL(apiUrl()).origin;
+  const audio = new URL(process.env.ORBIS_AUDIO_URL ?? api).origin;
   setResponseHeaders(
     new Headers({
       "Content-Security-Policy": [
@@ -19,7 +20,7 @@ const securityHeaders = createMiddleware().server(({ next }) => {
         "img-src 'self' https: data:",
         "font-src 'self'",
         `connect-src 'self' ${api}`,
-        `media-src ${api}`,
+        `media-src ${api} ${audio}`,
         "object-src 'none'",
         "base-uri 'none'",
         "form-action 'self'",

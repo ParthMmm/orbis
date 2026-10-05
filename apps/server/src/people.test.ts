@@ -1,11 +1,11 @@
 import { expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { createApp } from "./app.js";
-import { hashToken } from "./identity.js";
+import { hashToken, readTrustStrict } from "./identity.js";
 import { request } from "./test-http.js";
 
 const trust = (store: string, ...args: string[]) => {
@@ -64,10 +64,13 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
 
     const added = trust(devicesPath, "person", "add", "--username", "alice");
     expect(added.status).toBe(0);
-    const storeAfterAdd = JSON.parse(await readFile(devicesPath, "utf-8"));
+    const storeAfterAdd = readTrustStrict(devicesPath);
     const alice = storeAfterAdd.people.find(
       (person: { username: string }) => person.username === "alice"
     );
+    if (!alice) {
+      throw new Error("Added Person is missing.");
+    }
     expect(alice.id).toBeString();
     expect(storeAfterAdd.version).toBe(2);
     expect(storeAfterAdd.keys[0]).toMatchObject({
@@ -116,7 +119,7 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
     const renamedRead = await request(app, remote(token));
     expect(renamedRead.json()).toEqual(renamed.json());
 
-    const storedText = await readFile(devicesPath, "utf-8");
+    const storedText = JSON.stringify(readTrustStrict(devicesPath));
     const stored = JSON.parse(storedText);
     const key = stored.keys.find(
       (record: { personId: string }) => record.personId === alice.id
@@ -157,7 +160,7 @@ test("legacy devices become Host keys and new People can rename and revoke", asy
     ).toBe(0);
     const afterRemoval = await request(app, remote(secondToken));
     expect(afterRemoval.statusCode).toBe(401);
-    const finalStore = JSON.parse(await readFile(devicesPath, "utf-8"));
+    const finalStore = readTrustStrict(devicesPath);
     expect(
       finalStore.people.find((person: { id: string }) => person.id === alice.id)
     ).toMatchObject({ removed: true });
@@ -230,7 +233,7 @@ test("concurrent key usage cannot restore a removed Person's keys", async () => 
       )
     ).toBe(true);
     expect(await removal.exited).toBe(0);
-    const stored = JSON.parse(await readFile(devicesPath, "utf-8"));
+    const stored = readTrustStrict(devicesPath);
     expect(
       stored.keys.some((key: { personId: string }) => key.personId === personId)
     ).toBe(false);
@@ -261,20 +264,17 @@ test("a live lock blocks mutation and a killed owner releases it", async () => {
   const devicesPath = path.join(directory, "devices.json");
   const marker = path.join(directory, "locked");
   const holderCode = `
-    import { dlopen, FFIType } from "bun:ffi";
-    import { openSync, writeFileSync } from "node:fs";
-    const libc = dlopen(process.platform === "darwin" ? "libSystem.B.dylib" : "libc.so.6", {
-      flock: { args: [FFIType.i32, FFIType.i32], returns: FFIType.i32 },
-    });
-    const fd = openSync(process.env.LOCK_PATH, "a", 0o600);
-    if (libc.symbols.flock(fd, 2) !== 0) process.exit(1);
+    import { Database } from "bun:sqlite";
+    import { writeFileSync } from "node:fs";
+    const db = new Database(process.env.LOCK_PATH, { create: true });
+    db.run("BEGIN IMMEDIATE");
     writeFileSync(process.env.MARKER_PATH, "locked");
     await Bun.sleep(30_000);
   `;
   const holder = Bun.spawn([process.execPath, "-e", holderCode], {
     env: {
       ...process.env,
-      LOCK_PATH: `${devicesPath}.lock`,
+      LOCK_PATH: path.join(directory, "library.sqlite"),
       MARKER_PATH: marker,
     },
     stderr: "pipe",
@@ -307,9 +307,9 @@ test("a live lock blocks mutation and a killed owner releases it", async () => {
     expect(state).toBe("waiting");
     holder.kill(9);
     await holder.exited;
-    expect(existsSync(`${devicesPath}.lock`)).toBe(true);
+    expect(existsSync(path.join(directory, "library.sqlite"))).toBe(true);
     expect(await mutation.exited).toBe(0);
-    const stored = JSON.parse(await readFile(devicesPath, "utf-8"));
+    const stored = readTrustStrict(devicesPath);
     expect(
       stored.people.some(
         (person: { username: string }) => person.username === "recovered"
