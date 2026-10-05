@@ -1,5 +1,7 @@
 # Orbis native clients and Vanta playback plan
 
+Historical plan. This records the original build sequence, paths, and verification tools. Use [development](../development.md) for current source ownership and verification, [ADR 0018](../adr/0018-api-on-a-durable-object.md) for the current deployment decision, and [GitHub Issues](https://github.com/ParthMmm/orbis/issues) for remaining acceptance checks.
+
 This program turns Orbis from a loopback-only Electron library into a native Apple experience backed by the existing Bun, Effect v4, and SQLite service on Vanta. It covers the private Cobalt trial, one multiplatform SwiftUI app, metadata enrichment, retained audio, streaming playback with system controls, one synchronized Listening Queue, and listening statistics.
 
 Thirteen units land in dependency order. U1 is the Cobalt trial. U2 is the native foundation and Library browsing. U3 through U13 build the remaining ticket behaviours. Units are numbered by the order they may start, not by ticket number.

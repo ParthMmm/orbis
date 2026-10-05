@@ -1,3 +1,7 @@
+## Navigation
+
+Before locating a subsystem or choosing a verification lane, read the source and artifact map in `docs/development.md`.
+
 ## Effect Best Practices
 
 **IMPORTANT:** Always consult effect-solutions before writing Effect code.
