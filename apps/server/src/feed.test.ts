@@ -5,9 +5,11 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import type { ListeningQueue } from "@orbis/contracts";
+import { ListeningQueueSchema } from "@orbis/contracts/http-api";
+import { Schema } from "effect";
 
-import type { CatchUp, FeedNotice } from "./feed.js";
+import type { FeedNotice } from "./feed-signals.js";
+import type { CatchUp } from "./feed.js";
 import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
 import { createTestApp as createApp } from "./test-app.js";
@@ -15,16 +17,35 @@ import { createTestApp as createApp } from "./test-app.js";
 setDefaultTimeout(30_000);
 
 const PEOPLE = ["host", "ana", "ben", "cai"] as const;
-const KEYS = {
-  "ana-laptop": "ana",
-  "ana-phone": "ana",
-  "ben-phone": "ben",
-  "ben-tablet": "ben",
-  "cai-phone": "cai",
-} as const;
-type Key = keyof typeof KEYS;
+const DEVICE_KEYS = [
+  { id: "ana-laptop", personId: "ana" },
+  { id: "ana-phone", personId: "ana" },
+  { id: "ben-phone", personId: "ben" },
+  { id: "ben-tablet", personId: "ben" },
+  { id: "cai-phone", personId: "cai" },
+] as const;
+type Key = (typeof DEVICE_KEYS)[number]["id"];
+type Payload = Readonly<
+  Record<string, string | number | boolean | readonly string[]>
+>;
 const SHARED_SETS = ["set-1", "set-2", "set-3"];
 const CAI_SET = "cai-only";
+const Created = Schema.Struct({ id: Schema.String });
+const Played = Schema.Struct({
+  session: Schema.Struct({ ownerGeneration: Schema.Number }),
+});
+const People = Schema.Struct({
+  people: Schema.Array(Schema.Struct({ id: Schema.String })),
+});
+const Sets = Schema.Struct({
+  sets: Schema.Array(
+    Schema.Struct({ id: Schema.String, tags: Schema.Array(Schema.String) })
+  ),
+});
+const ActiveQueue = Schema.Struct({
+  queue: Schema.Struct({ activeSetId: Schema.NullOr(Schema.String) }),
+});
+const FullQueue = Schema.Struct({ queue: ListeningQueueSchema });
 const tokenFor = (key: Key) => `token-${key}`;
 const artifactDirectory =
   process.env.ORBIS_FEED_ARTIFACTS ??
@@ -47,14 +68,14 @@ const seed = async (root: string) => {
   await writeFile(
     path.join(root, "devices.json"),
     JSON.stringify({
-      keys: Object.entries(KEYS).map(([id, personId]) => ({
+      keys: DEVICE_KEYS.map(({ id, personId }) => ({
         addedAt: "2026-10-01T00:00:00.000Z",
         id,
         label: id,
         lastUsedAt: null,
         personId,
         scope: "daily",
-        tokenHash: hashToken(tokenFor(id as Key)),
+        tokenHash: hashToken(tokenFor(id)),
       })),
       people: PEOPLE.map((id) => ({
         autoDownload: false,
@@ -68,7 +89,8 @@ const seed = async (root: string) => {
   );
   const migrator = createApp({ databasePath, logging: { silent: true } });
   try {
-    expect((await migrator.initialize()).status).toBe(200);
+    const initialized = await migrator.initialize();
+    expect(initialized.status).toBe(200);
   } finally {
     await migrator.dispose();
   }
@@ -128,7 +150,7 @@ const start = (databasePath: string, trace: TraceEntry[], options = {}) => {
     key: Key | "admin",
     route: string,
     method = "GET",
-    payload?: unknown
+    payload?: Payload
   ) => {
     const headers: Record<string, string> =
       key === "admin"
@@ -148,7 +170,7 @@ const start = (databasePath: string, trace: TraceEntry[], options = {}) => {
     key: Key | "admin",
     route: string,
     method = "GET",
-    payload?: unknown
+    payload?: Payload
   ) => {
     const response = await call(key, route, method, payload);
     expect(response.status).toBeLessThan(300);
@@ -165,10 +187,10 @@ const start = (databasePath: string, trace: TraceEntry[], options = {}) => {
       get cursor() {
         return cursor;
       },
-      key,
       set cursor(value: string | null) {
         cursor = value;
       },
+      key,
       sync: async () => {
         const result = await catchUp(key, cursor);
         if (result.kind === "snapshot") {
@@ -229,8 +251,6 @@ const quiet = (result: CatchUp, cursor: string | null) => {
   expect(changes(result)).toEqual([]);
   expect(result.kind === "changes" && result.cursor).toBe(cursor ?? "");
 };
-const sorted = (ids: readonly string[]) =>
-  [...ids].sort((left, right) => left.localeCompare(right));
 const play = (setId: string, actionNumber: number) => ({
   actionId: `play-${actionNumber}`,
   actionNumber,
@@ -316,9 +336,9 @@ test("a Person's other devices receive Library, Queue, and Playlist changes once
         title: "Morning",
       });
       await fixture.ok("ana-phone", "/sets/set-3", "DELETE");
-      const created = (await fixture.ok("ana-phone", "/playlists", "POST", {
-        name: "Mix",
-      })) as { id: string };
+      const created = Schema.decodeUnknownSync(Created)(
+        await fixture.ok("ana-phone", "/playlists", "POST", { name: "Mix" })
+      );
       await fixture.ok("ana-phone", `/playlists/${created.id}/sets`, "PUT", {
         setIds: ["set-1"],
       });
@@ -355,12 +375,14 @@ test("Presence actions, legacy reports, and expiry reach viewers, and renewals c
       await cai.sync();
 
       fixture.step("explicit play");
-      const played = (await fixture.ok(
-        "ana-phone",
-        "/presence/actions",
-        "POST",
-        play("set-1", 1)
-      )) as { session: { ownerGeneration: number } };
+      const played = Schema.decodeUnknownSync(Played)(
+        await fixture.ok(
+          "ana-phone",
+          "/presence/actions",
+          "POST",
+          play("set-1", 1)
+        )
+      );
       expect(presenceOf(await ben.sync())).toEqual([
         [{ personId: "ana", setId: "set-1" }],
       ]);
@@ -482,13 +504,12 @@ for (const direction of DIRECTIONS) {
         expect(hidden.reset).toBe("access");
         expect(hidden.snapshot.presence).toEqual([]);
         expect(JSON.stringify(hidden)).not.toContain('"ben"');
-        const people = (await fixture.ok("ana-phone", "/people")) as {
-          people: { id: string }[];
-        };
+        const people = Schema.decodeUnknownSync(People)(
+          await fixture.ok("ana-phone", "/people")
+        );
         expect(people.people.map((person) => person.id)).not.toContain("ben");
-        expect(
-          (await fixture.call("ana-phone", "/people/ben/listens")).status
-        ).toBe(404);
+        const listens = await fixture.call("ana-phone", "/people/ben/listens");
+        expect(listens.status).toBe(404);
         const benSide = await ben.sync();
         expect(benSide.kind).toBe(direction.symmetric ? "snapshot" : "changes");
 
@@ -521,9 +542,9 @@ for (const direction of DIRECTIONS) {
             setId: entry.set.id,
           }))
         ).toEqual([{ personId: "ben", setId: "set-2" }]);
-        const visible = (await fixture.ok("ana-phone", "/people")) as {
-          people: { id: string }[];
-        };
+        const visible = Schema.decodeUnknownSync(People)(
+          await fixture.ok("ana-phone", "/people")
+        );
         expect(visible.people.map((person) => person.id)).toContain("ben");
         const after = await ana.sync();
         expect(invalidations(after)).toEqual([]);
@@ -573,22 +594,22 @@ test("the initial snapshot and replay agree with HTTP for every visibility combi
             "PUT",
             caiFilter
           );
-          const people = (await fixture.ok("ana-phone", "/people")) as {
-            people: { id: string }[];
-          };
-          const httpVisible = sorted(people.people.map((person) => person.id));
-          const initial = reset(await fixture.catchUp("ana-phone", null));
-          const fromInitial = sorted(
-            initial.snapshot.presence.map((entry) => entry.personId)
+          const people = Schema.decodeUnknownSync(People)(
+            await fixture.ok("ana-phone", "/people")
           );
-          expect(fromInitial).toEqual(
-            httpVisible.filter((id) => id !== "host")
+          const httpVisible = people.people.map((person) => person.id);
+          const initial = reset(await fixture.catchUp("ana-phone", null));
+          const fromInitial = initial.snapshot.presence.map(
+            (entry) => entry.personId
+          );
+          expect(new Set(fromInitial)).toEqual(
+            new Set(httpVisible.filter((id) => id !== "host"))
           );
           const replay = await ana.sync();
           const replayed = presenceOf(replay).at(-1);
           if (replayed !== undefined) {
-            expect(sorted(replayed.map((entry) => entry.personId))).toEqual(
-              fromInitial
+            expect(new Set(replayed.map((entry) => entry.personId))).toEqual(
+              new Set(fromInitial)
             );
           }
           if (!fromInitial.includes("cai")) {
@@ -610,9 +631,9 @@ test("Playlist edits reach readable editors, and editor removal resets without t
       const anaLaptop = fixture.client("ana-laptop");
       const ben = fixture.client("ben-tablet");
       const cai = fixture.client("cai-phone");
-      const playlist = (await fixture.ok("ana-phone", "/playlists", "POST", {
-        name: "Shared",
-      })) as { id: string };
+      const playlist = Schema.decodeUnknownSync(Created)(
+        await fixture.ok("ana-phone", "/playlists", "POST", { name: "Shared" })
+      );
       await fixture.ok(
         "ana-phone",
         `/playlists/${playlist.id}/collaboration`,
@@ -666,9 +687,11 @@ test("Playlist edits reach readable editors, and editor removal resets without t
       const benLater = await ben.sync();
       quiet(benLater, later);
       expect(JSON.stringify(benLater)).not.toContain(playlist.id);
-      expect(
-        (await fixture.call("ben-phone", `/playlists/${playlist.id}`)).status
-      ).toBe(404);
+      const unreadable = await fixture.call(
+        "ben-phone",
+        `/playlists/${playlist.id}`
+      );
+      expect(unreadable.status).toBe(404);
 
       fixture.step("collaboration off resets a remaining editor");
       await fixture.ok(
@@ -716,12 +739,16 @@ test("revoking a key closes its feed and clears its Presence in one commit", asy
         sqlite.run(
           "CREATE TRIGGER fail_presence_clear BEFORE DELETE ON presence_sessions BEGIN SELECT RAISE(ABORT, 'injected'); END"
         );
-        expect(
-          (await fixture.call("ana-laptop", "/me/devices/ana-phone", "DELETE"))
-            .status
-        ).toBe(500);
-        expect((await fixture.call("ana-phone", "/me")).status).toBe(200);
-        expect((await phone.sync()).kind).toBe("changes");
+        const failedRevoke = await fixture.call(
+          "ana-laptop",
+          "/me/devices/ana-phone",
+          "DELETE"
+        );
+        expect(failedRevoke.status).toBe(500);
+        const stillWorking = await fixture.call("ana-phone", "/me");
+        expect(stillWorking.status).toBe(200);
+        const stillSyncing = await phone.sync();
+        expect(stillSyncing.kind).toBe("changes");
         sqlite.run("DROP TRIGGER fail_presence_clear");
       } finally {
         sqlite.close();
@@ -741,7 +768,8 @@ test("revoking a key closes its feed and clears its Presence in one commit", asy
         personId: "ana",
       });
       expect(presenceOf(await ben.sync()).at(-1)).toEqual([]);
-      expect((await fixture.call("ana-phone", "/me")).status).toBe(401);
+      const revoked = await fixture.call("ana-phone", "/me");
+      expect(revoked.status).toBe(401);
 
       fixture.step("admin revokes ben's tablet");
       const tablet = fixture.client("ben-tablet");
@@ -780,28 +808,30 @@ test("a mutation and its deliveries commit or roll back together", async () => {
       sqlite.run(
         "CREATE TRIGGER fail_delivery BEFORE INSERT ON feed_deliveries BEGIN SELECT RAISE(ABORT, 'injected'); END"
       );
-      expect(
-        (
-          await fixture.call("ana-phone", "/sets/set-1/tags", "PATCH", {
-            tags: ["lost"],
-          })
-        ).status
-      ).toBe(500);
-      expect(
-        (
-          await fixture.call("ana-phone", "/queue/active", "PUT", {
-            setId: "set-1",
-          })
-        ).status
-      ).toBe(500);
+      const lostTag = await fixture.call(
+        "ana-phone",
+        "/sets/set-1/tags",
+        "PATCH",
+        { tags: ["lost"] }
+      );
+      expect(lostTag.status).toBe(500);
+      const lostQueue = await fixture.call(
+        "ana-phone",
+        "/queue/active",
+        "PUT",
+        {
+          setId: "set-1",
+        }
+      );
+      expect(lostQueue.status).toBe(500);
       sqlite.run("DROP TRIGGER fail_delivery");
-      const sets = (await fixture.ok("ana-phone", "/sets")) as {
-        sets: { id: string; tags: string[] }[];
-      };
+      const sets = Schema.decodeUnknownSync(Sets)(
+        await fixture.ok("ana-phone", "/sets")
+      );
       expect(sets.sets.find((set) => set.id === "set-1")?.tags).toEqual([]);
-      const queue = (await fixture.ok("ana-phone", "/queue")) as {
-        queue: { activeSetId: string | null };
-      };
+      const queue = Schema.decodeUnknownSync(ActiveQueue)(
+        await fixture.ok("ana-phone", "/queue")
+      );
       expect(queue.queue.activeSetId).toBeNull();
 
       fixture.step("the Listen insert fails after the Queue write");
@@ -809,17 +839,17 @@ test("a mutation and its deliveries commit or roll back together", async () => {
         "CREATE TRIGGER fail_listen BEFORE INSERT ON listens BEGIN SELECT RAISE(ABORT, 'injected'); END"
       );
       const before = laptop.cursor;
-      expect(
-        (
-          await fixture.call("ana-phone", "/queue/active", "PUT", {
-            setId: "set-2",
-          })
-        ).status
-      ).toBe(500);
+      const lostListen = await fixture.call(
+        "ana-phone",
+        "/queue/active",
+        "PUT",
+        { setId: "set-2" }
+      );
+      expect(lostListen.status).toBe(500);
       sqlite.run("DROP TRIGGER fail_listen");
-      const unchanged = (await fixture.ok("ana-phone", "/queue")) as {
-        queue: { activeSetId: string | null };
-      };
+      const unchanged = Schema.decodeUnknownSync(ActiveQueue)(
+        await fixture.ok("ana-phone", "/queue")
+      );
       expect(unchanged.queue.activeSetId).toBeNull();
       quiet(await laptop.sync(), before);
 
@@ -865,21 +895,21 @@ test("a snapshot boundary loses no write that commits around it", async () => {
           fixture.catchUp("ana-laptop", null)
         );
         await Promise.all(writes);
-        const final = (await fixture.ok("ana-phone", "/queue")) as {
-          queue: ListeningQueue;
-        };
+        const final = Schema.decodeUnknownSync(FullQueue)(
+          await fixture.ok("ana-phone", "/queue"),
+          { onExcessProperty: "error" }
+        );
         for (const pending of snapshots) {
           const taken = reset(await pending);
           const replay = changes(
             await fixture.catchUp("ana-laptop", taken.snapshot.cursor)
           );
-          const latest = [...replay]
-            .reverse()
-            .find((delivery) => delivery.body.kind === "queue");
-          const converged =
-            latest?.body.kind === "queue"
-              ? latest.body.queue
-              : taken.snapshot.queue;
+          let converged = taken.snapshot.queue;
+          for (const { body } of replay) {
+            if (body.kind === "queue") {
+              converged = body.queue;
+            }
+          }
           expect(converged).toEqual(final.queue);
         }
       } finally {
@@ -1001,7 +1031,8 @@ test("a restored backup answers reset to cursors from after the backup", async (
       expect(reset(await fixture.catchUp("ana-laptop", late)).reset).toBe(
         "invalid"
       );
-      expect((await fixture.catchUp("ana-laptop", early)).kind).toBe("changes");
+      const fromEarly = await fixture.catchUp("ana-laptop", early);
+      expect(fromEarly.kind).toBe("changes");
       for (const tag of ["x", "y", "z"]) {
         await fixture.ok("ana-phone", "/sets/set-3/tags", "PATCH", {
           tags: [tag],
