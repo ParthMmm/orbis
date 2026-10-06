@@ -1,3 +1,5 @@
+import type { PresenceAction } from "@orbis/contracts";
+
 import { callOrbis } from "@/lib/orbis";
 import type { ApiResult, Credentials } from "@/lib/orbis";
 
@@ -24,6 +26,18 @@ export const queueSet = (
 export const completeSet = (credentials: Credentials, setId: string) =>
   callOrbis(credentials, (client) =>
     client.queue.complete({ payload: { setId } })
+  );
+
+export const sendPresence = (
+  credentials: Credentials,
+  action: PresenceAction
+) =>
+  callOrbis(credentials, (client) =>
+    // SAFETY: `action` is a PresenceAction, and the client accepts each member as
+    // a payload; its overloads just do not accept the union in one call.
+    client.presence.act({ payload: action } as Parameters<
+      typeof client.presence.act
+    >[0])
   );
 
 export const reportPosition = (

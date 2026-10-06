@@ -13,14 +13,18 @@ type LiveEvent =
 
 export type ListeningQueue = Extract<LiveEvent, { kind: "queue" }>["queue"];
 export type Presence = Extract<LiveEvent, { kind: "presence" }>["presence"];
+export type ChangeTopic = Extract<LiveEvent, { kind: "changed" }>["topic"];
 
 export interface LiveEventHandlers {
+  readonly onChanged: (topic: ChangeTopic) => void;
+  /** Called once the stream is open, before its first event. */
+  readonly onOpen: () => void;
   readonly onPresence: (presence: Presence) => void;
   readonly onQueue: (queue: ListeningQueue) => void;
 }
 
 /**
- * Reads `GET /events` until the stream ends or `signal` aborts. It resolves when the
+ * Reads `GET /events?changes=1` until the stream ends or `signal` aborts. It resolves when the
  * stream closes, so the caller decides whether to reconnect (ADR 0014).
  */
 export const readLiveEvents = (
@@ -32,7 +36,10 @@ export const readLiveEvents = (
     credentials,
     (client) =>
       Effect.gen(function* receiveEvents() {
-        const events = yield* client.events.subscribe({ query: {} });
+        const events = yield* client.events.subscribe({
+          query: { changes: "1" },
+        });
+        handlers.onOpen();
         yield* events.pipe(
           Stream.runForEach((event) =>
             Effect.sync(() => {
@@ -40,6 +47,8 @@ export const readLiveEvents = (
                 handlers.onQueue(event.queue);
               } else if (event.kind === "presence") {
                 handlers.onPresence(event.presence);
+              } else if (event.kind === "changed") {
+                handlers.onChanged(event.topic);
               }
             })
           )

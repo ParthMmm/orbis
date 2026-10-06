@@ -8,7 +8,7 @@
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
     "deploy": "bun ../api/scripts/migrations.ts --check && alchemy deploy --stage prod",
     "destroy": "alchemy destroy --stage prod",
-    "test": "vite build && node e2e/sign-in.mjs && node e2e/journey.mjs && node e2e/admin-journey.mjs && node e2e/devices.mjs && node e2e/device-link.mjs && node e2e/live-queue.mjs && node e2e/invite.mjs && node e2e/shared-audio.mjs && node e2e/playlists.mjs && node e2e/tracklist.mjs"
+    "test": "vite build && node e2e/sign-in.mjs && node e2e/journey.mjs && node e2e/admin-journey.mjs && node e2e/devices.mjs && node e2e/device-link.mjs && node e2e/live-queue.mjs && node e2e/invite.mjs && node e2e/shared-audio.mjs && node e2e/playlists.mjs && node e2e/tracklist.mjs && node e2e/presence.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.8.0",
