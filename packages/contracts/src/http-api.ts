@@ -191,10 +191,6 @@ export const QueueEventSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("heartbeat") }),
 ]);
 
-/**
- * Explicit Presence actions (ADR 0019). A client owns a session per activated Set and
- * numbers its actions, so a delayed or retried message cannot undo a newer one.
- */
 const PresenceId = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(100),
@@ -226,7 +222,6 @@ const SessionFields = {
   sessionId: Schema.String,
   setId: Schema.String,
 };
-/** Only a playing session carries a lease. */
 export const PresenceSessionSchema = Schema.Union([
   Schema.Struct({
     ...SessionFields,

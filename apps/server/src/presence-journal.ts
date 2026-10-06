@@ -16,15 +16,10 @@ export interface PresenceTransition {
     | "queue"
     | "revocation"
     | "removal";
-  /** The Person's visible Set before and after the committing transaction. */
-  readonly before: string | null;
-  readonly after: string | null;
+  readonly visibleSetBefore: string | null;
+  readonly visibleSetAfter: string | null;
 }
 
-/**
- * Receives every change to a Person's visible Presence inside the transaction that commits it.
- * The change feed (#210) replaces the default layer, which records nothing.
- */
 export class PresenceJournal extends Context.Service<
   PresenceJournal,
   {

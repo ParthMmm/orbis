@@ -197,7 +197,6 @@ const sampleFor = (operationId: string) => {
   if (operationId === "devices.revoke") {
     return device;
   }
-  // The Swift client has no Presence action types yet, so this sample lives here.
   if (operationId === "presence.act") {
     return {
       outcome: "accepted",

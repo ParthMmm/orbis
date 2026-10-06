@@ -60,8 +60,8 @@ export class Group extends DurableObject<Environment> {
       }),
       presence: {
         alarm: {
-          set: (at) =>
-            at === null ? ctx.storage.deleteAlarm() : ctx.storage.setAlarm(at),
+          cancel: () => ctx.storage.deleteAlarm(),
+          set: (at) => ctx.storage.setAlarm(at),
         },
       },
       releaseAudio: release,

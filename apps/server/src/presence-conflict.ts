@@ -2,7 +2,6 @@ import { Schema } from "effect";
 
 const { TaggedError: taggedFailure } = Schema;
 
-/** A refused action that changed nothing. The HTTP handler answers 409 with the reason. */
 export class PresenceConflict extends taggedFailure<PresenceConflict>()(
   "PresenceConflict",
   {

@@ -237,12 +237,7 @@ export const listens = sqliteTable(
   ]
 );
 
-/**
- * One explicit Presence session per client session and daily key (ADR 0019). The row is a
- * state machine: `playing` is the only state with a lease, and a Person has at most one
- * `playing` or `paused` session. `actionNumber` is the watermark of accepted actions and
- * outlives result pruning so a pruned action can never reacquire ownership.
- */
+// `actionNumber` outlives result pruning so a pruned action can never reacquire ownership.
 export const presenceSessions = sqliteTable(
   "presence_sessions",
   {
@@ -267,7 +262,6 @@ export const presenceSessions = sqliteTable(
   ]
 );
 
-/** The saved result of an accepted action, so a retry answers the same way for seven days. */
 export const presenceActionResults = sqliteTable(
   "presence_action_results",
   {
@@ -284,14 +278,12 @@ export const presenceActionResults = sqliteTable(
   ]
 );
 
-/** A daily key that has sent an explicit play. Its Position reports no longer imply Presence. */
 export const presenceKeys = sqliteTable("presence_keys", {
   keyId: text("key_id").primaryKey(),
   optedInAt: integer("opted_in_at").notNull(),
   personId: text("person_id").notNull(),
 });
 
-/** The newest Playback Position report from a key that still infers Presence from Positions. */
 export const presenceLegacyReports = sqliteTable(
   "presence_legacy_reports",
   {

@@ -8,10 +8,6 @@ import { PresenceActionResultSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 
-/**
- * Evicts the Group while a lease is live, restores it, and observes the alarm expire the
- * lease with no client poll. The default 30-second lease is the contract under test.
- */
 const LEASE_MS = 30_000;
 const artifact = path.resolve(
   import.meta.dir,
@@ -116,7 +112,6 @@ try {
   assert.equal(live.sessions[0]?.lease_expires_at, deadline);
   assert.equal(live.alarm, deadline);
 
-  // Evict the Group with the lease live, then restore it with one request.
   await runtime.dispose();
   const evictedAt = Date.now();
   runtime = new Miniflare(options);
@@ -125,7 +120,6 @@ try {
   assert.equal(restored.sessions[0]?.lease_expires_at, deadline);
   assert.equal(restored.alarm, deadline);
 
-  // No request until well after the deadline. The alarm alone must clear the lease.
   await Bun.sleep(Math.max(deadline - Date.now(), 0) + 5000);
   const expired = await snapshot();
   assert.equal(expired.sessions[0]?.state, "paused");
@@ -141,7 +135,6 @@ try {
     `the alarm ran ${expiredAt - deadline} ms after the deadline`
   );
 
-  // The stale renewal changes nothing and the same session can resume.
   const renew = await call("/presence/actions", "POST", {
     actionId: "worker-renew-2",
     actionNumber: 2,

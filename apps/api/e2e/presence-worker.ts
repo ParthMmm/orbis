@@ -3,7 +3,6 @@ import { Group as ProductionGroup } from "../src/group.js";
 
 export { default } from "../src/index.js";
 
-/** Test-only routes that read Presence storage and the Group alarm. Excluded from the production bundle. */
 export class Group extends ProductionGroup {
   override async fetch(request: Request): Promise<Response> {
     const { pathname } = new URL(request.url);

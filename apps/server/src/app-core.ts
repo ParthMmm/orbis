@@ -278,7 +278,6 @@ export const createPortableApp = (options: {
   metadata?: Layer.Layer<Metadata>;
   /** How long after a Playback Position report a Person still counts as listening. */
   presenceWindowMs?: number;
-  /** Explicit Presence actions (ADR 0019): lease, result retention, journal, and alarm port. */
   presence?: PresenceOptions & { journal?: Layer.Layer<PresenceJournal> };
   /** How long a Device Link stays open. Tests shorten it to prove expiry. */
   deviceLinkTtlMs?: number;
@@ -325,7 +324,7 @@ export const createPortableApp = (options: {
   const queueSignalsLayer = QueueSignals.layer;
   const presenceLayer = Presence.layer({
     ...options.presence,
-    legacyWindowMs: options.presenceWindowMs ?? PRESENCE_WINDOW_MS,
+    legacyReportWindowMs: options.presenceWindowMs ?? PRESENCE_WINDOW_MS,
   }).pipe(
     Layer.provide(database),
     Layer.provide(options.presence?.journal ?? PresenceJournal.unrecorded)
@@ -1142,7 +1141,7 @@ export const createPortableApp = (options: {
                     input.seconds
                   );
                   if (caller.keyId !== null && caller.scope === "daily") {
-                    yield* presence.reportPosition(
+                    yield* presence.recordLegacyReport(
                       { keyId: caller.keyId, personId: caller.person.id },
                       params.id
                     );
@@ -2003,7 +2002,6 @@ export const createPortableApp = (options: {
   return {
     dispose: app.dispose,
     initialize,
-    /** The Group alarm handler. Builds the app first so a restored Group can expire a lease. */
     expirePresence: async (): Promise<void> => {
       await initialize();
       if (presenceService) {

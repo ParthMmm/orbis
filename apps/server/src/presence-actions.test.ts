@@ -238,7 +238,6 @@ const harness = (databasePath: string, transcript: Transcript) => {
       };
       return {
         close: () => reader.cancel(),
-        /** Waits for a Presence frame that `accept`s; fails after `ms`. */
         presence: async (accept: (entries: Entries) => boolean, ms = 6000) => {
           const deadline = Date.now() + ms;
           while (Date.now() < deadline) {
@@ -321,7 +320,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     opened.push(viewer);
     await viewer.presence((entries) => entries.length === 0);
 
-    // Only a daily key acts. The admin key, a node key, and malformed bodies change nothing.
     const play1: PresenceAction = {
       actionId: "p1",
       actionNumber: 1,
@@ -341,7 +339,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       await server.actStatus("a-phone", { ...play1, actionNumber: -1 })
     ).toBe(400);
 
-    // Rejected playback: the Set is not the active Queue entry, so nothing is acquired.
     expect(
       await server.callStatus("a-phone", "/queue/active", "PUT", {
         setId: "s1",
@@ -350,7 +347,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     await server.refused("a-phone", { ...play1, setId: "s2" }, "queue-changed");
     expect(transitions).toHaveLength(0);
 
-    // Successful playback acquires a generation and a lease, and the viewer sees it.
     const first = await server.accepted("a-phone", play1);
     expect(first.outcome).toBe("accepted");
     expect(first.session.state).toBe("playing");
@@ -363,13 +359,12 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     expect(firstDeadline - Date.now()).toBeLessThanOrEqual(LEASE_MS);
     await viewer.presence(listening("a", "s1"));
     expect(transitions.at(-1)).toMatchObject({
-      after: "s1",
-      before: null,
       cause: "play",
       personId: "a",
+      visibleSetAfter: "s1",
+      visibleSetBefore: null,
     });
 
-    // Renewals extend the lease past its first deadline and emit no transition.
     let actionNumber = 1;
     let lastDeadline = firstDeadline;
     const transitionsBeforeRenewals = transitions.length;
@@ -393,7 +388,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     }
     expect(transitions).toHaveLength(transitionsBeforeRenewals);
 
-    // A seek from the opted-in key saves the Position but neither alters Presence nor opens a Listen.
     expect(
       await server.callStatus("a-phone", "/sets/s1/position", "PUT", {
         seconds: 42,
@@ -404,7 +398,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     });
     expect(transitions).toHaveLength(transitionsBeforeRenewals);
 
-    // Pause clears live Presence at once. Its retry is a duplicate with the saved result.
     actionNumber += 1;
     const pause: PresenceAction = {
       actionId: "pause-1",
@@ -420,16 +413,15 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     });
     await viewer.presence(absent("a"));
     expect(transitions.at(-1)).toMatchObject({
-      after: null,
-      before: "s1",
       cause: "pause",
+      visibleSetAfter: null,
+      visibleSetBefore: "s1",
     });
     expect(await server.accepted("a-phone", pause)).toEqual({
       ...paused,
       outcome: "duplicate",
     });
 
-    // A still-valid legacy report from a key that never opted in supplies Presence after the pause.
     expect(
       await server.callStatus("a-legacy", "/sets/s1/position", "PUT", {
         seconds: 7,
@@ -437,18 +429,17 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     ).toBe(200);
     await viewer.presence(listening("a", "s1"));
     expect(transitions.at(-1)).toMatchObject({
-      after: "s1",
-      before: null,
       cause: "legacy-report",
+      visibleSetAfter: "s1",
+      visibleSetBefore: null,
     });
     await viewer.presence(absent("a"), LEGACY_WINDOW_MS + 6000);
     expect(transitions.at(-1)).toMatchObject({
-      after: null,
-      before: "s1",
       cause: "legacy-expiry",
+      visibleSetAfter: null,
+      visibleSetBefore: "s1",
     });
 
-    // Resume reacquires ownership with a new generation and no new Listen.
     actionNumber += 1;
     const resumed = await server.accepted("a-phone", {
       actionId: "p2",
@@ -465,7 +456,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       listenCount: 1,
     });
 
-    // A legacy report cannot replace a live explicit owner, so it records no transition.
     const transitionsBeforeLegacy = transitions.length;
     expect(
       await server.callStatus("a-legacy", "/sets/s1/position", "PUT", {
@@ -474,7 +464,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     ).toBe(200);
     expect(transitions).toHaveLength(transitionsBeforeLegacy);
 
-    // A second device takes ownership in Group order. The old device's generation is stale.
     const laptop = await server.accepted("a-laptop", {
       actionId: "l1",
       actionNumber: 1,
@@ -517,7 +506,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       })
     ).toMatchObject({ session: { state: "playing" } });
 
-    // Out-of-order action numbers cannot override a later action in the same session.
     await server.accepted("a-laptop", {
       actionId: "l5",
       actionNumber: 5,
@@ -536,7 +524,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       },
       "stale"
     );
-    // Reusing an action ID with different input is a conflict inside the retention window.
     await server.refused(
       "a-laptop",
       {
@@ -548,7 +535,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       },
       "action-reused"
     );
-    // A session is bound to its Set.
     await server.refused(
       "a-laptop",
       {
@@ -561,7 +547,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       "session-set"
     );
 
-    // A duplicate play answers the same before and after the Group restarts.
     const replay: PresenceAction = {
       actionId: "l7",
       actionNumber: 7,
@@ -585,7 +570,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       outcome: "duplicate",
     });
 
-    // After the result is pruned, the old number is stale and a higher number is a new action.
     await Bun.sleep(RETENTION_MS + 200);
     await server.refused("a-laptop", replay, "stale");
     const renewAfterPrune = await server.accepted("a-laptop", {
@@ -600,7 +584,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     const generation4 = renewAfterPrune.session.ownerGeneration;
     await viewer.presence(listening("a", "s1"));
 
-    // Stop ends the session for good: it can neither renew nor resume.
     expect(
       await server.accepted("a-laptop", {
         actionId: "l9",
@@ -669,7 +652,6 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     });
     await viewer.presence(listening("a", "s1"));
 
-    // A raced acquisition either loses to the Queue change or is superseded by it.
     const [queueChange, raced] = await Promise.all([
       server.call("a-phone", "/queue/active", "PUT", { setId: "s2" }),
       server.act("a-phone", {
@@ -712,7 +694,6 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     );
     await viewer.presence(absent("a"));
 
-    // Confirmed playback of the newly active Set, then a natural Finish advances the Queue.
     const second = await server.accepted("a-phone", {
       actionId: "q5",
       actionNumber: 1,
@@ -735,9 +716,9 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     });
     await viewer.presence(absent("a"));
     expect(transitions.at(-1)).toMatchObject({
-      after: null,
-      before: "s2",
       cause: "queue",
+      visibleSetAfter: null,
+      visibleSetBefore: "s2",
     });
     await server.refused(
       "a-phone",
@@ -759,15 +740,14 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     });
     await viewer.presence(listening("a", "s1"));
 
-    // Without renewals the lease lapses and the alarm clears Presence with no client call.
     const expiredAt = Date.now();
     await viewer.presence(absent("a"), LEASE_MS + 6000);
     expect(Date.now() - expiredAt).toBeGreaterThanOrEqual(LEASE_MS - 100);
     expect(transitions.at(-1)).toMatchObject({
-      after: null,
-      before: "s1",
       cause: "expiry",
       personId: "a",
+      visibleSetAfter: null,
+      visibleSetBefore: "s1",
     });
     await server.refused(
       "a-phone",
@@ -792,14 +772,13 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     );
     await viewer.presence(listening("a", "s1"));
 
-    // Revoking the live owner's key clears its session at once and refuses its next action.
     const revoked = await server.call("admin", "/admin/keys/a-phone", "DELETE");
     expect(revoked.status).toBe(200);
     await viewer.presence(absent("a"));
     expect(transitions.at(-1)).toMatchObject({
-      after: null,
-      before: "s1",
       cause: "revocation",
+      visibleSetAfter: null,
+      visibleSetBefore: "s1",
     });
     expect(
       await server.actStatus("a-phone", {
@@ -811,7 +790,6 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       })
     ).toBe(401);
 
-    // A key at the session cap keeps acting on a current session but opens no new one.
     const sqlite = new Database(databasePath);
     try {
       const insert = sqlite.prepare(
@@ -851,15 +829,14 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     });
     await viewer.presence(listening("b", "s1"));
 
-    // Removing a Person clears every session and report it owned.
     const removal = await server.call("admin", "/admin/people/b", "DELETE");
     expect(removal.status).toBe(200);
     await viewer.presence(absent("b"));
     expect(transitions.at(-1)).toMatchObject({
-      after: null,
-      before: "s1",
       cause: "removal",
       personId: "b",
+      visibleSetAfter: null,
+      visibleSetBefore: "s1",
     });
     const remaining = new Database(databasePath, { readonly: true });
     try {

@@ -42,7 +42,6 @@ import type { PresenceTransition } from "./presence-journal.js";
 export const LEASE_MS = 30_000;
 export const RESULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const LEGACY_WINDOW_MS = 30_000;
-/** Session rows one daily key may hold. Revoking the key reclaims them. */
 const SESSION_CAP = 10_000;
 
 const databaseError = () =>
@@ -54,8 +53,7 @@ const toLibraryError = <E>(error: E) =>
   error instanceof LibraryError ? error : databaseError();
 const execute = <A, E>(operation: Effect.Effect<A, E>) =>
   operation.pipe(Effect.mapError(toLibraryError));
-/** Keeps the typed refusal so the handler can answer 409 with its reason. */
-const executeAction = <A, E>(operation: Effect.Effect<A, E>) =>
+const executeKeepingConflict = <A, E>(operation: Effect.Effect<A, E>) =>
   operation.pipe(
     Effect.mapError((failure) =>
       failure instanceof PresenceConflict ? failure : toLibraryError(failure)
@@ -70,11 +68,11 @@ export interface PresenceCaller {
 export interface PresenceOptions {
   readonly leaseMs?: number;
   readonly resultRetentionMs?: number;
-  /** How long a Playback Position report from a key that never opted in counts as listening. */
-  readonly legacyWindowMs?: number;
-  /** Wakes `expire` at the nearest deadline; `null` cancels. Bun defaults to a scoped timer. */
+  readonly legacyReportWindowMs?: number;
+  /** Wakes `expire` at the deadline. Bun defaults to a scoped timer. */
   readonly alarm?: {
-    readonly set: (at: number | null) => void | Promise<void>;
+    readonly set: (at: number) => void | Promise<void>;
+    readonly cancel: () => void | Promise<void>;
   };
 }
 
@@ -86,7 +84,6 @@ interface SessionFields {
   readonly sessionId: string;
   readonly setId: string;
 }
-/** One session row. Only `playing` carries a lease. */
 type Session = SessionFields &
   (
     | { readonly state: "playing"; readonly leaseExpiresAt: number }
@@ -116,7 +113,6 @@ const fields = (session: Session): SessionFields => ({
   setId: session.setId,
 });
 
-/** The transition table of ADR 0019, with every guard that needs no further read. */
 const decide = (
   session: Session | null,
   caller: PresenceCaller,
@@ -207,8 +203,7 @@ const toContract = (session: Session): PresenceActionResult["session"] => {
     : { ...base, state: session.state };
 };
 
-/** Field order from the client must not decide whether a retry matches. */
-const canonical = (action: PresenceAction) =>
+const retryKey = (action: PresenceAction) =>
   JSON.stringify(action, [
     "actionId",
     "actionNumber",
@@ -271,11 +266,7 @@ const personOf = (tx: DatabaseClient, keyId: string) =>
     return (session ?? key ?? report)?.personId ?? null;
   });
 
-/**
- * The one owner of explicit Presence state (ADR 0019). Every write to the four presence tables
- * goes through here, so the lease, ownership, deduplication, and legacy fallback rules live in
- * one place and every visible change reaches the journal in its committing transaction.
- */
+/** Every write to the four presence tables goes through here. */
 export class Presence extends Context.Service<
   Presence,
   {
@@ -283,12 +274,11 @@ export class Presence extends Context.Service<
       caller: PresenceCaller,
       action: PresenceAction
     ) => Effect.Effect<PresenceActionResult, LibraryError | PresenceConflict>;
-    /** A legacy Position report. A key that opted into actions changes nothing here. */
-    readonly reportPosition: (
+    readonly recordLegacyReport: (
       caller: PresenceCaller,
       setId: string
     ) => Effect.Effect<void, LibraryError>;
-    /** Called inside the Queue's write transaction, before its rows change. */
+    /** Runs inside the Queue's write transaction before its rows change. */
     readonly queueActivated: (
       tx: DatabaseClient,
       personId: string,
@@ -299,15 +289,13 @@ export class Presence extends Context.Service<
       tx: DatabaseClient,
       personId: string
     ) => Effect.Effect<void, LibraryError>;
-    /** Runs at a deadline: lapsed leases pause, lapsed legacy reports drop, the alarm moves on. */
     readonly expire: (now: number) => Effect.Effect<void, LibraryError>;
     readonly currentSetFor: (
       personId: string,
       now: number
     ) => Effect.Effect<string | null, LibraryError>;
     readonly schedule: () => Effect.Effect<void, LibraryError>;
-    /** Fires after a commit that may have changed someone's visible Presence. */
-    readonly changes: Stream.Stream<boolean>;
+    readonly changes: Stream.Stream<null>;
   }
 >()("@orbis/Presence") {
   static layer(options: PresenceOptions = {}) {
@@ -319,12 +307,9 @@ export class Presence extends Context.Service<
         const scope = yield* Scope.Scope;
         const leaseMs = options.leaseMs ?? LEASE_MS;
         const retentionMs = options.resultRetentionMs ?? RESULT_RETENTION_MS;
-        const legacyWindowMs = options.legacyWindowMs ?? LEGACY_WINDOW_MS;
+        const legacyWindowMs = options.legacyReportWindowMs ?? LEGACY_WINDOW_MS;
 
-        /**
-         * The Person's visible Set. Without `now` it trusts the rows, which every transaction
-         * settles first; with `now` it also applies the deadlines, for a reader between alarms.
-         */
+        // Without `now` the rows are trusted because every transaction settles them first.
         const visible = (
           tx: DatabaseClient,
           personId: string,
@@ -378,11 +363,10 @@ export class Presence extends Context.Service<
           tx: DatabaseClient,
           transition: PresenceTransition
         ) =>
-          transition.before === transition.after
+          transition.visibleSetBefore === transition.visibleSetAfter
             ? Effect.void
             : journal.record(tx, transition);
 
-        /** Applies every lapsed deadline, for one Person or all. Idempotent. */
         const settle = (tx: DatabaseClient, now: number, personId?: string) =>
           Effect.gen(function* settleDeadlines() {
             const lapsedLease = and(
@@ -447,6 +431,7 @@ export class Presence extends Context.Service<
 
         let timer: Fiber.Fiber<void> | null = null;
         let wake: Effect.Effect<void> = Effect.void;
+        let armedAt: number | null = null;
         const bunAlarm = (at: number | null): Effect.Effect<void> =>
           Effect.gen(function* armTimer() {
             if (timer) {
@@ -462,6 +447,7 @@ export class Presence extends Context.Service<
               Effect.andThen(
                 Effect.sync(() => {
                   timer = null;
+                  armedAt = null;
                 })
               ),
               Effect.andThen(Effect.suspend(() => wake)),
@@ -469,18 +455,37 @@ export class Presence extends Context.Service<
             );
           });
         const { alarm } = options;
-        const setAlarm = (at: number | null) =>
-          alarm
-            ? Effect.promise(() => Promise.resolve(alarm.set(at)))
-            : bunAlarm(at);
+        // The port is written only when the deadline moves, and never fails the commit
+        // that moved it: a missed wake is caught by the next action's settle.
+        const setAlarm = (at: number | null) => {
+          if (at === armedAt) {
+            return Effect.void;
+          }
+          armedAt = at;
+          if (!alarm) {
+            return bunAlarm(at);
+          }
+          return Effect.matchEffect(
+            Effect.tryPromise(() =>
+              Promise.resolve(at === null ? alarm.cancel() : alarm.set(at))
+            ),
+            {
+              onFailure: (error) =>
+                Effect.logWarning("presence alarm not armed").pipe(
+                  Effect.annotateLogs({ at, cause: String(error) })
+                ),
+              onSuccess: () => Effect.void,
+            }
+          );
+        };
 
         const schedule: () => Effect.Effect<void, LibraryError> = Effect.fn(
           "Presence.schedule"
         )(() => execute(Effect.flatMap(nearestDeadline(), setAlarm)));
-        const hub = yield* PubSub.sliding<boolean>(1);
+        const hub = yield* PubSub.sliding<null>(1);
         const committed = () =>
           schedule().pipe(
-            Effect.andThen(PubSub.publish(hub, true)),
+            Effect.andThen(PubSub.publish(hub, null)),
             Effect.asVoid
           );
 
@@ -532,11 +537,11 @@ export class Presence extends Context.Service<
 
         const act = Effect.fn("Presence.act")(
           (caller: PresenceCaller, action: PresenceAction) =>
-            executeAction(
+            executeKeepingConflict(
               db.transaction((tx) =>
                 Effect.gen(function* applyAction() {
                   const now = Date.now();
-                  const input = canonical(action);
+                  const input = retryKey(action);
                   const [saved] = yield* tx
                     .select({
                       input: presenceActionResults.input,
@@ -561,7 +566,6 @@ export class Presence extends Context.Service<
                       outcome: "duplicate" as const,
                     };
                   }
-                  // A pruned action ID with a higher number is a new action, so the old row goes first.
                   yield* tx
                     .delete(presenceActionResults)
                     .where(
@@ -621,10 +625,10 @@ export class Presence extends Context.Service<
                   });
                   const after = yield* visible(tx, caller.personId);
                   yield* journalIfChanged(tx, {
-                    after,
-                    before,
                     cause: action.kind,
                     personId: caller.personId,
+                    visibleSetAfter: after,
+                    visibleSetBefore: before,
                   });
                   return result;
                 })
@@ -636,11 +640,11 @@ export class Presence extends Context.Service<
             )
         );
 
-        const reportPosition = Effect.fn("Presence.reportPosition")(
+        const recordLegacyReport = Effect.fn("Presence.recordLegacyReport")(
           (caller: PresenceCaller, setId: string) =>
             execute(
               db.transaction((tx) =>
-                Effect.gen(function* recordLegacyReport() {
+                Effect.gen(function* recordLegacyReportRow() {
                   const now = Date.now();
                   const [optedIn] = yield* tx
                     .select({ keyId: presenceKeys.keyId })
@@ -670,10 +674,10 @@ export class Presence extends Context.Service<
                     });
                   const after = yield* visible(tx, caller.personId);
                   yield* journalIfChanged(tx, {
-                    after,
-                    before,
                     cause: "legacy-report",
                     personId: caller.personId,
+                    visibleSetAfter: after,
+                    visibleSetBefore: before,
                   });
                   return true;
                 })
@@ -709,16 +713,15 @@ export class Presence extends Context.Service<
                   );
                 const after = yield* visible(tx, personId, { activeSetId });
                 yield* journalIfChanged(tx, {
-                  after,
-                  before,
                   cause: "queue",
                   personId,
+                  visibleSetAfter: after,
+                  visibleSetBefore: before,
                 });
               })
             )
         );
 
-        /** Deletes every presence row the key holds, journaling the Person's visible change. */
         const clearKeys = (
           tx: DatabaseClient,
           keyIds: readonly string[],
@@ -743,7 +746,12 @@ export class Presence extends Context.Service<
               .delete(presenceLegacyReports)
               .where(inArray(presenceLegacyReports.keyId, keyIds));
             const after = yield* visible(tx, personId);
-            yield* journalIfChanged(tx, { after, before, cause, personId });
+            yield* journalIfChanged(tx, {
+              cause,
+              personId,
+              visibleSetAfter: after,
+              visibleSetBefore: before,
+            });
           });
 
         const revokeKey = Effect.fn("Presence.revokeKey")((keyId: string) =>
@@ -790,6 +798,7 @@ export class Presence extends Context.Service<
             execute(
               db.transaction((tx) =>
                 Effect.gen(function* expireDeadlines() {
+                  armedAt = null;
                   const due = yield* Effect.all([
                     tx
                       .select({ personId: presenceSessions.personId })
@@ -821,12 +830,12 @@ export class Presence extends Context.Service<
                   for (const personId of people) {
                     const after = yield* visible(tx, personId);
                     yield* journalIfChanged(tx, {
-                      after,
-                      before: before.get(personId) ?? null,
                       cause: lapsed.leases.has(personId)
                         ? "expiry"
                         : "legacy-expiry",
                       personId,
+                      visibleSetAfter: after,
+                      visibleSetBefore: before.get(personId) ?? null,
                     });
                   }
                 })
@@ -851,8 +860,8 @@ export class Presence extends Context.Service<
           currentSetFor,
           expire,
           queueActivated,
+          recordLegacyReport,
           removePerson,
-          reportPosition,
           revokeKey,
           schedule,
         };
