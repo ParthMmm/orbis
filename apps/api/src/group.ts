@@ -58,6 +58,12 @@ export class Group extends DurableObject<Environment> {
         youTubeApiKey: env.YOUTUBE_API_KEY,
         ytDlp: { read: this.node.readDetails },
       }),
+      presence: {
+        alarm: {
+          set: (at) =>
+            at === null ? ctx.storage.deleteAlarm() : ctx.storage.setAlarm(at),
+        },
+      },
       releaseAudio: release,
       streamSecret,
       titleReviser: TitleReviser.layer({ apiKey: env.OPENROUTER_API_KEY }),
@@ -94,6 +100,10 @@ export class Group extends DurableObject<Environment> {
 
   override webSocketError(socket: WebSocket): void {
     this.node.disconnected(socket, 1011);
+  }
+
+  override async alarm(): Promise<void> {
+    await this.app.expirePresence();
   }
 
   override fetch(request: Request): Promise<Response> {
