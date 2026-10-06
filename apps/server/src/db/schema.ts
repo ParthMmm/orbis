@@ -331,11 +331,49 @@ export const feedDeliveries = sqliteTable(
   ]
 );
 
+/** A socket ticket. Only its SHA-256 digest is stored; an upgrade deletes the row it uses. */
+export const feedTickets = sqliteTable(
+  "feed_tickets",
+  {
+    authorizationEpoch: integer("authorization_epoch").notNull(),
+    digest: text("digest").primaryKey(),
+    expiresAt: integer("expires_at").notNull(),
+    keyId: text("key_id").notNull(),
+    personId: text("person_id").notNull(),
+    protocol: text("protocol").notNull(),
+  },
+  (table) => [index("feed_tickets_by_expiry").on(table.expiresAt)]
+);
+
+/**
+ * Feed state for one open client socket, kept in storage so it survives Group
+ * eviction. `pending` lists the boundary sequences sent and not yet acknowledged.
+ */
+export const feedConnections = sqliteTable(
+  "feed_connections",
+  {
+    ackedCursor: text("acked_cursor"),
+    greeted: integer("greeted", { mode: "boolean" }).notNull().default(false),
+    id: text("id").primaryKey(),
+    keyId: text("key_id").notNull(),
+    openedAt: integer("opened_at").notNull(),
+    pending: text("pending", { mode: "json" })
+      .$type<number[]>()
+      .notNull()
+      .default(sql`'[]'`),
+    personId: text("person_id").notNull(),
+    sentCursor: text("sent_cursor"),
+  },
+  (table) => [index("feed_connections_by_key").on(table.keyId)]
+);
+
 export const schema = {
   downloadJobs,
   downloadRequesters,
+  feedConnections,
   feedDeliveries,
   feedRecipients,
+  feedTickets,
   libraryEntries,
   listens,
   playbackPositions,

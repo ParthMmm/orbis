@@ -191,6 +191,102 @@ export const QueueEventSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("heartbeat") }),
 ]);
 
+/** The only feed protocol. A socket upgrade selects it; a ticket names it. */
+export const FEED_PROTOCOL = "orbis.feed.v1";
+/** A socket upgrade offers the ticket as the subprotocol token `orbis.ticket.<ticket>`. */
+export const FEED_TICKET_PROTOCOL_PREFIX = "orbis.ticket.";
+export const FEED_SOCKET_PATH = "/events/socket";
+/** The exact text a client sends to receive `{"kind":"pong"}` without waking the Group. */
+export const FEED_PING = '{"kind":"ping"}';
+export const FEED_PONG = '{"kind":"pong"}';
+/** A client must acknowledge within this many change messages or be disconnected. */
+export const FEED_ACK_WINDOW = 32;
+export const FeedCloseCode = {
+  /** The key was revoked or its Person removed. */
+  closed: 4401,
+  /** A message broke the protocol. */
+  protocol: 1008,
+  /** The client fell a full acknowledgement window behind. */
+  slow: 4008,
+} as const;
+
+const FeedCursor = Schema.String.check(
+  Schema.isMinLength(1),
+  Schema.isMaxLength(400),
+  Schema.isPattern(/^[A-Za-z0-9_-]+$/u)
+);
+export const FeedBodySchema = Schema.Union([
+  Schema.Struct({ kind: Schema.Literal("queue"), queue: ListeningQueueSchema }),
+  Schema.Struct({
+    kind: Schema.Literal("presence"),
+    presence: Schema.Array(PresenceSchema),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("invalidate"),
+    resourceId: Schema.optionalKey(Schema.String),
+    topic: Schema.Literals(["library", "playlist", "listen-history", "set"]),
+  }),
+]);
+export const FeedDeliverySchema = Schema.Struct({
+  body: FeedBodySchema,
+  cursor: FeedCursor,
+});
+export const FeedResetReasonSchema = Schema.Literals([
+  "expired",
+  "invalid",
+  "access",
+]);
+/**
+ * Every message the client feed sends, over a socket or SSE. `ready` ends a
+ * catch-up. `reset` precedes a `snapshot` and tells the client to clear social
+ * and invalidated caches. `closing` precedes a server close and names the last
+ * acknowledged cursor, when there is one, to resume from.
+ */
+export const FeedServerMessageSchema = Schema.Union([
+  Schema.Struct({
+    /** Where to resume after applying every delivery in this message. */
+    cursor: FeedCursor,
+    deliveries: Schema.Array(FeedDeliverySchema),
+    kind: Schema.Literal("changes"),
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("reset"),
+    reason: FeedResetReasonSchema,
+  }),
+  Schema.Struct({
+    cursor: FeedCursor,
+    kind: Schema.Literal("snapshot"),
+    presence: Schema.Array(PresenceSchema),
+    queue: ListeningQueueSchema,
+  }),
+  Schema.Struct({ cursor: FeedCursor, kind: Schema.Literal("ready") }),
+  Schema.Struct({ kind: Schema.Literal("heartbeat") }),
+  Schema.Struct({
+    cursor: Schema.NullOr(FeedCursor),
+    kind: Schema.Literal("closing"),
+    reason: Schema.Literals(["slow", "revoked"]),
+  }),
+  Schema.Struct({ kind: Schema.Literal("pong") }),
+]);
+/** Socket messages from the client. `hello` comes first and once; `ack` names the last applied cursor. */
+export const FeedClientMessageSchema = Schema.Union([
+  Schema.Struct({
+    cursor: Schema.optionalKey(FeedCursor),
+    kind: Schema.Literal("hello"),
+  }),
+  Schema.Struct({ cursor: FeedCursor, kind: Schema.Literal("ack") }),
+  Schema.Struct({ kind: Schema.Literal("ping") }),
+]);
+export const FeedTicketPayload = Schema.Struct({
+  protocol: Schema.Literal(FEED_PROTOCOL),
+});
+export const FeedTicketSchema = Schema.Struct({
+  expiresAt: Schema.String,
+  protocol: Schema.Literal(FEED_PROTOCOL),
+  ticket: Schema.String,
+});
+export const FeedLiveQuery = { cursor: Schema.optionalKey(FeedCursor) };
+
 const PresenceId = Schema.String.check(
   Schema.isMinLength(1),
   Schema.isMaxLength(100),
@@ -742,6 +838,19 @@ export const OrbisApi = PlaylistApi.add(
         HttpApiEndpoint.get("subscribe", "/events", {
           success: HttpApiSchema.StreamSse({
             data: QueueEventSchema,
+            error: Schema.Never,
+          }),
+        }),
+        HttpApiEndpoint.post("ticket", "/events/tickets", {
+          error: [BadRequest, Forbidden, InternalError],
+          payload: FeedTicketPayload,
+          success: FeedTicketSchema.pipe(HttpApiSchema.status(201)),
+        }),
+        HttpApiEndpoint.get("live", "/events/live", {
+          error: [BadRequest, Forbidden],
+          query: FeedLiveQuery,
+          success: HttpApiSchema.StreamSse({
+            data: FeedServerMessageSchema,
             error: Schema.Never,
           }),
         })
