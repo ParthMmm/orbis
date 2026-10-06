@@ -8,7 +8,6 @@ import path from "node:path";
 import { ListeningQueueSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
-import { revokeKey } from "./admin.js";
 import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
 import { createTestApp as createApp } from "./test-app.js";
@@ -194,7 +193,7 @@ test("live Queue snapshots stay personal and reconnect to current state", async 
       queue: { activeSetId: null, entries: [] },
     });
     expect(await peer.next()).toEqual(completed);
-    revokeKey(path.join(root, "devices.json"), "a1");
+    expect((await call("a2", "/me/devices/a1", "DELETE")).status).toBe(200);
     const replay = await call("a2", "/queue/active", "PUT", { setId: set.id });
     expect(replay.status).toBe(200);
     await expect(reconnected.next()).rejects.toThrow("The event stream closed");

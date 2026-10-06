@@ -8,6 +8,7 @@ import { Effect, Layer } from "effect";
 
 import { backfillDetails } from "./backfill-details.js";
 import { layer as databaseLayer } from "./db/database.js";
+import { detachedJournal } from "./journal.js";
 import { Library } from "./library.js";
 import { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
@@ -77,7 +78,7 @@ test("fills missing details, continues past a failure, and skips finished Sets",
     const asked: string[] = [];
     const database = databaseLayer({ databasePath, migrationsFolder });
     const layers = Layer.mergeAll(
-      Library.layer,
+      Library.layer.pipe(Layer.provide(detachedJournal())),
       Metadata.layerOf({
         details: (input) => {
           asked.push(input.url);

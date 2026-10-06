@@ -16,8 +16,8 @@ import { Effect, Layer, Schema } from "effect";
 import { layer as databaseLayer } from "./db/database.js";
 import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
-import { PresenceJournal } from "./presence-journal.js";
-import type { PresenceTransition } from "./presence-journal.js";
+import { detachedJournal } from "./journal.js";
+import type { PresenceTransition } from "./journal.js";
 import { Presence } from "./presence.js";
 import { createTestApp as createApp } from "./test-app.js";
 
@@ -135,17 +135,18 @@ interface AlarmPort {
 const harness = (databasePath: string, transcript: Transcript) => {
   const transitions: PresenceTransition[] = [];
   const alarm: AlarmPort = { calls: [], failNextSet: false };
-  const journal = Layer.succeed(PresenceJournal, {
-    record: (_tx, transition) =>
-      Effect.sync(() => {
-        transitions.push(transition);
-        transcript.push({ at: Date.now(), transition });
-      }),
-  });
   const start = async () => {
     let wake: ReturnType<typeof setTimeout> | undefined;
     const app = createApp({
       databasePath,
+      feed: {
+        observe: (change) => {
+          if (change.topic === "presence") {
+            transitions.push(change);
+            transcript.push({ at: Date.now(), transition: change });
+          }
+        },
+      },
       logging: { silent: true },
       presence: {
         alarm: {
@@ -168,7 +169,6 @@ const harness = (databasePath: string, transcript: Transcript) => {
             );
           },
         },
-        journal,
         leaseMs: LEASE_MS,
         resultRetentionMs: RETENTION_MS,
       },
@@ -919,29 +919,6 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       })
     ).toBe(401);
 
-    const ghost = new Database(databasePath);
-    try {
-      ghost.run(
-        `INSERT INTO presence_sessions (key_id, session_id, person_id, set_id, state, owner_generation, action_number, lease_expires_at, updated_at)
-         VALUES ('ghost-key', 'ghost', 'a', 's1', 'playing', 99, 1, ?, 0)`,
-        [Date.now() + 60_000]
-      );
-    } finally {
-      ghost.close();
-    }
-    await viewer.presence(listening("a", "s1"));
-    const sweepReportAt = Date.now();
-    expect(
-      await server.callStatus("a-legacy", "/sets/s3/position", "PUT", {
-        seconds: 4,
-      })
-    ).toBe(200);
-    await viewer.presence(absent("a"), 1000);
-    expect(transitions.at(-1)).toMatchObject({
-      personId: "a",
-      visibleSetAfter: null,
-      visibleSetBefore: "s1",
-    });
 
     const sqlite = new Database(databasePath);
     try {
@@ -957,9 +934,6 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     } finally {
       sqlite.close();
     }
-    await Bun.sleep(
-      Math.max(sweepReportAt + LEGACY_WINDOW_MS + 100 - Date.now(), 0)
-    );
     expect(
       await server.callStatus("b-phone", "/queue/active", "PUT", {
         setId: "s1",
@@ -1013,7 +987,7 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       expect(
         remaining
           .query(
-            "SELECT count(*) AS sessions FROM presence_sessions WHERE key_id IN ('a-phone', 'ghost-key')"
+            "SELECT count(*) AS sessions FROM presence_sessions WHERE key_id = 'a-phone'"
           )
           .get()
       ).toEqual({ sessions: 0 });
@@ -1040,14 +1014,12 @@ test("an action whose key row is gone is refused before it writes", async () => 
     sqlite.close();
   }
   const presenceLayer = Presence.layer({ leaseMs: LEASE_MS }).pipe(
+    Layer.provide(detachedJournal()),
     Layer.provide(
-      Layer.mergeAll(
-        databaseLayer({
-          databasePath,
-          migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
-        }),
-        PresenceJournal.unrecorded
-      )
+      databaseLayer({
+        databasePath,
+        migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
+      })
     )
   );
   const sessionsOf = (keyId: string) => {
@@ -1062,10 +1034,6 @@ test("an action whose key row is gone is refused before it writes", async () => 
       rows.close();
     }
   };
-  const sweep = Effect.gen(function* expireNow() {
-    const presence = yield* Presence;
-    yield* presence.expire(Date.now());
-  }).pipe(Effect.provide(presenceLayer), Effect.scoped);
   const play = (actionId: string, actionNumber: number) =>
     Effect.gen(function* actAsPhone() {
       const presence = yield* Presence;
@@ -1104,8 +1072,6 @@ test("an action whose key row is gone is refused before it writes", async () => 
       refused: 401,
     });
     expect(sessionsOf("a-phone")).toEqual(before);
-    await Effect.runPromise(sweep);
-    expect(sessionsOf("a-phone")).toEqual([]);
   } finally {
     await rm(root, { force: true, recursive: true });
   }

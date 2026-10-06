@@ -2,8 +2,8 @@ import { and, desc, eq, isNull } from "drizzle-orm";
 import { Context, Effect, Layer } from "effect";
 
 import { listens } from "./db/schema.js";
-import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
+import { Journal } from "./journal.js";
 import { LibraryPerson } from "./library-person.js";
 
 const databaseError = () =>
@@ -28,21 +28,27 @@ export class Stats extends Context.Service<
   static readonly scopedLayer = Layer.effect(
     Stats,
     Effect.gen(function* buildStats() {
-      const db = yield* Database;
+      const journal = yield* Journal;
       const personId = yield* LibraryPerson;
       const recordListen = Effect.fn("Stats.recordListen")((setId: string) =>
         execute(
-          db.insert(listens).values({
-            personId,
-            setId,
-            startedAt: new Date().toISOString(),
-          })
-        ).pipe(Effect.asVoid)
+          journal.transaction((tx) =>
+            Effect.gen(function* startListen() {
+              yield* tx.insert(listens).values({
+                personId,
+                setId,
+                startedAt: new Date().toISOString(),
+              });
+              yield* journal.record(tx, { personId, topic: "listen-history" });
+            })
+          )
+        )
       );
       const recordFinish = Effect.fn("Stats.recordFinish")((setId: string) =>
         execute(
+          journal.transaction((tx) =>
           Effect.gen(function* finishLatestListen() {
-            const [latest] = yield* db
+            const [latest] = yield* tx
               .select({ id: listens.id })
               .from(listens)
               .where(
@@ -55,14 +61,16 @@ export class Stats extends Context.Service<
               .orderBy(desc(listens.id))
               .limit(1);
             if (latest) {
-              yield* db
+              yield* tx
                 .update(listens)
                 .set({ finishedAt: new Date().toISOString() })
                 .where(
                   and(eq(listens.id, latest.id), isNull(listens.finishedAt))
                 );
+              yield* journal.record(tx, { personId, topic: "listen-history" });
             }
           })
+          )
         )
       );
       return { recordFinish, recordListen };

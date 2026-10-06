@@ -5,6 +5,7 @@ import { Duration, Effect, Layer, Result } from "effect";
 
 import { Database, layer as databaseLayer } from "./db/database.js";
 import { sets } from "./db/schema.js";
+import { detachedJournal } from "./journal.js";
 import { Library } from "./library.js";
 import { Metadata } from "./metadata.js";
 import { ytDlpMetadata } from "./ytdlp-metadata.js";
@@ -94,7 +95,7 @@ const main = async () => {
     migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
   });
   const layers = Layer.mergeAll(
-    Library.layer,
+    Library.layer.pipe(Layer.provide(detachedJournal())),
     Metadata.layer({ ytDlp: ytDlpMetadata({ binPath }) })
   ).pipe(Layer.provideMerge(database));
 

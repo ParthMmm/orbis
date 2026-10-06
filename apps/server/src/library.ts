@@ -22,6 +22,8 @@ import {
 import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import type { PersonRecord } from "./identity.js";
+import { Journal } from "./journal.js";
+import type { JournalCommit } from "./journal.js";
 import {
   MAX_PLAYLISTS_PER_SET,
   MAX_SETS_PER_PLAYLIST,
@@ -197,8 +199,14 @@ export class Library extends Context.Service<
     Library,
     Effect.gen(function* layer() {
       const db = yield* Database;
+      const journal = yield* Journal;
       const options = yield* LibrarySettings;
       const personId = yield* LibraryPerson;
+      const changedSet = (setId: string) =>
+        journal.transaction((tx) => journal.record(tx, { setId, topic: "set" }));
+      // A shared Set write and its invalidation commit in one transaction.
+      const setWrite = <A, E>(write: Effect.Effect<A, E, JournalCommit>) =>
+        execute(journal.transaction(() => write));
       const resolve = (id: string) =>
         resolveVisibleSet({
           id,
@@ -355,7 +363,7 @@ export class Library extends Context.Service<
             const { source, url } = yield* normalizeUrl(input.url);
             const title = input.title?.trim() ?? "";
             const tags = normalizeTags(input.tags);
-            const savedRow = yield* db.transaction((tx) =>
+            const savedRow = yield* journal.transaction((tx) =>
               Effect.gen(function* saveEntryTransaction() {
                 let [row] = yield* tx
                   .select()
@@ -413,6 +421,11 @@ export class Library extends Context.Service<
                     })
                   );
                 }
+                yield* journal.record(tx, {
+                  personId,
+                  setId: row.id,
+                  topic: "library",
+                });
                 return row;
               })
             );
@@ -525,19 +538,28 @@ export class Library extends Context.Service<
           execute(
             Effect.gen(function* updateTagsEffect() {
               yield* ensureEntry(id);
-              const [entry] = yield* db
-                .update(libraryEntries)
-                .set({ tags: JSON.stringify(normalizeTags(tags)) })
-                .where(
-                  and(
-                    eq(libraryEntries.personId, personId),
-                    eq(libraryEntries.setId, id)
-                  )
-                )
-                .returning();
-              if (!entry) {
-                return yield* Effect.fail(setNotFound());
-              }
+              yield* journal.transaction((tx) =>
+                Effect.gen(function* updateTagsTransaction() {
+                  const [entry] = yield* tx
+                    .update(libraryEntries)
+                    .set({ tags: JSON.stringify(normalizeTags(tags)) })
+                    .where(
+                      and(
+                        eq(libraryEntries.personId, personId),
+                        eq(libraryEntries.setId, id)
+                      )
+                    )
+                    .returning();
+                  if (!entry) {
+                    return yield* Effect.fail(setNotFound());
+                  }
+                  yield* journal.record(tx, {
+                    personId,
+                    setId: id,
+                    topic: "library",
+                  });
+                })
+              );
               return yield* findSavedSet(id);
             })
           )
@@ -557,19 +579,28 @@ export class Library extends Context.Service<
                   })
                 );
               }
-              const [entry] = yield* db
-                .update(libraryEntries)
-                .set({ titleOverride: trimmedTitle })
-                .where(
-                  and(
-                    eq(libraryEntries.personId, personId),
-                    eq(libraryEntries.setId, id)
-                  )
-                )
-                .returning();
-              if (!entry) {
-                return yield* Effect.fail(setNotFound());
-              }
+              yield* journal.transaction((tx) =>
+                Effect.gen(function* updateTitleTransaction() {
+                  const [entry] = yield* tx
+                    .update(libraryEntries)
+                    .set({ titleOverride: trimmedTitle })
+                    .where(
+                      and(
+                        eq(libraryEntries.personId, personId),
+                        eq(libraryEntries.setId, id)
+                      )
+                    )
+                    .returning();
+                  if (!entry) {
+                    return yield* Effect.fail(setNotFound());
+                  }
+                  yield* journal.record(tx, {
+                    personId,
+                    setId: id,
+                    topic: "library",
+                  });
+                })
+              );
               return yield* findSavedSet(id);
             })
           )
@@ -606,13 +637,29 @@ export class Library extends Context.Service<
                 current.durationSeconds === null
                   ? wanted
                   : Math.min(wanted, current.durationSeconds);
-              yield* db
-                .insert(playbackPositions)
-                .values({ personId, seconds: Math.round(bounded), setId: id })
-                .onConflictDoUpdate({
-                  set: { seconds: Math.round(bounded) },
-                  target: [playbackPositions.personId, playbackPositions.setId],
-                });
+              yield* journal.transaction((tx) =>
+                Effect.gen(function* savePositionTransaction() {
+                  yield* tx
+                    .insert(playbackPositions)
+                    .values({
+                      personId,
+                      seconds: Math.round(bounded),
+                      setId: id,
+                    })
+                    .onConflictDoUpdate({
+                      set: { seconds: Math.round(bounded) },
+                      target: [
+                        playbackPositions.personId,
+                        playbackPositions.setId,
+                      ],
+                    });
+                  yield* journal.record(tx, {
+                    personId,
+                    setId: id,
+                    topic: "library",
+                  });
+                })
+              );
               return yield* hydrateSet(current);
             })
           )
@@ -620,7 +667,7 @@ export class Library extends Context.Service<
 
       const recordEnrichment = Effect.fn("Library.recordEnrichment")(
         (id: string, metadata: EnrichedMetadata) =>
-          execute(
+          setWrite(
             Effect.gen(function* recordEnrichmentEffect() {
               const rows = yield* db
                 .update(sets)
@@ -641,6 +688,7 @@ export class Library extends Context.Service<
               if (!row) {
                 return yield* Effect.fail(setNotFound());
               }
+              yield* changedSet(id);
               return yield* hydrateSet(row);
             })
           )
@@ -649,7 +697,7 @@ export class Library extends Context.Service<
       // The provider's own values stay: a Set is filled where it has a gap, never overwritten.
       const recordDetails = Effect.fn("Library.recordDetails")(
         (id: string, details: SourceDetails) =>
-          execute(
+          setWrite(
             Effect.gen(function* recordDetailsEffect() {
               const rows = yield* db
                 .update(sets)
@@ -666,24 +714,26 @@ export class Library extends Context.Service<
               if (rows.length === 0) {
                 return yield* Effect.fail(setNotFound());
               }
+              yield* changedSet(id);
             })
           )
       );
 
       const recordDetailsFailure = Effect.fn("Library.recordDetailsFailure")(
         (id: string) =>
-          execute(
+          setWrite(
             db
               .update(sets)
               .set({ detailsState: "failed" })
               .where(eq(sets.id, id))
-          ).pipe(Effect.asVoid)
+              .pipe(Effect.andThen(changedSet(id)))
+          )
       );
 
       const recordEnrichmentFailure = Effect.fn(
         "Library.recordEnrichmentFailure"
       )((id: string) =>
-        execute(
+        setWrite(
           Effect.gen(function* recordEnrichmentFailureEffect() {
             const rows = yield* db
               .update(sets)
@@ -694,6 +744,7 @@ export class Library extends Context.Service<
             if (!row) {
               return yield* Effect.fail(setNotFound());
             }
+            yield* changedSet(id);
             return yield* hydrateSet(row);
           })
         )
@@ -704,7 +755,7 @@ export class Library extends Context.Service<
           Effect.gen(function* removeEffect() {
             yield* ensureEntry(id);
             const saved = yield* findSavedSet(id);
-            yield* db.transaction((tx) =>
+            yield* journal.transaction((tx) =>
               Effect.gen(function* removeTransaction() {
                 yield* tx
                   .delete(libraryEntries)
@@ -720,6 +771,11 @@ export class Library extends Context.Service<
                     .set({ hostRemoved: true })
                     .where(eq(sets.id, id));
                 }
+                yield* journal.record(tx, {
+                  personId,
+                  setId: id,
+                  topic: "library",
+                });
               })
             );
             yield* release(id);
@@ -731,7 +787,7 @@ export class Library extends Context.Service<
       const queueDownload = Effect.fn("Library.queueDownload")((id: string) =>
         execute(
           Effect.gen(function* queueDownloadEffect() {
-            const row = yield* db.transaction((tx) =>
+            const row = yield* journal.transaction((tx) =>
               Effect.gen(function* enqueue() {
                 const [current] = yield* tx
                   .select()
@@ -782,6 +838,7 @@ export class Library extends Context.Service<
                 if (!queued) {
                   return yield* Effect.fail(setNotFound());
                 }
+                yield* journal.record(tx, { setId: id, topic: "set" });
                 return queued;
               })
             );
@@ -792,7 +849,7 @@ export class Library extends Context.Service<
       const claimDownload = Effect.fn("Library.claimDownload")(() =>
         execute(
           Effect.gen(function* claimDownloadEffect() {
-            const row = yield* db.transaction((tx) =>
+            const row = yield* journal.transaction((tx) =>
               Effect.gen(function* claim() {
                 const [next] = yield* tx
                   .select({
@@ -825,6 +882,9 @@ export class Library extends Context.Service<
                   .set({ downloadState: "downloading" })
                   .where(eq(sets.id, next.setId))
                   .returning();
+                if (claimed) {
+                  yield* journal.record(tx, { setId: claimed.id, topic: "set" });
+                }
                 return claimed ?? null;
               })
             );
@@ -837,7 +897,7 @@ export class Library extends Context.Service<
           id: string,
           audio: { bytes: number; format: string; durationSeconds: number }
         ) =>
-          execute(
+          setWrite(
             Effect.gen(function* finishDownloadEffect() {
               // Whole seconds: SQLite keeps the fraction under INTEGER affinity, and
               // the app decodes an integer, so a fraction would unreadable the library.
@@ -854,6 +914,7 @@ export class Library extends Context.Service<
               if (!row) {
                 return yield* Effect.fail(setNotFound());
               }
+              yield* changedSet(id);
               return yield* hydrateSet(row);
             })
           )
@@ -861,7 +922,7 @@ export class Library extends Context.Service<
       // Only a download still running can fail. A cancel that won the race already
       // moved the row to none, and a failure must not drag it back to failed.
       const failDownload = Effect.fn("Library.failDownload")((id: string) =>
-        execute(
+        setWrite(
           Effect.gen(function* failDownloadEffect() {
             const [failed] = yield* db
               .update(sets)
@@ -871,6 +932,7 @@ export class Library extends Context.Service<
               )
               .returning();
             if (failed) {
+              yield* changedSet(id);
               return yield* hydrateSet(failed);
             }
             return yield* findSavedSet(id);
@@ -881,7 +943,7 @@ export class Library extends Context.Service<
       // The app reports a 409 as a duplicate library entry, so a finished download
       // that cannot be canceled answers 400 with its own sentence.
       const cancelDownload = Effect.fn("Library.cancelDownload")((id: string) =>
-        execute(
+        setWrite(
           Effect.gen(function* cancelDownloadEffect() {
             const [canceled] = yield* db
               .update(sets)
@@ -893,6 +955,7 @@ export class Library extends Context.Service<
               .where(and(eq(sets.id, id), ne(sets.downloadState, "ready")))
               .returning();
             if (canceled) {
+              yield* changedSet(id);
               return yield* hydrateSet(canceled);
             }
             yield* resolve(id);
@@ -908,12 +971,14 @@ export class Library extends Context.Service<
       // A restart must not leave a download stuck mid-flight: whatever was running
       // when the process died goes back to queued and the worker picks it up again.
       const resetStuckDownloads = Effect.fn("Library.resetStuckDownloads")(() =>
-        execute(
+        setWrite(
           Effect.gen(function* resetStuckDownloadsEffect() {
-            yield* db
+            const requeued = yield* db
               .update(sets)
               .set({ downloadState: "queued" })
-              .where(eq(sets.downloadState, "downloading"));
+              .where(eq(sets.downloadState, "downloading"))
+              .returning({ id: sets.id });
+            yield* Effect.forEach(requeued, (set) => changedSet(set.id));
             yield* db.run(
               sql`INSERT OR IGNORE INTO download_requesters (person_id) VALUES ('host')`
             );
@@ -980,16 +1045,28 @@ export class Library extends Context.Service<
                 name: trimmedName,
                 setCount: 0,
               } satisfies Playlist;
-              const inserted = yield* db
-                .insert(playlists)
-                .values({
-                  createdAt: playlist.createdAt,
-                  creatorId: personId,
-                  id: playlist.id,
-                  name: playlist.name,
-                })
-                .onConflictDoNothing()
-                .returning();
+              const inserted = yield* journal.transaction((tx) =>
+                tx
+                  .insert(playlists)
+                  .values({
+                    createdAt: playlist.createdAt,
+                    creatorId: personId,
+                    id: playlist.id,
+                    name: playlist.name,
+                  })
+                  .onConflictDoNothing()
+                  .returning()
+                  .pipe(
+                    Effect.tap((rows) =>
+                      rows.length > 0
+                        ? journal.record(tx, {
+                            playlistId: playlist.id,
+                            topic: "playlist",
+                          })
+                        : Effect.void
+                    )
+                  )
+              );
               if (!inserted[0]) {
                 return yield* Effect.fail(
                   new LibraryError({
@@ -1045,17 +1122,24 @@ export class Library extends Context.Service<
                   })
                 );
               }
-              const [row] = yield* db
-                .update(playlists)
-                .set({ name: trimmedName })
-                .where(
-                  and(eq(playlists.id, id), eq(playlists.creatorId, personId))
-                )
-                .returning({
-                  createdAt: playlists.createdAt,
-                  id: playlists.id,
-                  name: playlists.name,
-                });
+              const [row] = yield* journal.transaction((tx) =>
+                tx
+                  .update(playlists)
+                  .set({ name: trimmedName })
+                  .where(
+                    and(eq(playlists.id, id), eq(playlists.creatorId, personId))
+                  )
+                  .returning({
+                    createdAt: playlists.createdAt,
+                    id: playlists.id,
+                    name: playlists.name,
+                  })
+                  .pipe(
+                    Effect.tap(() =>
+                      journal.record(tx, { playlistId: id, topic: "playlist" })
+                    )
+                  )
+              );
               if (!row) {
                 return yield* Effect.fail(playlistNotFound());
               }
@@ -1096,8 +1180,10 @@ export class Library extends Context.Service<
             if (!row) {
               return yield* Effect.fail(playlistNotFound());
             }
-            const removed = yield* db.transaction((tx) =>
+            const removed = yield* journal.transaction((tx) =>
               Effect.gen(function* deletePlaylistTransaction() {
+                // Nobody can read a deleted Playlist, so its readers are resolved first.
+                yield* journal.record(tx, { playlistId: id, topic: "playlist" });
                 const deleted = yield* tx
                   .delete(playlistSets)
                   .where(eq(playlistSets.playlistId, id))
@@ -1133,7 +1219,7 @@ export class Library extends Context.Service<
                 return yield* Effect.fail(playlistNotFound());
               }
               yield* Effect.forEach(resolve)(setIds);
-              const removed = yield* db.transaction((tx) =>
+              const removed = yield* journal.transaction((tx) =>
                 Effect.gen(function* setPlaylistMembersTransaction() {
                   const playlist = yield* tx
                     .select({ id: playlists.id })
@@ -1214,6 +1300,10 @@ export class Library extends Context.Service<
                       }))
                     );
                   }
+                  yield* journal.record(tx, {
+                    playlistId: id,
+                    topic: "playlist",
+                  });
                   return currentRows.filter(
                     (row) => !setIds.includes(row.setId)
                   );
@@ -1248,7 +1338,7 @@ export class Library extends Context.Service<
               }
             }
             yield* ensureEntry(setId);
-            yield* db.transaction((tx) =>
+            yield* journal.transaction((tx) =>
               Effect.gen(function* setPlaylistMembershipsTransaction() {
                 const set = yield* tx
                   .select({ id: sets.id })
@@ -1346,6 +1436,18 @@ export class Library extends Context.Service<
                       setId,
                     })
                     .onConflictDoNothing();
+                }
+                yield* journal.record(tx, {
+                  personId,
+                  setId,
+                  topic: "library",
+                });
+                const changedPlaylists = [
+                  ...removedIds,
+                  ...playlistIds.filter((id) => !currentPlaylistIds.has(id)),
+                ];
+                for (const playlistId of changedPlaylists) {
+                  yield* journal.record(tx, { playlistId, topic: "playlist" });
                 }
               })
             );

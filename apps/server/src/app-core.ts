@@ -44,9 +44,6 @@ import {
   listDevices,
   listKeys,
   listPeople,
-  removePerson,
-  revokeDevice,
-  revokeKey,
 } from "./admin.js";
 import { Audio } from "./audio-service.js";
 import type { AudioFile } from "./audio-service.js";
@@ -58,6 +55,7 @@ import {
   sets as setRows,
 } from "./db/schema.js";
 import { Database } from "./db/service.js";
+import type { DatabaseClient } from "./db/service.js";
 import { DEVICE_LINK_TTL_MS, makeDeviceLinks } from "./device-link.js";
 import { LibraryError } from "./errors.js";
 import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
@@ -65,9 +63,11 @@ import {
   decideAccess,
   markKeyUsed,
   readTrustRegistry,
-  updatePerson,
-  updatePersonFilters,
 } from "./identity.js";
+import { makeFeed, visiblePresence } from "./feed.js";
+import type { CatchUp, FeedNotice } from "./feed.js";
+import { FeedSignals, Journal } from "./journal.js";
+import type { JournalOptions } from "./journal.js";
 import { consumeInvite, createInvite, INVITE_TTL_MS } from "./invite.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
@@ -83,7 +83,6 @@ import {
 import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
 import type { EnrichedMetadata } from "./metadata.js";
-import { PresenceJournal } from "./presence-journal.js";
 import { Presence } from "./presence.js";
 import type { PresenceOptions } from "./presence.js";
 import { QueueSignals } from "./queue-signals.js";
@@ -99,8 +98,18 @@ import {
   runClaimedTracklist,
 } from "./tracklists.js";
 import { retryTrustOperation } from "./trust-storage.js";
+import {
+  removePerson,
+  revokeKey,
+  updatePerson,
+  updatePersonFilters,
+} from "./trust-writes.js";
 import { Versos } from "./versos.js";
-import { listFilterablePeople, resolveVisiblePerson } from "./visibility.js";
+import {
+  listFilterablePeople,
+  resolveEditablePlaylist,
+  resolveVisiblePerson,
+} from "./visibility.js";
 
 interface RawFilters {
   creatorId?: string | null;
@@ -278,7 +287,11 @@ export const createPortableApp = (options: {
   metadata?: Layer.Layer<Metadata>;
   /** How long after a Playback Position report a Person still counts as listening. */
   presenceWindowMs?: number;
-  presence?: PresenceOptions & { journal?: Layer.Layer<PresenceJournal> };
+  presence?: PresenceOptions;
+  /** Retention bounds for the change feed. Tests shorten them to prove pruning. */
+  feed?: JournalOptions;
+  /** Shared with any other runtime on the same database, so its commits wake this app's feed readers. */
+  feedSignals?: typeof FeedSignals.Service;
   /** How long a Device Link stays open. Tests shorten it to prove expiry. */
   deviceLinkTtlMs?: number;
   deviceLinkNow?: () => number;
@@ -318,24 +331,50 @@ export const createPortableApp = (options: {
     people: () => readTrustRegistry(trustPath).store.people,
     releaseAudio: options.releaseAudio,
   };
+  const feedSignals = options.feedSignals ?? FeedSignals.make();
+  const journalLayer = Journal.layer(options.feed).pipe(
+    Layer.provide(database),
+    Layer.provide(Layer.succeed(FeedSignals, feedSignals))
+  );
+  const storage = Layer.mergeAll(database, journalLayer);
   const libraryLayer = Library.forPersonLayer("host", libraryOptions).pipe(
-    Layer.provide(database)
+    Layer.provide(storage)
   );
   const queueSignalsLayer = QueueSignals.layer;
   const presenceLayer = Presence.layer({
     ...options.presence,
     legacyReportWindowMs: options.presenceWindowMs ?? PRESENCE_WINDOW_MS,
-  }).pipe(
-    Layer.provide(database),
-    Layer.provide(options.presence?.journal ?? PresenceJournal.unrecorded)
-  );
+  }).pipe(Layer.provide(storage));
   let presenceService: typeof Presence.Service | null = null;
+  let feedReader: ReturnType<typeof makeFeed> | null = null;
   const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
       const db = yield* Database;
+      const journal = yield* Journal;
       const presence = yield* Presence;
       presenceService = presence;
+      const services = Layer.mergeAll(
+        Layer.succeed(Database, db),
+        Layer.succeed(Journal, journal)
+      );
+      const libraryFor = (
+        personId: string,
+        settings: Parameters<typeof Library.forPersonLayer>[1] = libraryOptions
+      ) => Library.forPersonLayer(personId, settings).pipe(Layer.provide(services));
+      const trustWrite = <A, E, R>(
+        body: (tx: DatabaseClient) => Effect.Effect<A, E, R>
+      ) =>
+        journal.transaction(body).pipe(
+          Effect.mapError((error) =>
+            error instanceof LibraryError
+              ? error
+              : new LibraryError({
+                  message: "The trust store is unavailable.",
+                  statusCode: 500,
+                })
+          )
+        );
       const audio = yield* Audio;
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
@@ -744,44 +783,11 @@ export const createPortableApp = (options: {
           };
         });
       const editablePlaylistOwner = (id: string, personId: string) =>
-        Effect.gen(function* resolveEditablePlaylist() {
-          const [owned] = yield* db
-            .select({ id: playlists.id })
-            .from(playlists)
-            .where(and(eq(playlists.id, id), eq(playlists.creatorId, personId)))
-            .limit(1);
-          if (owned) {
-            return personId;
-          }
-          const [editor] = yield* db
-            .select({ creatorId: playlistEditors.creatorId })
-            .from(playlistEditors)
-            .where(
-              and(
-                eq(playlistEditors.playlistId, id),
-                eq(playlistEditors.editorId, personId)
-              )
-            )
-            .limit(1);
-          if (!editor) {
-            return yield* Effect.fail(missingPlaylist());
-          }
-          yield* mutuallyVisibleFriend(editor.creatorId);
-          const [playlist] = yield* db
-            .select({ collaborative: playlists.collaborative })
-            .from(playlists)
-            .where(
-              and(
-                eq(playlists.id, id),
-                eq(playlists.creatorId, editor.creatorId)
-              )
-            )
-            .limit(1);
-          if (!playlist?.collaborative) {
-            return yield* Effect.fail(missingPlaylist());
-          }
-          return editor.creatorId;
-        });
+        resolveEditablePlaylist({
+          id,
+          people: readTrustRegistry(trustPath).store.people,
+          personId,
+        }).pipe(Effect.provideService(Database, db));
       const personSummary = (id: string) => {
         const { people } = readTrustRegistry(trustPath).store;
         const person = people.find((candidate) => candidate.id === id);
@@ -872,9 +878,7 @@ export const createPortableApp = (options: {
                         playlistId: params.id,
                       });
                     }),
-                    Library.forPersonLayer(ownerId, libraryOptions).pipe(
-                      Layer.provide(Layer.succeed(Database, db))
-                    )
+                    libraryFor(ownerId)
                   );
                   const role: "creator" | "editor" =
                     ownerId === caller.person.id ? "creator" : "editor";
@@ -942,10 +946,7 @@ export const createPortableApp = (options: {
                         })
                       );
                     }
-                    const ownerLayer = Library.forPersonLayer(
-                      ownerId,
-                      libraryOptions
-                    ).pipe(Layer.provide(Layer.succeed(Database, db)));
+                    const ownerLayer = libraryFor(ownerId);
                     return {
                       sets: yield* Effect.provide(
                         Effect.gen(function* updateSharedPlaylist() {
@@ -985,15 +986,29 @@ export const createPortableApp = (options: {
                       CollaborationPayload
                     );
                   yield* ownedPlaylist(params.id, caller.person.id);
-                  yield* db
-                    .update(playlists)
-                    .set({ collaborative: input.collaborative })
-                    .where(
-                      and(
-                        eq(playlists.id, params.id),
-                        eq(playlists.creatorId, caller.person.id)
+                  yield* journal.transaction((tx) =>
+                    journal
+                      .changingAccess(
+                        tx,
+                        tx
+                          .update(playlists)
+                          .set({ collaborative: input.collaborative })
+                          .where(
+                            and(
+                              eq(playlists.id, params.id),
+                              eq(playlists.creatorId, caller.person.id)
+                            )
+                          )
                       )
-                    );
+                      .pipe(
+                        Effect.andThen(
+                          journal.record(tx, {
+                            playlistId: params.id,
+                            topic: "playlist",
+                          })
+                        )
+                      )
+                  );
                   return yield* collaborationFor(params.id, caller.person.id);
                 })
               )
@@ -1019,20 +1034,29 @@ export const createPortableApp = (options: {
                   for (const editorId of input.editorIds) {
                     yield* mutuallyVisibleFriend(editorId);
                   }
-                  yield* db.transaction((tx) =>
+                  yield* journal.transaction((tx) =>
                     Effect.gen(function* replaceEditors() {
-                      yield* tx
-                        .delete(playlistEditors)
-                        .where(eq(playlistEditors.playlistId, params.id));
-                      if (input.editorIds.length > 0) {
-                        yield* tx.insert(playlistEditors).values(
-                          input.editorIds.map((editorId) => ({
-                            creatorId: caller.person.id,
-                            editorId,
-                            playlistId: params.id,
-                          }))
-                        );
-                      }
+                      yield* journal.changingAccess(
+                        tx,
+                        Effect.gen(function* writeEditors() {
+                          yield* tx
+                            .delete(playlistEditors)
+                            .where(eq(playlistEditors.playlistId, params.id));
+                          if (input.editorIds.length > 0) {
+                            yield* tx.insert(playlistEditors).values(
+                              input.editorIds.map((editorId) => ({
+                                creatorId: caller.person.id,
+                                editorId,
+                                playlistId: params.id,
+                              }))
+                            );
+                          }
+                        })
+                      );
+                      yield* journal.record(tx, {
+                        playlistId: params.id,
+                        topic: "playlist",
+                      });
                     })
                   );
                   return yield* collaborationFor(params.id, caller.person.id);
@@ -1169,45 +1193,22 @@ export const createPortableApp = (options: {
               )
             )
       );
-      const friendLibraryLayer = (personId: string) =>
-        Library.forPersonLayer(personId).pipe(
-          Layer.provide(Layer.succeed(Database, db))
-        );
+      const friendLibraryLayer = (personId: string) => libraryFor(personId, {});
       const presenceFor = (viewerId: string) =>
-        Effect.gen(function* readPresence() {
-          const { people } = readTrustRegistry(trustPath).store;
-          const now = Date.now();
-          const found = [];
-          for (const person of people) {
-            let target;
-            try {
-              target = resolveVisiblePerson(people, viewerId, person.id);
-            } catch {
-              continue;
-            }
-            const setId = yield* presence
-              .currentSetFor(target.id, now)
-              .pipe(Effect.orElseSucceed(() => null));
-            if (setId === null) {
-              continue;
-            }
-            const [set] = yield* Effect.provide(
-              Effect.gen(function* hydratePresence() {
-                const personal = yield* Library;
-                return yield* personal.byIds([setId]);
-              }),
-              friendLibraryLayer(target.id)
-            ).pipe(Effect.orElseSucceed(() => []));
-            if (set) {
-              found.push({
-                personId: target.id,
-                set,
-                username: target.username,
-              });
-            }
-          }
-          return found;
+        visiblePresence({
+          libraryFor: friendLibraryLayer,
+          now: Date.now(),
+          people: readTrustRegistry(trustPath).store.people,
+          presence,
+          viewerId,
         });
+      feedReader = makeFeed({
+        db,
+        friendLibraryFor: friendLibraryLayer,
+        libraryFor: (personId) => libraryFor(personId),
+        presence,
+        retentionMs: options.feed?.retentionMs,
+      });
       const peopleGroup = HttpApiBuilder.group(OrbisApi, "people", (handlers) =>
         handlers
           .handle("me", () =>
@@ -1227,29 +1228,13 @@ export const createPortableApp = (options: {
                 const caller = yield* SetCaller;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(UpdateMePayload);
-                const result = yield* Effect.promise(() =>
-                  retryTrustOperation(() =>
-                    updatePerson(trustPath, caller.person.id, input)
+                const updated = yield* trustWrite((tx) =>
+                  journal.changingAccess(
+                    tx,
+                    updatePerson(tx, caller.person.id, input)
                   )
                 );
-                if (result.kind === "updated") {
-                  return HttpServerResponse.jsonUnsafe({
-                    autoDownload: result.person.autoDownload ?? true,
-                    id: result.person.id,
-                    social: result.person.social ?? false,
-                    username: result.person.username,
-                  });
-                }
-                let statusCode = 500;
-                let message = "The trust store is unavailable.";
-                if (result.kind === "invalid") {
-                  statusCode = 400;
-                  message = "Choose a username with 1 to 40 characters.";
-                } else if (result.kind === "conflict") {
-                  statusCode = 409;
-                  message = "That username is already in use.";
-                }
-                return yield* new LibraryError({ message, statusCode });
+                return HttpServerResponse.jsonUnsafe(updated);
               })
             )
           )
@@ -1292,28 +1277,12 @@ export const createPortableApp = (options: {
                 const caller = yield* SetCaller;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(SocialFiltersPayload);
-                const result = yield* Effect.promise(() =>
-                  retryTrustOperation(() =>
-                    updatePersonFilters(
-                      trustPath,
-                      caller.person.id,
-                      params.id,
-                      input
-                    )
+                return yield* trustWrite((tx) =>
+                  journal.changingAccess(
+                    tx,
+                    updatePersonFilters(tx, caller.person.id, params.id, input)
                   )
                 );
-                if (result.kind === "updated") {
-                  return { appear: result.appear, see: result.see };
-                }
-                return yield* new LibraryError({
-                  message:
-                    result.kind === "invalid"
-                      ? "Choose at least one filter."
-                      : "Person not found.",
-                  statusCode: { invalid: 400, missing: 404, unavailable: 500 }[
-                    result.kind
-                  ],
-                });
               })
             )
           )
@@ -1449,18 +1418,16 @@ export const createPortableApp = (options: {
             action(storePath, caller.person.id, keyId)
           );
         });
-      // The key is already gone, so a failed clear is logged: the next settle sweeps the
-      // rows and the lease bounds how long the stale Presence can show.
-      const clearRevokedPresence = (keyId: string) =>
-        presence
-          .revokeKey(keyId)
-          .pipe(
-            Effect.catchTag("LibraryError", (failure) =>
-              Effect.logWarning("revoked key presence not cleared").pipe(
-                Effect.annotateLogs({ cause: failure.message })
-              )
-            )
-          );
+      // A key leaves with its Presence and its open feeds in one commit.
+      const revokeKeyNow = (id: string, ownerId?: string) =>
+        trustWrite((tx) =>
+          Effect.gen(function* revokeWithPresence() {
+            const key = yield* revokeKey(tx, id, ownerId);
+            yield* presence.revokeKey(tx, key.id, key.personId);
+            yield* journal.record(tx, { keyId: key.id, topic: "revoked" });
+            return key;
+          })
+        ).pipe(Effect.tap(() => presence.afterCommit()));
       const devicesGroup = HttpApiBuilder.group(
         OrbisApi,
         "devices",
@@ -1473,9 +1440,23 @@ export const createPortableApp = (options: {
             )
             .handleRaw("revoke", ({ params }) =>
               withFailureResponse(
-                deviceCall((storePath, personId, keyId) =>
-                  revokeDevice(storePath, personId, keyId, params.id)
-                ).pipe(Effect.tap(() => clearRevokedPresence(params.id)))
+                Effect.gen(function* revokeOwnDevice() {
+                  const caller = yield* SetCaller;
+                  if (caller.keyId === null || caller.scope !== "daily") {
+                    return yield* new LibraryError({
+                      message: "Sign in with a device key.",
+                      statusCode: 403,
+                    });
+                  }
+                  const key = yield* revokeKeyNow(params.id, caller.person.id);
+                  return {
+                    addedAt: key.addedAt,
+                    current: key.id === caller.keyId,
+                    id: key.id,
+                    label: key.label,
+                    lastUsedAt: key.lastUsedAt,
+                  };
+                })
               )
             )
       );
@@ -1502,9 +1483,7 @@ export const createPortableApp = (options: {
           .handleRaw("removePerson", ({ params }) =>
             withFailureResponse(
               Effect.gen(function* removeAdminPerson() {
-                const person = yield* adminCall((storePath) =>
-                  removePerson(storePath, params.id)
-                );
+                yield* requireAdminScope;
                 const released = yield* db
                   .all<{ readonly id: string }>(sql`
                   SELECT set_id AS id FROM library_entries WHERE person_id = ${params.id}
@@ -1512,9 +1491,11 @@ export const createPortableApp = (options: {
                   UNION SELECT set_id AS id FROM playlist_sets INNER JOIN playlists ON playlists.id = playlist_sets.playlist_id WHERE creator_id = ${params.id}
                 `)
                   .pipe(Effect.orDie);
-                yield* db
-                  .transaction((tx) =>
+                const person = yield* trustWrite((tx) =>
+                  journal.changingAccess(
+                    tx,
                     Effect.gen(function* deleteAdminPersonRows() {
+                      const removed = yield* removePerson(tx, params.id);
                       yield* tx.run(
                         sql`DELETE FROM playlist_sets WHERE playlist_id IN (SELECT id FROM playlists WHERE creator_id = ${params.id})`
                       );
@@ -1545,17 +1526,13 @@ export const createPortableApp = (options: {
                         sql`DELETE FROM download_requesters WHERE person_id = ${params.id}`
                       );
                       yield* presence.removePerson(tx, params.id);
+                      for (const keyId of removed.keyIds) {
+                        yield* journal.record(tx, { keyId, topic: "revoked" });
+                      }
+                      return removed.person;
                     })
                   )
-                  .pipe(
-                    Effect.mapError(
-                      () =>
-                        new LibraryError({
-                          message: "Could not remove the Person's data.",
-                          statusCode: 500,
-                        })
-                    )
-                  );
+                );
                 yield* presence.afterCommit();
                 yield* Effect.forEach((set: { readonly id: string }) =>
                   library.release(set.id)
@@ -1595,9 +1572,7 @@ export const createPortableApp = (options: {
           )
           .handleRaw("revokeKey", ({ params }) =>
             withFailureResponse(
-              adminCall((storePath) => revokeKey(storePath, params.id)).pipe(
-                Effect.tap(() => clearRevokedPresence(params.id))
-              )
+              Effect.andThen(requireAdminScope, revokeKeyNow(params.id))
             )
           )
           .handleRaw("createInvite", ({ params }) =>
@@ -1899,21 +1874,18 @@ export const createPortableApp = (options: {
                   Option.match({
                     onNone: () => Effect.die("Accepted access context missing"),
                     onSome: (access) => {
-                      const personalLibrary = Library.forPersonLayer(
-                        access.person.id,
-                        libraryOptions
-                      ).pipe(Layer.provide(Layer.succeed(Database, db)));
+                      const personalLibrary = libraryFor(access.person.id);
                       const personalQueue = Queue.forPersonLayer(
                         access.person.id
                       ).pipe(
                         Layer.provide(
                           Layer.mergeAll(
-                            Layer.succeed(Database, db),
+                            services,
                             Layer.succeed(QueueSignals, signals),
                             Layer.succeed(Presence, presence),
                             personalLibrary,
                             Stats.forPersonLayer(access.person.id).pipe(
-                              Layer.provide(Layer.succeed(Database, db))
+                              Layer.provide(services)
                             )
                           )
                         )
@@ -1959,6 +1931,7 @@ export const createPortableApp = (options: {
       Layer.provide(options.audio),
       Layer.provide(libraryLayer),
       Layer.provide(presenceLayer),
+      Layer.provide(journalLayer),
       Layer.provide(queueSignalsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
       Layer.provide(options.titleReviser ?? TitleReviser.unconfigured()),
@@ -2020,6 +1993,21 @@ export const createPortableApp = (options: {
       if (presenceService) {
         await Effect.runPromise(presenceService.expire(Date.now()));
       }
+    },
+    /** The catch-up operation and commit notices the feed transport (#211) adapts. */
+    feed: {
+      catchUp: async (request: {
+        readonly keyId: string;
+        readonly cursor: string | null;
+      }): Promise<CatchUp> => {
+        await initialize();
+        if (!feedReader) {
+          throw new Error("The feed is not ready.");
+        }
+        return Effect.runPromise(feedReader.catchUp(request));
+      },
+      subscribe: (listener: (notice: FeedNotice) => void) =>
+        feedSignals.subscribe(listener),
     },
     handler: async (
       request: Request,

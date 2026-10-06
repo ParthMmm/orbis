@@ -300,9 +300,42 @@ export const presenceLegacyReports = sqliteTable(
   ]
 );
 
+export const feedRecipients = sqliteTable("feed_recipients", {
+  authorizationEpoch: integer("authorization_epoch").notNull(),
+  personId: text("person_id").primaryKey(),
+  sequence: integer("sequence").notNull(),
+});
+
+export const feedTopics = [
+  "queue",
+  "presence",
+  "library",
+  "playlist",
+  "listen-history",
+  "set",
+] as const;
+
+export const feedDeliveries = sqliteTable(
+  "feed_deliveries",
+  {
+    personId: text("person_id").notNull(),
+    recordedAt: integer("recorded_at").notNull(),
+    resourceId: text("resource_id"),
+    sequence: integer("sequence").notNull(),
+    tag: text("tag").notNull(),
+    topic: text("topic", { enum: feedTopics }).notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.personId, table.sequence] }),
+    index("feed_deliveries_by_age").on(table.personId, table.recordedAt),
+  ]
+);
+
 export const schema = {
   downloadJobs,
   downloadRequesters,
+  feedDeliveries,
+  feedRecipients,
   libraryEntries,
   listens,
   playbackPositions,

@@ -1,8 +1,15 @@
-import { eq, sql } from "drizzle-orm";
-import { Effect, Option } from "effect";
+import { and, eq, sql } from "drizzle-orm";
+import { Effect, Option, Schema } from "effect";
 
-import { libraryEntries, sets } from "./db/schema.js";
+import {
+  libraryEntries,
+  people as peopleTable,
+  playlistEditors,
+  playlists,
+  sets,
+} from "./db/schema.js";
 import { Database } from "./db/service.js";
+import type { DatabaseClient } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import type { PersonRecord } from "./identity.js";
 
@@ -33,6 +40,163 @@ export const resolveVisiblePerson = (
   }
   return target;
 };
+
+export const canSee = (
+  people: readonly PersonRecord[],
+  viewerId: string,
+  targetId: string
+): boolean => {
+  try {
+    resolveVisiblePerson(people, viewerId, targetId);
+    return true;
+  } catch {
+    return false;
+  }
+};
+
+export const viewersOf = (people: readonly PersonRecord[], targetId: string) =>
+  people
+    .filter((person) => canSee(people, person.id, targetId))
+    .map((person) => person.id);
+
+const Filters = Schema.fromJsonString(
+  Schema.Array(
+    Schema.Struct({
+      appear: Schema.Boolean,
+      personId: Schema.String,
+      see: Schema.Boolean,
+    })
+  )
+);
+
+/** People as the current transaction sees them, for writes that must judge visibility before they commit. */
+export const readPeople = (db: DatabaseClient) =>
+  db
+    .select()
+    .from(peopleTable)
+    .orderBy(sql`rowid`)
+    .pipe(
+      Effect.flatMap((rows) =>
+        Effect.forEach(rows, (row) =>
+          Schema.decodeUnknownEffect(Filters)(row.filters).pipe(
+            Effect.map(
+              (filters): PersonRecord => ({
+                autoDownload: row.autoDownload,
+                filters,
+                id: row.id,
+                removed: row.removed,
+                social: row.social,
+                username: row.username,
+              })
+            )
+          )
+        )
+      )
+    );
+
+const missingPlaylist = () =>
+  new LibraryError({ message: "Playlist not found.", statusCode: 404 });
+
+/**
+ * The creator whose Playlist the Person may edit: their own, or a collaborative one whose
+ * creator and editor still see each other.
+ */
+export const resolveEditablePlaylist = (input: {
+  readonly id: string;
+  readonly personId: string;
+  readonly people: readonly PersonRecord[];
+}) =>
+  Effect.gen(function* resolvePlaylist() {
+    const db = yield* Database;
+    const [owned] = yield* db
+      .select({ id: playlists.id })
+      .from(playlists)
+      .where(
+        and(eq(playlists.id, input.id), eq(playlists.creatorId, input.personId))
+      )
+      .limit(1);
+    if (owned) {
+      return input.personId;
+    }
+    const [editor] = yield* db
+      .select({
+        collaborative: playlists.collaborative,
+        creatorId: playlistEditors.creatorId,
+      })
+      .from(playlistEditors)
+      .innerJoin(playlists, eq(playlists.id, playlistEditors.playlistId))
+      .where(
+        and(
+          eq(playlistEditors.playlistId, input.id),
+          eq(playlistEditors.editorId, input.personId),
+          eq(playlists.creatorId, playlistEditors.creatorId)
+        )
+      )
+      .limit(1);
+    if (
+      !editor?.collaborative ||
+      !canSee(input.people, input.personId, editor.creatorId) ||
+      !canSee(input.people, editor.creatorId, input.personId)
+    ) {
+      return yield* Effect.fail(missingPlaylist());
+    }
+    return editor.creatorId;
+  });
+
+/** Every Person who can read the Playlist now: its creator and its open editors. */
+export const playlistReaders = (
+  people: readonly PersonRecord[],
+  playlistId: string
+) =>
+  Effect.gen(function* readPlaylistReaders() {
+    const db = yield* Database;
+    const [playlist] = yield* db
+      .select({ creatorId: playlists.creatorId })
+      .from(playlists)
+      .where(eq(playlists.id, playlistId))
+      .limit(1);
+    if (!playlist) {
+      return [];
+    }
+    const editors = yield* db
+      .select({ editorId: playlistEditors.editorId })
+      .from(playlistEditors)
+      .where(eq(playlistEditors.playlistId, playlistId));
+    const readers = [playlist.creatorId];
+    for (const { editorId } of editors) {
+      const open = yield* resolveEditablePlaylist({
+        id: playlistId,
+        people,
+        personId: editorId,
+      }).pipe(Effect.option);
+      if (Option.isSome(open)) {
+        readers.push(editorId);
+      }
+    }
+    return readers;
+  });
+
+/** Each Person's editable Playlists, keyed by editor, for detecting a lost or gained grant. */
+export const editorAccess = (people: readonly PersonRecord[]) =>
+  Effect.gen(function* readEditorAccess() {
+    const db = yield* Database;
+    const rows = yield* db
+      .select({
+        collaborative: playlists.collaborative,
+        creatorId: playlists.creatorId,
+        editorId: playlistEditors.editorId,
+        playlistId: playlistEditors.playlistId,
+      })
+      .from(playlistEditors)
+      .innerJoin(playlists, eq(playlists.id, playlistEditors.playlistId))
+      .where(eq(playlists.creatorId, playlistEditors.creatorId));
+    return rows.filter(
+      (row) =>
+        row.collaborative &&
+        canSee(people, row.editorId, row.creatorId) &&
+        canSee(people, row.creatorId, row.editorId)
+    );
+  });
 
 /**
  * The People the viewer would see if their own See filter allowed it, with the
@@ -79,6 +243,17 @@ export const listFilterablePeople = (
 
 const notFound = () =>
   new LibraryError({ message: "Set not found.", statusCode: 404 });
+
+/** Every Person who can read the Set now. */
+export const setReaders = (people: readonly PersonRecord[], setId: string) =>
+  Effect.filter(
+    people.filter((person) => !person.removed).map((person) => person.id),
+    (personId) =>
+      resolveVisibleSet({ id: setId, people, personId }).pipe(
+        Effect.as(true),
+        Effect.catchTag("LibraryError", () => Effect.succeed(false))
+      )
+  );
 
 /** Resolves a Set through an owned reference or another visible Person's Library. */
 export const resolveVisibleSet = (input: {

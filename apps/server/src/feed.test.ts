@@ -5,6 +5,8 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import type { ListeningQueue } from "@orbis/contracts";
+
 import type { CatchUp, FeedNotice } from "./feed.js";
 import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
@@ -109,7 +111,7 @@ const start = (databasePath: string, trace: TraceEntry[], options = {}) => {
   const { feed, leaseMs }: Options = options;
   const app = createApp({
     databasePath,
-    feed,
+    ...(feed && { feed }),
     logging: { silent: true },
     presence: { leaseMs: leaseMs ?? 30_000 },
     presenceWindowMs: 1500,
@@ -857,16 +859,16 @@ test("a snapshot boundary loses no write that commits around it", async () => {
         );
         await Promise.all(writes);
         const final = (await fixture.ok("ana-phone", "/queue")) as {
-          queue: unknown;
+          queue: ListeningQueue;
         };
         for (const pending of snapshots) {
           const taken = reset(await pending);
           const replay = changes(
             await fixture.catchUp("ana-laptop", taken.snapshot.cursor)
           );
-          const latest = replay.findLast(
-            (delivery) => delivery.body.kind === "queue"
-          );
+          const latest = [...replay]
+            .reverse()
+            .find((delivery) => delivery.body.kind === "queue");
           const converged =
             latest?.body.kind === "queue"
               ? latest.body.queue

@@ -4,6 +4,7 @@ import { HttpServerResponse } from "effect/unstable/http";
 
 import { createPortableApp } from "../../server/src/app-core.js";
 import { releaseAudio } from "../../server/src/audio-release.js";
+import { FeedSignals, Journal } from "../../server/src/journal.js";
 import { Library } from "../../server/src/library.js";
 import { Metadata } from "../../server/src/metadata.js";
 import { issueStreamGrant } from "../../server/src/stream-grant-core.js";
@@ -33,8 +34,15 @@ export class Group extends DurableObject<Environment> {
       releaseAudio(id, undefined, (releasedId) =>
         Effect.sync(() => this.node.release(releasedId))
       );
+    // The audio node's download writes journal on the same database and wake the same feed.
+    const feedSignals = FeedSignals.make();
     const runtime = ManagedRuntime.make(
       Library.forPersonLayer("host", { releaseAudio: release }).pipe(
+        Layer.provide(
+          Journal.layer().pipe(
+            Layer.provide(Layer.succeed(FeedSignals, feedSignals))
+          )
+        ),
         Layer.provideMerge(database)
       )
     );
@@ -53,6 +61,7 @@ export class Group extends DurableObject<Environment> {
         return HttpServerResponse.redirect(url.toString(), { status: 302 });
       },
       database,
+      feedSignals,
       logging: { pretty: false, silent: false },
       metadata: Metadata.layer({
         youTubeApiKey: env.YOUTUBE_API_KEY,

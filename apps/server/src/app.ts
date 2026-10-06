@@ -10,10 +10,10 @@ import type { AudioFile, AudioOptions } from "./audio.js";
 import type { Database } from "./db/database.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { migrateTrustStore } from "./identity.js";
+import type { JournalOptions } from "./journal.js";
 import type { LoggingOptions } from "./logging.js";
 import { MediaStore } from "./media-store.js";
 import type { Metadata } from "./metadata.js";
-import type { PresenceJournal } from "./presence-journal.js";
 import type { PresenceOptions } from "./presence.js";
 import { grantSecret } from "./stream-grant.js";
 import type { TitleReviser } from "./title-reviser.js";
@@ -85,13 +85,19 @@ export const createApp = (
     audio?: AudioOptions;
     databasePath?: string;
     database?: Layer.Layer<Database, unknown>;
+    /**
+     * A legacy trust file. Trust and data share `databasePath`, because Presence, the change
+     * feed, and revocation read and write `people` and `api_keys` in the data transaction. With
+     * an in-memory database the trust file only authenticates keys; those writes find no keys.
+     */
     devicesPath?: string;
     logging?: LoggingOptions;
     recordKeyUse?: boolean;
     metadata?: Layer.Layer<Metadata>;
     /** How long after a Playback Position report a Person still counts as listening. */
     presenceWindowMs?: number;
-    presence?: PresenceOptions & { journal?: Layer.Layer<PresenceJournal> };
+    presence?: PresenceOptions;
+    feed?: JournalOptions;
     /** How long a Device Link stays open. Tests shorten it to prove expiry. */
     deviceLinkTtlMs?: number;
     deviceLinkNow?: () => number;

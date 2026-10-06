@@ -5,7 +5,10 @@ import { Context, Effect, Layer } from "effect";
 
 import { playlistSets, playlists, queueEntries } from "./db/schema.js";
 import { Database } from "./db/service.js";
+import type { DatabaseClient } from "./db/service.js";
 import { LibraryError } from "./errors.js";
+import { Journal } from "./journal.js";
+import type { JournalCommit } from "./journal.js";
 import { LibraryPerson } from "./library-person.js";
 import { Library } from "./library.js";
 import { Presence } from "./presence.js";
@@ -37,6 +40,28 @@ interface QueueRow {
 
 const activeIn = (rows: readonly QueueRow[]) =>
   rows.find((row) => row.isActive)?.setId ?? null;
+
+const entriesOf = (db: DatabaseClient, personId: string) =>
+  db
+    .select({
+      isActive: queueEntries.isActive,
+      setId: queueEntries.setId,
+    })
+    .from(queueEntries)
+    .where(eq(queueEntries.personId, personId))
+    .orderBy(asc(queueEntries.position));
+
+/** A Person's Listening Queue as their own Library hydrates it. */
+export const readListeningQueue = (personId: string) =>
+  Effect.gen(function* readQueue() {
+    const db = yield* Database;
+    const library = yield* Library;
+    const rows = yield* execute(entriesOf(db, personId));
+    return {
+      activeSetId: activeIn(rows),
+      entries: yield* library.byIds(rows.map((row) => row.setId)),
+    } satisfies ListeningQueue;
+  });
 
 /**
  * Where a Set goes when it joins a queue behind the active entry.
@@ -99,6 +124,7 @@ export class Queue extends Context.Service<
     Queue,
     Effect.gen(function* buildQueue() {
       const db = yield* Database;
+      const journal = yield* Journal;
       const library = yield* Library;
       const stats = yield* Stats;
       const presence = yield* Presence;
@@ -106,55 +132,64 @@ export class Queue extends Context.Service<
       const signals = yield* QueueSignals;
       const notify = () => signals.publish(personId);
 
-      const order = () =>
-        db
-          .select({
-            isActive: queueEntries.isActive,
-            setId: queueEntries.setId,
-          })
-          .from(queueEntries)
-          .where(eq(queueEntries.personId, personId))
-          .orderBy(asc(queueEntries.position));
+      const order = () => entriesOf(db, personId);
 
       const read = Effect.fn("Queue.read")(() =>
-        Effect.gen(function* readQueue() {
-          const rows = yield* execute(order());
-          return {
-            activeSetId: activeIn(rows),
-            entries: yield* library.byIds(rows.map((row) => row.setId)),
-          } satisfies ListeningQueue;
-        })
+        readListeningQueue(personId).pipe(
+          Effect.provideService(Database, db),
+          Effect.provideService(Library, library)
+        )
       );
 
-      // Every change states the whole queue. One person's queue is small, the write is one
-      // transaction, and positions stay consecutive instead of drifting into gaps that need
-      // renumbering later.
-      const writeQueue = (ids: readonly string[], activeSetId: string | null) =>
+      // Every change states the whole queue. One person's queue is small, and positions stay
+      // consecutive instead of drifting into gaps that need renumbering later.
+      const writeQueue = (
+        tx: DatabaseClient,
+        rows: readonly QueueRow[],
+        ids: readonly string[],
+        activeSetId: string | null
+      ) =>
         Effect.gen(function* replaceEntries() {
-          const previous = yield* order();
-          yield* db.transaction((tx) =>
-            Effect.gen(function* writeQueueTransaction() {
-              yield* presence.queueActivated(tx, personId, activeSetId);
-              yield* tx
-                .delete(queueEntries)
-                .where(eq(queueEntries.personId, personId));
-              if (ids.length > 0) {
-                yield* tx.insert(queueEntries).values(
-                  ids.map((setId, position) => ({
-                    isActive: setId === activeSetId,
-                    personId,
-                    position,
-                    setId,
-                  }))
-                );
-              }
-            })
+          yield* presence.queueActivated(tx, personId, activeSetId);
+          yield* tx
+            .delete(queueEntries)
+            .where(eq(queueEntries.personId, personId));
+          if (ids.length > 0) {
+            yield* tx.insert(queueEntries).values(
+              ids.map((setId, position) => ({
+                isActive: setId === activeSetId,
+                personId,
+                position,
+                setId,
+              }))
+            );
+          }
+          yield* journal.record(tx, { personId, topic: "queue" });
+          return rows
+            .map((row) => row.setId)
+            .filter((setId) => !ids.includes(setId));
+        });
+
+      // The Queue owns the transaction: its rows, the Listen and Finish it opens or closes, a
+      // reset position, and every delivery commit together. A change that returns null wrote
+      // nothing.
+      const mutate = <E>(
+        change: (
+          tx: DatabaseClient,
+          rows: readonly QueueRow[]
+        ) => Effect.Effect<readonly string[] | null, E, JournalCommit>
+      ) =>
+        Effect.gen(function* commitQueueChange() {
+          const released = yield* execute(
+            journal.transaction((tx) =>
+              Effect.flatMap(order(), (rows) => change(tx, rows))
+            )
           );
-          yield* presence.afterCommit();
-          yield* Effect.forEach(
-            previous.filter((row) => !ids.includes(row.setId)),
-            (row) => library.release(row.setId)
-          );
+          if (released !== null) {
+            yield* presence.afterCommit();
+            yield* Effect.forEach(released, (setId) => library.release(setId));
+          }
+          return yield* read().pipe(Effect.tap(notify));
         });
 
       // The one check that keeps an unplayable Set out of the queue. A Playlist is filtered
@@ -176,21 +211,24 @@ export class Queue extends Context.Service<
       const play = Effect.fn("Queue.play")((id: string) =>
         Effect.gen(function* playSet() {
           yield* playable(id);
-          const rows = yield* execute(order());
-          const activeSetId = activeIn(rows);
-          const ids = rows.map((row) => row.setId);
-          // A Set already in the queue takes the active place without moving: the queue behind it
-          // is the order the person made. A Set that is not in the queue takes the active place
-          // where the listening had reached, so nothing is dropped and the Set that was playing
-          // becomes what plays next.
-          const next = ids.includes(id)
-            ? ids
-            : placedBefore(ids, id, activeSetId);
-          yield* execute(writeQueue(next, id));
-          if (activeSetId !== id) {
-            yield* stats.recordListen(id);
-          }
-          return yield* read().pipe(Effect.tap(notify));
+          return yield* mutate((tx, rows) =>
+            Effect.gen(function* activateSet() {
+              const activeSetId = activeIn(rows);
+              const ids = rows.map((row) => row.setId);
+              // A Set already in the queue takes the active place without moving: the queue
+              // behind it is the order the person made. A Set that is not in the queue takes the
+              // active place where the listening had reached, so nothing is dropped and the Set
+              // that was playing becomes what plays next.
+              const next = ids.includes(id)
+                ? ids
+                : placedBefore(ids, id, activeSetId);
+              const released = yield* writeQueue(tx, rows, next, id);
+              if (activeSetId !== id) {
+                yield* stats.recordListen(id);
+              }
+              return released;
+            })
+          );
         })
       );
 
@@ -198,22 +236,22 @@ export class Queue extends Context.Service<
         (id: string, placement: QueuePlacement) =>
           Effect.gen(function* insertEntry() {
             yield* playable(id);
-            const rows = yield* execute(order());
-            const activeSetId = activeIn(rows);
-            // Moving the Set that is playing now would leave the open Listen beside a queue it no
-            // longer matches, so a queued action on the active Set changes nothing.
-            if (activeSetId === id) {
-              return yield* read().pipe(Effect.tap(notify));
-            }
-            const rest = rows
-              .map((row) => row.setId)
-              .filter((setId) => setId !== id);
-            const next =
-              placement === "end"
-                ? [...rest, id]
-                : placedAfter(rest, id, activeSetId);
-            yield* execute(writeQueue(next, activeSetId));
-            return yield* read().pipe(Effect.tap(notify));
+            return yield* mutate((tx, rows) => {
+              const activeSetId = activeIn(rows);
+              // Moving the Set that is playing now would leave the open Listen beside a queue it
+              // no longer matches, so a queued action on the active Set changes nothing.
+              if (activeSetId === id) {
+                return Effect.succeed(null);
+              }
+              const rest = rows
+                .map((row) => row.setId)
+                .filter((setId) => setId !== id);
+              const next =
+                placement === "end"
+                  ? [...rest, id]
+                  : placedAfter(rest, id, activeSetId);
+              return writeQueue(tx, rows, next, activeSetId);
+            });
           })
       );
 
@@ -250,51 +288,54 @@ export class Queue extends Context.Service<
             const members = yield* library.byIds(
               memberIds.map((member) => member.setId)
             );
-            const rows = yield* execute(order());
-            const previousActive = activeIn(rows);
             const playableMembers = members.filter(
               (set) => set.downloadState === "ready"
             );
             const activeSetId = playableMembers[0]?.id ?? null;
-            yield* execute(
-              writeQueue(
-                playableMembers.map((set) => set.id),
-                activeSetId
-              )
+            return yield* mutate((tx, rows) =>
+              Effect.gen(function* replaceEntriesFromPlaylist() {
+                const released = yield* writeQueue(
+                  tx,
+                  rows,
+                  playableMembers.map((set) => set.id),
+                  activeSetId
+                );
+                if (activeSetId !== null && activeSetId !== activeIn(rows)) {
+                  yield* stats.recordListen(activeSetId);
+                }
+                return released;
+              })
             );
-            if (activeSetId !== null && activeSetId !== previousActive) {
-              yield* stats.recordListen(activeSetId);
-            }
-            return yield* read().pipe(Effect.tap(notify));
           })
       );
 
       const complete = Effect.fn("Queue.complete")((id: string) =>
-        Effect.gen(function* completeSet() {
-          const rows = yield* execute(order());
-          const at = rows.findIndex((row) => row.isActive && row.setId === id);
-          // A Set that is not the active one was already finished, or the person started
-          // something else while it played. Either way this signal adds nothing.
-          if (at === -1) {
-            return yield* read().pipe(Effect.tap(notify));
-          }
-          const ids = rows.map((row) => row.setId);
-          const nextActive = ids[at + 1] ?? null;
-          yield* library.setPlaybackPosition(id, 0);
-          yield* execute(
-            writeQueue(
+        mutate((tx, rows) =>
+          Effect.gen(function* completeSet() {
+            const at = rows.findIndex((row) => row.isActive && row.setId === id);
+            // A Set that is not the active one was already finished, or the person started
+            // something else while it played. Either way this signal adds nothing.
+            if (at === -1) {
+              return null;
+            }
+            const ids = rows.map((row) => row.setId);
+            const nextActive = ids[at + 1] ?? null;
+            yield* library.setPlaybackPosition(id, 0);
+            const released = yield* writeQueue(
+              tx,
+              rows,
               ids.filter((setId) => setId !== id),
               nextActive
-            )
-          );
-          yield* stats.recordFinish(id);
-          // The Set that takes over was not being listened to until now, so it opens its own
-          // Listen. An empty queue opens nothing, and playback stops.
-          if (nextActive !== null) {
-            yield* stats.recordListen(nextActive);
-          }
-          return yield* read().pipe(Effect.tap(notify));
-        })
+            );
+            yield* stats.recordFinish(id);
+            // The Set that takes over was not being listened to until now, so it opens its own
+            // Listen. An empty queue opens nothing, and playback stops.
+            if (nextActive !== null) {
+              yield* stats.recordListen(nextActive);
+            }
+            return released;
+          })
+        )
       );
 
       return {
