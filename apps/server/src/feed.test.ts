@@ -735,6 +735,11 @@ test("revoking a key closes its feed and clears its Presence in one commit", asy
         kind: "revoked",
       });
       expect(await phone.sync()).toEqual({ kind: "closed" });
+      expect(await fixture.app.feed.authorize("ana-phone")).toBeNull();
+      expect(await fixture.app.feed.authorize("ana-laptop")).toEqual({
+        authorizationEpoch: 0,
+        personId: "ana",
+      });
       expect(presenceOf(await ben.sync()).at(-1)).toEqual([]);
       expect((await fixture.call("ana-phone", "/me")).status).toBe(401);
 
@@ -941,6 +946,14 @@ test("retention and stale cursors answer reset", async () => {
       expect(
         reset(await fixture.catchUp("ana-laptop", beforeEpoch)).reset
       ).toBe("access");
+      expect(await fixture.app.feed.authorize("ana-laptop")).toEqual({
+        authorizationEpoch: 1,
+        personId: "ana",
+      });
+      expect(await fixture.app.feed.authorize("ben-phone")).toEqual({
+        authorizationEpoch: 0,
+        personId: "ben",
+      });
     } finally {
       await fixture.stop();
     }

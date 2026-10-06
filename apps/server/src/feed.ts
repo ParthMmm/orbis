@@ -228,6 +228,48 @@ export const makeFeed = (input: {
       }
     });
 
+  // The daily key's Person and authorization epoch as this transaction sees them, or null
+  // once the key is revoked or the Person removed.
+  const recipientOf = (tx: DatabaseClient, keyId: string) =>
+    Effect.gen(function* readRecipient() {
+      const [key] = yield* tx
+        .select({ personId: apiKeys.personId })
+        .from(apiKeys)
+        .where(and(eq(apiKeys.id, keyId), eq(apiKeys.scope, "daily")))
+        .limit(1);
+      const people = yield* readPeople(tx);
+      const person = people.find(
+        (candidate) => candidate.id === key?.personId && !candidate.removed
+      );
+      if (!person) {
+        return null;
+      }
+      const [recipient] = yield* tx
+        .select()
+        .from(feedRecipients)
+        .where(eq(feedRecipients.personId, person.id))
+        .limit(1);
+      return {
+        epoch: recipient?.authorizationEpoch ?? 0,
+        head: recipient?.sequence ?? 0,
+        people,
+        person,
+      };
+    });
+
+  /** What a feed ticket binds: the key's Person and current authorization epoch. */
+  const authorize = (keyId: string) =>
+    db
+      .transaction((tx) => recipientOf(tx, keyId))
+      .pipe(
+        Effect.map((found) =>
+          found === null
+            ? null
+            : { authorizationEpoch: found.epoch, personId: found.person.id }
+        ),
+        Effect.mapError(unreadable)
+      );
+
   const catchUp = (request: {
     readonly keyId: string;
     readonly cursor: string | null;
@@ -235,18 +277,11 @@ export const makeFeed = (input: {
     db
       .transaction((tx) =>
         Effect.gen(function* readFeed() {
-          const [key] = yield* tx
-            .select({ personId: apiKeys.personId })
-            .from(apiKeys)
-            .where(and(eq(apiKeys.id, request.keyId), eq(apiKeys.scope, "daily")))
-            .limit(1);
-          const people = yield* readPeople(tx);
-          const person = people.find(
-            (candidate) => candidate.id === key?.personId && !candidate.removed
-          );
-          if (!person) {
+          const found = yield* recipientOf(tx, request.keyId);
+          if (found === null) {
             return { kind: "closed" as const };
           }
+          const { epoch, head, people, person } = found;
           const now = Date.now();
           yield* tx
             .delete(feedDeliveries)
@@ -256,13 +291,6 @@ export const makeFeed = (input: {
                 lte(feedDeliveries.recordedAt, now - retentionMs)
               )
             );
-          const [recipient] = yield* tx
-            .select()
-            .from(feedRecipients)
-            .where(eq(feedRecipients.personId, person.id))
-            .limit(1);
-          const head = recipient?.sequence ?? 0;
-          const epoch = recipient?.authorizationEpoch ?? 0;
           const rows: readonly Row[] = yield* tx
             .select({
               resourceId: feedDeliveries.resourceId,
@@ -354,7 +382,7 @@ export const makeFeed = (input: {
         Effect.mapError(unreadable)
       );
 
-  return { catchUp };
+  return { authorize, catchUp };
 };
 
 export type Feed = ReturnType<typeof makeFeed> & {

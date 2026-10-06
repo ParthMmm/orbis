@@ -1996,6 +1996,13 @@ export const createPortableApp = (options: {
     },
     /** The catch-up operation and commit notices the feed transport (#211) adapts. */
     feed: {
+      authorize: async (keyId: string) => {
+        await initialize();
+        if (!feedReader) {
+          throw new Error("The feed is not ready.");
+        }
+        return Effect.runPromise(feedReader.authorize(keyId));
+      },
       catchUp: async (request: {
         readonly keyId: string;
         readonly cursor: string | null;
