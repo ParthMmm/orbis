@@ -197,6 +197,20 @@ const sampleFor = (operationId: string) => {
   if (operationId === "devices.revoke") {
     return device;
   }
+  // The Swift client has no Presence action types yet, so this sample lives here.
+  if (operationId === "presence.act") {
+    return {
+      outcome: "accepted",
+      session: {
+        actionNumber: 1,
+        leaseExpiresAt: "2026-09-29T00:00:30.000Z",
+        ownerGeneration: 1,
+        sessionId: "phone-s1",
+        setId: "a1b2c3d4e5f6",
+        state: "playing",
+      },
+    };
+  }
   return samples[sampleKeyFor(operationId)];
 };
 
@@ -260,7 +274,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(44);
+    expect(checked).toBe(45);
   } finally {
     await app.dispose();
   }

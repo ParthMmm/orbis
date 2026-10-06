@@ -13,6 +13,8 @@ import { migrateTrustStore } from "./identity.js";
 import type { LoggingOptions } from "./logging.js";
 import { MediaStore } from "./media-store.js";
 import type { Metadata } from "./metadata.js";
+import type { PresenceJournal } from "./presence-journal.js";
+import type { PresenceOptions } from "./presence.js";
 import { grantSecret } from "./stream-grant.js";
 import type { TitleReviser } from "./title-reviser.js";
 import { useNonblockingTrustStorage } from "./trust-storage-bun.js";
@@ -89,6 +91,7 @@ export const createApp = (
     metadata?: Layer.Layer<Metadata>;
     /** How long after a Playback Position report a Person still counts as listening. */
     presenceWindowMs?: number;
+    presence?: PresenceOptions & { journal?: Layer.Layer<PresenceJournal> };
     /** How long a Device Link stays open. Tests shorten it to prove expiry. */
     deviceLinkTtlMs?: number;
     deviceLinkNow?: () => number;

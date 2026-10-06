@@ -15,8 +15,8 @@ import { Effect, Layer, Schema } from "effect";
 
 import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
-import { PresenceJournal } from "./presence.js";
-import type { PresenceTransition } from "./presence.js";
+import { PresenceJournal } from "./presence-journal.js";
+import type { PresenceTransition } from "./presence-journal.js";
 import { createTestApp as createApp } from "./test-app.js";
 
 const LEASE_MS = 1500;
@@ -93,10 +93,7 @@ const seed = async (root: string) => {
   );
   const migrator = createApp({ databasePath, logging: { silent: true } });
   try {
-    const health = await migrator.handler(
-      new Request("http://localhost/health"),
-      "device"
-    );
+    const health = await migrator.initialize();
     expect(health.status).toBe(200);
   } finally {
     await migrator.dispose();
