@@ -18,6 +18,21 @@ New clients renew a playing session every 15 seconds. A renewal extends a 30-sec
 
 Keys opt into explicit Presence when they first acquire a session. After opt-in, their Position reports never create or renew Presence. Older keys keep the existing Position-based inference and expiry. A legacy report cannot take ownership while an explicit playing lease is live. Store legacy reports by daily key, replacing the current per-Person report map. Without an explicit playing owner, the most recent unexpired legacy report from a non-opted-in key supplies Presence. Pausing an explicit owner clears that session; another still-valid legacy report may then supply Presence. Revoking a key clears its explicit sessions and legacy reports in the same transaction. Removing a Person clears every owned session and report. Both transitions journal only currently permitted resets. This compatibility path stays until every supported client can report actions. Upgraded clients continue saving Playback Positions at the existing rate.
 
+## Update: changes ride the existing `/events` stream
+
+On October 6, 2026, the Host chose a simpler design for a group of a few friends (#217). It replaces the delivery sequence, the journal, the resume cursor, the connection tickets, and the WebSocket feed described in the three sections that follow. #210 and #211 were closed without implementation.
+
+`GET /events?changes=1` adds one frame, `{ kind: "changed", topic }`, where `topic` is `library`, `playlist`, `listen-history`, or `set`. The frame carries no IDs. A client reloads that topic from its normal HTTP routes. Without the parameter the stream is unchanged, because the web client decodes `/events` with a closed union and fails on an unknown `kind`. The Apple client does not read `/events`.
+
+An in-memory hub in the API process receives a change after its mutation commits. Each open stream decides delivery when the change arrives, using the HTTP read rules in `visibility.ts`:
+
+- `library` reaches the changing Person's own streams.
+- `playlist` reaches the creator and everyone who can see the creator, which includes current editors.
+- `listen-history` reaches the listening Person and everyone who can see them.
+- `set` reaches everyone who can read the Set through `resolveVisibleSet`.
+
+There is no replay. A client that misses a frame or reconnects reloads everything. Revoking a key or removing a Person makes every stream recheck its key, so a revoked stream closes at once. The two-second Presence re-read stays, because a See or Appear filter change and a social toggle change visible Presence without a Presence commit.
+
 ## Changes push once through the same visibility gate
 
 A Presence action, an expiry, a Queue change, or a visibility change triggers delivery after its state change commits. There is no two-second Presence re-read in the new feed. Build visible snapshots through the same ADR 0009 resolver that HTTP uses.

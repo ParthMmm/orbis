@@ -182,6 +182,13 @@ export const PresenceSchema = Schema.Struct({
   set: SavedSetSchema,
   username: Schema.String,
 });
+export const ChangeTopicSchema = Schema.Literals([
+  "library",
+  "playlist",
+  "listen-history",
+  "set",
+]);
+export type ChangeTopic = typeof ChangeTopicSchema.Type;
 export const QueueEventSchema = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("queue"), queue: ListeningQueueSchema }),
   Schema.Struct({
@@ -189,6 +196,8 @@ export const QueueEventSchema = Schema.Union([
     presence: Schema.Array(PresenceSchema),
   }),
   Schema.Struct({ kind: Schema.Literal("heartbeat") }),
+  // Sent only to `/events?changes=1`: older decoders reject an unknown kind (ADR 0019).
+  Schema.Struct({ kind: Schema.Literal("changed"), topic: ChangeTopicSchema }),
 ]);
 
 const PresenceId = Schema.String.check(
@@ -740,6 +749,7 @@ export const OrbisApi = PlaylistApi.add(
     HttpApiGroup.make("events")
       .add(
         HttpApiEndpoint.get("subscribe", "/events", {
+          query: { changes: Schema.optionalKey(Schema.Literal("1")) },
           success: HttpApiSchema.StreamSse({
             data: QueueEventSchema,
             error: Schema.Never,
