@@ -1,5 +1,8 @@
 import type { SavedSet } from "@orbis/contracts";
-import type { SaveSetResultSchema } from "@orbis/contracts/http-api";
+import type {
+  ChangeTopic,
+  SaveSetResultSchema,
+} from "@orbis/contracts/http-api";
 import {
   AdminKeyPayload,
   AdminPersonPayload,
@@ -27,7 +30,16 @@ import {
   UpdateMePayload,
 } from "@orbis/contracts/http-api";
 import { and, asc, desc, eq, sql } from "drizzle-orm";
-import { Context, Effect, Layer, Option, Schema, Scope, Stream } from "effect";
+import {
+  Context,
+  Effect,
+  Layer,
+  Option,
+  PubSub,
+  Schema,
+  Scope,
+  Stream,
+} from "effect";
 import {
   Headers,
   HttpRouter,
@@ -100,7 +112,11 @@ import {
 } from "./tracklists.js";
 import { retryTrustOperation } from "./trust-storage.js";
 import { Versos } from "./versos.js";
-import { listFilterablePeople, resolveVisiblePerson } from "./visibility.js";
+import {
+  listFilterablePeople,
+  resolveVisiblePerson,
+  resolveVisibleSet,
+} from "./visibility.js";
 
 interface RawFilters {
   creatorId?: string | null;
@@ -164,6 +180,9 @@ const forwardedResponse = (
   }
   return response;
 };
+
+const ownDevices = (personId: string) => (viewerId: string) =>
+  Effect.succeed(viewerId === personId);
 
 const PRESENCE_WINDOW_MS = 30_000;
 /** Failed key attempts one client may make in a minute before it gets 429. */
@@ -342,6 +361,57 @@ export const createPortableApp = (options: {
       const versos = yield* Versos;
       const scope = yield* Scope.Scope;
       const signals = yield* QueueSignals;
+      // Every open `/events` stream reads this hub. A `changed` entry decides its own
+      // recipients when delivered; `access` makes each stream recheck its key.
+      const changes = yield* PubSub.unbounded<
+        | {
+            readonly kind: "changed";
+            readonly topic: ChangeTopic;
+            readonly reaches: (viewerId: string) => Effect.Effect<boolean>;
+          }
+        | { readonly kind: "access" }
+      >();
+      const announce = (
+        topic: ChangeTopic,
+        reaches: (viewerId: string) => Effect.Effect<boolean>
+      ) => PubSub.publish(changes, { kind: "changed", reaches, topic });
+      const recheckAccess = () => PubSub.publish(changes, { kind: "access" });
+      const seesPerson = (personId: string) => (viewerId: string) =>
+        Effect.sync(() => {
+          if (viewerId === personId) {
+            return true;
+          }
+          try {
+            resolveVisiblePerson(
+              readTrustRegistry(trustPath).store.people,
+              viewerId,
+              personId
+            );
+            return true;
+          } catch {
+            return false;
+          }
+        });
+      const readsSet = (setId: string) => (viewerId: string) =>
+        resolveVisibleSet({
+          id: setId,
+          people: readTrustRegistry(trustPath).store.people,
+          personId: viewerId,
+        }).pipe(
+          Effect.provideService(Database, db),
+          Effect.as(true),
+          Effect.orElseSucceed(() => false)
+        );
+      const announceForCaller = (
+        topic: ChangeTopic,
+        reaches: (
+          personId: string
+        ) => (viewerId: string) => Effect.Effect<boolean>
+      ) =>
+        Effect.gen(function* announceCallerChange() {
+          const caller = yield* SetCaller;
+          yield* announce(topic, reaches(caller.person.id));
+        });
       const runningTracklists = new Set<string>();
       const startTracklist = Effect.fn("startSavedSetTracklist")(
         (id: string, retry = false) =>
@@ -497,7 +567,10 @@ export const createPortableApp = (options: {
                 yield* personal.find(params.id);
                 const result = yield* audio.requestDownload(params.id);
                 return { ...result, set: yield* personal.find(params.id) };
-              }).pipe(Effect.tapError(logLibraryFailure)),
+              }).pipe(
+                Effect.tap(() => announce("set", readsSet(params.id))),
+                Effect.tapError(logLibraryFailure)
+              ),
               {
                 onFailure: failureResponse,
                 onSuccess: ({ accepted, set }) =>
@@ -567,7 +640,7 @@ export const createPortableApp = (options: {
                 yield* personal.find(params.id);
                 yield* audio.cancelDownload(params.id);
                 return yield* personal.find(params.id);
-              })
+              }).pipe(Effect.tap(() => announce("set", readsSet(params.id))))
             )
           )
           .handleRaw("save", () =>
@@ -598,7 +671,9 @@ export const createPortableApp = (options: {
                 return yield* autoDownloadSaved(
                   yield* enrichSavedSet(saved, personal)
                 );
-              })
+              }).pipe(
+                Effect.tap(() => announceForCaller("library", ownDevices))
+              )
             )
           )
           .handle("retryMetadata", ({ params }) =>
@@ -607,7 +682,7 @@ export const createPortableApp = (options: {
                 const personal = yield* Library;
                 const set = yield* personal.find(params.id);
                 return yield* enrichSavedSet(set, personal);
-              })
+              }).pipe(Effect.tap(() => announce("set", readsSet(params.id))))
             )
           )
           .handle("tracklist", ({ params }) =>
@@ -646,7 +721,9 @@ export const createPortableApp = (options: {
                   yield* HttpServerRequest.schemaBodyJson(UpdateTitlePayload);
                 const personal = yield* Library;
                 return yield* personal.updateTitle(params.id, input.title);
-              })
+              }).pipe(
+                Effect.tap(() => announceForCaller("library", ownDevices))
+              )
             )
           )
           .handle("remove", ({ params }) =>
@@ -657,7 +734,9 @@ export const createPortableApp = (options: {
                 return yield* personal
                   .remove(params.id)
                   .pipe(Effect.tap(queue.notify));
-              })
+              }).pipe(
+                Effect.tap(() => announceForCaller("library", ownDevices))
+              )
             )
           )
           .handleRaw("list", ({ request }) =>
@@ -897,7 +976,9 @@ export const createPortableApp = (options: {
                     );
                   const personal = yield* Library;
                   return yield* personal.createPlaylist(input.name);
-                })
+                }).pipe(
+                  Effect.tap(() => announceForCaller("playlist", seesPerson))
+                )
               )
             )
             .handleRaw("rename", ({ params }) =>
@@ -909,7 +990,9 @@ export const createPortableApp = (options: {
                     );
                   const personal = yield* Library;
                   return yield* personal.renamePlaylist(params.id, input.name);
-                })
+                }).pipe(
+                  Effect.tap(() => announceForCaller("playlist", seesPerson))
+                )
               )
             )
             .handle("remove", ({ params }) =>
@@ -917,7 +1000,9 @@ export const createPortableApp = (options: {
                 Effect.gen(function* removePersonalPlaylist() {
                   const personal = yield* Library;
                   return yield* personal.deletePlaylist(params.id);
-                })
+                }).pipe(
+                  Effect.tap(() => announceForCaller("playlist", seesPerson))
+                )
               )
             )
             .handleRaw("replaceMembers", ({ params }) =>
@@ -946,25 +1031,25 @@ export const createPortableApp = (options: {
                       ownerId,
                       libraryOptions
                     ).pipe(Layer.provide(Layer.succeed(Database, db)));
-                    return {
-                      sets: yield* Effect.provide(
-                        Effect.gen(function* updateSharedPlaylist() {
-                          const ownerLibrary = yield* Library;
-                          return yield* ownerLibrary.setPlaylistMembers(
-                            params.id,
-                            input.setIds
-                          );
-                        }),
-                        ownerLayer
-                      ),
-                    };
+                    const sets = yield* Effect.provide(
+                      Effect.gen(function* updateSharedPlaylist() {
+                        const ownerLibrary = yield* Library;
+                        return yield* ownerLibrary.setPlaylistMembers(
+                          params.id,
+                          input.setIds
+                        );
+                      }),
+                      ownerLayer
+                    );
+                    yield* announce("playlist", seesPerson(ownerId));
+                    return { sets };
                   }
-                  return {
-                    sets: yield* personal.setPlaylistMembers(
-                      params.id,
-                      input.setIds
-                    ),
-                  };
+                  const sets = yield* personal.setPlaylistMembers(
+                    params.id,
+                    input.setIds
+                  );
+                  yield* announce("playlist", seesPerson(ownerId));
+                  return { sets };
                 })
               )
             )
@@ -995,7 +1080,9 @@ export const createPortableApp = (options: {
                       )
                     );
                   return yield* collaborationFor(params.id, caller.person.id);
-                })
+                }).pipe(
+                  Effect.tap(() => announceForCaller("playlist", seesPerson))
+                )
               )
             )
             .handleRaw("setEditors", ({ params }) =>
@@ -1036,7 +1123,9 @@ export const createPortableApp = (options: {
                     })
                   );
                   return yield* collaborationFor(params.id, caller.person.id);
-                })
+                }).pipe(
+                  Effect.tap(() => announceForCaller("playlist", seesPerson))
+                )
               )
             )
             .handleRaw("replaceSetPlaylists", ({ params }) =>
@@ -1051,7 +1140,9 @@ export const createPortableApp = (options: {
                     params.id,
                     input.playlistIds
                   );
-                })
+                }).pipe(
+                  Effect.tap(() => announceForCaller("playlist", seesPerson))
+                )
               )
             )
       );
@@ -1072,7 +1163,11 @@ export const createPortableApp = (options: {
                   yield* HttpServerRequest.schemaBodyJson(QueueSetPayload);
                 const queue = yield* Queue;
                 return { queue: yield* queue.play(input.setId) };
-              })
+              }).pipe(
+                Effect.tap(() =>
+                  announceForCaller("listen-history", seesPerson)
+                )
+              )
             )
           )
           .handleRaw("insert", () =>
@@ -1110,7 +1205,11 @@ export const createPortableApp = (options: {
                     creatorId
                   ),
                 };
-              })
+              }).pipe(
+                Effect.tap(() =>
+                  announceForCaller("listen-history", seesPerson)
+                )
+              )
             )
           )
           .handleRaw("complete", () =>
@@ -1120,7 +1219,11 @@ export const createPortableApp = (options: {
                   yield* HttpServerRequest.schemaBodyJson(QueueSetPayload);
                 const queue = yield* Queue;
                 return { queue: yield* queue.complete(input.setId) };
-              })
+              }).pipe(
+                Effect.tap(() =>
+                  announceForCaller("listen-history", seesPerson)
+                )
+              )
             )
           )
       );
@@ -1165,7 +1268,9 @@ export const createPortableApp = (options: {
                     yield* HttpServerRequest.schemaBodyJson(TagsPayload);
                   const personal = yield* Library;
                   return yield* personal.updateTags(params.id, input.tags);
-                })
+                }).pipe(
+                  Effect.tap(() => announceForCaller("library", ownDevices))
+                )
               )
             )
       );
@@ -1452,15 +1557,14 @@ export const createPortableApp = (options: {
       // The key is already gone, so a failed clear is logged: the next settle sweeps the
       // rows and the lease bounds how long the stale Presence can show.
       const clearRevokedPresence = (keyId: string) =>
-        presence
-          .revokeKey(keyId)
-          .pipe(
-            Effect.catchTag("LibraryError", (failure) =>
-              Effect.logWarning("revoked key presence not cleared").pipe(
-                Effect.annotateLogs({ cause: failure.message })
-              )
+        presence.revokeKey(keyId).pipe(
+          Effect.catchTag("LibraryError", (failure) =>
+            Effect.logWarning("revoked key presence not cleared").pipe(
+              Effect.annotateLogs({ cause: failure.message })
             )
-          );
+          ),
+          Effect.andThen(recheckAccess())
+        );
       const devicesGroup = HttpApiBuilder.group(
         OrbisApi,
         "devices",
@@ -1557,6 +1661,7 @@ export const createPortableApp = (options: {
                     )
                   );
                 yield* presence.afterCommit();
+                yield* recheckAccess();
                 yield* Effect.forEach((set: { readonly id: string }) =>
                   library.release(set.id)
                 )(released);
@@ -1655,7 +1760,7 @@ export const createPortableApp = (options: {
           )
       );
       const eventsGroup = HttpApiBuilder.group(OrbisApi, "events", (handlers) =>
-        handlers.handle("subscribe", () =>
+        handlers.handle("subscribe", ({ query }) =>
           Effect.gen(function* subscribeEvents() {
             const queue = yield* Queue;
             const caller = yield* SetCaller;
@@ -1698,10 +1803,26 @@ export const createPortableApp = (options: {
               Stream.drop(1),
               Stream.map(() => ({ kind: "heartbeat" as const }))
             );
+            // A null entry only makes `authorized` run, so a revoked key closes at once.
+            const changeFrames = Stream.fromPubSub(changes).pipe(
+              Stream.mapEffect((change) =>
+                change.kind === "changed" && query.changes === "1"
+                  ? Effect.map(change.reaches(caller.person.id), (reached) =>
+                      reached
+                        ? { kind: "changed" as const, topic: change.topic }
+                        : null
+                    )
+                  : Effect.succeed(null)
+              )
+            );
             return Stream.merge(
               Stream.merge(snapshots, presenceFrames),
-              heartbeats
-            ).pipe(Stream.takeWhile(authorized), Stream.orDie);
+              Stream.merge(heartbeats, changeFrames)
+            ).pipe(
+              Stream.takeWhile(authorized),
+              Stream.filter((frame) => frame !== null),
+              Stream.orDie
+            );
           })
         )
       );

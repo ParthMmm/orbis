@@ -32,7 +32,7 @@ export const readLiveEvents = (
     credentials,
     (client) =>
       Effect.gen(function* receiveEvents() {
-        const events = yield* client.events.subscribe();
+        const events = yield* client.events.subscribe({ query: {} });
         yield* events.pipe(
           Stream.runForEach((event) =>
             Effect.sync(() => {
