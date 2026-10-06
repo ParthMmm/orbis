@@ -331,7 +331,6 @@ export const feedDeliveries = sqliteTable(
   ]
 );
 
-/** A socket ticket. Only its SHA-256 digest is stored; an upgrade deletes the row it uses. */
 export const feedTickets = sqliteTable(
   "feed_tickets",
   {
@@ -345,10 +344,6 @@ export const feedTickets = sqliteTable(
   (table) => [index("feed_tickets_by_expiry").on(table.expiresAt)]
 );
 
-/**
- * Feed state for one open client socket, kept in storage so it survives Group
- * eviction. `pending` lists the boundary sequences sent and not yet acknowledged.
- */
 export const feedConnections = sqliteTable(
   "feed_connections",
   {
@@ -357,12 +352,12 @@ export const feedConnections = sqliteTable(
     id: text("id").primaryKey(),
     keyId: text("key_id").notNull(),
     openedAt: integer("opened_at").notNull(),
-    pending: text("pending", { mode: "json" })
+    personId: text("person_id").notNull(),
+    sentCursor: text("sent_cursor"),
+    unackedSequences: text("unacked_sequences", { mode: "json" })
       .$type<number[]>()
       .notNull()
       .default(sql`'[]'`),
-    personId: text("person_id").notNull(),
-    sentCursor: text("sent_cursor"),
   },
   (table) => [index("feed_connections_by_key").on(table.keyId)]
 );

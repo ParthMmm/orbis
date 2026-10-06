@@ -82,7 +82,7 @@ export class Group extends ProductionGroup {
           .map((socket) => socket.deserializeAttachment()),
         connections: this.ctx.storage.sql
           .exec(
-            "SELECT id, key_id, person_id, greeted, json_array_length(pending) AS unacknowledged, acked_cursor IS NOT NULL AS acked FROM feed_connections ORDER BY opened_at"
+            "SELECT id, key_id, person_id, greeted, json_array_length(unacked_sequences) AS unacknowledged, acked_cursor IS NOT NULL AS acked FROM feed_connections ORDER BY opened_at"
           )
           .toArray(),
         constructions: this.ctx.storage.sql

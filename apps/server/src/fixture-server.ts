@@ -37,7 +37,7 @@ export const startFixtureServer = (
     () => [...ports.values()]
   );
   const stopFeed = feed.start();
-  const restored = app.feed.socket.restore([]);
+  const restored = app.feed.socket.prune([]);
   const server = Bun.serve<FeedIdentity>({
     fetch: async (request, listener) => {
       const origin = request.headers.get("origin");

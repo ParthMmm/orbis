@@ -14,7 +14,7 @@ CREATE TABLE `feed_connections` (
   `greeted` integer NOT NULL DEFAULT 0,
   `sent_cursor` text,
   `acked_cursor` text,
-  `pending` text NOT NULL DEFAULT '[]',
+  `unacked_sequences` text NOT NULL DEFAULT '[]',
   `opened_at` integer NOT NULL
 );--> statement-breakpoint
 CREATE INDEX `feed_connections_by_key` ON `feed_connections` (`key_id`);

@@ -1,7 +1,6 @@
 import type { FeedNotice } from "./feed-signals.js";
 import type { FeedIdentity, FeedOutcome } from "./feed-transport.js";
 
-/** One open client socket as a runtime adapter exposes it. */
 export interface FeedSocketPort {
   readonly identity: FeedIdentity;
   readonly send: (text: string) => void;
@@ -27,21 +26,16 @@ const apply = (port: FeedSocketPort, outcome: FeedOutcome) => {
   }
 };
 
-/**
- * Runs each socket's work in order and folds repeated wakes into one pending
- * delivery. Nothing here is durable: after eviction a new instance starts with
- * empty queues and reads each socket's position from storage.
- */
 export const makeFeedSockets = (
   operations: FeedSocketOperations,
   sockets: () => readonly FeedSocketPort[]
 ) => {
-  const tails = new Map<string, Promise<void>>();
-  const waiting = new Set<string>();
+  const queueBySocket = new Map<string, Promise<void>>();
+  const deliveryPending = new Set<string>();
 
   const run = (port: FeedSocketPort, task: () => Promise<FeedOutcome>) => {
     const id = port.identity.connectionId;
-    const previous = tails.get(id);
+    const previous = queueBySocket.get(id);
     const next = (async () => {
       await previous;
       try {
@@ -50,11 +44,11 @@ export const makeFeedSockets = (
         port.close(1011, "Feed unavailable");
       }
     })();
-    tails.set(id, next);
+    queueBySocket.set(id, next);
     void (async () => {
       await next;
-      if (tails.get(id) === next) {
-        tails.delete(id);
+      if (queueBySocket.get(id) === next) {
+        queueBySocket.delete(id);
       }
     })();
     return next;
@@ -62,12 +56,12 @@ export const makeFeedSockets = (
 
   const deliver = (port: FeedSocketPort) => {
     const id = port.identity.connectionId;
-    if (waiting.has(id)) {
+    if (deliveryPending.has(id)) {
       return;
     }
-    waiting.add(id);
+    deliveryPending.add(id);
     void run(port, () => {
-      waiting.delete(id);
+      deliveryPending.delete(id);
       return operations.deliver(port.identity);
     });
   };

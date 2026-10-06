@@ -83,7 +83,6 @@ const decodeCursor = (value: string): Cursor | null => {
   };
 };
 
-/** The delivery sequence a cursor names, or null for a malformed cursor. */
 export const cursorSequence = (value: string): number | null =>
   decodeCursor(value)?.sequence ?? null;
 

@@ -124,7 +124,7 @@ export class Group extends DurableObject<Environment> {
       if (!response.ok) {
         throw new Error("Group database initialization failed.");
       }
-      await this.app.feed.socket.restore(
+      await this.app.feed.socket.prune(
         ctx
           .getWebSockets(FEED_TAG)
           .map((socket) => feedPort(socket).identity.connectionId)

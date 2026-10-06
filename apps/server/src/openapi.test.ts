@@ -197,7 +197,6 @@ const sampleFor = (operationId: string) => {
   if (operationId === "devices.revoke") {
     return device;
   }
-  // The Swift client has no feed transport until #212 adopts it.
   if (operationId === "events.ticket") {
     return {
       expiresAt: "2026-09-29T00:00:30.000Z",

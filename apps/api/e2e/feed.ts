@@ -479,7 +479,6 @@ try {
   const seeded = await call(null, "/__seed-feed");
   assert.equal(seeded.status, 200);
 
-  // Ticket contract: daily keys only, fixed protocol, no-store, 30 seconds.
   const minted = await mint("ana-phone");
   const expiresIn = Date.parse(minted.expiresAt) - Date.now();
   assert.ok(
@@ -506,7 +505,6 @@ try {
   assert.equal(anonymous.status, 403);
   passed("ticket-scope");
 
-  // Wrong Origin fails before the ticket is consumed.
   const offered = `${FEED_PROTOCOL}, ${FEED_TICKET_PROTOCOL_PREFIX}${minted.ticket}`;
   const foreign = await upgrade(offered, { Origin: "https://evil.example" });
   assert.equal(foreign.status, 403, await foreign.text());
@@ -534,7 +532,6 @@ try {
   assert.equal(replay.webSocket, null);
   passed("ticket-replay");
 
-  // Only a ticket opens a socket: never a header key, a URL key, or a node key.
   for (const [label, response] of [
     [
       "daily bearer",
@@ -568,7 +565,6 @@ try {
   assert.equal(plain.status, 426, plain.text);
   passed("wrong-scope");
 
-  // #209: a committed Presence transition reaches a viewer over the feed.
   const benPhone = await open("ben-phone");
   benPhone.hello();
   await benPhone.next((message) => message.kind === "ready");
@@ -587,7 +583,6 @@ try {
   await benPhone.next(hasPresence(null));
   passed("presence-transition-reaches-viewer");
 
-  // Reconnection resumes from the last applied cursor without a snapshot.
   const resume = anaPhone.lastCursor();
   assert.ok(resume);
   anaPhone.close();
@@ -620,7 +615,6 @@ try {
   await laptop.next((message) => message.kind === "ready");
   passed("reconnect-with-cursor");
 
-  // An authorization epoch change voids an unused ticket and resets open sockets.
   const stale = await mint("ana-phone");
   const unsocial = await call("ben-phone", "/me", {
     body: { social: false },
@@ -643,7 +637,6 @@ try {
   await benPhone.next((message) => message.kind === "ready");
   passed("wrong-key-epoch");
 
-  // A client that stops acknowledging is cut off with a resumable cursor.
   const slow = await open("ana-tablet", {
     ack: false,
     label: "ana-tablet#slow",
@@ -675,7 +668,6 @@ try {
   );
   passed("slow-client");
 
-  // Hibernation: quiet sockets survive eviction; the node socket dispatches separately.
   const nodeResponse = await runtime.dispatchFetch("http://orbis/api/node", {
     headers: {
       Upgrade: "websocket",
@@ -759,7 +751,6 @@ try {
   assert.equal(evicted.nodeSockets, 1);
   passed("ping-without-wake");
 
-  // The lease alarm wakes an evicted Group and its expiry reaches a restored socket.
   const expiry = await benPhone.next(
     hasPresence(null),
     deadline - Date.now() + 15_000
@@ -782,7 +773,6 @@ try {
   assert.equal(expired.status, 401, await expired.text());
   passed("ticket-expiry");
 
-  // Both socket kinds dispatch on their own paths after another eviction.
   await Bun.sleep(12_000);
   const evictedAgainAt = Date.now();
   const saved = await call("ana-phone", "/sets", {
@@ -844,7 +834,6 @@ try {
   assert.equal(nodeMisrouted.reason, "Invalid node message");
   passed("node-and-client-dispatch");
 
-  // Revocation closes every socket and stream for the key right after it commits.
   const revokedSocket = await open("ana-laptop", { label: "ana-laptop#2" });
   revokedSocket.hello();
   await revokedSocket.next((message) => message.kind === "ready");
@@ -879,7 +868,6 @@ try {
   );
   passed("revoked-key");
 
-  // SSE fallback: same messages, cursor in the query, heartbeat kept.
   const live = readSse(await sse("ben-phone"), "ben-phone sse");
   const liveReady = await live.next((message) => message.kind === "ready");
   assert.ok(live.messages.some((message) => message.kind === "snapshot"));
@@ -903,7 +891,6 @@ try {
   }
   passed("sse-live");
 
-  // The deployed /events decoder still receives only its own union.
   const oldEvents: unknown[] = [];
   const oldFiber = Effect.runFork(
     Effect.gen(function* readOldEvents() {
@@ -974,7 +961,6 @@ try {
   );
   passed("old-decoder");
 
-  // Through the Vanta forwarder an upgrade is unavailable, and SSE carries the same feed.
   forwarder = Bun.serve({
     fetch: makeNodeHttpHandler({
       apiUrl: new URL("api", base),

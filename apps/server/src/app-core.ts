@@ -1727,7 +1727,7 @@ export const createPortableApp = (options: {
                   message: "Sign in with a device key.",
                 });
               }
-              return transport.live({
+              return transport.sseFeed({
                 cursor: query.cursor ?? null,
                 keyId: caller.keyId,
                 personId: caller.person.id,
@@ -2077,11 +2077,6 @@ export const createPortableApp = (options: {
         return Effect.runPromise(feedReader.catchUp(request));
       },
       socket: {
-        /**
-         * Checks a client socket upgrade and spends its ticket. The runtime
-         * adapter performs the upgrade only for an accepted decision. The log
-         * records the path alone: the ticket travels in a header it never reads.
-         */
         accept: async (
           request: Request,
           allowedOrigins: readonly string[] = []
@@ -2112,10 +2107,10 @@ export const createPortableApp = (options: {
           runTransport((transport) => transport.closed(connectionId)),
         deliver: (identity: FeedIdentity) =>
           runTransport((transport) => transport.deliver(identity)),
+        prune: (open: readonly string[]) =>
+          runTransport((transport) => transport.pruneConnections(open)),
         receive: (identity: FeedIdentity, text: string) =>
           runTransport((transport) => transport.receive(identity, text)),
-        restore: (open: readonly string[]) =>
-          runTransport((transport) => transport.restore(open)),
       },
       subscribe: (listener: (notice: FeedNotice) => void) =>
         feedSignals.subscribe(listener),

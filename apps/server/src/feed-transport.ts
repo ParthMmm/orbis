@@ -21,7 +21,6 @@ import type { CatchUp, makeFeed } from "./feed.js";
 export const TICKET_TTL_MS = 30_000;
 const HEARTBEAT = "30 seconds";
 
-/** What a client socket's serialized attachment holds. Feed state stays in storage. */
 export interface FeedIdentity {
   readonly connectionId: string;
   readonly keyId: string;
@@ -33,7 +32,6 @@ export interface FeedClose {
   readonly reason: string;
 }
 
-/** Frames to send in order, then an optional close. */
 export interface FeedOutcome {
   readonly send: readonly FeedServerMessage[];
   readonly close?: FeedClose;
@@ -72,13 +70,11 @@ const protocolClose = (reason: string): FeedOutcome => ({
 const digest = (ticket: string) =>
   createHash("sha256").update(ticket, "utf-8").digest("hex");
 
-/** The frames for one catch-up, and the cursor the client holds after applying them. */
 export interface FeedFrames {
   readonly messages: readonly FeedServerMessage[];
   readonly cursor: string | null;
 }
 
-/** Turns one catch-up into the frames a client receives. */
 export const feedMessages = (result: CatchUp, initial: boolean): FeedFrames => {
   switch (result.kind) {
     case "closed": {
@@ -129,6 +125,43 @@ const offeredTicket = (header: string | null) => {
   };
 };
 
+export interface UpgradeRequest {
+  readonly url: string;
+  readonly method: string;
+  readonly header: (name: string) => string | null;
+  readonly allowedOrigins: readonly string[];
+}
+
+const checkUpgradeRequest = (
+  request: UpgradeRequest
+): { readonly kind: "offered"; readonly ticket: string } | UpgradeDecision => {
+  const url = new URL(request.url);
+  if (url.search !== "") {
+    return rejected(400, "The feed socket takes no URL parameters.");
+  }
+  const origin = request.header("origin");
+  if (
+    origin !== null &&
+    origin !== url.origin &&
+    !request.allowedOrigins.includes(origin)
+  ) {
+    return rejected(403, "This browser Origin is not allowed.");
+  }
+  if (
+    request.method !== "GET" ||
+    request.header("upgrade")?.toLowerCase() !== "websocket"
+  ) {
+    return rejected(426, "Upgrade to a WebSocket.");
+  }
+  const offered = offeredTicket(request.header("sec-websocket-protocol"));
+  if (!offered.protocol) {
+    return rejected(400, `Offer the ${FEED_PROTOCOL} protocol.`);
+  }
+  return offered.ticket === ""
+    ? INVALID_TICKET
+    : { kind: "offered", ticket: offered.ticket };
+};
+
 const transportFailure = () =>
   new LibraryError({ message: "The feed is unavailable.", statusCode: 500 });
 
@@ -177,80 +210,50 @@ export const makeFeedTransport = (input: {
       )
     );
 
-  /**
-   * Checks an upgrade and spends its ticket. Origin is checked first, so a
-   * refused browser page cannot burn a ticket it saw. A ticket is deleted
-   * before its checks run, so every outcome after lookup spends it.
-   */
-  const accept = (request: {
-    readonly url: string;
-    readonly method: string;
-    readonly header: (name: string) => string | null;
-    readonly allowedOrigins: readonly string[];
-  }) =>
-    Effect.gen(function* acceptUpgrade() {
-      const url = new URL(request.url);
-      if (url.search !== "") {
-        return rejected(400, "The feed socket takes no URL parameters.");
-      }
-      const origin = request.header("origin");
-      if (
-        origin !== null &&
-        origin !== url.origin &&
-        !request.allowedOrigins.includes(origin)
-      ) {
-        return rejected(403, "This browser Origin is not allowed.");
-      }
-      if (
-        request.method !== "GET" ||
-        request.header("upgrade")?.toLowerCase() !== "websocket"
-      ) {
-        return rejected(426, "Upgrade to a WebSocket.");
-      }
-      const offered = offeredTicket(request.header("sec-websocket-protocol"));
-      if (!offered.protocol) {
-        return rejected(400, `Offer the ${FEED_PROTOCOL} protocol.`);
-      }
-      if (offered.ticket === "") {
-        return INVALID_TICKET;
-      }
-      return yield* db.transaction((tx) =>
-        Effect.gen(function* spendTicket() {
-          const [ticket] = yield* tx
-            .delete(feedTickets)
-            .where(eq(feedTickets.digest, digest(offered.ticket)))
-            .returning();
-          const now = Date.now();
-          if (
-            !ticket ||
-            ticket.expiresAt <= now ||
-            ticket.protocol !== FEED_PROTOCOL
-          ) {
-            return INVALID_TICKET;
-          }
-          const access = yield* reader.authorize(ticket.keyId);
-          if (
-            access === null ||
-            access.personId !== ticket.personId ||
-            access.authorizationEpoch !== ticket.authorizationEpoch
-          ) {
-            return INVALID_TICKET;
-          }
-          const identity: FeedIdentity = {
-            connectionId: crypto.randomUUID(),
-            keyId: ticket.keyId,
-            personId: ticket.personId,
-          };
-          yield* tx.insert(feedConnections).values({
-            id: identity.connectionId,
-            keyId: identity.keyId,
-            openedAt: now,
-            personId: identity.personId,
-          });
-          return accepted(identity);
-        })
-      );
-    }).pipe(Effect.mapError(transportFailure));
+  const spendTicket = (offered: string) =>
+    db.transaction((tx) =>
+      Effect.gen(function* spendTicketRow() {
+        const [ticket] = yield* tx
+          .delete(feedTickets)
+          .where(eq(feedTickets.digest, digest(offered)))
+          .returning();
+        const now = Date.now();
+        if (
+          !ticket ||
+          ticket.expiresAt <= now ||
+          ticket.protocol !== FEED_PROTOCOL
+        ) {
+          return INVALID_TICKET;
+        }
+        const access = yield* reader.authorize(ticket.keyId);
+        if (
+          access === null ||
+          access.personId !== ticket.personId ||
+          access.authorizationEpoch !== ticket.authorizationEpoch
+        ) {
+          return INVALID_TICKET;
+        }
+        const identity: FeedIdentity = {
+          connectionId: crypto.randomUUID(),
+          keyId: ticket.keyId,
+          personId: ticket.personId,
+        };
+        yield* tx.insert(feedConnections).values({
+          id: identity.connectionId,
+          keyId: identity.keyId,
+          openedAt: now,
+          personId: identity.personId,
+        });
+        return accepted(identity);
+      })
+    );
+
+  const accept = (request: UpgradeRequest) => {
+    const checked = checkUpgradeRequest(request);
+    return checked.kind === "offered"
+      ? spendTicket(checked.ticket).pipe(Effect.mapError(transportFailure))
+      : Effect.succeed(checked);
+  };
 
   const connection = (id: string) =>
     db
@@ -271,7 +274,6 @@ export const makeFeedTransport = (input: {
       })
     );
 
-  /** Sends what the client has not seen. Every call rechecks the key and each row's access. */
   const deliver = (identity: FeedIdentity) =>
     Effect.gen(function* deliverChanges() {
       const row = yield* connection(identity.connectionId);
@@ -291,7 +293,10 @@ export const makeFeedTransport = (input: {
         return yield* ended(identity, row.ackedCursor);
       }
       const { cursor, messages } = feedMessages(result, false);
-      if (messages.length > 0 && row.pending.length >= FEED_ACK_WINDOW) {
+      if (
+        messages.length > 0 &&
+        row.unackedSequences.length >= FEED_ACK_WINDOW
+      ) {
         yield* forget(identity.connectionId);
         return {
           close: { code: FeedCloseCode.slow, reason: "Acknowledge sooner" },
@@ -302,11 +307,11 @@ export const makeFeedTransport = (input: {
       yield* db
         .update(feedConnections)
         .set({
-          pending:
-            messages.length === 0 || sequence === null
-              ? row.pending
-              : [...row.pending, sequence],
           sentCursor: cursor,
+          unackedSequences:
+            messages.length === 0 || sequence === null
+              ? row.unackedSequences
+              : [...row.unackedSequences, sequence],
         })
         .where(eq(feedConnections.id, identity.connectionId));
       return { send: messages } satisfies FeedOutcome;
@@ -345,8 +350,8 @@ export const makeFeedTransport = (input: {
           .update(feedConnections)
           .set({
             greeted: true,
-            pending: sequence === null ? [] : [sequence],
             sentCursor: cursor,
+            unackedSequences: sequence === null ? [] : [sequence],
           })
           .where(eq(feedConnections.id, identity.connectionId));
         return { send: messages } satisfies FeedOutcome;
@@ -355,11 +360,13 @@ export const makeFeedTransport = (input: {
       if (!row.greeted || acknowledged === null) {
         return protocolClose("Acknowledge a cursor after hello");
       }
-      const pending = row.pending.filter((sequence) => sequence > acknowledged);
-      if (pending.length !== row.pending.length) {
+      const unackedSequences = row.unackedSequences.filter(
+        (sequence) => sequence > acknowledged
+      );
+      if (unackedSequences.length !== row.unackedSequences.length) {
         yield* db
           .update(feedConnections)
-          .set({ ackedCursor: value.cursor, pending })
+          .set({ ackedCursor: value.cursor, unackedSequences })
           .where(eq(feedConnections.id, identity.connectionId));
       }
       return { send: [] } satisfies FeedOutcome;
@@ -368,18 +375,13 @@ export const makeFeedTransport = (input: {
   const closed = (connectionId: string) =>
     forget(connectionId).pipe(Effect.asVoid, Effect.mapError(transportFailure));
 
-  /** Drops state for sockets that no longer exist, such as after a restart. */
-  const restore = (open: readonly string[]) =>
+  const pruneConnections = (open: readonly string[]) =>
     db
       .delete(feedConnections)
       .where(notInArray(feedConnections.id, [...open]))
       .pipe(Effect.asVoid, Effect.mapError(transportFailure));
 
-  /**
-   * The SSE form of the feed. A catch-up runs only when the response pulls, so
-   * a slow reader holds at most one pending wake instead of a buffer.
-   */
-  const live = (caller: {
+  const sseFeed = (caller: {
     readonly keyId: string;
     readonly personId: string;
     readonly cursor: string | null;
@@ -447,7 +449,15 @@ export const makeFeedTransport = (input: {
     );
   };
 
-  return { accept, closed, deliver, live, mintTicket, receive, restore };
+  return {
+    accept,
+    closed,
+    deliver,
+    mintTicket,
+    pruneConnections,
+    receive,
+    sseFeed,
+  };
 };
 
 export type FeedTransport = ReturnType<typeof makeFeedTransport>;
