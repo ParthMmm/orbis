@@ -161,7 +161,7 @@ try {
       const url = new URL(request.url());
       assert.ok(!url.search.includes(key));
       if (url.pathname === "/events") {
-        assert.equal(url.search, "");
+        assert.equal(url.search, "?changes=1");
         assert.equal(request.headers().authorization, `Bearer ${key}`);
         eventRequests.push({ bearerHeader: true, path: "/events" });
       }

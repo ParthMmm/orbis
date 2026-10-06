@@ -65,6 +65,7 @@ The four original journey groups keep their entrypoint names. Their assertions n
 | `admin-journey` | `e2e/admin-journey.mjs` | Admin scope rejection, People, key minting and copying, revocation, removal, and session-only admin credentials | `.cache/web-admin` |
 | `live-queue` | `e2e/live-queue.mjs` | Remote Playlist enqueue, another Person's queue isolation, bearer-authenticated events, reconnect, Playback Position, and automatic advance | `.cache/web-player` |
 | `shared-audio` | `e2e/shared-audio.mjs` | Shared playback without saving, the caller's Playback Position, a save without the friend's title, and a shared Download that plays | `.cache/web-social` |
+| `presence` | `e2e/presence.mjs` | Presence actions from real audio events: a failed play sends none, play shows Presence to another Person, renew, pause clears it, and a Library change from a second browser appears without a reload ([#212](https://github.com/ParthMmm/orbis/issues/212)) | `.cache/web-presence` |
 
 The migration spec [#137](https://github.com/ParthMmm/orbis/issues/137) has thirteen child issues. The table records the code verification for each child. A passing local journey does not verify a live deployment.
 

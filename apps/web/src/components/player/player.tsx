@@ -1,3 +1,4 @@
+import type { PresenceAction } from "@orbis/contracts";
 import { createContext, use, useRef, useState } from "react";
 import type { ReactNode, SyntheticEvent } from "react";
 
@@ -24,11 +25,37 @@ import {
   playSet,
   queueSet,
   reportPosition,
+  sendPresence,
   streamUrl,
 } from "@/lib/player";
 
 // Report the Playback Position this often while playing, plus on pause and seek.
 const REPORT_EVERY_MS = 15_000;
+// Renew the 30-second Presence lease this often while audio plays (ADR 0019).
+const RENEW_EVERY_MS = 15_000;
+
+type PresenceKind = "play" | "pause" | "stop" | "renew";
+type PresenceState = "idle" | "playing" | "paused" | "stopped";
+
+/** Which local states each action leaves, and the state it enters. */
+const PRESENCE_MOVES: Record<
+  PresenceKind,
+  { readonly from: readonly PresenceState[]; readonly to: PresenceState }
+> = {
+  pause: { from: ["playing"], to: "paused" },
+  play: { from: ["idle", "paused"], to: "playing" },
+  renew: { from: ["playing"], to: "playing" },
+  stop: { from: ["playing", "paused"], to: "stopped" },
+};
+
+/** One Presence session per Set the player makes active. */
+interface PresenceSession {
+  readonly sessionId: string;
+  readonly setId: string;
+  actionNumber: number;
+  ownerGeneration: number | null;
+  state: PresenceState;
+}
 
 interface Playing {
   /** Bumped for each new source, so the `<audio>` element starts fresh. */
@@ -86,6 +113,52 @@ export const PlayerProvider = ({
   const lastReport = useRef(0);
   const audioRef = useRef<HTMLAudioElement>(null);
   const playIntent = useRef(0);
+  const presence = useRef<PresenceSession | null>(null);
+  const presenceSent = useRef<Promise<void>>(Promise.resolve());
+  // An API without `/presence/actions` answers 404; Position reports still infer Presence.
+  const presenceRoute = useRef(true);
+  const lastRenew = useRef(0);
+
+  // Actions go out one at a time, so each carries the generation its play returned.
+  const act = (kind: PresenceKind) => {
+    const session = presence.current;
+    const move = PRESENCE_MOVES[kind];
+    if (session === null || !move.from.includes(session.state)) {
+      return;
+    }
+    session.state = move.to;
+    if (kind === "play") {
+      lastRenew.current = Date.now();
+    }
+    const previous = presenceSent.current;
+    presenceSent.current = (async () => {
+      await previous;
+      const { ownerGeneration } = session;
+      const fields = {
+        actionId: crypto.randomUUID(),
+        actionNumber: session.actionNumber + 1,
+        sessionId: session.sessionId,
+      };
+      let action: PresenceAction | null = null;
+      if (kind === "play") {
+        action = { ...fields, kind, setId: session.setId };
+      } else if (ownerGeneration !== null) {
+        action = { ...fields, kind, ownerGeneration };
+      }
+      if (!presenceRoute.current || action === null) {
+        return;
+      }
+      session.actionNumber = fields.actionNumber;
+      const sent = await sendPresence(credentials, action);
+      if (sent.ok) {
+        session.ownerGeneration = sent.value.session.ownerGeneration;
+      } else if (sent.status === 404) {
+        presenceRoute.current = false;
+      } else if (kind === "play" && session.state === "playing") {
+        session.state = "idle";
+      }
+    })();
+  };
 
   const start = async (
     set: SavedSet,
@@ -101,6 +174,14 @@ export const PlayerProvider = ({
       setProblem(FAILURE_MESSAGES[src.failure]);
       return src;
     }
+    act("stop");
+    presence.current = {
+      actionNumber: 0,
+      ownerGeneration: null,
+      sessionId: crypto.randomUUID(),
+      setId: set.id,
+      state: "idle",
+    };
     lastReport.current = 0;
     setProblem(null);
     setElapsed(startAt);
@@ -181,9 +262,19 @@ export const PlayerProvider = ({
       lastReport.current = now;
       report(event);
     }
+    if (now - lastRenew.current >= RENEW_EVERY_MS) {
+      lastRenew.current = now;
+      act("renew");
+    }
+  };
+
+  const pause = (event: SyntheticEvent<HTMLAudioElement>) => {
+    act("pause");
+    report(event);
   };
 
   const finish = async () => {
+    act("stop");
     if (playing === null) {
       return;
     }
@@ -241,7 +332,8 @@ export const PlayerProvider = ({
               onLoadedMetadata={(event) => {
                 event.currentTarget.currentTime = playing.startAt;
               }}
-              onPause={report}
+              onPause={pause}
+              onPlaying={() => act("play")}
               onSeeked={report}
               onTimeUpdate={reportNowAndThen}
               src={playing.src}
