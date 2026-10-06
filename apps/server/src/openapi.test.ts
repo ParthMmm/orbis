@@ -197,6 +197,14 @@ const sampleFor = (operationId: string) => {
   if (operationId === "devices.revoke") {
     return device;
   }
+  // The Swift client has no feed transport until #212 adopts it.
+  if (operationId === "events.ticket") {
+    return {
+      expiresAt: "2026-09-29T00:00:30.000Z",
+      protocol: "orbis.feed.v1",
+      ticket: "c2FtcGxlLXRpY2tldA",
+    };
+  }
   if (operationId === "presence.act") {
     return {
       outcome: "accepted",
@@ -248,7 +256,10 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
           checked += 1;
           continue;
         }
-        if (operation.operationId === "events.subscribe") {
+        if (
+          operation.operationId === "events.subscribe" ||
+          operation.operationId === "events.live"
+        ) {
           expect(
             operation.responses["200"]?.content?.["text/event-stream"]
           ).toBeDefined();
@@ -273,7 +284,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(45);
+    expect(checked).toBe(47);
   } finally {
     await app.dispose();
   }

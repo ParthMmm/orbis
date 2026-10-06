@@ -36,6 +36,7 @@ test("visible Sets share audio and storage releases only the last reference over
   const audioDir = path.join(root, "audio");
   const databasePath = path.join(root, "library.sqlite");
   const evidence: string[] = [];
+  const setChanges: string[] = [];
   await writeFile(
     path.join(root, "devices.json"),
     JSON.stringify({
@@ -89,6 +90,13 @@ test("visible Sets share audio and storage releases only the last reference over
         startWorker: true,
       },
       databasePath,
+      feed: {
+        observe: (change) => {
+          if (change.topic === "set") {
+            setChanges.push(change.setId);
+          }
+        },
+      },
       logging: { silent: true },
     }),
     port: 0,
@@ -246,9 +254,12 @@ test("visible Sets share audio and storage releases only the last reference over
     );
     const last = await save("b", "shared00004");
     await download("b", last.id);
+    const changesBeforeRelease = setChanges.length;
     expect(await status("b", `/sets/${last.id}`, "DELETE")).toBe(200);
     expect(await retained(last.id)).toBe(false);
+    expect(setChanges.slice(changesBeforeRelease)).toContain(last.id);
     evidence.push("last Library Entry releases bytes");
+    evidence.push("the release journals a Set invalidation");
     const queued = await save("b", "shared00005");
     await download("a", queued.id);
     expect(

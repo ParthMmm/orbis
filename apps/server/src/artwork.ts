@@ -3,6 +3,7 @@ import { Effect, Result } from "effect";
 
 import { Database } from "./db/database.js";
 import { sets } from "./db/schema.js";
+import { Journal } from "./journal.js";
 import { Metadata } from "./metadata.js";
 
 /**
@@ -14,6 +15,7 @@ import { Metadata } from "./metadata.js";
 export const backfillArtwork = Effect.gen(function* backfillArtworkEffect() {
   const db = yield* Database;
   const metadata = yield* Metadata;
+  const journal = yield* Journal;
 
   const rows = yield* db
     .select({ id: sets.id, source: sets.source, url: sets.url })
@@ -29,13 +31,18 @@ export const backfillArtwork = Effect.gen(function* backfillArtworkEffect() {
         source: row.source,
         url: row.url,
       });
-      yield* db
-        .update(sets)
-        .set({
-          artworkLargeUrl: image.artworkLargeUrl,
-          artworkUrl: image.artworkUrl,
+      yield* journal.transaction((tx) =>
+        Effect.gen(function* storeImages() {
+          yield* tx
+            .update(sets)
+            .set({
+              artworkLargeUrl: image.artworkLargeUrl,
+              artworkUrl: image.artworkUrl,
+            })
+            .where(eq(sets.id, row.id));
+          yield* journal.record(tx, { setId: row.id, topic: "set" });
         })
-        .where(eq(sets.id, row.id));
+      );
     }).pipe(
       Effect.tapError((error) =>
         Effect.logWarning(`Kept the images on ${row.id}: ${error.message}`)

@@ -37,7 +37,7 @@ import type { SourceDetails } from "./ytdlp-metadata.js";
 interface LibraryOptions {
   readonly releaseAudio?: (
     id: string
-  ) => Effect.Effect<void, LibraryError, Database>;
+  ) => Effect.Effect<void, LibraryError, Database | Journal>;
   readonly people?: () => readonly PersonRecord[];
 }
 
@@ -216,7 +216,8 @@ export class Library extends Context.Service<
         }).pipe(Effect.provideService(Database, db));
       const release = (id: string) =>
         (options.releaseAudio ?? releaseAudio)(id).pipe(
-          Effect.provideService(Database, db)
+          Effect.provideService(Database, db),
+          Effect.provideService(Journal, journal)
         );
 
       const entryFor = (setId: string) =>

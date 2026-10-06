@@ -7,7 +7,15 @@ import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
 import { request } from "./test-http.js";
 
-test("devicesPath without a file database preserves key authentication across app restarts", async () => {
+test("an in-memory database refuses a separate trust file", () => {
+  const devicesPath = path.join(tmpdir(), "orbis-unused-devices.json");
+  expect(() => createApp({ devicesPath })).toThrow(/file databasePath/u);
+  expect(() => createApp({ databasePath: ":memory:", devicesPath })).toThrow(
+    /file databasePath/u
+  );
+});
+
+test("a legacy devicesPath beside a file database preserves key authentication across app restarts", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-trust-options-"));
   const devicesPath = path.join(directory, "devices.json");
   const token = crypto.randomUUID();
@@ -25,7 +33,8 @@ test("devicesPath without a file database preserves key authentication across ap
       version: 1,
     })
   );
-  const app = createApp({ devicesPath });
+  const databasePath = path.join(directory, "library.sqlite");
+  const app = createApp({ databasePath, devicesPath });
   try {
     const response = await request(app, {
       accessMode: "device",
@@ -40,7 +49,7 @@ test("devicesPath without a file database preserves key authentication across ap
   } finally {
     await app.dispose();
   }
-  const restarted = createApp({ databasePath: ":memory:", devicesPath });
+  const restarted = createApp({ databasePath, devicesPath });
   try {
     const response = await request(restarted, {
       accessMode: "device",

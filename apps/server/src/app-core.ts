@@ -280,7 +280,9 @@ export const createPortableApp = (options: {
     personId: string,
     grant: string | null
   ) => HttpServerResponse.HttpServerResponse;
-  releaseAudio: (id: string) => Effect.Effect<void, LibraryError, Database>;
+  releaseAudio: (
+    id: string
+  ) => Effect.Effect<void, LibraryError, Database | Journal>;
   streamSecret: Buffer;
   database: Layer.Layer<Database, unknown>;
   trustPath?: string | undefined;

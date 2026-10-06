@@ -4,6 +4,7 @@ import { Effect } from "effect";
 
 import { backfillArtwork } from "./artwork.js";
 import { layer as databaseLayer } from "./db/database.js";
+import { detachedJournal } from "./journal.js";
 import { Metadata } from "./metadata.js";
 
 /**
@@ -36,6 +37,7 @@ process.exitCode = await Effect.runPromise(
       })
     ),
     Effect.provide(Metadata.layer({ youTubeApiKey })),
+    Effect.provide(detachedJournal()),
     Effect.provide(
       databaseLayer({
         databasePath,

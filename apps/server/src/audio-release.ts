@@ -2,8 +2,8 @@ import { eq, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { downloadJobs, setCues, sets } from "./db/schema.js";
-import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
+import { Journal } from "./journal.js";
 
 const releaseError = <E>(error: E) =>
   error instanceof LibraryError
@@ -21,8 +21,8 @@ export const releaseAudio = (
     Effect.void
 ) =>
   Effect.gen(function* releaseStoredAudio() {
-    const db = yield* Database;
-    const released = yield* db.transaction((tx) =>
+    const journal = yield* Journal;
+    const released = yield* journal.transaction((tx) =>
       Effect.gen(function* releaseUnreferencedAudio() {
         const [reference] = yield* tx.all<{ readonly present: number }>(sql`
           SELECT 1 AS present FROM library_entries WHERE set_id = ${id}
@@ -47,6 +47,7 @@ export const releaseAudio = (
           .where(eq(sets.id, id));
         yield* tx.delete(downloadJobs).where(eq(downloadJobs.setId, id));
         yield* tx.delete(setCues).where(eq(setCues.setId, id));
+        yield* journal.record(tx, { setId: id, topic: "set" });
         return true;
       })
     );

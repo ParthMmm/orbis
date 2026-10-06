@@ -31,6 +31,7 @@ test("forwarded requests log the authenticated key label at the API without copy
   const events: WideEvent[] = [];
   const forwardedEvents: WideEvent[] = [];
   const app = createApp({
+    databasePath: path.join(path.dirname(devicesPath), "library.sqlite"),
     devicesPath,
     logging: { onEvent: (event) => events.push(event), silent: true },
   });

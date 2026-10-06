@@ -106,16 +106,17 @@ export const createApp = (
 ) => {
   useNonblockingTrustStorage();
   const databasePath = options.databasePath ?? ":memory:";
-  const devicesPath =
-    options.devicesPath ??
-    (databasePath === ":memory:"
-      ? undefined
-      : path.join(path.dirname(databasePath), "devices.json"));
-  const trustPath = databasePath === ":memory:" ? devicesPath : databasePath;
-  if (devicesPath) {
+  const inMemory = databasePath === ":memory:";
+  if (inMemory && options.devicesPath !== undefined) {
+    throw new Error(
+      "devicesPath needs a file databasePath: trust, Presence, and the change journal commit in one SQLite database."
+    );
+  }
+  const trustPath = inMemory ? undefined : databasePath;
+  if (trustPath) {
     migrateTrustStore(
-      devicesPath,
-      databasePath === ":memory:" ? devicesPath : databasePath
+      options.devicesPath ?? path.join(path.dirname(trustPath), "devices.json"),
+      trustPath
     );
   }
   return createPortableApp({
@@ -132,7 +133,7 @@ export const createApp = (
     releaseAudio: (id) =>
       releaseAudio(id, () => MediaStore.removeFiles(id, options.audio)),
     streamSecret: grantSecret(
-      databasePath === ":memory:"
+      inMemory
         ? undefined
         : path.join(path.dirname(databasePath), "stream-grant.key")
     ),

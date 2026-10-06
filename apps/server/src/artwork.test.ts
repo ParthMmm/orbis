@@ -8,6 +8,7 @@ import { Effect } from "effect";
 
 import { backfillArtwork } from "./artwork.js";
 import { layer as databaseLayer } from "./db/database.js";
+import { detachedJournal } from "./journal.js";
 import { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
 import { createTestApp as createApp } from "./test-app.js";
@@ -71,6 +72,22 @@ const seedLibrary = async (databasePath: string) => {
       null,
       null
     );
+    database.run(
+      "INSERT INTO library_entries (person_id, set_id, saved_at, tags) VALUES ('host', 'old-set', '2026-02-01T00:00:00.000Z', '[]')"
+    );
+  } finally {
+    database.close();
+  }
+};
+
+const readSetInvalidations = (databasePath: string) => {
+  const database = new Database(databasePath);
+  try {
+    return database
+      .query<{ person_id: string; resource_id: string }, []>(
+        "SELECT person_id, resource_id FROM feed_deliveries WHERE topic = 'set'"
+      )
+      .all();
   } finally {
     database.close();
   }
@@ -109,6 +126,7 @@ const runBackfill = (databasePath: string, asked: string[]) =>
             }),
         })
       ),
+      Effect.provide(detachedJournal()),
       Effect.provide(databaseLayer({ databasePath, migrationsFolder }))
     )
   );
@@ -131,6 +149,9 @@ test("fills both images on a Set that holds only one", async () => {
       artwork_large_url: "https://example.test/large.jpg",
       artwork_url: "https://example.test/listing.jpg",
     });
+    expect(readSetInvalidations(databasePath)).toEqual([
+      { person_id: "host", resource_id: "old-set" },
+    ]);
   } finally {
     await rm(directory, { force: true, recursive: true });
   }
@@ -155,6 +176,7 @@ test("keeps the images a Set has when the provider cannot answer", async () => {
               ),
           })
         ),
+        Effect.provide(detachedJournal()),
         Effect.provide(databaseLayer({ databasePath, migrationsFolder }))
       )
     );
