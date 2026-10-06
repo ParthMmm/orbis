@@ -150,6 +150,7 @@ export class Queue extends Context.Service<
               }
             })
           );
+          yield* presence.afterCommit();
           yield* Effect.forEach(
             previous.filter((row) => !ids.includes(row.setId)),
             (row) => library.release(row.setId)

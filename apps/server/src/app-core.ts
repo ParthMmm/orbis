@@ -1449,6 +1449,18 @@ export const createPortableApp = (options: {
             action(storePath, caller.person.id, keyId)
           );
         });
+      // The key is already gone, so a failed clear is logged: the next settle sweeps the
+      // rows and the lease bounds how long the stale Presence can show.
+      const clearRevokedPresence = (keyId: string) =>
+        presence
+          .revokeKey(keyId)
+          .pipe(
+            Effect.catchTag("LibraryError", (failure) =>
+              Effect.logWarning("revoked key presence not cleared").pipe(
+                Effect.annotateLogs({ cause: failure.message })
+              )
+            )
+          );
       const devicesGroup = HttpApiBuilder.group(
         OrbisApi,
         "devices",
@@ -1463,7 +1475,7 @@ export const createPortableApp = (options: {
               withFailureResponse(
                 deviceCall((storePath, personId, keyId) =>
                   revokeDevice(storePath, personId, keyId, params.id)
-                ).pipe(Effect.tap(() => presence.revokeKey(params.id)))
+                ).pipe(Effect.tap(() => clearRevokedPresence(params.id)))
               )
             )
       );
@@ -1544,6 +1556,7 @@ export const createPortableApp = (options: {
                         })
                     )
                   );
+                yield* presence.afterCommit();
                 yield* Effect.forEach((set: { readonly id: string }) =>
                   library.release(set.id)
                 )(released);
@@ -1583,7 +1596,7 @@ export const createPortableApp = (options: {
           .handleRaw("revokeKey", ({ params }) =>
             withFailureResponse(
               adminCall((storePath) => revokeKey(storePath, params.id)).pipe(
-                Effect.tap(() => presence.revokeKey(params.id))
+                Effect.tap(() => clearRevokedPresence(params.id))
               )
             )
           )

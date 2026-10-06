@@ -13,10 +13,12 @@ import {
 } from "@orbis/contracts/http-api";
 import { Effect, Layer, Schema } from "effect";
 
+import { layer as databaseLayer } from "./db/database.js";
 import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
 import { PresenceJournal } from "./presence-journal.js";
 import type { PresenceTransition } from "./presence-journal.js";
+import { Presence } from "./presence.js";
 import { createTestApp as createApp } from "./test-app.js";
 
 const LEASE_MS = 1500;
@@ -56,9 +58,10 @@ type Payload =
       setId: string;
     };
 type TranscriptEntry =
-  | { transition: PresenceTransition }
-  | { event: Entries; viewer: string }
+  | { at: number; transition: PresenceTransition }
+  | { at: number; event: Entries; viewer: string }
   | {
+      at: number;
       body: unknown;
       key: string;
       method: string;
@@ -124,30 +127,62 @@ const seed = async (root: string) => {
   return databasePath;
 };
 
+interface AlarmPort {
+  readonly calls: { at: number | null }[];
+  failNextSet: boolean;
+}
+
 const harness = (databasePath: string, transcript: Transcript) => {
   const transitions: PresenceTransition[] = [];
+  const alarm: AlarmPort = { calls: [], failNextSet: false };
   const journal = Layer.succeed(PresenceJournal, {
     record: (_tx, transition) =>
       Effect.sync(() => {
         transitions.push(transition);
-        transcript.push({ transition });
+        transcript.push({ at: Date.now(), transition });
       }),
   });
   const start = async () => {
-    const listeners = await startFixtureServer({
-      app: createApp({
-        databasePath,
-        logging: { silent: true },
-        presence: {
-          journal,
-          leaseMs: LEASE_MS,
-          resultRetentionMs: RETENTION_MS,
+    let wake: ReturnType<typeof setTimeout> | undefined;
+    const app = createApp({
+      databasePath,
+      logging: { silent: true },
+      presence: {
+        alarm: {
+          cancel: () => {
+            alarm.calls.push({ at: null });
+            clearTimeout(wake);
+          },
+          set: (at) => {
+            alarm.calls.push({ at });
+            if (alarm.failNextSet) {
+              alarm.failNextSet = false;
+              throw new Error("alarm storage unavailable");
+            }
+            clearTimeout(wake);
+            wake = setTimeout(
+              async () => {
+                await app.expirePresence();
+              },
+              Math.max(at - Date.now(), 0)
+            );
+          },
         },
-        presenceWindowMs: LEGACY_WINDOW_MS,
-      }),
+        journal,
+        leaseMs: LEASE_MS,
+        resultRetentionMs: RETENTION_MS,
+      },
+      presenceWindowMs: LEGACY_WINDOW_MS,
+    });
+    const listeners = await startFixtureServer({
+      app,
       port: 0,
       token: "seeded-test-fixture",
     });
+    const stop = async () => {
+      clearTimeout(wake);
+      await listeners.stop();
+    };
     const call = async (
       key: Key | "admin",
       route: string,
@@ -170,7 +205,14 @@ const harness = (databasePath: string, transcript: Transcript) => {
       }
       const response = await fetch(new URL(route, listeners.url), init);
       const body: unknown = await response.json();
-      transcript.push({ body, key, method, route, status: response.status });
+      transcript.push({
+        at: Date.now(),
+        body,
+        key,
+        method,
+        route,
+        status: response.status,
+      });
       return { body, status: response.status };
     };
     const callStatus = async (...args: Parameters<typeof call>) => {
@@ -227,6 +269,7 @@ const harness = (databasePath: string, transcript: Transcript) => {
         );
         if (event.kind === "presence") {
           transcript.push({
+            at: Date.now(),
             event: event.presence.map((entry) => ({
               personId: entry.personId,
               setId: entry.set.id,
@@ -236,24 +279,46 @@ const harness = (databasePath: string, transcript: Transcript) => {
         }
         return event;
       };
-      return {
-        close: () => reader.cancel(),
-        presence: async (accept: (entries: Entries) => boolean, ms = 6000) => {
-          const deadline = Date.now() + ms;
-          while (Date.now() < deadline) {
-            const event = await Promise.race([
-              read(),
-              Bun.sleep(deadline - Date.now()).then(() => null),
-            ]);
-            if (event?.kind === "presence") {
-              const entries = event.presence.map((entry) => ({
+      // A frame counts only if it arrived after the previous assertion returned, so a
+      // frame left over from an earlier step can never satisfy a later one.
+      let lastReturn = Date.now();
+      const frames: { at: number; consumed: boolean; entries: Entries }[] = [];
+      const pump = (async () => {
+        for (;;) {
+          const event = await read();
+          if (event.kind === "presence") {
+            frames.push({
+              at: Date.now(),
+              consumed: false,
+              entries: event.presence.map((entry) => ({
                 personId: entry.personId,
                 setId: entry.set.id,
-              }));
-              if (accept(entries)) {
-                return entries;
-              }
+              })),
+            });
+          }
+        }
+      })().catch(() => null);
+      return {
+        close: async () => {
+          await reader.cancel();
+          await pump;
+        },
+        presence: async (accept: (entries: Entries) => boolean, ms = 6000) => {
+          const since = lastReturn;
+          const deadline = Date.now() + ms;
+          while (Date.now() < deadline) {
+            const frame = frames.find(
+              (candidate) =>
+                !candidate.consumed &&
+                candidate.at >= since &&
+                accept(candidate.entries)
+            );
+            if (frame) {
+              frame.consumed = true;
+              lastReturn = Date.now();
+              return frame.entries;
             }
+            await Bun.sleep(10);
           }
           throw new Error("No matching presence event arrived");
         },
@@ -267,10 +332,11 @@ const harness = (databasePath: string, transcript: Transcript) => {
       callStatus,
       listeners,
       refused,
+      stop,
       watch,
     };
   };
-  return { start, transitions };
+  return { alarm, start, transitions };
 };
 
 const listening = (personId: string, setId: string) => (entries: Entries) =>
@@ -455,6 +521,20 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     expect(await listenCount(server.call, "a-phone", "s1")).toMatchObject({
       listenCount: 1,
     });
+    actionNumber += 1;
+    const transitionsBeforeOldGeneration = transitions.length;
+    await server.refused(
+      "a-phone",
+      {
+        actionId: "old-generation-pause",
+        actionNumber,
+        kind: "pause",
+        ownerGeneration: generation1,
+        sessionId: "phone-s1",
+      },
+      "stale"
+    );
+    expect(transitions).toHaveLength(transitionsBeforeOldGeneration);
 
     const transitionsBeforeLegacy = transitions.length;
     expect(
@@ -561,7 +641,7 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       outcome: "duplicate",
     });
     await viewer.close();
-    await server.listeners.stop();
+    await server.stop();
     server = await start();
     viewer = await server.watch("c-phone", "c");
     opened.push(viewer);
@@ -619,9 +699,35 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
     expect(await listenCount(server.call, "a-laptop", "s1")).toMatchObject({
       listenCount: 1,
     });
+
+    const ownReportAt = Date.now();
+    expect(
+      await server.callStatus("a-legacy", "/sets/s1/position", "PUT", {
+        seconds: 11,
+      })
+    ).toBe(200);
+    await viewer.presence(listening("a", "s1"));
+    const optedIn = await server.accepted("a-legacy", {
+      actionId: "legacy-play",
+      actionNumber: 1,
+      kind: "play",
+      sessionId: "legacy-s1",
+      setId: "s1",
+    });
+    await server.accepted("a-legacy", {
+      actionId: "legacy-pause",
+      actionNumber: 2,
+      kind: "pause",
+      ownerGeneration: optedIn.session.ownerGeneration,
+      sessionId: "legacy-s1",
+    });
+    const beforeOwnReportLapses =
+      ownReportAt + LEGACY_WINDOW_MS - 300 - Date.now();
+    expect(beforeOwnReportLapses).toBeGreaterThan(0);
+    await viewer.presence(absent("a"), beforeOwnReportLapses);
   } finally {
     await Promise.all(opened.map((open) => open.close().catch(() => null)));
-    await server.listeners.stop();
+    await server.stop();
     await saveTranscript("lifecycle.json", transcript);
     await rm(root, { force: true, recursive: true });
   }
@@ -631,7 +737,7 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
   const root = await mkdtemp(path.join(tmpdir(), "orbis-presence-queue-"));
   const transcript: Transcript = [];
   const databasePath = await seed(root);
-  const { start, transitions } = harness(databasePath, transcript);
+  const { alarm, start, transitions } = harness(databasePath, transcript);
   const server = await start();
   const opened: { close: () => Promise<void> }[] = [];
   try {
@@ -643,6 +749,7 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
         setId: "s1",
       })
     ).toBe(200);
+    alarm.failNextSet = true;
     const owner = await server.accepted("a-phone", {
       actionId: "q1",
       actionNumber: 1,
@@ -651,6 +758,18 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       setId: "s1",
     });
     await viewer.presence(listening("a", "s1"));
+    if (owner.session.state !== "playing") {
+      throw new Error("expected a playing session");
+    }
+    const ownerDeadline = Date.parse(owner.session.leaseExpiresAt);
+    expect(alarm.calls).toEqual([{ at: ownerDeadline }]);
+    const retryReportAt = Date.now();
+    expect(
+      await server.callStatus("a-legacy", "/sets/s3/position", "PUT", {
+        seconds: 3,
+      })
+    ).toBe(200);
+    expect(alarm.calls).toEqual([{ at: ownerDeadline }, { at: ownerDeadline }]);
 
     const [queueChange, raced] = await Promise.all([
       server.call("a-phone", "/queue/active", "PUT", { setId: "s2" }),
@@ -694,6 +813,9 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     );
     await viewer.presence(absent("a"));
 
+    await Bun.sleep(
+      Math.max(retryReportAt + LEGACY_WINDOW_MS + 100 - Date.now(), 0)
+    );
     const second = await server.accepted("a-phone", {
       actionId: "q5",
       actionNumber: 1,
@@ -701,7 +823,13 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       sessionId: "phone-s2",
       setId: "s2",
     });
+    if (second.session.state !== "playing") {
+      throw new Error("expected a playing session");
+    }
     await viewer.presence(listening("a", "s2"));
+    expect(alarm.calls.at(-1)).toEqual({
+      at: Date.parse(second.session.leaseExpiresAt),
+    });
     const completion = await server.call(
       "a-phone",
       "/queue/completion",
@@ -711,10 +839,11 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       }
     );
     expect(completion.status).toBe(200);
+    expect(alarm.calls.at(-1)).toEqual({ at: null });
+    await viewer.presence(absent("a"), 1000);
     expect(await listenCount(server.call, "a-phone", "s1")).toMatchObject({
       listenCount: 2,
     });
-    await viewer.presence(absent("a"));
     expect(transitions.at(-1)).toMatchObject({
       cause: "queue",
       visibleSetAfter: null,
@@ -790,6 +919,30 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       })
     ).toBe(401);
 
+    const ghost = new Database(databasePath);
+    try {
+      ghost.run(
+        `INSERT INTO presence_sessions (key_id, session_id, person_id, set_id, state, owner_generation, action_number, lease_expires_at, updated_at)
+         VALUES ('ghost-key', 'ghost', 'a', 's1', 'playing', 99, 1, ?, 0)`,
+        [Date.now() + 60_000]
+      );
+    } finally {
+      ghost.close();
+    }
+    await viewer.presence(listening("a", "s1"));
+    const sweepReportAt = Date.now();
+    expect(
+      await server.callStatus("a-legacy", "/sets/s3/position", "PUT", {
+        seconds: 4,
+      })
+    ).toBe(200);
+    await viewer.presence(absent("a"), 1000);
+    expect(transitions.at(-1)).toMatchObject({
+      personId: "a",
+      visibleSetAfter: null,
+      visibleSetBefore: "s1",
+    });
+
     const sqlite = new Database(databasePath);
     try {
       const insert = sqlite.prepare(
@@ -804,6 +957,9 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     } finally {
       sqlite.close();
     }
+    await Bun.sleep(
+      Math.max(sweepReportAt + LEGACY_WINDOW_MS + 100 - Date.now(), 0)
+    );
     expect(
       await server.callStatus("b-phone", "/queue/active", "PUT", {
         setId: "s1",
@@ -820,18 +976,25 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       },
       "session-limit"
     );
-    await server.accepted("b-phone", {
+    const resumedB = await server.accepted("b-phone", {
       actionId: "b2",
       actionNumber: 1,
       kind: "play",
       sessionId: "old-42",
       setId: "s1",
     });
+    if (resumedB.session.state !== "playing") {
+      throw new Error("expected a playing session");
+    }
     await viewer.presence(listening("b", "s1"));
+    expect(alarm.calls.at(-1)).toEqual({
+      at: Date.parse(resumedB.session.leaseExpiresAt),
+    });
 
     const removal = await server.call("admin", "/admin/people/b", "DELETE");
     expect(removal.status).toBe(200);
-    await viewer.presence(absent("b"));
+    expect(alarm.calls.at(-1)).toEqual({ at: null });
+    await viewer.presence(absent("b"), 1000);
     expect(transitions.at(-1)).toMatchObject({
       cause: "removal",
       personId: "b",
@@ -850,7 +1013,7 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       expect(
         remaining
           .query(
-            "SELECT count(*) AS sessions FROM presence_sessions WHERE key_id = 'a-phone'"
+            "SELECT count(*) AS sessions FROM presence_sessions WHERE key_id IN ('a-phone', 'ghost-key')"
           )
           .get()
       ).toEqual({ sessions: 0 });
@@ -859,8 +1022,91 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
     }
   } finally {
     await Promise.all(opened.map((open) => open.close().catch(() => null)));
-    await server.listeners.stop();
+    await server.stop();
     await saveTranscript("queue-expiry-revocation.json", transcript);
     await rm(root, { force: true, recursive: true });
   }
 }, 90_000);
+
+test("an action whose key row is gone is refused before it writes", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "orbis-presence-revoked-"));
+  const databasePath = await seed(root);
+  const sqlite = new Database(databasePath);
+  try {
+    sqlite.run(
+      "INSERT INTO queue_entries (person_id, set_id, position, is_active) VALUES ('a', 's1', 0, 1)"
+    );
+  } finally {
+    sqlite.close();
+  }
+  const presenceLayer = Presence.layer({ leaseMs: LEASE_MS }).pipe(
+    Layer.provide(
+      Layer.mergeAll(
+        databaseLayer({
+          databasePath,
+          migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
+        }),
+        PresenceJournal.unrecorded
+      )
+    )
+  );
+  const sessionsOf = (keyId: string) => {
+    const rows = new Database(databasePath, { readonly: true });
+    try {
+      return rows
+        .query(
+          "SELECT state, action_number AS actionNumber FROM presence_sessions WHERE key_id = ?"
+        )
+        .all(keyId);
+    } finally {
+      rows.close();
+    }
+  };
+  const sweep = Effect.gen(function* expireNow() {
+    const presence = yield* Presence;
+    yield* presence.expire(Date.now());
+  }).pipe(Effect.provide(presenceLayer), Effect.scoped);
+  const play = (actionId: string, actionNumber: number) =>
+    Effect.gen(function* actAsPhone() {
+      const presence = yield* Presence;
+      return yield* Effect.match(
+        presence.act(
+          { keyId: "a-phone", personId: "a" },
+          {
+            actionId,
+            actionNumber,
+            kind: "play",
+            sessionId: "phone-s1",
+            setId: "s1",
+          }
+        ),
+        {
+          onFailure: (failure) => ({
+            refused: failure._tag === "LibraryError" ? failure.statusCode : 409,
+          }),
+          onSuccess: (result) => ({ outcome: result.outcome }),
+        }
+      );
+    }).pipe(Effect.provide(presenceLayer), Effect.scoped);
+  try {
+    expect(await Effect.runPromise(play("before-revoke", 1))).toEqual({
+      outcome: "accepted",
+    });
+    const revoke = new Database(databasePath);
+    try {
+      revoke.run("DELETE FROM api_keys WHERE id = 'a-phone'");
+    } finally {
+      revoke.close();
+    }
+    const before = sessionsOf("a-phone");
+    expect(before).toEqual([{ actionNumber: 1, state: "playing" }]);
+    expect(await Effect.runPromise(play("after-revoke", 2))).toEqual({
+      refused: 401,
+    });
+    expect(sessionsOf("a-phone")).toEqual(before);
+    await Effect.runPromise(sweep);
+    expect(sessionsOf("a-phone")).toEqual([]);
+  } finally {
+    await rm(root, { force: true, recursive: true });
+  }
+});

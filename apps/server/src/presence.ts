@@ -10,6 +10,7 @@ import {
   lte,
   max,
   ne,
+  notInArray,
   sql,
 } from "drizzle-orm";
 import {
@@ -25,6 +26,7 @@ import {
 } from "effect";
 
 import {
+  apiKeys,
   presenceActionResults,
   presenceKeys,
   presenceLegacyReports,
@@ -44,6 +46,8 @@ export const RESULT_RETENTION_MS = 7 * 24 * 60 * 60 * 1000;
 export const LEGACY_WINDOW_MS = 30_000;
 const SESSION_CAP = 10_000;
 
+const revokedKey = () =>
+  new LibraryError({ message: "This key was revoked.", statusCode: 401 });
 const databaseError = () =>
   new LibraryError({
     message: "Could not complete the presence request.",
@@ -246,6 +250,65 @@ const supersedeOwner = (
       )
     );
 
+const expiryCause = (
+  lapsed: {
+    readonly leases: ReadonlySet<string>;
+    readonly orphans: ReadonlySet<string>;
+  },
+  personId: string
+): PresenceTransition["cause"] => {
+  if (lapsed.orphans.has(personId)) {
+    return "revocation";
+  }
+  return lapsed.leases.has(personId) ? "expiry" : "legacy-expiry";
+};
+const liveKeys = (tx: DatabaseClient) =>
+  tx.select({ id: apiKeys.id }).from(apiKeys);
+/** Presence rows whose key lost its api_keys row before this module could clear them. */
+const orphanSessions = (tx: DatabaseClient, personId?: string) =>
+  tx
+    .select({
+      keyId: presenceSessions.keyId,
+      personId: presenceSessions.personId,
+    })
+    .from(presenceSessions)
+    .where(
+      and(
+        notInArray(presenceSessions.keyId, liveKeys(tx)),
+        personId === undefined
+          ? undefined
+          : eq(presenceSessions.personId, personId)
+      )
+    );
+const clearKeyRows = (tx: DatabaseClient, keyIds: readonly string[]) =>
+  Effect.gen(function* deleteKeyRows() {
+    yield* tx
+      .delete(presenceActionResults)
+      .where(inArray(presenceActionResults.keyId, keyIds));
+    yield* tx
+      .delete(presenceSessions)
+      .where(inArray(presenceSessions.keyId, keyIds));
+    yield* tx.delete(presenceKeys).where(inArray(presenceKeys.keyId, keyIds));
+    yield* tx
+      .delete(presenceLegacyReports)
+      .where(inArray(presenceLegacyReports.keyId, keyIds));
+  });
+const requireLiveKey = (tx: DatabaseClient, caller: PresenceCaller) =>
+  tx
+    .select({ id: apiKeys.id })
+    .from(apiKeys)
+    .where(
+      and(
+        eq(apiKeys.id, caller.keyId),
+        eq(apiKeys.personId, caller.personId),
+        eq(apiKeys.scope, "daily")
+      )
+    )
+    .limit(1)
+    .pipe(
+      Effect.flatMap(([key]) => (key ? Effect.void : Effect.fail(revokedKey())))
+    );
+
 const personOf = (tx: DatabaseClient, keyId: string) =>
   Effect.gen(function* findKeyPerson() {
     const [session] = yield* tx
@@ -295,6 +358,8 @@ export class Presence extends Context.Service<
       now: number
     ) => Effect.Effect<string | null, LibraryError>;
     readonly schedule: () => Effect.Effect<void, LibraryError>;
+    /** Runs once the caller's transaction around `queueActivated` or `removePerson` commits. */
+    readonly afterCommit: () => Effect.Effect<void>;
     readonly changes: Stream.Stream<null>;
   }
 >()("@orbis/Presence") {
@@ -369,6 +434,12 @@ export class Presence extends Context.Service<
 
         const settle = (tx: DatabaseClient, now: number, personId?: string) =>
           Effect.gen(function* settleDeadlines() {
+            const orphans = yield* orphanSessions(tx, personId);
+            if (orphans.length > 0) {
+              yield* clearKeyRows(tx, [
+                ...new Set(orphans.map((row) => row.keyId)),
+              ]);
+            }
             const lapsedLease = and(
               eq(presenceSessions.state, "playing"),
               lte(presenceSessions.leaseExpiresAt, now),
@@ -401,6 +472,7 @@ export class Presence extends Context.Service<
             }
             return {
               leases: new Set(lapsedSessions.map((row) => row.personId)),
+              orphans: new Set(orphans.map((row) => row.personId)),
               reports: new Set(lapsedReports.map((row) => row.personId)),
             };
           });
@@ -456,13 +528,14 @@ export class Presence extends Context.Service<
           });
         const { alarm } = options;
         // The port is written only when the deadline moves, and never fails the commit
-        // that moved it: a missed wake is caught by the next action's settle.
+        // that moved it: a failed write is retried by the next commit, and a missed wake
+        // is caught by the next action's settle.
         const setAlarm = (at: number | null) => {
           if (at === armedAt) {
             return Effect.void;
           }
-          armedAt = at;
           if (!alarm) {
+            armedAt = at;
             return bunAlarm(at);
           }
           return Effect.matchEffect(
@@ -474,7 +547,10 @@ export class Presence extends Context.Service<
                 Effect.logWarning("presence alarm not armed").pipe(
                   Effect.annotateLogs({ at, cause: String(error) })
                 ),
-              onSuccess: () => Effect.void,
+              onSuccess: () =>
+                Effect.sync(() => {
+                  armedAt = at;
+                }),
             }
           );
         };
@@ -483,11 +559,19 @@ export class Presence extends Context.Service<
           "Presence.schedule"
         )(() => execute(Effect.flatMap(nearestDeadline(), setAlarm)));
         const hub = yield* PubSub.sliding<null>(1);
-        const committed = () =>
+        const afterCommit: () => Effect.Effect<void> = Effect.fn(
+          "Presence.afterCommit"
+        )(() =>
           schedule().pipe(
+            Effect.catchTag("LibraryError", (failure) =>
+              Effect.logWarning("presence alarm not rescheduled").pipe(
+                Effect.annotateLogs({ cause: failure.message })
+              )
+            ),
             Effect.andThen(PubSub.publish(hub, null)),
             Effect.asVoid
-          );
+          )
+        );
 
         const upsert = (tx: DatabaseClient, next: Session, now: number) => {
           const row = {
@@ -574,6 +658,7 @@ export class Presence extends Context.Service<
                         lte(presenceActionResults.recordedAt, now - retentionMs)
                       )
                     );
+                  yield* requireLiveKey(tx, caller);
                   const before = yield* visible(tx, caller.personId);
                   yield* settle(tx, now, caller.personId);
                   const [row] = yield* tx
@@ -609,6 +694,9 @@ export class Presence extends Context.Service<
                         personId: caller.personId,
                       })
                       .onConflictDoNothing();
+                    yield* tx
+                      .delete(presenceLegacyReports)
+                      .where(eq(presenceLegacyReports.keyId, caller.keyId));
                   }
                   yield* upsert(tx, decision.next, now);
                   const result: PresenceActionResult = {
@@ -635,7 +723,7 @@ export class Presence extends Context.Service<
               )
             ).pipe(
               Effect.tap((result) =>
-                result.outcome === "accepted" ? committed() : Effect.void
+                result.outcome === "accepted" ? afterCommit() : Effect.void
               )
             )
         );
@@ -654,6 +742,7 @@ export class Presence extends Context.Service<
                   if (optedIn) {
                     return false;
                   }
+                  yield* requireLiveKey(tx, caller);
                   const before = yield* visible(tx, caller.personId);
                   yield* settle(tx, now, caller.personId);
                   yield* tx
@@ -684,7 +773,7 @@ export class Presence extends Context.Service<
               )
             ).pipe(
               Effect.flatMap((reported) =>
-                reported ? committed() : Effect.void
+                reported ? afterCommit() : Effect.void
               )
             )
         );
@@ -733,18 +822,7 @@ export class Presence extends Context.Service<
               return;
             }
             const before = yield* visible(tx, personId);
-            yield* tx
-              .delete(presenceActionResults)
-              .where(inArray(presenceActionResults.keyId, keyIds));
-            yield* tx
-              .delete(presenceSessions)
-              .where(inArray(presenceSessions.keyId, keyIds));
-            yield* tx
-              .delete(presenceKeys)
-              .where(inArray(presenceKeys.keyId, keyIds));
-            yield* tx
-              .delete(presenceLegacyReports)
-              .where(inArray(presenceLegacyReports.keyId, keyIds));
+            yield* clearKeyRows(tx, keyIds);
             const after = yield* visible(tx, personId);
             yield* journalIfChanged(tx, {
               cause,
@@ -764,7 +842,7 @@ export class Presence extends Context.Service<
                 }
               })
             )
-          ).pipe(Effect.andThen(committed()))
+          ).pipe(Effect.andThen(afterCommit()))
         );
 
         const removePerson = Effect.fn("Presence.removePerson")(
@@ -800,6 +878,7 @@ export class Presence extends Context.Service<
                 Effect.gen(function* expireDeadlines() {
                   armedAt = null;
                   const due = yield* Effect.all([
+                    orphanSessions(tx),
                     tx
                       .select({ personId: presenceSessions.personId })
                       .from(presenceSessions)
@@ -830,9 +909,7 @@ export class Presence extends Context.Service<
                   for (const personId of people) {
                     const after = yield* visible(tx, personId);
                     yield* journalIfChanged(tx, {
-                      cause: lapsed.leases.has(personId)
-                        ? "expiry"
-                        : "legacy-expiry",
+                      cause: expiryCause(lapsed, personId),
                       personId,
                       visibleSetAfter: after,
                       visibleSetBefore: before.get(personId) ?? null,
@@ -840,10 +917,19 @@ export class Presence extends Context.Service<
                   }
                 })
               )
-            ).pipe(Effect.andThen(committed()))
+            ).pipe(Effect.andThen(afterCommit()))
           );
 
-        wake = Effect.suspend(() => expire(Date.now())).pipe(Effect.ignore);
+        wake = Effect.suspend(() => expire(Date.now())).pipe(
+          Effect.catchTag("LibraryError", (failure) =>
+            Effect.logWarning("presence expiry failed").pipe(
+              Effect.annotateLogs({ cause: failure.message }),
+              Effect.andThen(Effect.sleep(Duration.seconds(1))),
+              Effect.andThen(schedule()),
+              Effect.ignore
+            )
+          )
+        );
 
         const currentSetFor = Effect.fn("Presence.currentSetFor")(
           (personId: string, now: number) =>
@@ -854,6 +940,7 @@ export class Presence extends Context.Service<
 
         return {
           act,
+          afterCommit,
           changes: Stream.unwrap(
             Effect.map(PubSub.subscribe(hub), Stream.fromSubscription)
           ),
