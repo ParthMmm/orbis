@@ -762,7 +762,12 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       throw new Error("expected a playing session");
     }
     const ownerDeadline = Date.parse(owner.session.leaseExpiresAt);
-    expect(alarm.calls).toEqual([{ at: ownerDeadline }]);
+    expect(alarm.calls[0]).toEqual({ at: ownerDeadline });
+    const retryDeadline = Date.now() + 3000;
+    while (alarm.calls.length < 2 && Date.now() < retryDeadline) {
+      await Bun.sleep(20);
+    }
+    expect(alarm.calls).toEqual([{ at: ownerDeadline }, { at: ownerDeadline }]);
     const retryReportAt = Date.now();
     expect(
       await server.callStatus("a-legacy", "/sets/s3/position", "PUT", {

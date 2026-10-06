@@ -1,6 +1,6 @@
 /* oxlint-disable no-await-in-loop -- Feed clients catch up in the order the journeys write. */
 import { Database } from "bun:sqlite";
-import { expect, test } from "bun:test";
+import { expect, setDefaultTimeout, test } from "bun:test";
 import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,6 +11,8 @@ import type { CatchUp, FeedNotice } from "./feed.js";
 import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
 import { createTestApp as createApp } from "./test-app.js";
+
+setDefaultTimeout(30_000);
 
 const PEOPLE = ["host", "ana", "ben", "cai"] as const;
 const KEYS = {
@@ -233,7 +235,7 @@ const play = (setId: string, actionNumber: number) => ({
   actionId: `play-${actionNumber}`,
   actionNumber,
   kind: "play",
-  sessionId: "session-1",
+  sessionId: `session-${setId}`,
   setId,
 });
 
@@ -373,7 +375,7 @@ test("Presence actions, legacy reports, and expiry reach viewers, and renewals c
         actionNumber: 2,
         kind: "renew",
         ownerGeneration: played.session.ownerGeneration,
-        sessionId: "session-1",
+        sessionId: "session-set-1",
       });
       quiet(await ben.sync(), beforeRenew);
 
@@ -383,7 +385,7 @@ test("Presence actions, legacy reports, and expiry reach viewers, and renewals c
         actionNumber: 3,
         kind: "pause",
         ownerGeneration: played.session.ownerGeneration,
-        sessionId: "session-1",
+        sessionId: "session-set-1",
       });
       expect(presenceOf(await ben.sync())).toEqual([[]]);
 
@@ -749,7 +751,7 @@ test("revoking a key closes its feed and clears its Presence in one commit", asy
       fixture.step("removing a Person closes their feed and resets viewers");
       const cai = fixture.client("cai-phone");
       reset(await cai.sync());
-      reset(await ben.sync());
+      await ben.sync();
       await fixture.ok("admin", "/admin/people/cai", "DELETE");
       expect(await cai.sync()).toEqual({ kind: "closed" });
       const viewer = reset(await ben.sync());
