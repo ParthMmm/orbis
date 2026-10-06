@@ -22,8 +22,8 @@ import {
 import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import type { PersonRecord } from "./identity.js";
+import type { JournalCommit } from "./journal-commit.js";
 import { Journal } from "./journal.js";
-import type { JournalCommit } from "./journal.js";
 import {
   MAX_PLAYLISTS_PER_SET,
   MAX_SETS_PER_PLAYLIST,
@@ -203,7 +203,9 @@ export class Library extends Context.Service<
       const options = yield* LibrarySettings;
       const personId = yield* LibraryPerson;
       const changedSet = (setId: string) =>
-        journal.transaction((tx) => journal.record(tx, { setId, topic: "set" }));
+        journal.transaction((tx) =>
+          journal.record(tx, { setId, topic: "set" })
+        );
       // A shared Set write and its invalidation commit in one transaction.
       const setWrite = <A, E>(write: Effect.Effect<A, E, JournalCommit>) =>
         execute(journal.transaction(() => write));
@@ -883,7 +885,10 @@ export class Library extends Context.Service<
                   .where(eq(sets.id, next.setId))
                   .returning();
                 if (claimed) {
-                  yield* journal.record(tx, { setId: claimed.id, topic: "set" });
+                  yield* journal.record(tx, {
+                    setId: claimed.id,
+                    topic: "set",
+                  });
                 }
                 return claimed ?? null;
               })
@@ -978,7 +983,7 @@ export class Library extends Context.Service<
               .set({ downloadState: "queued" })
               .where(eq(sets.downloadState, "downloading"))
               .returning({ id: sets.id });
-            yield* Effect.forEach(requeued, (set) => changedSet(set.id));
+            yield* Effect.all(requeued.map((set) => changedSet(set.id)));
             yield* db.run(
               sql`INSERT OR IGNORE INTO download_requesters (person_id) VALUES ('host')`
             );
@@ -1183,7 +1188,10 @@ export class Library extends Context.Service<
             const removed = yield* journal.transaction((tx) =>
               Effect.gen(function* deletePlaylistTransaction() {
                 // Nobody can read a deleted Playlist, so its readers are resolved first.
-                yield* journal.record(tx, { playlistId: id, topic: "playlist" });
+                yield* journal.record(tx, {
+                  playlistId: id,
+                  topic: "playlist",
+                });
                 const deleted = yield* tx
                   .delete(playlistSets)
                   .where(eq(playlistSets.playlistId, id))

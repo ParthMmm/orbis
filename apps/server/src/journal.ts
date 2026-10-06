@@ -7,7 +7,10 @@ import type { feedTopics } from "./db/schema.js";
 import { Database } from "./db/service.js";
 import type { DatabaseClient } from "./db/service.js";
 import { LibraryError } from "./errors.js";
+import { FeedSignals } from "./feed-signals.js";
+import type { FeedNotice } from "./feed-signals.js";
 import type { PersonRecord } from "./identity.js";
+import { JournalCommit } from "./journal-commit.js";
 import {
   canSee,
   editorAccess,
@@ -54,9 +57,27 @@ export type FeedChange =
   | { readonly topic: "set"; readonly setId: string }
   | { readonly topic: "revoked"; readonly keyId: string };
 
-export type FeedNotice =
-  | { readonly kind: "changed"; readonly personId: string }
-  | { readonly kind: "revoked"; readonly keyId: string };
+type DeliveredChange = Exclude<FeedChange, { topic: "revoked" }>;
+
+const resourceOf = (change: DeliveredChange) => {
+  switch (change.topic) {
+    case "library": {
+      return change.setId;
+    }
+    case "listen-history": {
+      return change.personId;
+    }
+    case "playlist": {
+      return change.playlistId;
+    }
+    case "set": {
+      return change.setId;
+    }
+    default: {
+      return null;
+    }
+  }
+};
 
 export interface JournalOptions {
   readonly retentionMs?: number;
@@ -71,48 +92,6 @@ const journalFailure = () =>
     statusCode: 500,
   });
 
-/** Wakes feed readers after a commit. A notice says only that a Person's journal may have moved. */
-export class FeedSignals extends Context.Service<
-  FeedSignals,
-  {
-    readonly publish: (notices: readonly FeedNotice[]) => Effect.Effect<void>;
-    readonly subscribe: (listener: (notice: FeedNotice) => void) => () => void;
-  }
->()("@orbis/FeedSignals") {
-  static make(): typeof FeedSignals.Service {
-    const listeners = new Set<(notice: FeedNotice) => void>();
-    return {
-      publish: (notices) =>
-        Effect.forEach(notices, (notice) =>
-          Effect.forEach(listeners, (listener) =>
-            Effect.try(() => listener(notice)).pipe(
-              Effect.catch((cause) =>
-                Effect.logWarning("feed listener failed").pipe(
-                  Effect.annotateLogs({ cause: String(cause) })
-                )
-              )
-            )
-          )
-        ).pipe(Effect.asVoid),
-      subscribe: (listener) => {
-        listeners.add(listener);
-        return () => {
-          listeners.delete(listener);
-        };
-      },
-    };
-  }
-
-  static readonly layer = Layer.sync(FeedSignals, () => FeedSignals.make());
-}
-
-
-/** The notices of one outermost journal transaction, published once it commits. */
-export class JournalCommit extends Context.Service<
-  JournalCommit,
-  { readonly changed: Set<string>; readonly revoked: Set<string> }
->()("@orbis/JournalCommit") {}
-
 const tag = () => crypto.randomUUID().replaceAll("-", "").slice(0, 16);
 
 const accessFingerprints = (people: readonly PersonRecord[]) =>
@@ -125,11 +104,29 @@ const accessFingerprints = (people: readonly PersonRecord[]) =>
         .map((target) => target.id);
       const playlistIds = editable
         .filter((row) => row.editorId === viewer.id)
-        .map((row) => row.playlistId)
-        .sort((left, right) => left.localeCompare(right));
+        .map((row) => row.playlistId);
       prints.set(viewer.id, `${visible.join(",")}|${playlistIds.join(",")}`);
     }
     return prints;
+  });
+
+/** Resets a Person whose view changed: any older cursor answers reset, and their undelivered rows go. */
+const bump = (tx: DatabaseClient, personId: string) =>
+  Effect.gen(function* resetRecipient() {
+    const commit = yield* JournalCommit;
+    yield* tx
+      .insert(feedRecipients)
+      .values({ authorizationEpoch: 1, personId, sequence: 0 })
+      .onConflictDoUpdate({
+        set: {
+          authorizationEpoch: sql`${feedRecipients.authorizationEpoch} + 1`,
+        },
+        target: feedRecipients.personId,
+      });
+    yield* tx
+      .delete(feedDeliveries)
+      .where(eq(feedDeliveries.personId, personId));
+    commit.changed.add(personId);
   });
 
 /**
@@ -165,8 +162,8 @@ export class Journal extends Context.Service<
         const guarded = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
           effect.pipe(
             Effect.provideService(Database, db),
-            Effect.mapError((error) =>
-              error instanceof LibraryError ? error : journalFailure()
+            Effect.mapError((failure) =>
+              failure instanceof LibraryError ? failure : journalFailure()
             )
           );
 
@@ -178,22 +175,29 @@ export class Journal extends Context.Service<
               Option.match({
                 onNone: () =>
                   Effect.gen(function* commitAndPublish() {
-                    const commit = { changed: new Set<string>(), revoked: new Set<string>() };
+                    const commit = {
+                      changed: new Set<string>(),
+                      revoked: new Set<string>(),
+                    };
                     const result = yield* db
                       .transaction(body)
                       .pipe(Effect.provideService(JournalCommit, commit));
                     yield* signals.publish([
-                      ...[...commit.revoked].map(
-                        (keyId): FeedNotice => ({ keyId, kind: "revoked" })
-                      ),
-                      ...[...commit.changed].map(
-                        (personId): FeedNotice => ({ kind: "changed", personId })
-                      ),
+                      ...[...commit.revoked].map((keyId): FeedNotice => ({
+                        keyId,
+                        kind: "revoked",
+                      })),
+                      ...[...commit.changed].map((personId): FeedNotice => ({
+                        kind: "changed",
+                        personId,
+                      })),
                     ]);
                     return result;
                   }),
                 onSome: (commit) =>
-                  db.transaction(body).pipe(Effect.provideService(JournalCommit, commit)),
+                  db
+                    .transaction(body)
+                    .pipe(Effect.provideService(JournalCommit, commit)),
               })
             )
           );
@@ -238,7 +242,7 @@ export class Journal extends Context.Service<
             commit.changed.add(personId);
           });
 
-        const recipients = (change: Exclude<FeedChange, { topic: "revoked" }>) =>
+        const recipients = (change: DeliveredChange) =>
           Effect.gen(function* resolveRecipients() {
             switch (change.topic) {
               case "queue":
@@ -250,7 +254,10 @@ export class Journal extends Context.Service<
                 return viewersOf(yield* readPeople(db), change.personId);
               }
               case "playlist": {
-                return yield* playlistReaders(yield* readPeople(db), change.playlistId);
+                return yield* playlistReaders(
+                  yield* readPeople(db),
+                  change.playlistId
+                );
               }
               case "set": {
                 return yield* setReaders(yield* readPeople(db), change.setId);
@@ -260,26 +267,6 @@ export class Journal extends Context.Service<
               }
             }
           });
-
-        const resourceOf = (change: Exclude<FeedChange, { topic: "revoked" }>) => {
-          switch (change.topic) {
-            case "library": {
-              return change.setId;
-            }
-            case "listen-history": {
-              return change.personId;
-            }
-            case "playlist": {
-              return change.playlistId;
-            }
-            case "set": {
-              return change.setId;
-            }
-            default: {
-              return null;
-            }
-          }
-        };
 
         const record = (tx: DatabaseClient, change: FeedChange) =>
           Effect.gen(function* recordChange() {
@@ -295,22 +282,6 @@ export class Journal extends Context.Service<
             }
           });
 
-        const bump = (tx: DatabaseClient, personId: string) =>
-          Effect.gen(function* resetRecipient() {
-            const commit = yield* JournalCommit;
-            yield* tx
-              .insert(feedRecipients)
-              .values({ authorizationEpoch: 1, personId, sequence: 0 })
-              .onConflictDoUpdate({
-                set: {
-                  authorizationEpoch: sql`${feedRecipients.authorizationEpoch} + 1`,
-                },
-                target: feedRecipients.personId,
-              });
-            yield* tx.delete(feedDeliveries).where(eq(feedDeliveries.personId, personId));
-            commit.changed.add(personId);
-          });
-
         const changingAccess = <A, E, R>(
           tx: DatabaseClient,
           mutate: Effect.Effect<A, E, R>
@@ -323,7 +294,10 @@ export class Journal extends Context.Service<
             const after = yield* guarded(
               Effect.flatMap(readPeople(db), accessFingerprints)
             );
-            for (const personId of new Set([...before.keys(), ...after.keys()])) {
+            for (const personId of new Set([
+              ...before.keys(),
+              ...after.keys(),
+            ])) {
               if (before.get(personId) !== after.get(personId)) {
                 yield* guarded(bump(tx, personId));
               }

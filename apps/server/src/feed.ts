@@ -1,6 +1,10 @@
-import type { ListeningQueue, Presence as PresenceEntry } from "@orbis/contracts";
+import type {
+  ListeningQueue,
+  Presence as PresenceEntry,
+} from "@orbis/contracts";
 import { and, asc, eq, lte } from "drizzle-orm";
-import { Effect, Layer, Option } from "effect";
+import { Effect, Option } from "effect";
+import type { Layer } from "effect";
 
 import {
   apiKeys,
@@ -11,9 +15,10 @@ import {
 import { Database } from "./db/service.js";
 import type { DatabaseClient } from "./db/service.js";
 import { LibraryError } from "./errors.js";
+import type { FeedNotice } from "./feed-signals.js";
 import type { PersonRecord } from "./identity.js";
 import { RETENTION_MS } from "./journal.js";
-import type { FeedNotice, FeedTopic } from "./journal.js";
+import type { FeedTopic } from "./journal.js";
 import { Library } from "./library.js";
 import type { Presence } from "./presence.js";
 import { readListeningQueue } from "./queue.js";
@@ -23,8 +28,6 @@ import {
   resolveEditablePlaylist,
   resolveVisibleSet,
 } from "./visibility.js";
-
-export type { FeedNotice } from "./journal.js";
 
 export type FeedBody =
   | { readonly kind: "queue"; readonly queue: ListeningQueue }
@@ -157,9 +160,8 @@ export const visiblePresence = (input: {
       if (setId === null) {
         continue;
       }
-      const [set] = yield* Effect.flatMap(Library, (library) =>
-        library.byIds([setId])
-      ).pipe(
+      const [set] = yield* Library.pipe(
+        Effect.flatMap((library) => library.byIds([setId])),
         Effect.provide(input.libraryFor(person.id)),
         Effect.orElseSucceed(() => [])
       );
@@ -168,6 +170,79 @@ export const visiblePresence = (input: {
       }
     }
     return found;
+  });
+
+const authorized = (
+  tx: DatabaseClient,
+  recipientId: string,
+  people: readonly PersonRecord[],
+  row: Row
+) =>
+  Effect.gen(function* checkAccess() {
+    const resourceId = row.resourceId ?? "";
+    switch (row.topic) {
+      case "listen-history": {
+        return canSee(people, recipientId, resourceId);
+      }
+      case "playlist": {
+        const [playlist] = yield* tx
+          .select({ id: playlists.id })
+          .from(playlists)
+          .where(eq(playlists.id, resourceId))
+          .limit(1);
+        if (!playlist) {
+          return true;
+        }
+        return Option.isSome(
+          yield* resolveEditablePlaylist({
+            id: resourceId,
+            people,
+            personId: recipientId,
+          }).pipe(Effect.option)
+        );
+      }
+      case "set": {
+        return Option.isSome(
+          yield* resolveVisibleSet({
+            id: resourceId,
+            people,
+            personId: recipientId,
+          }).pipe(Effect.option)
+        );
+      }
+      default: {
+        return true;
+      }
+    }
+  });
+
+// The daily key's Person and authorization epoch as this transaction sees them, or null
+// once the key is revoked or the Person removed.
+const recipientOf = (tx: DatabaseClient, keyId: string) =>
+  Effect.gen(function* readRecipient() {
+    const [key] = yield* tx
+      .select({ personId: apiKeys.personId })
+      .from(apiKeys)
+      .where(and(eq(apiKeys.id, keyId), eq(apiKeys.scope, "daily")))
+      .limit(1);
+    const people = yield* readPeople(tx);
+    const person = people.find(
+      (candidate) => candidate.id === key?.personId && !candidate.removed
+    );
+    if (!person) {
+      return null;
+    }
+    const [recipient] = yield* tx
+      .select()
+      .from(feedRecipients)
+      .where(eq(feedRecipients.personId, person.id))
+      .limit(1);
+    return {
+      epoch: recipient?.authorizationEpoch ?? 0,
+      head: recipient?.sequence ?? 0,
+      people,
+      person,
+    };
   });
 
 const unreadable = () =>
@@ -188,74 +263,6 @@ export const makeFeed = (input: {
 }) => {
   const { db } = input;
   const retentionMs = input.retentionMs ?? RETENTION_MS;
-
-  const authorized = (tx: DatabaseClient, recipientId: string, people: readonly PersonRecord[], row: Row) =>
-    Effect.gen(function* checkAccess() {
-      const resourceId = row.resourceId ?? "";
-      switch (row.topic) {
-        case "listen-history": {
-          return canSee(people, recipientId, resourceId);
-        }
-        case "playlist": {
-          const [playlist] = yield* tx
-            .select({ id: playlists.id })
-            .from(playlists)
-            .where(eq(playlists.id, resourceId))
-            .limit(1);
-          if (!playlist) {
-            return true;
-          }
-          return Option.isSome(
-            yield* resolveEditablePlaylist({
-              id: resourceId,
-              people,
-              personId: recipientId,
-            }).pipe(Effect.option)
-          );
-        }
-        case "set": {
-          return Option.isSome(
-            yield* resolveVisibleSet({
-              id: resourceId,
-              people,
-              personId: recipientId,
-            }).pipe(Effect.option)
-          );
-        }
-        default: {
-          return true;
-        }
-      }
-    });
-
-  // The daily key's Person and authorization epoch as this transaction sees them, or null
-  // once the key is revoked or the Person removed.
-  const recipientOf = (tx: DatabaseClient, keyId: string) =>
-    Effect.gen(function* readRecipient() {
-      const [key] = yield* tx
-        .select({ personId: apiKeys.personId })
-        .from(apiKeys)
-        .where(and(eq(apiKeys.id, keyId), eq(apiKeys.scope, "daily")))
-        .limit(1);
-      const people = yield* readPeople(tx);
-      const person = people.find(
-        (candidate) => candidate.id === key?.personId && !candidate.removed
-      );
-      if (!person) {
-        return null;
-      }
-      const [recipient] = yield* tx
-        .select()
-        .from(feedRecipients)
-        .where(eq(feedRecipients.personId, person.id))
-        .limit(1);
-      return {
-        epoch: recipient?.authorizationEpoch ?? 0,
-        head: recipient?.sequence ?? 0,
-        people,
-        person,
-      };
-    });
 
   /** What a feed ticket binds: the key's Person and current authorization epoch. */
   const authorize = (keyId: string) =>
@@ -370,7 +377,11 @@ export const makeFeed = (input: {
               body =
                 row.resourceId === null
                   ? { kind: "invalidate", topic: row.topic }
-                  : { kind: "invalidate", resourceId: row.resourceId, topic: row.topic };
+                  : {
+                      kind: "invalidate",
+                      resourceId: row.resourceId,
+                      topic: row.topic,
+                    };
             }
             deliveries.push({ body, cursor: deliveryCursor });
           }

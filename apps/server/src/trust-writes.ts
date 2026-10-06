@@ -1,3 +1,7 @@
+/**
+ * Trust writes that change who can see or act, run on the caller's journal transaction so
+ * the write, its Presence clear, and its feed resets commit together.
+ */
 import { and, eq, ne, sql } from "drizzle-orm";
 import { Effect } from "effect";
 
@@ -7,18 +11,10 @@ import { LibraryError } from "./errors.js";
 import { HOST_PERSON_ID } from "./identity.js";
 import { readPeople } from "./visibility.js";
 
-/**
- * Trust writes that change who can see or act, run on the caller's journal transaction so
- * the write, its Presence clear, and its feed resets commit together.
- */
 const failure = (statusCode: number, message: string) =>
   new LibraryError({ message, statusCode });
 
-export const revokeKey = (
-  tx: DatabaseClient,
-  id: string,
-  ownerId?: string
-) =>
+export const revokeKey = (tx: DatabaseClient, id: string, ownerId?: string) =>
   Effect.gen(function* revokeKeyRow() {
     // With `ownerId`, only that Person's daily keys match, and every other key answers the
     // same 404 as a missing one.
@@ -159,9 +155,7 @@ export const updatePersonFilters = (
       .update(people)
       .set({
         filters: JSON.stringify([
-          ...(owner.filters ?? []).filter(
-            (item) => item.personId !== targetId
-          ),
+          ...(owner.filters ?? []).filter((item) => item.personId !== targetId),
           filter,
         ]),
       })

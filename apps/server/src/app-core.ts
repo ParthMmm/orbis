@@ -58,17 +58,15 @@ import { Database } from "./db/service.js";
 import type { DatabaseClient } from "./db/service.js";
 import { DEVICE_LINK_TTL_MS, makeDeviceLinks } from "./device-link.js";
 import { LibraryError } from "./errors.js";
-import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
-import {
-  decideAccess,
-  markKeyUsed,
-  readTrustRegistry,
-} from "./identity.js";
+import type { FeedNotice } from "./feed-signals.js";
+import { FeedSignals } from "./feed-signals.js";
 import { makeFeed, visiblePresence } from "./feed.js";
-import type { CatchUp, FeedNotice } from "./feed.js";
-import { FeedSignals, Journal } from "./journal.js";
-import type { JournalOptions } from "./journal.js";
+import type { CatchUp } from "./feed.js";
+import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
+import { decideAccess, markKeyUsed, readTrustRegistry } from "./identity.js";
 import { consumeInvite, createInvite, INVITE_TTL_MS } from "./invite.js";
+import { Journal } from "./journal.js";
+import type { JournalOptions } from "./journal.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
 import {
@@ -361,14 +359,17 @@ export const createPortableApp = (options: {
       const libraryFor = (
         personId: string,
         settings: Parameters<typeof Library.forPersonLayer>[1] = libraryOptions
-      ) => Library.forPersonLayer(personId, settings).pipe(Layer.provide(services));
+      ) =>
+        Library.forPersonLayer(personId, settings).pipe(
+          Layer.provide(services)
+        );
       const trustWrite = <A, E, R>(
         body: (tx: DatabaseClient) => Effect.Effect<A, E, R>
       ) =>
         journal.transaction(body).pipe(
-          Effect.mapError((error) =>
-            error instanceof LibraryError
-              ? error
+          Effect.mapError((failure) =>
+            failure instanceof LibraryError
+              ? failure
               : new LibraryError({
                   message: "The trust store is unavailable.",
                   statusCode: 500,

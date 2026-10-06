@@ -47,29 +47,32 @@ export class Stats extends Context.Service<
       const recordFinish = Effect.fn("Stats.recordFinish")((setId: string) =>
         execute(
           journal.transaction((tx) =>
-          Effect.gen(function* finishLatestListen() {
-            const [latest] = yield* tx
-              .select({ id: listens.id })
-              .from(listens)
-              .where(
-                and(
-                  eq(listens.personId, personId),
-                  eq(listens.setId, setId),
-                  isNull(listens.finishedAt)
-                )
-              )
-              .orderBy(desc(listens.id))
-              .limit(1);
-            if (latest) {
-              yield* tx
-                .update(listens)
-                .set({ finishedAt: new Date().toISOString() })
+            Effect.gen(function* finishLatestListen() {
+              const [latest] = yield* tx
+                .select({ id: listens.id })
+                .from(listens)
                 .where(
-                  and(eq(listens.id, latest.id), isNull(listens.finishedAt))
-                );
-              yield* journal.record(tx, { personId, topic: "listen-history" });
-            }
-          })
+                  and(
+                    eq(listens.personId, personId),
+                    eq(listens.setId, setId),
+                    isNull(listens.finishedAt)
+                  )
+                )
+                .orderBy(desc(listens.id))
+                .limit(1);
+              if (latest) {
+                yield* tx
+                  .update(listens)
+                  .set({ finishedAt: new Date().toISOString() })
+                  .where(
+                    and(eq(listens.id, latest.id), isNull(listens.finishedAt))
+                  );
+                yield* journal.record(tx, {
+                  personId,
+                  topic: "listen-history",
+                });
+              }
+            })
           )
         )
       );

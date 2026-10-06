@@ -13,7 +13,8 @@ Source ownership, local setup, and verification.
 | Vanta audio-node startup and protocol | [`apps/server/src/node.ts`](../apps/server/src/node.ts), [`audio-node.ts`](../apps/server/src/audio-node.ts), and [operation guide](../deploy/orbis-server/README.md) |
 | Audio HTTP listener and API forwarding | [`node-http.ts`](../apps/server/src/node-http.ts) |
 | Download selection and retained files | [`download-backends.ts`](../apps/server/src/download-backends.ts) and [`media-store.ts`](../apps/server/src/media-store.ts) |
-| Identity, trust storage, and administration | [`identity.ts`](../apps/server/src/identity.ts), [`trust-storage.ts`](../apps/server/src/trust-storage.ts), and [`admin.ts`](../apps/server/src/admin.ts) |
+| Presence actions, the change journal, and feed catch-up | [`presence.ts`](../apps/server/src/presence.ts), [`journal.ts`](../apps/server/src/journal.ts), and [`feed.ts`](../apps/server/src/feed.ts) |
+| Identity, trust storage, and administration | [`identity.ts`](../apps/server/src/identity.ts), [`trust-storage.ts`](../apps/server/src/trust-storage.ts), [`trust-writes.ts`](../apps/server/src/trust-writes.ts) (revocation, removal, and Social changes), and [`admin.ts`](../apps/server/src/admin.ts) |
 | Web routes and player | [`apps/web/src/routes`](../apps/web/src/routes) and [`player.tsx`](../apps/web/src/components/player/player.tsx) |
 | Apple client and project specification | [`apps/apple/Orbis`](../apps/apple/Orbis) and [`project.yml`](../apps/apple/project.yml) |
 | Native fixture setup and HTTP client | [`scripts/native-lanes.mjs`](../scripts/native-lanes.mjs), [`seed-lane-audio.mjs`](../scripts/seed-lane-audio.mjs), and [`LaneService.swift`](../apps/apple/OrbisUITests/LaneService.swift) |

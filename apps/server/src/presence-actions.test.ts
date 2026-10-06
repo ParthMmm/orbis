@@ -924,7 +924,6 @@ test("Queue changes, lease expiry, revocation, the session cap, and removal clea
       })
     ).toBe(401);
 
-
     const sqlite = new Database(databasePath);
     try {
       const insert = sqlite.prepare(

@@ -7,8 +7,8 @@ import { playlistSets, playlists, queueEntries } from "./db/schema.js";
 import { Database } from "./db/service.js";
 import type { DatabaseClient } from "./db/service.js";
 import { LibraryError } from "./errors.js";
+import type { JournalCommit } from "./journal-commit.js";
 import { Journal } from "./journal.js";
-import type { JournalCommit } from "./journal.js";
 import { LibraryPerson } from "./library-person.js";
 import { Library } from "./library.js";
 import { Presence } from "./presence.js";
@@ -187,7 +187,7 @@ export class Queue extends Context.Service<
           );
           if (released !== null) {
             yield* presence.afterCommit();
-            yield* Effect.forEach(released, (setId) => library.release(setId));
+            yield* Effect.all(released.map((setId) => library.release(setId)));
           }
           return yield* read().pipe(Effect.tap(notify));
         });
@@ -312,7 +312,9 @@ export class Queue extends Context.Service<
       const complete = Effect.fn("Queue.complete")((id: string) =>
         mutate((tx, rows) =>
           Effect.gen(function* completeSet() {
-            const at = rows.findIndex((row) => row.isActive && row.setId === id);
+            const at = rows.findIndex(
+              (row) => row.isActive && row.setId === id
+            );
             // A Set that is not the active one was already finished, or the person started
             // something else while it played. Either way this signal adds nothing.
             if (at === -1) {

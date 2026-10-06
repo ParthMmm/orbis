@@ -77,17 +77,17 @@ export const readPeople = (db: DatabaseClient) =>
     .orderBy(sql`rowid`)
     .pipe(
       Effect.flatMap((rows) =>
-        Effect.forEach(rows, (row) =>
-          Schema.decodeUnknownEffect(Filters)(row.filters).pipe(
-            Effect.map(
-              (filters): PersonRecord => ({
+        Effect.all(
+          rows.map((row) =>
+            Schema.decodeUnknownEffect(Filters)(row.filters).pipe(
+              Effect.map((filters): PersonRecord => ({
                 autoDownload: row.autoDownload,
                 filters,
                 id: row.id,
                 removed: row.removed,
                 social: row.social,
                 username: row.username,
-              })
+              }))
             )
           )
         )
@@ -189,7 +189,8 @@ export const editorAccess = (people: readonly PersonRecord[]) =>
       })
       .from(playlistEditors)
       .innerJoin(playlists, eq(playlists.id, playlistEditors.playlistId))
-      .where(eq(playlists.creatorId, playlistEditors.creatorId));
+      .where(eq(playlists.creatorId, playlistEditors.creatorId))
+      .orderBy(playlistEditors.playlistId);
     return rows.filter(
       (row) =>
         row.collaborative &&
@@ -244,17 +245,6 @@ export const listFilterablePeople = (
 const notFound = () =>
   new LibraryError({ message: "Set not found.", statusCode: 404 });
 
-/** Every Person who can read the Set now. */
-export const setReaders = (people: readonly PersonRecord[], setId: string) =>
-  Effect.filter(
-    people.filter((person) => !person.removed).map((person) => person.id),
-    (personId) =>
-      resolveVisibleSet({ id: setId, people, personId }).pipe(
-        Effect.as(true),
-        Effect.catchTag("LibraryError", () => Effect.succeed(false))
-      )
-  );
-
 /** Resolves a Set through an owned reference or another visible Person's Library. */
 export const resolveVisibleSet = (input: {
   readonly id: string;
@@ -299,3 +289,14 @@ export const resolveVisibleSet = (input: {
     }
     return yield* Effect.fail(notFound());
   });
+
+/** Every Person who can read the Set now. */
+export const setReaders = (people: readonly PersonRecord[], setId: string) =>
+  Effect.filter(
+    people.filter((person) => !person.removed).map((person) => person.id),
+    (personId) =>
+      resolveVisibleSet({ id: setId, people, personId }).pipe(
+        Effect.as(true),
+        Effect.catchTag("LibraryError", () => Effect.succeed(false))
+      )
+  );

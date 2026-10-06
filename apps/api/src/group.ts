@@ -4,7 +4,8 @@ import { HttpServerResponse } from "effect/unstable/http";
 
 import { createPortableApp } from "../../server/src/app-core.js";
 import { releaseAudio } from "../../server/src/audio-release.js";
-import { FeedSignals, Journal } from "../../server/src/journal.js";
+import { FeedSignals } from "../../server/src/feed-signals.js";
+import { Journal } from "../../server/src/journal.js";
 import { Library } from "../../server/src/library.js";
 import { Metadata } from "../../server/src/metadata.js";
 import { issueStreamGrant } from "../../server/src/stream-grant-core.js";

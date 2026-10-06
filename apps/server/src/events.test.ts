@@ -193,7 +193,8 @@ test("live Queue snapshots stay personal and reconnect to current state", async 
       queue: { activeSetId: null, entries: [] },
     });
     expect(await peer.next()).toEqual(completed);
-    expect((await call("a2", "/me/devices/a1", "DELETE")).status).toBe(200);
+    const revoked = await call("a2", "/me/devices/a1", "DELETE");
+    expect(revoked.status).toBe(200);
     const replay = await call("a2", "/queue/active", "PUT", { setId: set.id });
     expect(replay.status).toBe(200);
     await expect(reconnected.next()).rejects.toThrow("The event stream closed");

@@ -36,8 +36,9 @@ import {
 import type { DatabaseClient } from "./db/service.js";
 import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
+import type { JournalCommit } from "./journal-commit.js";
 import { Journal } from "./journal.js";
-import type { JournalCommit, PresenceTransition } from "./journal.js";
+import type { PresenceTransition } from "./journal.js";
 import { conflict, PresenceConflict } from "./presence-conflict.js";
 import type { ConflictReason } from "./presence-conflict.js";
 
