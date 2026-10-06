@@ -7,6 +7,7 @@ import {
   DeviceLinkCodePayload,
   DeviceLinkPollPayload,
   DeviceLinkStartPayload,
+  FeedTicketPayload,
   InviteClaimPayload,
   SaveSetPayload,
   OrbisApi,
@@ -60,6 +61,8 @@ import { DEVICE_LINK_TTL_MS, makeDeviceLinks } from "./device-link.js";
 import { LibraryError } from "./errors.js";
 import type { FeedNotice } from "./feed-signals.js";
 import { FeedSignals } from "./feed-signals.js";
+import { makeFeedTransport } from "./feed-transport.js";
+import type { FeedIdentity, FeedTransport } from "./feed-transport.js";
 import { makeFeed, visiblePresence } from "./feed.js";
 import type { CatchUp } from "./feed.js";
 import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
@@ -344,6 +347,7 @@ export const createPortableApp = (options: {
   }).pipe(Layer.provide(storage));
   let presenceService: typeof Presence.Service | null = null;
   let feedReader: ReturnType<typeof makeFeed> | null = null;
+  let feedTransport: FeedTransport | null = null;
   const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
@@ -1209,6 +1213,12 @@ export const createPortableApp = (options: {
         presence,
         retentionMs: options.feed?.retentionMs,
       });
+      const transport = makeFeedTransport({
+        db,
+        reader: feedReader,
+        subscribe: feedSignals.subscribe,
+      });
+      feedTransport = transport;
       const peopleGroup = HttpApiBuilder.group(OrbisApi, "people", (handlers) =>
         handlers
           .handle("me", () =>
@@ -1685,6 +1695,39 @@ export const createPortableApp = (options: {
             ).pipe(Stream.takeWhile(authorized), Stream.orDie);
           })
         )
+          .handleRaw("ticket", () =>
+            withFailureResponse(
+              Effect.gen(function* mintFeedTicket() {
+                const caller = yield* SetCaller;
+                if (caller.keyId === null || caller.scope !== "daily") {
+                  return yield* new LibraryError({
+                    message: "Sign in with a device key.",
+                    statusCode: 403,
+                  });
+                }
+                yield* HttpServerRequest.schemaBodyJson(FeedTicketPayload);
+                return HttpServerResponse.jsonUnsafe(
+                  yield* transport.mintTicket(caller.keyId),
+                  { headers: { "cache-control": "no-store" }, status: 201 }
+                );
+              })
+            )
+          )
+          .handle("live", ({ query }) =>
+            Effect.gen(function* streamFeed() {
+              const caller = yield* SetCaller;
+              if (caller.keyId === null || caller.scope !== "daily") {
+                return yield* Effect.fail({
+                  message: "Sign in with a device key.",
+                });
+              }
+              return transport.live({
+                cursor: query.cursor ?? null,
+                keyId: caller.keyId,
+                personId: caller.person.id,
+              });
+            })
+          )
       );
       const presenceGroup = HttpApiBuilder.group(
         OrbisApi,
@@ -1990,6 +2033,15 @@ export const createPortableApp = (options: {
       new Request("http://orbis.internal/health"),
       Context.empty() as Context.Context<Library | Queue | SetCaller>
     );
+  const runTransport = async <A, E>(
+    use: (transport: FeedTransport) => Effect.Effect<A, E>
+  ): Promise<A> => {
+    await initialize();
+    if (!feedTransport) {
+      throw new Error("The feed is not ready.");
+    }
+    return Effect.runPromise(use(feedTransport));
+  };
   // oxlint-disable-next-line eslint/sort-keys -- Lifecycle methods precede the request boundary.
   return {
     dispose: app.dispose,
@@ -2020,6 +2072,47 @@ export const createPortableApp = (options: {
       },
       subscribe: (listener: (notice: FeedNotice) => void) =>
         feedSignals.subscribe(listener),
+      socket: {
+        /**
+         * Checks a client socket upgrade and spends its ticket. The runtime
+         * adapter performs the upgrade only for an accepted decision. The log
+         * records the path alone: the ticket travels in a header it never reads.
+         */
+        accept: async (
+          request: Request,
+          allowedOrigins: readonly string[] = []
+        ) => {
+          const logger = startRequestLog({
+            method: request.method,
+            path: safeRequestPath(request.url),
+            requestId: crypto.randomUUID(),
+          });
+          const decision = await runTransport((transport) =>
+            transport.accept({
+              allowedOrigins,
+              header: (name) => request.headers.get(name),
+              method: request.method,
+              url: request.url,
+            })
+          );
+          finishRequestLog(
+            logger,
+            decision.kind === "accepted"
+              ? { outcome: "success", status: 101 }
+              : { outcome: "rejected", status: decision.status },
+            options.logging
+          );
+          return decision;
+        },
+        closed: (connectionId: string) =>
+          runTransport((transport) => transport.closed(connectionId)),
+        deliver: (identity: FeedIdentity) =>
+          runTransport((transport) => transport.deliver(identity)),
+        receive: (identity: FeedIdentity, text: string) =>
+          runTransport((transport) => transport.receive(identity, text)),
+        restore: (open: readonly string[]) =>
+          runTransport((transport) => transport.restore(open)),
+      },
     },
     handler: async (
       request: Request,

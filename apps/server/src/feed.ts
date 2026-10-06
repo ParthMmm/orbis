@@ -1,4 +1,7 @@
 import type {
+  FeedBody,
+  FeedDelivery,
+  FeedResetReason,
   ListeningQueue,
   Presence as PresenceEntry,
 } from "@orbis/contracts";
@@ -29,19 +32,7 @@ import {
   resolveVisibleSet,
 } from "./visibility.js";
 
-export type FeedBody =
-  | { readonly kind: "queue"; readonly queue: ListeningQueue }
-  | { readonly kind: "presence"; readonly presence: readonly PresenceEntry[] }
-  | {
-      readonly kind: "invalidate";
-      readonly topic: Exclude<FeedTopic, "queue" | "presence">;
-      readonly resourceId?: string;
-    };
-export interface FeedDelivery {
-  readonly cursor: string;
-  readonly body: FeedBody;
-}
-export type ResetReason = "expired" | "invalid" | "access";
+export type ResetReason = FeedResetReason;
 export interface FeedSnapshot {
   readonly cursor: string;
   readonly queue: ListeningQueue;
@@ -91,6 +82,10 @@ const decodeCursor = (value: string): Cursor | null => {
     tag: tag === "" || tag === undefined ? null : tag,
   };
 };
+
+/** The delivery sequence a cursor names, or null for a malformed cursor. */
+export const cursorSequence = (value: string): number | null =>
+  decodeCursor(value)?.sequence ?? null;
 
 interface Row {
   readonly sequence: number;

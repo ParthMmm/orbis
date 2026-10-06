@@ -621,7 +621,12 @@ try {
     nodeSocket.send(JSON.stringify(message));
   };
   sendNode({
-    files: [{ bytes: 10, durationSeconds: 1, format: "m4a", setId: "orphan-file" }],
+    files: ["set-1", "set-2", "orphan-file"].map((setId) => ({
+      bytes: 10,
+      durationSeconds: 1,
+      format: "m4a" as const,
+      setId,
+    })),
     kind: "inventory",
   });
   const released = async (setId: string) => {
@@ -802,6 +807,10 @@ try {
     }).pipe(Effect.provide(FetchHttpClient.layer))
   );
   await Bun.sleep(500);
+  assert.equal(
+    (await call("ana-phone", "/queue/active", { body: { setId: "set-2" }, method: "PUT" })).status,
+    200
+  );
   const oldPlay = await act("ana-phone", { kind: "play", setId: "set-2" }, "old-decoder");
   await call("ana-phone", "/sets/set-2/tags", { body: { tags: ["old"] }, method: "PATCH" });
   await act("ana-phone", {
@@ -866,7 +875,7 @@ try {
   await fallback.next((message) => message.kind === "snapshot");
   await fallback.next((message) => message.kind === "ready");
   assert.equal(
-    (await call("ana-phone", "/queue/active", { body: { setId: "set-2" }, method: "PUT" })).status,
+    (await call("ana-phone", "/queue/active", { body: { setId: "set-1" }, method: "PUT" })).status,
     200
   );
   await fallback.next(queued);

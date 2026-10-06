@@ -847,7 +847,7 @@ export const OrbisApi = PlaylistApi.add(
           success: FeedTicketSchema.pipe(HttpApiSchema.status(201)),
         }),
         HttpApiEndpoint.get("live", "/events/live", {
-          error: [BadRequest, Forbidden],
+          error: Forbidden,
           query: FeedLiveQuery,
           success: HttpApiSchema.StreamSse({
             data: FeedServerMessageSchema,

@@ -96,7 +96,7 @@ test("the Bun fixture serves the ticketed socket and the SSE fallback", async ()
   });
   const call = async (keyId: string, route: string, method = "GET", body?: unknown) => {
     const response = await fetch(new URL(route, server.url), {
-      body: body === undefined ? undefined : JSON.stringify(body),
+      body: body === undefined ? null : JSON.stringify(body),
       headers: {
         authorization: `Bearer ${tokenFor(keyId)}`,
         "content-type": "application/json",
