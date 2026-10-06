@@ -84,8 +84,9 @@ const redact = (text: string) => {
       `"cursor":"cursor#${createHash("sha256").update(cursor).digest("hex").slice(0, 8)}"`
   );
 };
-const trace: unknown[] = [];
-const note = (entry: Record<string, unknown>) =>
+type TraceEntry = Readonly<Record<string, string | number | null>>;
+const trace: TraceEntry[] = [];
+const note = (entry: TraceEntry) =>
   trace.push({ at: new Date().toISOString(), ...entry });
 const results: Record<string, "pass"> = {};
 const passed = (name: string) => {
@@ -94,20 +95,32 @@ const passed = (name: string) => {
   console.log(`pass ${name}`);
 };
 
+interface CallHeaders {
+  "CF-Connecting-IP": string;
+  "content-type": string;
+  authorization?: string;
+}
+
 const call = async (
   keyId: string | null,
   route: string,
-  init: { method?: string; body?: unknown; headers?: Record<string, string> } = {}
+  init: {
+    method?: string;
+    body?: unknown;
+    headers?: Record<string, string>;
+  } = {}
 ) => {
   const method = init.method ?? "GET";
+  const headers: CallHeaders = {
+    "CF-Connecting-IP": "192.0.2.10",
+    "content-type": "application/json",
+  };
+  if (keyId !== null) {
+    headers.authorization = `Bearer ${token(keyId)}`;
+  }
   const response = await runtime.dispatchFetch(`http://orbis/api${route}`, {
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
-    headers: {
-      "CF-Connecting-IP": "192.0.2.10",
-      "content-type": "application/json",
-      ...(keyId === null ? {} : { authorization: `Bearer ${token(keyId)}` }),
-      ...init.headers,
-    },
+    headers: { ...headers, ...init.headers },
     method,
   });
   const text = await response.text();
@@ -150,18 +163,24 @@ interface FeedClient {
   readonly close: () => void;
 }
 
+interface UpgradeHeaders {
+  Upgrade: "websocket";
+  "Sec-WebSocket-Protocol"?: string;
+}
+
 const upgrade = (
   protocols: string | null,
   headers: Record<string, string> = {},
   route = "/events/socket"
-) =>
-  runtime.dispatchFetch(`http://orbis/api${route}`, {
-    headers: {
-      Upgrade: "websocket",
-      ...(protocols === null ? {} : { "Sec-WebSocket-Protocol": protocols }),
-      ...headers,
-    },
+) => {
+  const upgradeHeaders: UpgradeHeaders = { Upgrade: "websocket" };
+  if (protocols !== null) {
+    upgradeHeaders["Sec-WebSocket-Protocol"] = protocols;
+  }
+  return runtime.dispatchFetch(`http://orbis/api${route}`, {
+    headers: { ...upgradeHeaders, ...headers },
   });
+};
 
 const attach = (
   label: string,
@@ -204,9 +223,15 @@ const attach = (
       wake();
     }
   });
+  // oxlint-disable-next-line promise/avoid-new -- The socket reports its close through an event.
   const closed = new Promise<{ code: number; reason: string }>((resolve) => {
     socket.addEventListener("close", (event) => {
-      note({ code: event.code, kind: "socket-close", label, reason: event.reason });
+      note({
+        code: event.code,
+        kind: "socket-close",
+        label,
+        reason: event.reason,
+      });
       resolve({ code: event.code, reason: event.reason });
     });
   });
@@ -246,7 +271,13 @@ const attach = (
     close: () => socket.close(1000, "done"),
     closed,
     hello: (resume) =>
-      send(JSON.stringify(resume === undefined ? { kind: "hello" } : { cursor: resume, kind: "hello" })),
+      send(
+        JSON.stringify(
+          resume === undefined
+            ? { kind: "hello" }
+            : { cursor: resume, kind: "hello" }
+        )
+      ),
     label,
     lastCursor: () => cursor,
     messages,
@@ -280,14 +311,15 @@ const hasPresence = (personId: string | null) => (message: FeedServerMessage) =>
       ? presence.length === 0
       : presence.some((entry) => entry.personId === personId)
   );
-const invalidates = (topic: string, resourceId?: string) => (message: FeedServerMessage) =>
-  message.kind === "changes" &&
-  message.deliveries.some(
-    (delivery) =>
-      delivery.body.kind === "invalidate" &&
-      delivery.body.topic === topic &&
-      (resourceId === undefined || delivery.body.resourceId === resourceId)
-  );
+const invalidates =
+  (topic: string, resourceId?: string) => (message: FeedServerMessage) =>
+    message.kind === "changes" &&
+    message.deliveries.some(
+      (delivery) =>
+        delivery.body.kind === "invalidate" &&
+        delivery.body.topic === topic &&
+        (resourceId === undefined || delivery.body.resourceId === resourceId)
+    );
 const queued = (message: FeedServerMessage) =>
   message.kind === "changes" &&
   message.deliveries.some((delivery) => delivery.body.kind === "queue");
@@ -352,38 +384,43 @@ const readSse = (response: Response, label: string) => {
   let buffer = "";
   let ended = false;
   const pump = (async () => {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) {
-        ended = true;
-        note({ kind: "sse-end", label });
-        return;
-      }
-      buffer += decoder.decode(value, { stream: true });
-      let boundary = buffer.indexOf("\n\n");
-      while (boundary !== -1) {
-        const frame = buffer.slice(0, boundary);
-        buffer = buffer.slice(boundary + 2);
-        boundary = buffer.indexOf("\n\n");
-        const data = frame
-          .split("\n")
-          .filter((line) => line.startsWith("data:"))
-          .map((line) => line.slice(5).trim())
-          .join("\n");
-        if (data === "") {
-          continue;
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) {
+          ended = true;
+          note({ kind: "sse-end", label });
+          return;
         }
-        note({ kind: "sse-in", label, text: redact(data) });
-        messages.push(
-          Schema.decodeUnknownSync(FeedServerMessageSchema)(JSON.parse(data), {
-            onExcessProperty: "error",
-          })
-        );
+        buffer += decoder.decode(value, { stream: true });
+        let boundary = buffer.indexOf("\n\n");
+        while (boundary !== -1) {
+          const frame = buffer.slice(0, boundary);
+          buffer = buffer.slice(boundary + 2);
+          boundary = buffer.indexOf("\n\n");
+          const data = frame
+            .split("\n")
+            .filter((line) => line.startsWith("data:"))
+            .map((line) => line.slice(5).trim())
+            .join("\n");
+          if (data === "") {
+            continue;
+          }
+          note({ kind: "sse-in", label, text: redact(data) });
+          messages.push(
+            Schema.decodeUnknownSync(FeedServerMessageSchema)(
+              JSON.parse(data),
+              {
+                onExcessProperty: "error",
+              }
+            )
+          );
+        }
       }
+    } catch {
+      ended = true;
     }
-  })().catch(() => {
-    ended = true;
-  });
+  })();
   let seen = 0;
   const next = async (
     matches: (message: FeedServerMessage) => boolean,
@@ -400,7 +437,9 @@ const readSse = (response: Response, label: string) => {
       }
       await Bun.sleep(20);
     }
-    throw new Error(`${label} SSE timed out; saw ${redact(JSON.stringify(messages.slice(-5)))}`);
+    throw new Error(
+      `${label} SSE timed out; saw ${redact(JSON.stringify(messages.slice(-5)))}`
+    );
   };
   return {
     cancel: () => reader.cancel(),
@@ -427,7 +466,8 @@ const sse = async (
     keyId,
     kind: "http",
     method: "GET",
-    route: cursor === undefined ? "/events/live" : "/events/live?cursor=[cursor]",
+    route:
+      cursor === undefined ? "/events/live" : "/events/live?cursor=[cursor]",
     status: response.status,
     via: origin === base.toString() ? "worker" : "forwarder",
   });
@@ -436,22 +476,22 @@ const sse = async (
 
 let forwarder: ReturnType<typeof Bun.serve> | undefined;
 try {
-  assert.equal((await call(null, "/__seed-feed")).status, 200);
+  const seeded = await call(null, "/__seed-feed");
+  assert.equal(seeded.status, 200);
 
   // Ticket contract: daily keys only, fixed protocol, no-store, 30 seconds.
   const minted = await mint("ana-phone");
   const expiresIn = Date.parse(minted.expiresAt) - Date.now();
-  assert.ok(expiresIn > 28_000 && expiresIn <= 30_000, `expires in ${expiresIn}`);
-  assert.equal(minted.protocol, FEED_PROTOCOL);
-  assert.equal(
-    (
-      await call("ana-phone", "/events/tickets", {
-        body: { protocol: "orbis.feed.v2" },
-        method: "POST",
-      })
-    ).status,
-    400
+  assert.ok(
+    expiresIn > 28_000 && expiresIn <= 30_000,
+    `expires in ${expiresIn}`
   );
+  assert.equal(minted.protocol, FEED_PROTOCOL);
+  const wrongProtocol = await call("ana-phone", "/events/tickets", {
+    body: { protocol: "orbis.feed.v2" },
+    method: "POST",
+  });
+  assert.equal(wrongProtocol.status, 400);
   for (const keyId of ["host-admin", "vanta-node"]) {
     const refused = await call(keyId, "/events/tickets", {
       body: { protocol: FEED_PROTOCOL },
@@ -459,15 +499,11 @@ try {
     });
     assert.equal(refused.status, 403, `${keyId}: ${refused.text}`);
   }
-  assert.equal(
-    (
-      await call(null, "/events/tickets", {
-        body: { protocol: FEED_PROTOCOL },
-        method: "POST",
-      })
-    ).status,
-    403
-  );
+  const anonymous = await call(null, "/events/tickets", {
+    body: { protocol: FEED_PROTOCOL },
+    method: "POST",
+  });
+  assert.equal(anonymous.status, 403);
   passed("ticket-scope");
 
   // Wrong Origin fails before the ticket is consumed.
@@ -482,7 +518,9 @@ try {
   assert.equal(first.headers.get("sec-websocket-protocol"), FEED_PROTOCOL);
   const anaPhone = attach("ana-phone#1", first, { ack: true });
   anaPhone.hello();
-  const snapshot = await anaPhone.next((message) => message.kind === "snapshot");
+  const snapshot = await anaPhone.next(
+    (message) => message.kind === "snapshot"
+  );
   assert.equal(snapshot.kind, "snapshot");
   await anaPhone.next((message) => message.kind === "ready");
   assert.ok(
@@ -498,9 +536,26 @@ try {
 
   // Only a ticket opens a socket: never a header key, a URL key, or a node key.
   for (const [label, response] of [
-    ["daily bearer", await upgrade(FEED_PROTOCOL, { authorization: `Bearer ${token("ana-phone")}` })],
-    ["node bearer", await upgrade(FEED_PROTOCOL, { authorization: `Bearer ${token("vanta-node")}` })],
-    ["url key", await upgrade(FEED_PROTOCOL, {}, `/events/socket?key=${token("ana-phone")}`)],
+    [
+      "daily bearer",
+      await upgrade(FEED_PROTOCOL, {
+        authorization: `Bearer ${token("ana-phone")}`,
+      }),
+    ],
+    [
+      "node bearer",
+      await upgrade(FEED_PROTOCOL, {
+        authorization: `Bearer ${token("vanta-node")}`,
+      }),
+    ],
+    [
+      "url key",
+      await upgrade(
+        FEED_PROTOCOL,
+        {},
+        `/events/socket?key=${token("ana-phone")}`
+      ),
+    ],
     ["no protocol", await upgrade(null)],
   ] as const) {
     assert.ok(
@@ -517,7 +572,11 @@ try {
   const benPhone = await open("ben-phone");
   benPhone.hello();
   await benPhone.next((message) => message.kind === "ready");
-  assert.equal((await call("ana-phone", "/queue/active", { body: { setId: "set-1" }, method: "PUT" })).status, 200);
+  const activated = await call("ana-phone", "/queue/active", {
+    body: { setId: "set-1" },
+    method: "PUT",
+  });
+  assert.equal(activated.status, 200);
   await anaPhone.next(queued);
   const played = await act("ana-phone", { kind: "play", setId: "set-1" });
   await benPhone.next(hasPresence("ana"));
@@ -533,10 +592,11 @@ try {
   assert.ok(resume);
   anaPhone.close();
   await anaPhone.closed;
-  assert.equal(
-    (await call("ana-phone", "/sets/set-2/tags", { body: { tags: ["missed"] }, method: "PATCH" })).status,
-    200
-  );
+  const missed = await call("ana-phone", "/sets/set-2/tags", {
+    body: { tags: ["missed"] },
+    method: "PATCH",
+  });
+  assert.equal(missed.status, 200);
   const anaAgain = await open("ana-phone", { label: "ana-phone#2" });
   anaAgain.hello(resume);
   await anaAgain.next(invalidates("library", "set-2"));
@@ -549,15 +609,24 @@ try {
   );
   const laptop = await open("ana-laptop", { label: "ana-laptop#1" });
   laptop.hello(resume);
-  const foreignCursor = await laptop.next((message) => message.kind === "reset");
-  assert.equal(foreignCursor.kind === "reset" && foreignCursor.reason, "invalid");
+  const foreignCursor = await laptop.next(
+    (message) => message.kind === "reset"
+  );
+  assert.equal(
+    foreignCursor.kind === "reset" && foreignCursor.reason,
+    "invalid"
+  );
   await laptop.next((message) => message.kind === "snapshot");
   await laptop.next((message) => message.kind === "ready");
   passed("reconnect-with-cursor");
 
   // An authorization epoch change voids an unused ticket and resets open sockets.
   const stale = await mint("ana-phone");
-  assert.equal((await call("ben-phone", "/me", { body: { social: false }, method: "PATCH" })).status, 200);
+  const unsocial = await call("ben-phone", "/me", {
+    body: { social: false },
+    method: "PATCH",
+  });
+  assert.equal(unsocial.status, 200);
   const epochReset = await anaAgain.next((message) => message.kind === "reset");
   assert.equal(epochReset.kind === "reset" && epochReset.reason, "access");
   await anaAgain.next((message) => message.kind === "snapshot");
@@ -566,12 +635,19 @@ try {
     `${FEED_PROTOCOL}, ${FEED_TICKET_PROTOCOL_PREFIX}${stale.ticket}`
   );
   assert.equal(staleUpgrade.status, 401, await staleUpgrade.text());
-  assert.equal((await call("ben-phone", "/me", { body: { social: true }, method: "PATCH" })).status, 200);
+  const social = await call("ben-phone", "/me", {
+    body: { social: true },
+    method: "PATCH",
+  });
+  assert.equal(social.status, 200);
   await benPhone.next((message) => message.kind === "ready");
   passed("wrong-key-epoch");
 
   // A client that stops acknowledging is cut off with a resumable cursor.
-  const slow = await open("ana-tablet", { ack: false, label: "ana-tablet#slow" });
+  const slow = await open("ana-tablet", {
+    ack: false,
+    label: "ana-tablet#slow",
+  });
   slow.hello();
   await slow.next((message) => message.kind === "ready");
   for (let index = 0; index <= FEED_ACK_WINDOW + 1; index += 1) {
@@ -580,7 +656,10 @@ try {
       method: "PATCH",
     });
     assert.equal(response.status, 200, response.text);
-    if ((await Promise.race([slow.closed, Bun.sleep(30).then(() => null)])) !== null) {
+    if (
+      (await Promise.race([slow.closed, Bun.sleep(30).then(() => null)])) !==
+      null
+    ) {
       break;
     }
   }
@@ -598,25 +677,33 @@ try {
 
   // Hibernation: quiet sockets survive eviction; the node socket dispatches separately.
   const nodeResponse = await runtime.dispatchFetch("http://orbis/api/node", {
-    headers: { Upgrade: "websocket", authorization: `Bearer ${token("vanta-node")}` },
+    headers: {
+      Upgrade: "websocket",
+      authorization: `Bearer ${token("vanta-node")}`,
+    },
   });
   assert.equal(nodeResponse.status, 101, await nodeResponse.text());
   const nodeSocket = nodeResponse.webSocket;
   assert.ok(nodeSocket);
   nodeSocket.accept();
   const commands: NodeCommand[] = [];
-  const nodeClosed = new Promise<{ code: number; reason: string }>((resolve) =>
-    nodeSocket.addEventListener("close", (event) =>
-      resolve({ code: event.code, reason: event.reason })
-    )
+  // oxlint-disable-next-line promise/avoid-new -- The node socket reports its close through an event.
+  const nodeClosed = new Promise<{ code: number; reason: string }>(
+    (resolve) => {
+      nodeSocket.addEventListener("close", (event) =>
+        resolve({ code: event.code, reason: event.reason })
+      );
+    }
   );
   nodeSocket.addEventListener("message", (event) => {
     note({ kind: "node-in", text: String(event.data) });
     commands.push(
-      Schema.decodeUnknownSync(NodeCommandSchema)(JSON.parse(String(event.data)))
+      Schema.decodeUnknownSync(NodeCommandSchema)(
+        JSON.parse(String(event.data))
+      )
     );
   });
-  const sendNode = (message: NodeMessage | Record<string, unknown>) => {
+  const sendNode = (message: NodeMessage | { readonly kind: "hello" }) => {
     note({ kind: "node-out", text: JSON.stringify(message) });
     nodeSocket.send(JSON.stringify(message));
   };
@@ -631,7 +718,11 @@ try {
   });
   const released = async (setId: string) => {
     const deadline = Date.now() + 5000;
-    while (!commands.some((command) => command.kind === "release" && command.setId === setId)) {
+    while (
+      !commands.some(
+        (command) => command.kind === "release" && command.setId === setId
+      )
+    ) {
       assert.ok(Date.now() < deadline, `node release for ${setId}`);
       await Bun.sleep(20);
     }
@@ -642,7 +733,9 @@ try {
   await benPhone.next(hasPresence("ana"));
   assert.equal(leased.session.state, "playing");
   const deadline =
-    leased.session.state === "playing" ? Date.parse(leased.session.leaseExpiresAt) : 0;
+    leased.session.state === "playing"
+      ? Date.parse(leased.session.leaseExpiresAt)
+      : 0;
   const expiring = await mint("ana-phone");
   const quietSince = Date.now();
   await Bun.sleep(12_000);
@@ -660,16 +753,23 @@ try {
     evicted.constructions.some((at) => at >= probedAt),
     "the Group was evicted while sockets stayed open"
   );
-  assert.ok(evicted.attachments.some((attached) => attached.keyId === "ben-phone"));
+  assert.ok(
+    evicted.attachments.some((attached) => attached.keyId === "ben-phone")
+  );
   assert.equal(evicted.nodeSockets, 1);
   passed("ping-without-wake");
 
   // The lease alarm wakes an evicted Group and its expiry reaches a restored socket.
-  const expiry = await benPhone.next(hasPresence(null), deadline - Date.now() + 15_000);
+  const expiry = await benPhone.next(
+    hasPresence(null),
+    deadline - Date.now() + 15_000
+  );
   assert.ok(expiry);
   const afterAlarm = await feedState();
   assert.ok(
-    afterAlarm.constructions.some((at) => at >= deadline - 1000 && at <= deadline + 5000),
+    afterAlarm.constructions.some(
+      (at) => at >= deadline - 1000 && at <= deadline + 5000
+    ),
     `an alarm constructed the Group near ${new Date(deadline).toISOString()}`
   );
   assert.ok(quietSince < deadline);
@@ -686,11 +786,17 @@ try {
   await Bun.sleep(12_000);
   const evictedAgainAt = Date.now();
   const saved = await call("ana-phone", "/sets", {
-    body: { tags: [], title: "Node fixture", url: "https://soundcloud.com/fixture/feed-node" },
+    body: {
+      tags: [],
+      title: "Node fixture",
+      url: "https://soundcloud.com/fixture/feed-node",
+    },
     method: "POST",
   });
   assert.equal(saved.status, 201, saved.text);
-  const savedId = (JSON.parse(saved.text) as { id: string }).id;
+  const { id: savedId } = Schema.decodeUnknownSync(
+    Schema.Struct({ id: Schema.String })
+  )(JSON.parse(saved.text));
   const restarted = await feedState();
   assert.ok(restarted.constructions.some((at) => at >= evictedAgainAt));
   const start = await (async () => {
@@ -715,13 +821,18 @@ try {
     requestId: start.requestId,
     setId: savedId,
   });
-  const state = async () =>
-    JSON.parse((await call("ana-phone", `/sets/${savedId}/audio/state`)).text) as {
-      state: string;
-    };
+  const AudioState = Schema.Struct({ state: Schema.String });
+  const state = async () => {
+    const response = await call("ana-phone", `/sets/${savedId}/audio/state`);
+    return Schema.decodeUnknownSync(AudioState)(JSON.parse(response.text))
+      .state;
+  };
   const readyBy = Date.now() + 5000;
-  while ((await state()).state !== "ready") {
-    assert.ok(Date.now() < readyBy, "the node finish reached the restored Group");
+  while ((await state()) !== "ready") {
+    assert.ok(
+      Date.now() < readyBy,
+      "the node finish reached the restored Group"
+    );
     await Bun.sleep(50);
   }
   anaAgain.send(JSON.stringify({ files: [], kind: "inventory" }));
@@ -740,26 +851,32 @@ try {
   const revokedStream = readSse(await sse("ana-laptop"), "ana-laptop sse");
   await revokedStream.next((message) => message.kind === "ready");
   const revokedAt = Date.now();
-  assert.equal(
-    (await call("ana-phone", "/me/devices/ana-laptop", { method: "DELETE" })).status,
-    200
-  );
+  const revoked = await call("ana-phone", "/me/devices/ana-laptop", {
+    method: "DELETE",
+  });
+  assert.equal(revoked.status, 200);
   const revokedClose = await revokedSocket.closed;
   assert.equal(revokedClose.code, FeedCloseCode.closed);
   assert.ok(Date.now() - revokedAt < 2000, "the socket closed promptly");
   const revokedLast = revokedSocket.messages.at(-1);
-  assert.equal(revokedLast?.kind === "closing" && revokedLast.reason, "revoked");
+  assert.equal(
+    revokedLast?.kind === "closing" && revokedLast.reason,
+    "revoked"
+  );
   await revokedStream.pump;
   assert.ok(revokedStream.ended(), "the SSE stream for the key ended");
   assert.equal(laptop.messages.length > 0, true);
-  assert.equal((await laptop.closed).code, FeedCloseCode.closed);
+  const laptopClose = await laptop.closed;
+  assert.equal(laptopClose.code, FeedCloseCode.closed);
   const refused = await call("ana-laptop", "/events/tickets", {
     body: { protocol: FEED_PROTOCOL },
     method: "POST",
   });
   assert.equal(refused.status, 401, refused.text);
   const afterRevoke = await feedState();
-  assert.ok(!afterRevoke.connections.some((row) => row.key_id === "ana-laptop"));
+  assert.ok(
+    !afterRevoke.connections.some((row) => row.key_id === "ana-laptop")
+  );
   passed("revoked-key");
 
   // SSE fallback: same messages, cursor in the query, heartbeat kept.
@@ -781,7 +898,8 @@ try {
   await resumed.next((message) => message.kind === "heartbeat", 35_000);
   await resumed.cancel();
   for (const keyId of ["host-admin", "vanta-node"]) {
-    assert.equal((await sse(keyId)).status, 403, keyId);
+    const refusedStream = await sse(keyId);
+    assert.equal(refusedStream.status, 403, keyId);
   }
   passed("sse-live");
 
@@ -792,7 +910,10 @@ try {
       const client = yield* HttpApiClient.make(OrbisApi, {
         baseUrl: new URL("api", base).toString(),
         transformClient: HttpClient.mapRequest(
-          HttpClientRequest.setHeader("authorization", `Bearer ${token("ben-phone")}`)
+          HttpClientRequest.setHeader(
+            "authorization",
+            `Bearer ${token("ben-phone")}`
+          )
         ),
       });
       const events = yield* client.events.subscribe();
@@ -807,30 +928,47 @@ try {
     }).pipe(Effect.provide(FetchHttpClient.layer))
   );
   await Bun.sleep(500);
-  assert.equal(
-    (await call("ana-phone", "/queue/active", { body: { setId: "set-2" }, method: "PUT" })).status,
-    200
+  const activatedAgain = await call("ana-phone", "/queue/active", {
+    body: { setId: "set-2" },
+    method: "PUT",
+  });
+  assert.equal(activatedAgain.status, 200);
+  const oldPlay = await act(
+    "ana-phone",
+    { kind: "play", setId: "set-2" },
+    "old-decoder"
   );
-  const oldPlay = await act("ana-phone", { kind: "play", setId: "set-2" }, "old-decoder");
-  await call("ana-phone", "/sets/set-2/tags", { body: { tags: ["old"] }, method: "PATCH" });
-  await act("ana-phone", {
-    kind: "pause",
-    ownerGeneration: oldPlay.session.ownerGeneration,
-  }, "old-decoder");
+  await call("ana-phone", "/sets/set-2/tags", {
+    body: { tags: ["old"] },
+    method: "PATCH",
+  });
+  await act(
+    "ana-phone",
+    {
+      kind: "pause",
+      ownerGeneration: oldPlay.session.ownerGeneration,
+    },
+    "old-decoder"
+  );
   await Bun.sleep(3000);
   await Effect.runPromise(Fiber.interrupt(oldFiber));
-  assert.ok(oldEvents.length >= 2, `old decoder read ${oldEvents.length} events`);
-  for (const event of oldEvents) {
-    Schema.decodeUnknownSync(QueueEventSchema)(event, { onExcessProperty: "error" });
-    assert.ok(
-      ["queue", "presence", "heartbeat"].includes((event as { kind: string }).kind)
-    );
+  assert.ok(
+    oldEvents.length >= 2,
+    `old decoder read ${oldEvents.length} events`
+  );
+  const decodedOld = oldEvents.map((event) =>
+    Schema.decodeUnknownSync(QueueEventSchema)(event, {
+      onExcessProperty: "error",
+    })
+  );
+  for (const event of decodedOld) {
+    assert.ok(["queue", "presence", "heartbeat"].includes(event.kind));
   }
   assert.ok(
-    oldEvents.some(
+    decodedOld.some(
       (event) =>
-        (event as { kind: string; presence?: { personId: string }[] }).kind === "presence" &&
-        (event as { presence: { personId: string }[] }).presence.some((entry) => entry.personId === "ana")
+        event.kind === "presence" &&
+        event.presence.some((entry) => entry.personId === "ana")
     ),
     "the old stream still shows Presence"
   );
@@ -848,21 +986,31 @@ try {
     port: 0,
   });
   const fallbackTicket = await mint("ana-phone");
-  const viaForwarder = await fetch(new URL("/api/events/socket", forwarder.url), {
-    headers: {
-      Connection: "Upgrade",
-      "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
-      "Sec-WebSocket-Protocol": `${FEED_PROTOCOL}, ${FEED_TICKET_PROTOCOL_PREFIX}${fallbackTicket.ticket}`,
-      "Sec-WebSocket-Version": "13",
-      Upgrade: "websocket",
-    },
+  const viaForwarder = await fetch(
+    new URL("/api/events/socket", forwarder.url),
+    {
+      headers: {
+        Connection: "Upgrade",
+        "Sec-WebSocket-Key": "dGhlIHNhbXBsZSBub25jZQ==",
+        "Sec-WebSocket-Protocol": `${FEED_PROTOCOL}, ${FEED_TICKET_PROTOCOL_PREFIX}${fallbackTicket.ticket}`,
+        "Sec-WebSocket-Version": "13",
+        Upgrade: "websocket",
+      },
+    }
+  );
+  note({
+    kind: "http",
+    route: "/events/socket",
+    status: viaForwarder.status,
+    via: "forwarder",
   });
-  note({ kind: "http", route: "/events/socket", status: viaForwarder.status, via: "forwarder" });
   assert.equal(viaForwarder.status, 426, await viaForwarder.text());
   // oxlint-disable-next-line promise/avoid-new -- A browser-style client reports failure through events.
   const browserOutcome = await new Promise<string>((resolve) => {
     const client = new WebSocket(
-      new URL("/api/events/socket", forwarder?.url).toString().replace("http", "ws"),
+      new URL("/api/events/socket", forwarder?.url)
+        .toString()
+        .replace("http", "ws"),
       [FEED_PROTOCOL, `${FEED_TICKET_PROTOCOL_PREFIX}${fallbackTicket.ticket}`]
     );
     client.addEventListener("open", () => resolve("open"));
@@ -871,13 +1019,17 @@ try {
   });
   note({ kind: "socket-attempt", outcome: browserOutcome, via: "forwarder" });
   assert.notEqual(browserOutcome, "open");
-  const fallback = readSse(await sse("ana-phone", undefined, forwarder.url.toString()), "ana-phone fallback sse");
+  const fallback = readSse(
+    await sse("ana-phone", undefined, forwarder.url.toString()),
+    "ana-phone fallback sse"
+  );
   await fallback.next((message) => message.kind === "snapshot");
   await fallback.next((message) => message.kind === "ready");
-  assert.equal(
-    (await call("ana-phone", "/queue/active", { body: { setId: "set-1" }, method: "PUT" })).status,
-    200
-  );
+  const fallbackActivated = await call("ana-phone", "/queue/active", {
+    body: { setId: "set-1" },
+    method: "PUT",
+  });
+  assert.equal(fallbackActivated.status, 200);
   await fallback.next(queued);
   await fallback.cancel();
   passed("upgrade-unavailable-sse-fallback");
@@ -890,17 +1042,39 @@ try {
   assert.ok(logs.includes("/events/socket"), "upgrades are logged");
   passed("redacted-logs");
 
-  await writeFile(path.join(artifact, "trace.json"), `${redact(JSON.stringify(trace, null, 2))}\n`);
+  await writeFile(
+    path.join(artifact, "trace.json"),
+    `${redact(JSON.stringify(trace, null, 2))}\n`
+  );
   await writeFile(
     path.join(artifact, "runtime.log"),
-    redact(logs.split("\n").filter((line) => line.includes("/events")).join("\n"))
+    redact(
+      logs
+        .split("\n")
+        .filter((line) => line.includes("/events"))
+        .join("\n")
+    )
   );
-  await writeFile(path.join(artifact, "result.json"), `${JSON.stringify(results, null, 2)}\n`);
-  console.log(`Feed transport journey passed. ${path.join(artifact, "result.json")}`);
+  await writeFile(
+    path.join(artifact, "result.json"),
+    `${JSON.stringify(results, null, 2)}\n`
+  );
+  console.log(
+    `Feed transport journey passed. ${path.join(artifact, "result.json")}`
+  );
 } catch (error) {
-  await writeFile(path.join(artifact, "trace.json"), `${redact(JSON.stringify(trace, null, 2))}\n`);
-  await writeFile(path.join(artifact, "runtime.log"), redact(runtimeLog.join("")));
-  await writeFile(path.join(artifact, "result.json"), `${JSON.stringify({ ...results, failed: String(error) }, null, 2)}\n`);
+  await writeFile(
+    path.join(artifact, "trace.json"),
+    `${redact(JSON.stringify(trace, null, 2))}\n`
+  );
+  await writeFile(
+    path.join(artifact, "runtime.log"),
+    redact(runtimeLog.join(""))
+  );
+  await writeFile(
+    path.join(artifact, "result.json"),
+    `${JSON.stringify({ ...results, failed: String(error) }, null, 2)}\n`
+  );
   console.error(`Feed journey failed; trace in ${artifact}`);
   throw error;
 } finally {

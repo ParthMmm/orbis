@@ -6,6 +6,8 @@ The Worker at `https://orbis.p11a.xyz/api/*` forwards requests to one SQLite Dur
 
 Presence, Queue signals, Device Links, and the failed-key limit live in the Group. The limit uses `CF-Connecting-IP`. Events retain the 30-second heartbeat and end when the caller's key is revoked. Requests produce JSON logs.
 
+The client change feed (ADR 0019) has two transports with one message set. A daily key mints a 30-second single-use ticket with `POST /events/tickets` and offers it as the subprotocol `orbis.ticket.<ticket>` beside `orbis.feed.v1` on `GET /events/socket`. The Group accepts that socket under the `feed` hibernation tag, separate from the audio node's `node` tag, and keeps only the connection, key, and Person in its attachment. Each socket's cursor and unacknowledged sends live in `feed_connections`, so a socket survives eviction. The exact text `{"kind":"ping"}` gets an automatic `{"kind":"pong"}` that does not wake the Group. `GET /events/live` serves the same messages over SSE with the Bearer key and an optional `cursor` query, and keeps the heartbeat. The Vanta forwarder drops upgrade headers, so a socket through Vanta answers 426 and clients use SSE there.
+
 ## Worker configuration
 
 Alchemy enables `nodejs_compat` for the portable crypto APIs. Configure these values in the deploy environment before deploying:

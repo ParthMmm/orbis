@@ -14,7 +14,10 @@ const KEYS = [
 ] as const;
 
 export class Group extends ProductionGroup {
-  constructor(ctx: DurableObjectState, env: ConstructorParameters<typeof ProductionGroup>[1]) {
+  constructor(
+    ctx: DurableObjectState,
+    env: ConstructorParameters<typeof ProductionGroup>[1]
+  ) {
     super(ctx, env);
     ctx.storage.sql.exec(
       "CREATE TABLE IF NOT EXISTS journey_constructions (at INTEGER NOT NULL)"

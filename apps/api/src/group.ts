@@ -5,7 +5,7 @@ import {
   FEED_SOCKET_PATH,
 } from "@orbis/contracts/http-api";
 import { DurableObject } from "cloudflare:workers";
-import { Effect, Layer, ManagedRuntime, Redacted } from "effect";
+import { Effect, Layer, ManagedRuntime, Redacted, Schema } from "effect";
 import { HttpServerResponse } from "effect/unstable/http";
 
 import { createPortableApp } from "../../server/src/app-core.js";
@@ -30,9 +30,17 @@ import { registerTrustStorage } from "./trust-storage.js";
 
 const FEED_TAG = "feed";
 
+const FeedAttachment = Schema.Struct({
+  connectionId: Schema.String,
+  keyId: Schema.String,
+  personId: Schema.String,
+});
+
 const feedPort = (socket: WebSocket): FeedSocketPort => ({
   close: (code, reason) => socket.close(code, reason),
-  identity: socket.deserializeAttachment() as FeedIdentity,
+  identity: Schema.decodeUnknownSync(FeedAttachment)(
+    socket.deserializeAttachment()
+  ),
   send: (text) => socket.send(text),
 });
 
@@ -153,7 +161,9 @@ export class Group extends DurableObject<Environment> {
     if (this.isFeed(socket)) {
       await this.feed.receive(
         feedPort(socket),
-        typeof message === "string" ? message : new TextDecoder().decode(message)
+        message instanceof ArrayBuffer
+          ? new TextDecoder().decode(message)
+          : message
       );
       return;
     }
@@ -164,7 +174,10 @@ export class Group extends DurableObject<Environment> {
     }
   }
 
-  override async webSocketClose(socket: WebSocket, code: number): Promise<void> {
+  override async webSocketClose(
+    socket: WebSocket,
+    code: number
+  ): Promise<void> {
     if (this.isFeed(socket)) {
       await this.feed.closed(feedPort(socket));
       return;

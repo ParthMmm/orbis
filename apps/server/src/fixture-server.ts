@@ -1,6 +1,5 @@
-import type { ServerWebSocket } from "bun";
-
 import { FEED_PROTOCOL, FEED_SOCKET_PATH } from "@orbis/contracts/http-api";
+import type { ServerWebSocket } from "bun";
 
 import type { createApp } from "./app.js";
 import { makeFeedSockets } from "./feed-sockets.js";
@@ -94,6 +93,8 @@ export const startFixtureServer = (
     },
     hostname: "127.0.0.1",
     idleTimeout: 60,
+    maxRequestBodySize: 65_536,
+    port: options.port ?? 0,
     websocket: {
       close: (socket) => {
         const port = ports.get(socket);
@@ -118,8 +119,6 @@ export const startFixtureServer = (
         });
       },
     },
-    maxRequestBodySize: 65_536,
-    port: options.port ?? 0,
   });
   let stopping: Promise<void> | undefined;
   return {

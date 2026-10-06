@@ -29,6 +29,11 @@ const KEYS = [
   ["ben-phone", "ben"],
 ] as const;
 const tokenFor = (keyId: string) => `token-${keyId}`;
+type CallBody = { readonly protocol: string } | { readonly tags: string[] };
+// SAFETY: Bun implements this options overload; lib.dom only declares the browser overload.
+const BunSocket = WebSocket as typeof WebSocket & {
+  new (url: URL, options: Bun.WebSocketOptions): WebSocket;
+};
 const artifacts =
   process.env.ORBIS_FEED_ARTIFACTS ??
   path.resolve(import.meta.dir, "../../../.cache/feed-transport");
@@ -59,7 +64,8 @@ const seed = async (root: string) => {
   );
   const migrator = createApp({ databasePath, logging: { silent: true } });
   try {
-    expect((await migrator.initialize()).status).toBe(200);
+    const initialized = await migrator.initialize();
+    expect(initialized.status).toBe(200);
   } finally {
     await migrator.dispose();
   }
@@ -94,15 +100,23 @@ test("the Bun fixture serves the ticketed socket and the SSE fallback", async ()
     port: 0,
     token: "feed-transport",
   });
-  const call = async (keyId: string, route: string, method = "GET", body?: unknown) => {
-    const response = await fetch(new URL(route, server.url), {
-      body: body === undefined ? null : JSON.stringify(body),
+  const call = async (
+    keyId: string,
+    route: string,
+    method = "GET",
+    body?: CallBody
+  ) => {
+    const init: RequestInit = {
       headers: {
         authorization: `Bearer ${tokenFor(keyId)}`,
         "content-type": "application/json",
       },
       method,
-    });
+    };
+    if (body !== undefined) {
+      init.body = JSON.stringify(body);
+    }
+    const response = await fetch(new URL(route, server.url), init);
     trace.push({ keyId, method, route, status: response.status });
     return response;
   };
@@ -118,10 +132,10 @@ test("the Bun fixture serves the ticketed socket and the SSE fallback", async ()
   const connect = (ticket: string, origin?: string) => {
     const socketUrl = new URL("/events/socket", server.url);
     socketUrl.protocol = "ws:";
-    const socket = new WebSocket(socketUrl, {
+    const socket = new BunSocket(socketUrl, {
       headers: origin === undefined ? {} : { Origin: origin },
       protocols: [FEED_PROTOCOL, `${FEED_TICKET_PROTOCOL_PREFIX}${ticket}`],
-    } as unknown as string[]);
+    });
     const messages: FeedServerMessage[] = [];
     socket.addEventListener("message", (event) => {
       const message = Schema.decodeUnknownSync(FeedServerMessageSchema)(
@@ -143,9 +157,10 @@ test("the Bun fixture serves the ticketed socket and the SSE fallback", async ()
     const next = async (kind: FeedServerMessage["kind"]) => {
       const deadline = Date.now() + 5000;
       while (Date.now() < deadline) {
-        const index = messages.findIndex((message) => message.kind === kind);
-        if (index !== -1) {
-          return messages.splice(0, index + 1).at(-1) as FeedServerMessage;
+        const message = messages.find((candidate) => candidate.kind === kind);
+        if (message !== undefined) {
+          messages.splice(0, messages.indexOf(message) + 1);
+          return message;
         }
         await Bun.sleep(10);
       }
@@ -155,7 +170,9 @@ test("the Bun fixture serves the ticketed socket and the SSE fallback", async ()
   };
   try {
     const ticket = await mint("ana-phone");
-    expect(await connect(ticket, "http://evil.fixture.test").opened).toBe(false);
+    expect(await connect(ticket, "http://evil.fixture.test").opened).toBe(
+      false
+    );
     const ana = connect(ticket, WEB_ORIGIN);
     expect(await ana.opened).toBe(true);
     expect(ana.socket.protocol).toBe(FEED_PROTOCOL);
@@ -171,10 +188,10 @@ test("the Bun fixture serves the ticketed socket and the SSE fallback", async ()
     laptop.socket.send(JSON.stringify({ kind: "hello" }));
     await laptop.next("ready");
 
-    expect(
-      (await call("ana-phone", "/sets/set-1/tags", "PATCH", { tags: ["bun"] }))
-        .status
-    ).toBe(200);
+    const tagged = await call("ana-phone", "/sets/set-1/tags", "PATCH", {
+      tags: ["bun"],
+    });
+    expect(tagged.status).toBe(200);
     const change = await ana.next("changes");
     expect(change.kind === "changes" && change.deliveries[0]?.body).toEqual({
       kind: "invalidate",
@@ -194,9 +211,8 @@ test("the Bun fixture serves the ticketed socket and the SSE fallback", async ()
     expect(text).toContain('"kind":"reset"');
     await reader?.cancel();
 
-    expect(
-      (await call("ana-phone", "/me/devices/ana-laptop", "DELETE")).status
-    ).toBe(200);
+    const revoked = await call("ana-phone", "/me/devices/ana-laptop", "DELETE");
+    expect(revoked.status).toBe(200);
     expect(await laptop.closed).toBe(FeedCloseCode.closed);
     ana.socket.close();
     await mkdir(artifacts, { recursive: true });

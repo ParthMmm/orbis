@@ -14,6 +14,7 @@ Source ownership, local setup, and verification.
 | Audio HTTP listener and API forwarding | [`node-http.ts`](../apps/server/src/node-http.ts) |
 | Download selection and retained files | [`download-backends.ts`](../apps/server/src/download-backends.ts) and [`media-store.ts`](../apps/server/src/media-store.ts) |
 | Presence actions, the change journal, and feed catch-up | [`presence.ts`](../apps/server/src/presence.ts), [`journal.ts`](../apps/server/src/journal.ts), and [`feed.ts`](../apps/server/src/feed.ts) |
+| Feed tickets, client sockets, and the SSE fallback | [`feed-transport.ts`](../apps/server/src/feed-transport.ts), [`feed-sockets.ts`](../apps/server/src/feed-sockets.ts), and the Group's socket dispatch in [`group.ts`](../apps/api/src/group.ts) |
 | Identity, trust storage, and administration | [`identity.ts`](../apps/server/src/identity.ts), [`trust-storage.ts`](../apps/server/src/trust-storage.ts), [`trust-writes.ts`](../apps/server/src/trust-writes.ts) (revocation, removal, and Social changes), and [`admin.ts`](../apps/server/src/admin.ts) |
 | Web routes and player | [`apps/web/src/routes`](../apps/web/src/routes) and [`player.tsx`](../apps/web/src/components/player/player.tsx) |
 | Apple client and project specification | [`apps/apple/Orbis`](../apps/apple/Orbis) and [`project.yml`](../apps/apple/project.yml) |
@@ -69,7 +70,7 @@ Build shared contracts before running a focused lane from the repository root:
 | Change | Command from repo root | Evidence and prerequisites |
 | --- | --- | --- |
 | Bun HTTP handlers | `bun run --filter @orbis/server test` | Real database HTTP tests in `apps/server/src`; retain command output for failures |
-| Cloudflare Group and audio node | `bun run --filter @orbis/api test` | Workerd journeys write `.cache/api-group`, `.cache/audio-node`, `.cache/api-grants`, and `.cache/api-recovery`; requires ffmpeg and ffprobe |
+| Cloudflare Group and audio node | `bun run --filter @orbis/api test` | Workerd journeys write `.cache/api-group`, `.cache/audio-node`, `.cache/api-grants`, `.cache/api-recovery`, `.cache/api-presence`, and `.cache/api-feed`; requires ffmpeg and ffprobe |
 | Group data transfer | `bun run --filter @orbis/api test:transfer` | See [data transfer](data-transfer.md) for restore and comparison artifacts |
 | Web client | `bun run --filter @orbis/web test` | Production browser journeys and artifacts listed in [web verification](../apps/web/README.md#verify-the-migration); install Chromium with `bun x playwright install chromium` |
 | Apple client | `bun run native:lanes --journeys` | Simulator journeys; see [native clients](#native-clients) for outputs and required tools |

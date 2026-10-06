@@ -18,6 +18,15 @@ export interface FeedSocketOperations {
   readonly subscribe: (listener: (notice: FeedNotice) => void) => () => void;
 }
 
+const apply = (port: FeedSocketPort, outcome: FeedOutcome) => {
+  for (const message of outcome.send) {
+    port.send(JSON.stringify(message));
+  }
+  if (outcome.close) {
+    port.close(outcome.close.code, outcome.close.reason);
+  }
+};
+
 /**
  * Runs each socket's work in order and folds repeated wakes into one pending
  * delivery. Nothing here is durable: after eviction a new instance starts with
@@ -30,26 +39,24 @@ export const makeFeedSockets = (
   const tails = new Map<string, Promise<void>>();
   const waiting = new Set<string>();
 
-  const apply = (port: FeedSocketPort, outcome: FeedOutcome) => {
-    for (const message of outcome.send) {
-      port.send(JSON.stringify(message));
-    }
-    if (outcome.close) {
-      port.close(outcome.close.code, outcome.close.reason);
-    }
-  };
-
   const run = (port: FeedSocketPort, task: () => Promise<FeedOutcome>) => {
     const id = port.identity.connectionId;
-    const next = (tails.get(id) ?? Promise.resolve())
-      .then(async () => apply(port, await task()))
-      .catch(() => port.close(1011, "Feed unavailable"));
+    const previous = tails.get(id);
+    const next = (async () => {
+      await previous;
+      try {
+        apply(port, await task());
+      } catch {
+        port.close(1011, "Feed unavailable");
+      }
+    })();
     tails.set(id, next);
-    void next.finally(() => {
+    void (async () => {
+      await next;
       if (tails.get(id) === next) {
         tails.delete(id);
       }
-    });
+    })();
     return next;
   };
 

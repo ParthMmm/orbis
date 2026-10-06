@@ -1648,55 +1648,59 @@ export const createPortableApp = (options: {
           )
       );
       const eventsGroup = HttpApiBuilder.group(OrbisApi, "events", (handlers) =>
-        handlers.handle("subscribe", () =>
-          Effect.gen(function* subscribeEvents() {
-            const queue = yield* Queue;
-            const caller = yield* SetCaller;
-            const authorized = () => {
-              if (caller.keyId === null) {
-                return true;
-              }
-              const { store } = readTrustRegistry(trustPath);
-              return (
-                store.keys.some(
-                  (key) =>
-                    key.id === caller.keyId && key.personId === caller.person.id
-                ) &&
-                store.people.some(
-                  (person) => person.id === caller.person.id && !person.removed
-                )
+        handlers
+          .handle("subscribe", () =>
+            Effect.gen(function* subscribeEvents() {
+              const queue = yield* Queue;
+              const caller = yield* SetCaller;
+              const authorized = () => {
+                if (caller.keyId === null) {
+                  return true;
+                }
+                const { store } = readTrustRegistry(trustPath);
+                return (
+                  store.keys.some(
+                    (key) =>
+                      key.id === caller.keyId &&
+                      key.personId === caller.person.id
+                  ) &&
+                  store.people.some(
+                    (person) =>
+                      person.id === caller.person.id && !person.removed
+                  )
+                );
+              };
+              const snapshots = queue.changes.pipe(
+                Stream.mapEffect(() => queue.read()),
+                Stream.map((snapshot) => ({
+                  kind: "queue" as const,
+                  queue: snapshot,
+                }))
               );
-            };
-            const snapshots = queue.changes.pipe(
-              Stream.mapEffect(() => queue.read()),
-              Stream.map((snapshot) => ({
-                kind: "queue" as const,
-                queue: snapshot,
-              }))
-            );
-            const presenceFrames = Stream.merge(
-              Stream.tick("2 seconds"),
-              presence.changes
-            ).pipe(
-              Stream.mapEffect(() => presenceFor(caller.person.id)),
-              Stream.changesWith(
-                (left, right) => JSON.stringify(left) === JSON.stringify(right)
-              ),
-              Stream.map((found) => ({
-                kind: "presence" as const,
-                presence: found,
-              }))
-            );
-            const heartbeats = Stream.tick("30 seconds").pipe(
-              Stream.drop(1),
-              Stream.map(() => ({ kind: "heartbeat" as const }))
-            );
-            return Stream.merge(
-              Stream.merge(snapshots, presenceFrames),
-              heartbeats
-            ).pipe(Stream.takeWhile(authorized), Stream.orDie);
-          })
-        )
+              const presenceFrames = Stream.merge(
+                Stream.tick("2 seconds"),
+                presence.changes
+              ).pipe(
+                Stream.mapEffect(() => presenceFor(caller.person.id)),
+                Stream.changesWith(
+                  (left, right) =>
+                    JSON.stringify(left) === JSON.stringify(right)
+                ),
+                Stream.map((found) => ({
+                  kind: "presence" as const,
+                  presence: found,
+                }))
+              );
+              const heartbeats = Stream.tick("30 seconds").pipe(
+                Stream.drop(1),
+                Stream.map(() => ({ kind: "heartbeat" as const }))
+              );
+              return Stream.merge(
+                Stream.merge(snapshots, presenceFrames),
+                heartbeats
+              ).pipe(Stream.takeWhile(authorized), Stream.orDie);
+            })
+          )
           .handleRaw("ticket", () =>
             withFailureResponse(
               Effect.gen(function* mintFeedTicket() {
@@ -2072,8 +2076,6 @@ export const createPortableApp = (options: {
         }
         return Effect.runPromise(feedReader.catchUp(request));
       },
-      subscribe: (listener: (notice: FeedNotice) => void) =>
-        feedSignals.subscribe(listener),
       socket: {
         /**
          * Checks a client socket upgrade and spends its ticket. The runtime
@@ -2115,6 +2117,8 @@ export const createPortableApp = (options: {
         restore: (open: readonly string[]) =>
           runTransport((transport) => transport.restore(open)),
       },
+      subscribe: (listener: (notice: FeedNotice) => void) =>
+        feedSignals.subscribe(listener),
     },
     handler: async (
       request: Request,

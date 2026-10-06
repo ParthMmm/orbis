@@ -53,23 +53,33 @@ const rejected = (status: number, message: string): UpgradeDecision => ({
   status,
 });
 
+const accepted = (identity: FeedIdentity): UpgradeDecision => ({
+  identity,
+  kind: "accepted",
+});
+
 const INVALID_TICKET = rejected(401, "Request a new feed ticket.");
 const ENDED: FeedClose = {
   code: FeedCloseCode.closed,
   reason: "Feed access ended",
 };
 
+const protocolClose = (reason: string): FeedOutcome => ({
+  close: { code: FeedCloseCode.protocol, reason },
+  send: [],
+});
+
 const digest = (ticket: string) =>
   createHash("sha256").update(ticket, "utf-8").digest("hex");
 
-/** Turns one catch-up into the frames a client receives. */
-export const feedMessages = (
-  result: CatchUp,
-  initial: boolean
-): {
+/** The frames for one catch-up, and the cursor the client holds after applying them. */
+export interface FeedFrames {
   readonly messages: readonly FeedServerMessage[];
   readonly cursor: string | null;
-} => {
+}
+
+/** Turns one catch-up into the frames a client receives. */
+export const feedMessages = (result: CatchUp, initial: boolean): FeedFrames => {
   switch (result.kind) {
     case "closed": {
       return { cursor: null, messages: [] };
@@ -162,8 +172,8 @@ export const makeFeedTransport = (input: {
         ticket,
       };
     }).pipe(
-      Effect.mapError((error) =>
-        error instanceof LibraryError ? error : transportFailure()
+      Effect.mapError((failure) =>
+        failure instanceof LibraryError ? failure : transportFailure()
       )
     );
 
@@ -237,10 +247,7 @@ export const makeFeedTransport = (input: {
             openedAt: now,
             personId: identity.personId,
           });
-          return {
-            identity,
-            kind: "accepted",
-          } satisfies UpgradeDecision as UpgradeDecision;
+          return accepted(identity);
         })
       );
     }).pipe(Effect.mapError(transportFailure));
@@ -263,11 +270,6 @@ export const makeFeedTransport = (input: {
         send: [{ cursor: ackedCursor, kind: "closing", reason: "revoked" }],
       })
     );
-
-  const protocolClose = (reason: string): FeedOutcome => ({
-    close: { code: FeedCloseCode.protocol, reason },
-    send: [],
-  });
 
   /** Sends what the client has not seen. Every call rechecks the key and each row's access. */
   const deliver = (identity: FeedIdentity) =>

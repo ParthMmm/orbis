@@ -258,8 +258,10 @@ test("visible Sets share audio and storage releases only the last reference over
     expect(await status("b", `/sets/${last.id}`, "DELETE")).toBe(200);
     expect(await retained(last.id)).toBe(false);
     expect(setChanges.slice(changesBeforeRelease)).toContain(last.id);
-    evidence.push("last Library Entry releases bytes");
-    evidence.push("the release journals a Set invalidation");
+    evidence.push(
+      "last Library Entry releases bytes",
+      "the release journals a Set invalidation"
+    );
     const queued = await save("b", "shared00005");
     await download("a", queued.id);
     expect(
