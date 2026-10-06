@@ -5,7 +5,8 @@
   "scripts": {
     "build": "bun scripts/migrations.ts --check && bun build src/index.ts --target=browser --external=cloudflare:workers --external=node:* --outdir=dist",
     "typecheck": "tsc --noEmit --tsBuildInfoFile .cache/typecheck.tsbuildinfo",
-    "test": "bun run build && bun e2e/group.ts && bun e2e/node.ts && bun e2e/grants.ts && bun e2e/recovery.ts",
+    "test": "bun run build && bun e2e/group.ts && bun e2e/node.ts && bun e2e/grants.ts && bun e2e/recovery.ts && bun e2e/presence.ts",
+    "test:presence": "bun e2e/presence.ts",
     "test:node": "bun e2e/node.ts",
     "test:transfer": "bun e2e/transfer-verify.ts"
   },

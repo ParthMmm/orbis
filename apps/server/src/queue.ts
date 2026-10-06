@@ -8,6 +8,7 @@ import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
 import { LibraryPerson } from "./library-person.js";
 import { Library } from "./library.js";
+import { Presence } from "./presence.js";
 import { QueueSignals } from "./queue-signals.js";
 import { Stats } from "./stats.js";
 
@@ -100,6 +101,7 @@ export class Queue extends Context.Service<
       const db = yield* Database;
       const library = yield* Library;
       const stats = yield* Stats;
+      const presence = yield* Presence;
       const personId = yield* LibraryPerson;
       const signals = yield* QueueSignals;
       const notify = () => signals.publish(personId);
@@ -132,6 +134,7 @@ export class Queue extends Context.Service<
           const previous = yield* order();
           yield* db.transaction((tx) =>
             Effect.gen(function* writeQueueTransaction() {
+              yield* presence.queueActivated(tx, personId, activeSetId);
               yield* tx
                 .delete(queueEntries)
                 .where(eq(queueEntries.personId, personId));
@@ -147,6 +150,7 @@ export class Queue extends Context.Service<
               }
             })
           );
+          yield* presence.afterCommit();
           yield* Effect.forEach(
             previous.filter((row) => !ids.includes(row.setId)),
             (row) => library.release(row.setId)

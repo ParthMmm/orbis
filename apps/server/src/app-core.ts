@@ -14,6 +14,7 @@ import {
   PlaylistEditorsPayload,
   PlaylistNamePayload,
   PositionPayload,
+  PresenceActionPayload,
   QueueEntryPayload,
   QueuePlaylistPayload,
   QueueSetPayload,
@@ -54,7 +55,6 @@ import {
   playlistEditors,
   playlistSets,
   playlists,
-  queueEntries,
   sets as setRows,
 } from "./db/schema.js";
 import { Database } from "./db/service.js";
@@ -83,6 +83,9 @@ import {
 import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
 import type { EnrichedMetadata } from "./metadata.js";
+import { PresenceJournal } from "./presence-journal.js";
+import { Presence } from "./presence.js";
+import type { PresenceOptions } from "./presence.js";
 import { QueueSignals } from "./queue-signals.js";
 import { Queue } from "./queue.js";
 import { expandShortLink } from "./short-link.js";
@@ -275,6 +278,7 @@ export const createPortableApp = (options: {
   metadata?: Layer.Layer<Metadata>;
   /** How long after a Playback Position report a Person still counts as listening. */
   presenceWindowMs?: number;
+  presence?: PresenceOptions & { journal?: Layer.Layer<PresenceJournal> };
   /** How long a Device Link stays open. Tests shorten it to prove expiry. */
   deviceLinkTtlMs?: number;
   deviceLinkNow?: () => number;
@@ -318,10 +322,20 @@ export const createPortableApp = (options: {
     Layer.provide(database)
   );
   const queueSignalsLayer = QueueSignals.layer;
+  const presenceLayer = Presence.layer({
+    ...options.presence,
+    legacyReportWindowMs: options.presenceWindowMs ?? PRESENCE_WINDOW_MS,
+  }).pipe(
+    Layer.provide(database),
+    Layer.provide(options.presence?.journal ?? PresenceJournal.unrecorded)
+  );
+  let presenceService: typeof Presence.Service | null = null;
   const routes = Layer.effectDiscard(
     Effect.gen(function* registerRoutes() {
       const library = yield* Library;
       const db = yield* Database;
+      const presence = yield* Presence;
+      presenceService = presence;
       const audio = yield* Audio;
       const metadata = yield* Metadata;
       const titleReviser = yield* TitleReviser;
@@ -1110,11 +1124,6 @@ export const createPortableApp = (options: {
             )
           )
       );
-      // Presence is ephemeral: a report older than the window means the player stopped.
-      const presenceReports = new Map<
-        string,
-        { readonly at: number; readonly setId: string }
-      >();
       const libraryGroup = HttpApiBuilder.group(
         OrbisApi,
         "library",
@@ -1131,10 +1140,12 @@ export const createPortableApp = (options: {
                     params.id,
                     input.seconds
                   );
-                  presenceReports.set(caller.person.id, {
-                    at: Date.now(),
-                    setId: params.id,
-                  });
+                  if (caller.keyId !== null && caller.scope === "daily") {
+                    yield* presence.recordLegacyReport(
+                      { keyId: caller.keyId, personId: caller.person.id },
+                      params.id
+                    );
+                  }
                   return saved;
                 })
               )
@@ -1165,6 +1176,7 @@ export const createPortableApp = (options: {
       const presenceFor = (viewerId: string) =>
         Effect.gen(function* readPresence() {
           const { people } = readTrustRegistry(trustPath).store;
+          const now = Date.now();
           const found = [];
           for (const person of people) {
             let target;
@@ -1173,30 +1185,16 @@ export const createPortableApp = (options: {
             } catch {
               continue;
             }
-            const report = presenceReports.get(target.id);
-            if (
-              !report ||
-              Date.now() - report.at >
-                (options.presenceWindowMs ?? PRESENCE_WINDOW_MS)
-            ) {
-              continue;
-            }
-            const [active] = yield* db
-              .select({ setId: queueEntries.setId })
-              .from(queueEntries)
-              .where(
-                and(
-                  eq(queueEntries.personId, target.id),
-                  eq(queueEntries.isActive, true)
-                )
-              );
-            if (active?.setId !== report.setId) {
+            const setId = yield* presence
+              .currentSetFor(target.id, now)
+              .pipe(Effect.orElseSucceed(() => null));
+            if (setId === null) {
               continue;
             }
             const [set] = yield* Effect.provide(
               Effect.gen(function* hydratePresence() {
                 const personal = yield* Library;
-                return yield* personal.byIds([report.setId]);
+                return yield* personal.byIds([setId]);
               }),
               friendLibraryLayer(target.id)
             ).pipe(Effect.orElseSucceed(() => []));
@@ -1451,6 +1449,18 @@ export const createPortableApp = (options: {
             action(storePath, caller.person.id, keyId)
           );
         });
+      // The key is already gone, so a failed clear is logged: the next settle sweeps the
+      // rows and the lease bounds how long the stale Presence can show.
+      const clearRevokedPresence = (keyId: string) =>
+        presence
+          .revokeKey(keyId)
+          .pipe(
+            Effect.catchTag("LibraryError", (failure) =>
+              Effect.logWarning("revoked key presence not cleared").pipe(
+                Effect.annotateLogs({ cause: failure.message })
+              )
+            )
+          );
       const devicesGroup = HttpApiBuilder.group(
         OrbisApi,
         "devices",
@@ -1465,7 +1475,7 @@ export const createPortableApp = (options: {
               withFailureResponse(
                 deviceCall((storePath, personId, keyId) =>
                   revokeDevice(storePath, personId, keyId, params.id)
-                )
+                ).pipe(Effect.tap(() => clearRevokedPresence(params.id)))
               )
             )
       );
@@ -1534,6 +1544,7 @@ export const createPortableApp = (options: {
                       yield* tx.run(
                         sql`DELETE FROM download_requesters WHERE person_id = ${params.id}`
                       );
+                      yield* presence.removePerson(tx, params.id);
                     })
                   )
                   .pipe(
@@ -1545,6 +1556,7 @@ export const createPortableApp = (options: {
                         })
                     )
                   );
+                yield* presence.afterCommit();
                 yield* Effect.forEach((set: { readonly id: string }) =>
                   library.release(set.id)
                 )(released);
@@ -1583,7 +1595,9 @@ export const createPortableApp = (options: {
           )
           .handleRaw("revokeKey", ({ params }) =>
             withFailureResponse(
-              adminCall((storePath) => revokeKey(storePath, params.id))
+              adminCall((storePath) => revokeKey(storePath, params.id)).pipe(
+                Effect.tap(() => clearRevokedPresence(params.id))
+              )
             )
           )
           .handleRaw("createInvite", ({ params }) =>
@@ -1667,7 +1681,10 @@ export const createPortableApp = (options: {
                 queue: snapshot,
               }))
             );
-            const presence = Stream.tick("2 seconds").pipe(
+            const presenceFrames = Stream.merge(
+              Stream.tick("2 seconds"),
+              presence.changes
+            ).pipe(
               Stream.mapEffect(() => presenceFor(caller.person.id)),
               Stream.changesWith(
                 (left, right) => JSON.stringify(left) === JSON.stringify(right)
@@ -1682,11 +1699,55 @@ export const createPortableApp = (options: {
               Stream.map(() => ({ kind: "heartbeat" as const }))
             );
             return Stream.merge(
-              Stream.merge(snapshots, presence),
+              Stream.merge(snapshots, presenceFrames),
               heartbeats
             ).pipe(Stream.takeWhile(authorized), Stream.orDie);
           })
         )
+      );
+      const presenceGroup = HttpApiBuilder.group(
+        OrbisApi,
+        "presence",
+        (handlers) =>
+          handlers.handleRaw("act", () =>
+            withFailureResponse(
+              Effect.gen(function* actOnPresence() {
+                const caller = yield* SetCaller;
+                const { keyId } = caller;
+                if (keyId === null || caller.scope !== "daily") {
+                  return yield* new LibraryError({
+                    message: "Sign in with a device key.",
+                    statusCode: 403,
+                  });
+                }
+                const input = yield* HttpServerRequest.schemaBodyJson(
+                  PresenceActionPayload
+                );
+                if (input.kind === "play") {
+                  const personal = yield* Library;
+                  const [set] = yield* personal.byIds([input.setId]);
+                  if (!set) {
+                    return yield* new LibraryError({
+                      message: "Set not found.",
+                      statusCode: 404,
+                    });
+                  }
+                }
+                return yield* presence
+                  .act({ keyId, personId: caller.person.id }, input)
+                  .pipe(
+                    Effect.catchTag("PresenceConflict", (refusal) =>
+                      Effect.succeed(
+                        HttpServerResponse.jsonUnsafe(
+                          { message: refusal.message, reason: refusal.reason },
+                          { status: 409 }
+                        )
+                      )
+                    )
+                  );
+              })
+            )
+          )
       );
       // Device Links mint only daily keys, for the Person who approved (ADR 0016).
       const mintLinkedKey = (personId: string, label: string) =>
@@ -1824,6 +1885,7 @@ export const createPortableApp = (options: {
           Layer.provide(deviceLinkGroup),
           Layer.provide(inviteGroup),
           Layer.provide(eventsGroup),
+          Layer.provide(presenceGroup),
           Layer.provide(peopleGroup),
           Layer.provide(adminGroup),
           Layer.provide(devicesGroup),
@@ -1848,6 +1910,7 @@ export const createPortableApp = (options: {
                           Layer.mergeAll(
                             Layer.succeed(Database, db),
                             Layer.succeed(QueueSignals, signals),
+                            Layer.succeed(Presence, presence),
                             personalLibrary,
                             Stats.forPersonLayer(access.person.id).pipe(
                               Layer.provide(Layer.succeed(Database, db))
@@ -1895,6 +1958,7 @@ export const createPortableApp = (options: {
     routes.pipe(
       Layer.provide(options.audio),
       Layer.provide(libraryLayer),
+      Layer.provide(presenceLayer),
       Layer.provide(queueSignalsLayer),
       Layer.provide(options.metadata ?? Metadata.unconfigured()),
       Layer.provide(options.titleReviser ?? TitleReviser.unconfigured()),
@@ -1941,15 +2005,22 @@ export const createPortableApp = (options: {
     }
     return response;
   };
+  const initialize = () =>
+    // SAFETY: The health route reads no caller-bound service.
+    app.handler(
+      new Request("http://orbis.internal/health"),
+      Context.empty() as Context.Context<Library | Queue | SetCaller>
+    );
   // oxlint-disable-next-line eslint/sort-keys -- Lifecycle methods precede the request boundary.
   return {
     dispose: app.dispose,
-    initialize: () =>
-      // SAFETY: The health route reads no caller-bound service.
-      app.handler(
-        new Request("http://orbis.internal/health"),
-        Context.empty() as Context.Context<Library | Queue | SetCaller>
-      ),
+    initialize,
+    expirePresence: async (): Promise<void> => {
+      await initialize();
+      if (presenceService) {
+        await Effect.runPromise(presenceService.expire(Date.now()));
+      }
+    },
     handler: async (
       request: Request,
       mode: AccessMode,

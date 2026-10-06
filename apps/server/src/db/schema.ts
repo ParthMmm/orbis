@@ -237,6 +237,69 @@ export const listens = sqliteTable(
   ]
 );
 
+// `actionNumber` outlives result pruning so a pruned action can never reacquire ownership.
+export const presenceSessions = sqliteTable(
+  "presence_sessions",
+  {
+    actionNumber: integer("action_number").notNull(),
+    keyId: text("key_id").notNull(),
+    leaseExpiresAt: integer("lease_expires_at"),
+    ownerGeneration: integer("owner_generation").notNull(),
+    personId: text("person_id").notNull(),
+    sessionId: text("session_id").notNull(),
+    setId: text("set_id").notNull(),
+    state: text("state", {
+      enum: ["playing", "paused", "stopped", "superseded"],
+    }).notNull(),
+    updatedAt: integer("updated_at").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.keyId, table.sessionId] }),
+    index("presence_sessions_by_person").on(table.personId, table.state),
+    uniqueIndex("presence_sessions_owner_unique")
+      .on(table.personId)
+      .where(sql`${table.state} IN ('playing', 'paused')`),
+  ]
+);
+
+export const presenceActionResults = sqliteTable(
+  "presence_action_results",
+  {
+    actionId: text("action_id").notNull(),
+    input: text("input").notNull(),
+    keyId: text("key_id").notNull(),
+    recordedAt: integer("recorded_at").notNull(),
+    result: text("result").notNull(),
+    sessionId: text("session_id").notNull(),
+  },
+  (table) => [
+    primaryKey({ columns: [table.keyId, table.sessionId, table.actionId] }),
+    index("presence_action_results_by_age").on(table.keyId, table.recordedAt),
+  ]
+);
+
+export const presenceKeys = sqliteTable("presence_keys", {
+  keyId: text("key_id").primaryKey(),
+  optedInAt: integer("opted_in_at").notNull(),
+  personId: text("person_id").notNull(),
+});
+
+export const presenceLegacyReports = sqliteTable(
+  "presence_legacy_reports",
+  {
+    keyId: text("key_id").primaryKey(),
+    personId: text("person_id").notNull(),
+    reportedAt: integer("reported_at").notNull(),
+    setId: text("set_id").notNull(),
+  },
+  (table) => [
+    index("presence_legacy_reports_by_person").on(
+      table.personId,
+      table.reportedAt
+    ),
+  ]
+);
+
 export const schema = {
   downloadJobs,
   downloadRequesters,
@@ -246,6 +309,10 @@ export const schema = {
   playlistEditors,
   playlistSets,
   playlists,
+  presenceActionResults,
+  presenceKeys,
+  presenceLegacyReports,
+  presenceSessions,
   queueEntries,
   setCues,
   sets,
