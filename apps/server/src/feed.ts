@@ -99,7 +99,6 @@ interface Row {
   readonly resourceId: string | null;
 }
 
-/** Why a cursor cannot resume, or null when every delivery after it is still retained. */
 const staleness = (
   cursor: Cursor | null,
   input: {
@@ -129,8 +128,6 @@ const staleness = (
       ? "expired"
       : "invalid";
   }
-  // Without a tag the cursor sat where no delivery was retained, so nothing at or below it
-  // may exist now, and nothing between it and the oldest retained delivery may be missing.
   if (oldest !== undefined && oldest <= cursor.sequence) {
     return "invalid";
   }
@@ -140,7 +137,6 @@ const staleness = (
   return null;
 };
 
-/** Visible Presence for one viewer, through the same gate HTTP uses. */
 export const visiblePresence = (input: {
   readonly people: readonly PersonRecord[];
   readonly viewerId: string;
@@ -216,8 +212,6 @@ const authorized = (
     }
   });
 
-// The daily key's Person and authorization epoch as this transaction sees them, or null
-// once the key is revoked or the Person removed.
 const recipientOf = (tx: DatabaseClient, keyId: string) =>
   Effect.gen(function* readRecipient() {
     const [key] = yield* tx
@@ -248,23 +242,16 @@ const recipientOf = (tx: DatabaseClient, keyId: string) =>
 const unreadable = () =>
   new LibraryError({ message: "Could not read the feed.", statusCode: 500 });
 
-/**
- * The read side of the change feed. Catch-up rechecks the key and every delivery's access,
- * and a snapshot and its cursor come from one transaction.
- */
 export const makeFeed = (input: {
   readonly db: DatabaseClient;
   readonly presence: typeof Presence.Service;
-  /** The recipient's own Library, as their Queue reads it over HTTP. */
-  readonly libraryFor: (personId: string) => Layer.Layer<Library>;
-  /** Another Person's Library, as Presence hydrates it over HTTP. */
+  readonly ownLibraryFor: (personId: string) => Layer.Layer<Library>;
   readonly friendLibraryFor: (personId: string) => Layer.Layer<Library>;
   readonly retentionMs?: number | undefined;
 }) => {
   const { db } = input;
   const retentionMs = input.retentionMs ?? RETENTION_MS;
 
-  /** What a feed ticket binds: the key's Person and current authorization epoch. */
   const authorize = (keyId: string) =>
     db
       .transaction((tx) => recipientOf(tx, keyId))
@@ -317,7 +304,7 @@ export const makeFeed = (input: {
           });
           const queue = () =>
             readListeningQueue(person.id).pipe(
-              Effect.provide(input.libraryFor(person.id))
+              Effect.provide(input.ownLibraryFor(person.id))
             );
           const presence = () =>
             visiblePresence({

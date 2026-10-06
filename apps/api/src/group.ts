@@ -35,7 +35,6 @@ export class Group extends DurableObject<Environment> {
       releaseAudio(id, undefined, (releasedId) =>
         Effect.sync(() => this.node.release(releasedId))
       );
-    // The audio node's download writes journal on the same database and wake the same feed.
     const feedSignals = FeedSignals.make();
     const runtime = ManagedRuntime.make(
       Library.forPersonLayer("host", { releaseAudio: release }).pipe(

@@ -85,11 +85,6 @@ export const createApp = (
     audio?: AudioOptions;
     databasePath?: string;
     database?: Layer.Layer<Database, unknown>;
-    /**
-     * A legacy trust file. Trust and data share `databasePath`, because Presence, the change
-     * feed, and revocation read and write `people` and `api_keys` in the data transaction. With
-     * an in-memory database the trust file only authenticates keys; those writes find no keys.
-     */
     devicesPath?: string;
     logging?: LoggingOptions;
     recordKeyUse?: boolean;

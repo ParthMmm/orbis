@@ -98,6 +98,7 @@ import {
 import { retryTrustOperation } from "./trust-storage.js";
 import {
   removePerson,
+  revokeDevice,
   revokeKey,
   updatePerson,
   updatePersonFilters,
@@ -286,9 +287,7 @@ export const createPortableApp = (options: {
   /** How long after a Playback Position report a Person still counts as listening. */
   presenceWindowMs?: number;
   presence?: PresenceOptions;
-  /** Retention bounds for the change feed. Tests shorten them to prove pruning. */
   feed?: JournalOptions;
-  /** Shared with any other runtime on the same database, so its commits wake this app's feed readers. */
   feedSignals?: typeof FeedSignals.Service;
   /** How long a Device Link stays open. Tests shorten it to prove expiry. */
   deviceLinkTtlMs?: number;
@@ -1206,7 +1205,7 @@ export const createPortableApp = (options: {
       feedReader = makeFeed({
         db,
         friendLibraryFor: friendLibraryLayer,
-        libraryFor: (personId) => libraryFor(personId),
+        ownLibraryFor: (personId) => libraryFor(personId),
         presence,
         retentionMs: options.feed?.retentionMs,
       });
@@ -1419,11 +1418,12 @@ export const createPortableApp = (options: {
             action(storePath, caller.person.id, keyId)
           );
         });
-      // A key leaves with its Presence and its open feeds in one commit.
-      const revokeKeyNow = (id: string, ownerId?: string) =>
+      const revokeKeyNow = (
+        revoke: (tx: DatabaseClient) => ReturnType<typeof revokeKey>
+      ) =>
         trustWrite((tx) =>
           Effect.gen(function* revokeWithPresence() {
-            const key = yield* revokeKey(tx, id, ownerId);
+            const key = yield* revoke(tx);
             yield* presence.revokeKey(tx, key.id, key.personId);
             yield* journal.record(tx, { keyId: key.id, topic: "revoked" });
             return key;
@@ -1449,7 +1449,9 @@ export const createPortableApp = (options: {
                       statusCode: 403,
                     });
                   }
-                  const key = yield* revokeKeyNow(params.id, caller.person.id);
+                  const key = yield* revokeKeyNow((tx) =>
+                    revokeDevice(tx, params.id, caller.person.id)
+                  );
                   return {
                     addedAt: key.addedAt,
                     current: key.id === caller.keyId,
@@ -1573,7 +1575,10 @@ export const createPortableApp = (options: {
           )
           .handleRaw("revokeKey", ({ params }) =>
             withFailureResponse(
-              Effect.andThen(requireAdminScope, revokeKeyNow(params.id))
+              Effect.andThen(
+                requireAdminScope,
+                revokeKeyNow((tx) => revokeKey(tx, params.id))
+              )
             )
           )
           .handleRaw("createInvite", ({ params }) =>
@@ -1995,7 +2000,6 @@ export const createPortableApp = (options: {
         await Effect.runPromise(presenceService.expire(Date.now()));
       }
     },
-    /** The catch-up operation and commit notices the feed transport (#211) adapts. */
     feed: {
       authorize: async (keyId: string) => {
         await initialize();

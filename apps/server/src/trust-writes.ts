@@ -1,8 +1,5 @@
-/**
- * Trust writes that change who can see or act, run on the caller's journal transaction so
- * the write, its Presence clear, and its feed resets commit together.
- */
 import { and, eq, ne, sql } from "drizzle-orm";
+import type { SQL } from "drizzle-orm";
 import { Effect } from "effect";
 
 import { apiKeys, invites, people } from "./db/schema.js";
@@ -14,10 +11,8 @@ import { readPeople } from "./visibility.js";
 const failure = (statusCode: number, message: string) =>
   new LibraryError({ message, statusCode });
 
-export const revokeKey = (tx: DatabaseClient, id: string, ownerId?: string) =>
-  Effect.gen(function* revokeKeyRow() {
-    // With `ownerId`, only that Person's daily keys match, and every other key answers the
-    // same 404 as a missing one.
+const deleteKey = (tx: DatabaseClient, id: string, owned?: SQL) =>
+  Effect.gen(function* deleteKeyRow() {
     const [key] = yield* tx
       .select({
         addedAt: apiKeys.addedAt,
@@ -28,14 +23,7 @@ export const revokeKey = (tx: DatabaseClient, id: string, ownerId?: string) =>
         scope: apiKeys.scope,
       })
       .from(apiKeys)
-      .where(
-        and(
-          eq(apiKeys.id, id),
-          ownerId === undefined
-            ? undefined
-            : and(eq(apiKeys.personId, ownerId), eq(apiKeys.scope, "daily"))
-        )
-      )
+      .where(and(eq(apiKeys.id, id), owned))
       .limit(1);
     if (!key) {
       return yield* failure(404, "Key not found.");
@@ -43,6 +31,20 @@ export const revokeKey = (tx: DatabaseClient, id: string, ownerId?: string) =>
     yield* tx.delete(apiKeys).where(eq(apiKeys.id, id));
     return key;
   });
+
+export const revokeKey = (tx: DatabaseClient, id: string) => deleteKey(tx, id);
+
+/** Every key but the Person's own daily keys answers the same 404 as a missing one. */
+export const revokeDevice = (
+  tx: DatabaseClient,
+  id: string,
+  personId: string
+) =>
+  deleteKey(
+    tx,
+    id,
+    and(eq(apiKeys.personId, personId), eq(apiKeys.scope, "daily"))
+  );
 
 export const removePerson = (tx: DatabaseClient, id: string) =>
   Effect.gen(function* removePersonRow() {

@@ -303,7 +303,6 @@ export class Presence extends Context.Service<
       personId: string,
       activeSetId: string | null
     ) => Effect.Effect<void, LibraryError, JournalCommit>;
-    /** Runs inside the trust transaction that deletes the key. */
     readonly revokeKey: (
       tx: DatabaseClient,
       keyId: string,
@@ -319,7 +318,6 @@ export class Presence extends Context.Service<
       now: number
     ) => Effect.Effect<string | null, LibraryError>;
     readonly schedule: () => Effect.Effect<void, LibraryError>;
-    /** Runs once the caller's transaction around `queueActivated`, `revokeKey`, or `removePerson` commits. */
     readonly afterCommit: () => Effect.Effect<void>;
     readonly changes: Stream.Stream<null>;
   }
@@ -481,7 +479,6 @@ export class Presence extends Context.Service<
             );
           });
         const { alarm } = options;
-        // The port is written only when the deadline moves.
         const setAlarm = (at: number | null) => {
           if (at === armedAt) {
             return Effect.void;
@@ -510,8 +507,6 @@ export class Presence extends Context.Service<
         const schedule: () => Effect.Effect<void, LibraryError> = Effect.fn(
           "Presence.schedule"
         )(() => execute(Effect.flatMap(nearestDeadline(), setAlarm)));
-        // The feed has no polling, so a deadline that failed to arm is retried until it
-        // is armed instead of waiting for a commit that may never come.
         let rescheduling = false;
         const reschedule = Effect.suspend(() => {
           if (rescheduling) {

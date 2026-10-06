@@ -43,7 +43,6 @@ export interface PresenceTransition {
   readonly visibleSetAfter: string | null;
 }
 
-/** What a domain owner records inside its mutation transaction. */
 export type FeedChange =
   | { readonly topic: "queue"; readonly personId: string }
   | {
@@ -82,7 +81,6 @@ const resourceOf = (change: DeliveredChange) => {
 export interface JournalOptions {
   readonly retentionMs?: number;
   readonly retentionCount?: number;
-  /** Sees every change as it is recorded. Tests use it to watch Presence transitions. */
   readonly observe?: (change: FeedChange) => void;
 }
 
@@ -110,9 +108,8 @@ const accessFingerprints = (people: readonly PersonRecord[]) =>
     return prints;
   });
 
-/** Resets a Person whose view changed: any older cursor answers reset, and their undelivered rows go. */
-const bump = (tx: DatabaseClient, personId: string) =>
-  Effect.gen(function* resetRecipient() {
+const resetRecipient = (tx: DatabaseClient, personId: string) =>
+  Effect.gen(function* clearRecipient() {
     const commit = yield* JournalCommit;
     yield* tx
       .insert(feedRecipients)
@@ -129,14 +126,9 @@ const bump = (tx: DatabaseClient, personId: string) =>
     commit.changed.add(personId);
   });
 
-/**
- * The one write interface of the change feed. Every domain owner records its changes inside
- * its own mutation transaction, so a mutation and its deliveries commit or roll back together.
- */
 export class Journal extends Context.Service<
   Journal,
   {
-    /** Opens a journal transaction, or joins the one already open, and publishes notices after the outermost commit. */
     readonly transaction: <A, E, R>(
       body: (tx: DatabaseClient) => Effect.Effect<A, E, R>
     ) => Effect.Effect<A, E | SqlError, Exclude<R, JournalCommit>>;
@@ -144,7 +136,6 @@ export class Journal extends Context.Service<
       tx: DatabaseClient,
       change: FeedChange
     ) => Effect.Effect<void, LibraryError, JournalCommit>;
-    /** Runs a write that can change who sees whom, and resets every Person whose view changed. */
     readonly changingAccess: <A, E, R>(
       tx: DatabaseClient,
       mutate: Effect.Effect<A, E, R>
@@ -299,7 +290,7 @@ export class Journal extends Context.Service<
               ...after.keys(),
             ])) {
               if (before.get(personId) !== after.get(personId)) {
-                yield* guarded(bump(tx, personId));
+                yield* guarded(resetRecipient(tx, personId));
               }
             }
             return result;
@@ -311,6 +302,5 @@ export class Journal extends Context.Service<
   }
 }
 
-/** A journal for a runtime whose commits no feed reader is waiting on; catch-up still reads its rows. */
 export const detachedJournal = (options: JournalOptions = {}) =>
   Journal.layer(options).pipe(Layer.provide(FeedSignals.layer));

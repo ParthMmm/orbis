@@ -51,7 +51,6 @@ const entriesOf = (db: DatabaseClient, personId: string) =>
     .where(eq(queueEntries.personId, personId))
     .orderBy(asc(queueEntries.position));
 
-/** A Person's Listening Queue as their own Library hydrates it. */
 export const readListeningQueue = (personId: string) =>
   Effect.gen(function* readQueue() {
     const db = yield* Database;
@@ -170,14 +169,11 @@ export class Queue extends Context.Service<
             .filter((setId) => !ids.includes(setId));
         });
 
-      // The Queue owns the transaction: its rows, the Listen and Finish it opens or closes, a
-      // reset position, and every delivery commit together. A change that returns null wrote
-      // nothing.
       const mutate = <E>(
         change: (
           tx: DatabaseClient,
           rows: readonly QueueRow[]
-        ) => Effect.Effect<readonly string[] | null, E, JournalCommit>
+        ) => Effect.Effect<readonly string[] | "unchanged", E, JournalCommit>
       ) =>
         Effect.gen(function* commitQueueChange() {
           const released = yield* execute(
@@ -185,7 +181,7 @@ export class Queue extends Context.Service<
               Effect.flatMap(order(), (rows) => change(tx, rows))
             )
           );
-          if (released !== null) {
+          if (released !== "unchanged") {
             yield* presence.afterCommit();
             yield* Effect.all(released.map((setId) => library.release(setId)));
           }
@@ -241,7 +237,7 @@ export class Queue extends Context.Service<
               // Moving the Set that is playing now would leave the open Listen beside a queue it
               // no longer matches, so a queued action on the active Set changes nothing.
               if (activeSetId === id) {
-                return Effect.succeed(null);
+                return Effect.succeed("unchanged" as const);
               }
               const rest = rows
                 .map((row) => row.setId)
@@ -318,7 +314,7 @@ export class Queue extends Context.Service<
             // A Set that is not the active one was already finished, or the person started
             // something else while it played. Either way this signal adds nothing.
             if (at === -1) {
-              return null;
+              return "unchanged" as const;
             }
             const ids = rows.map((row) => row.setId);
             const nextActive = ids[at + 1] ?? null;

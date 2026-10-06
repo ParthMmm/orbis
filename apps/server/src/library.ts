@@ -206,7 +206,6 @@ export class Library extends Context.Service<
         journal.transaction((tx) =>
           journal.record(tx, { setId, topic: "set" })
         );
-      // A shared Set write and its invalidation commit in one transaction.
       const setWrite = <A, E>(write: Effect.Effect<A, E, JournalCommit>) =>
         execute(journal.transaction(() => write));
       const resolve = (id: string) =>
@@ -1187,7 +1186,6 @@ export class Library extends Context.Service<
             }
             const removed = yield* journal.transaction((tx) =>
               Effect.gen(function* deletePlaylistTransaction() {
-                // Nobody can read a deleted Playlist, so its readers are resolved first.
                 yield* journal.record(tx, {
                   playlistId: id,
                   topic: "playlist",

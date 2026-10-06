@@ -6,7 +6,6 @@ export type FeedNotice =
 
 type Listener = (notice: FeedNotice) => void;
 
-/** Wakes feed readers after a commit. A notice says only that a Person's journal may have moved. */
 export class FeedSignals extends Context.Service<
   FeedSignals,
   {
@@ -21,7 +20,6 @@ export class FeedSignals extends Context.Service<
         Effect.gen(function* notifyListeners() {
           for (const notice of notices) {
             for (const listener of listeners) {
-              // A failing transport must not fail the mutation that already committed.
               yield* Effect.try({
                 catch: String,
                 try: () => listener(notice),

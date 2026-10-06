@@ -69,7 +69,6 @@ const Filters = Schema.fromJsonString(
   )
 );
 
-/** People as the current transaction sees them, for writes that must judge visibility before they commit. */
 export const readPeople = (db: DatabaseClient) =>
   db
     .select()
@@ -97,10 +96,6 @@ export const readPeople = (db: DatabaseClient) =>
 const missingPlaylist = () =>
   new LibraryError({ message: "Playlist not found.", statusCode: 404 });
 
-/**
- * The creator whose Playlist the Person may edit: their own, or a collaborative one whose
- * creator and editor still see each other.
- */
 export const resolveEditablePlaylist = (input: {
   readonly id: string;
   readonly personId: string;
@@ -143,7 +138,6 @@ export const resolveEditablePlaylist = (input: {
     return editor.creatorId;
   });
 
-/** Every Person who can read the Playlist now: its creator and its open editors. */
 export const playlistReaders = (
   people: readonly PersonRecord[],
   playlistId: string
@@ -176,7 +170,6 @@ export const playlistReaders = (
     return readers;
   });
 
-/** Each Person's editable Playlists, keyed by editor, for detecting a lost or gained grant. */
 export const editorAccess = (people: readonly PersonRecord[]) =>
   Effect.gen(function* readEditorAccess() {
     const db = yield* Database;
@@ -290,7 +283,6 @@ export const resolveVisibleSet = (input: {
     return yield* Effect.fail(notFound());
   });
 
-/** Every Person who can read the Set now. */
 export const setReaders = (people: readonly PersonRecord[], setId: string) =>
   Effect.filter(
     people.filter((person) => !person.removed).map((person) => person.id),
