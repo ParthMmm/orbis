@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- The Mac App Store requires App Sandbox, which iOS always applies and never declares.
+	     Networking is outbound only: the app reaches the service over TLS and never listens.
+	     The CarPlay audio entitlement is deliberately absent here. App Store validation
+	     rejects it on macOS (error 90285), so iOS signs the file beside this one. -->
+	<key>com.apple.security.app-sandbox</key>
+	<true/>
+	<key>com.apple.security.network.client</key>
+	<true/>
+	<key>com.apple.security.application-groups</key>
+	<array>
+		<string>group.app.orbis.client</string>
+	</array>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>$(AppIdentifierPrefix)app.orbis.client</string>
+	</array>
+</dict>
+</plist>
