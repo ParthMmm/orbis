@@ -61,6 +61,10 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client
         PRODUCT_NAME: Orbis
+        # The two platforms need different entitlements: the Mac App Store requires App Sandbox
+        # and rejects the CarPlay entitlement, and iOS rejects app-sandbox. The file above signs
+        # iOS; this one signs macOS.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Orbis/Orbis-macOS.entitlements
         # orbis.icon, the Icon Composer document. This replaces the AppIcon image set.
         ASSETCATALOG_COMPILER_APPICON_NAME: orbis
         # The system tint (tab selection, links, toggles) comes from the catalog, so it carries the
@@ -101,6 +105,8 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.share
         PRODUCT_NAME: OrbisShare
+        # See the app target: the extension sandboxes on macOS and shares the app's container.
+        "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": OrbisShare/OrbisShare-macOS.entitlements
         INFOPLIST_FILE: OrbisShare/Info.plist
         SKIP_INSTALL: YES
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
