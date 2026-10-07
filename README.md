@@ -30,7 +30,7 @@ Orbis is a personal project for a private Group of listeners. The API and librar
 
 The Group owns library data, People, keys, and Download scheduling. Vanta connects to it to fetch Downloads and serves Retained Audio through signed stream grants. Older API addresses forward to the Group during the transition. See [ADR 0018](docs/adr/0018-api-on-a-durable-object.md).
 
-Saving a link creates a Person's Library Entry. Auto Download starts a Download when enabled. Each Person has a Listening Queue and Playback Positions shared across their devices. [CONTEXT.md](CONTEXT.md) defines these terms.
+Saving a link creates a Person's Library Entry. Auto Download starts a Download when enabled. Each Person has a Listening Queue and Playback Positions shared across their devices. [GLOSSARY.md](GLOSSARY.md) defines these terms.
 
 ## What is in the repo
 
@@ -47,7 +47,7 @@ Saving a link creates a Person's Library Entry. Auto Download starts a Download 
 
 ## Choices worth a look
 
-- **Domain language first.** [`CONTEXT.md`](CONTEXT.md) defines the terms (Set, Retained Audio, Playback Position, Listen) and the words to avoid. The code and the [decision records](docs/adr) use them.
+- **Domain language first.** [`GLOSSARY.md`](GLOSSARY.md) defines the terms (Set, Retained Audio, Playback Position, Listen) and the words to avoid. The code and the [decision records](docs/adr) use them.
 - **Decision records.** [ADRs](docs/adr) record platform, storage, identity, and deployment decisions. Implementation and live acceptance evidence belong in [GitHub Issues](https://github.com/ParthMmm/orbis/issues).
 - **One source for design tokens.** [`docs/design/tokens.json`](docs/design/tokens.json) generates the Swift colors and the CSS. CI fails if the output drifts.
 - **Native test lanes.** `bun run native:lanes` starts a temporary server with its own database and trust store, pairs a device, and runs the unit tests and UI journeys against it. See [development](docs/development.md#native-clients) for lane modes and evidence retention.

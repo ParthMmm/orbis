@@ -17,7 +17,7 @@ Source ownership, local setup, and verification.
 | Web routes and player | [`apps/web/src/routes`](../apps/web/src/routes) and [`player.tsx`](../apps/web/src/components/player/player.tsx) |
 | Apple client and project specification | [`apps/apple/Orbis`](../apps/apple/Orbis) and [`project.yml`](../apps/apple/project.yml) |
 | Native fixture setup and HTTP client | [`scripts/native-lanes.mjs`](../scripts/native-lanes.mjs), [`seed-lane-audio.mjs`](../scripts/seed-lane-audio.mjs), and [`LaneService.swift`](../apps/apple/OrbisUITests/LaneService.swift) |
-| Domain terms and decisions | [CONTEXT.md](../CONTEXT.md) and [ADRs](adr) |
+| Domain terms and decisions | [GLOSSARY.md](../GLOSSARY.md) and [ADRs](adr) |
 
 Resolve a filename with `rg --files <directory>` before reading it. Server HTTP tests live beside the implementation in `apps/server/src`; native fixture setup lives in the lane runner. Historical plans in `docs/plans` record earlier build sequences and are not current setup instructions.
 

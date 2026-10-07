@@ -35,7 +35,7 @@ Three prototype results already constrain this plan and are recorded in Appendix
   - [ ] `git show origin/main:docs/agents/issue-tracker.md`
   - [ ] `git show origin/main:docs/agents/triage-labels.md`
   - [ ] `git show origin/main:README.md`
-  - [ ] `git show origin/main:CONTEXT.md`
+  - [ ] `git show origin/main:GLOSSARY.md`
 - [ ] Arm the 30-minute audit tick. In a local session, a real terminal with a recurring wake. Never leave the cadence to memory.
 - [ ] Use this tick prompt, verbatim. "Re-read the standing goal and `docs/agents/domain.md` from trunk. Audit the operation against both and fix drift in this tick. Probe every active unit and judge progress by side effects only. Stand down a stuck unit and dispatch its replacement now. Then send the operator a status message, whether or not anything changed, with the unit table of id, owner, state, and head SHA, the verdicts since the last tick, what landed, open operator gates, and blockers."
 - [ ] On the operator's hold or stand-down, send every owner a zero-writes order at once.
@@ -1016,7 +1016,7 @@ Two questions stay unproven. Nothing here proves playback of Opus or a multi-hou
 
 ## Appendix D. Links and reading list
 
-- `docs/agents/domain.md` and `CONTEXT.md` hold the glossary. Retained Audio, Download, Listen, Finish, Playback Position, and Listening Queue all have fixed meanings that the code must match.
+- `docs/agents/domain.md` and `GLOSSARY.md` hold the glossary. Retained Audio, Download, Listen, Finish, Playback Position, and Listening Queue all have fixed meanings that the code must match.
 - `docs/agents/issue-tracker.md` governs how tickets are read, claimed, and closed. Claim with `gh issue edit <number> --add-assignee @me` before starting a unit.
 - `docs/agents/triage-labels.md` governs labels. All twelve tickets already carry `ready-for-agent`.
 - `docs/adr/0001-client-platform-strategy.md` records why native Apple clients come before a web client.
