@@ -341,13 +341,9 @@ export const apiKeys = sqliteTable("api_keys", {
   scope: text("scope", { enum: ["daily", "admin", "node"] }).notNull(),
 });
 
-export const invites = sqliteTable("invites", {
-  digest: text("digest").primaryKey(),
-  expiresAt: text("expires_at").notNull(),
-  personId: text("person_id")
-    .notNull()
-    .references(() => people.id),
-  used: integer("used", { mode: "boolean" }).notNull(),
+export const groupSettings = sqliteTable("group_settings", {
+  id: integer("id").primaryKey(),
+  passcode: text("passcode"),
 });
 
 export const trustMigrations = sqliteTable("trust_migrations", {

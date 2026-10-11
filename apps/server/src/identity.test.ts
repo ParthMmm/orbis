@@ -1,3 +1,4 @@
+import { Database } from "bun:sqlite";
 import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -312,6 +313,87 @@ test("migration preserves digests and identities and ignores a recreated JSON fi
     expect(response.json()).toMatchObject({ id: "host" });
   } finally {
     await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+// A trust database from before ADR 0020 still holds Invites that point at
+// People. If the upgrade kept them, rewriting `people` would break their
+// foreign keys, so removing a Person or setting the passcode would fail.
+const PRE_PASSCODE_TRUST = `CREATE TABLE people (
+      id TEXT PRIMARY KEY NOT NULL, username TEXT NOT NULL, removed INTEGER NOT NULL,
+      social INTEGER NOT NULL DEFAULT 0, auto_download INTEGER NOT NULL DEFAULT 1,
+      filters TEXT NOT NULL DEFAULT '[]'
+    );
+    CREATE TABLE api_keys (
+      id TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
+      scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin', 'node')), person_id TEXT NOT NULL REFERENCES people(id),
+      added_at TEXT NOT NULL, last_used_at TEXT
+    );
+    CREATE TABLE invites (
+      digest TEXT PRIMARY KEY NOT NULL, person_id TEXT NOT NULL REFERENCES people(id),
+      expires_at TEXT NOT NULL, used INTEGER NOT NULL
+    );
+    CREATE TABLE trust_migrations (id INTEGER PRIMARY KEY CHECK (id = 1));
+    INSERT INTO trust_migrations (id) VALUES (1);
+    INSERT INTO people (id, username, removed) VALUES ('host', 'host', 0), ('friend', 'friend', 0);
+    INSERT INTO invites VALUES ('${"0".repeat(64)}', 'friend', '2026-01-01T00:00:00.000Z', 0);`;
+
+test("an existing trust database drops Invites and keeps the passcode across restarts", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-identity-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  const devicesPath = path.join(directory, "devices.json");
+  const database = new Database(databasePath, { create: true });
+  try {
+    database.exec(PRE_PASSCODE_TRUST);
+    database
+      .query(
+        "INSERT INTO api_keys VALUES ('host-admin', ?, 'Recovery', 'admin', 'host', '2026-01-01T00:00:00.000Z', NULL)"
+      )
+      .run(hashToken("pre-passcode-admin"));
+  } finally {
+    database.close();
+  }
+  const host = { authorization: "Bearer pre-passcode-admin" };
+  // Without a file database, only the trust adapter upgrades the trust file.
+  const first = createApp({ devicesPath });
+  try {
+    const removed = await request(first, {
+      headers: host,
+      method: "DELETE",
+      url: "/admin/people/friend",
+    });
+    expect(removed.statusCode).toBe(200);
+    const set = await request(first, {
+      headers: host,
+      method: "PUT",
+      payload: { passcode: "orbit" },
+      url: "/admin/passcode",
+    });
+    expect(set.statusCode).toBe(200);
+  } finally {
+    await first.dispose();
+  }
+  const second = createApp({ devicesPath });
+  try {
+    const read = await request(second, {
+      headers: host,
+      method: "GET",
+      url: "/admin/passcode",
+    });
+    expect(read.json()).toEqual({ passcode: "orbit" });
+    const upgraded = new Database(databasePath, { readonly: true });
+    try {
+      expect(
+        upgraded
+          .query("SELECT name FROM sqlite_master WHERE name = 'invites'")
+          .all()
+      ).toEqual([]);
+    } finally {
+      upgraded.close();
+    }
+  } finally {
+    await second.dispose();
     await rm(directory, { force: true, recursive: true });
   }
 });

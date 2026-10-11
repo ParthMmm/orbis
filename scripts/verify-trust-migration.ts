@@ -37,7 +37,6 @@ migrateTrustStore(path.join(scratch, "devices.json"));
 const after = readTrustStrict(path.join(scratch, "library.sqlite"));
 assert.equal(after.keys.length, before.keys.length);
 assert.equal(after.people.length, before.people.length);
-assert.equal(after.invites?.length ?? 0, before.invites?.length ?? 0);
 assert.deepEqual(after.keys, before.keys);
 assert.deepEqual(
   after.people,
@@ -48,10 +47,8 @@ assert.deepEqual(
     social: person.social ?? false,
   }))
 );
-assert.deepEqual(after.invites ?? [], before.invites ?? []);
 const result = {
   digestsPersonAndScopePreserved: true,
-  invites: after.invites?.length ?? 0,
   keys: after.keys.length,
   people: after.people.length,
   sourceOpenedReadOnly: true,

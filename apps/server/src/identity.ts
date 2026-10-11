@@ -36,27 +36,20 @@ const Key = Schema.Struct({
   scope: Schema.Literals(["daily", "admin", "node"]),
   tokenHash: TokenHash,
 });
-/** An Invite (ADR 0016): the store keeps the code's `sha256`, never the code. */
-const Invite = Schema.Struct({
-  codeHash: TokenHash,
-  expiresAt: Schema.String,
-  personId: Schema.String,
-  used: Schema.Boolean,
-});
 const LegacyTrustFile = Schema.Struct({
   devices: Schema.Array(LegacyDevice),
   version: Schema.Literal(1),
 });
 const TrustFile = Schema.Struct({
-  invites: Schema.optionalKey(Schema.Array(Invite)),
   keys: Schema.Array(Key),
+  /** Plain text so the Host can read it back (ADR 0020). Absent or null closes joining. */
+  passcode: Schema.optionalKey(Schema.NullOr(Schema.String)),
   people: Schema.Array(Person),
   version: Schema.Literal(2),
 });
 
 export type PersonRecord = typeof Person.Type;
 export type KeyRecord = typeof Key.Type;
-export type InviteRecord = typeof Invite.Type;
 export type TrustStore = typeof TrustFile.Type;
 export type AccessMode = "device";
 
@@ -158,7 +151,10 @@ export const readTrustRegistry = (
   }
 };
 
-const matchesTokenHash = (storedHash: string, presented: string): boolean => {
+export const matchesTokenHash = (
+  storedHash: string,
+  presented: string
+): boolean => {
   const stored = Buffer.from(storedHash, "hex");
   const digest = Buffer.from(hashToken(presented), "hex");
   return stored.length === digest.length && timingSafeEqual(stored, digest);

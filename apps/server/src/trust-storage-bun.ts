@@ -27,7 +27,6 @@ const withDatabase = <T>(target: string, action: (db: Database) => T): T => {
 };
 
 const writeStore = (db: Database, store: TrustStore): void => {
-  db.run("DELETE FROM invites");
   db.run("DELETE FROM api_keys");
   db.run("DELETE FROM people");
   const person = db.query(
@@ -57,18 +56,14 @@ const writeStore = (db: Database, store: TrustStore): void => {
       record.lastUsedAt
     );
   }
-  const invite = db.query(
-    "INSERT INTO invites (digest, person_id, expires_at, used) VALUES (?, ?, ?, ?)"
-  );
-  for (const record of store.invites ?? []) {
-    invite.run(
-      record.codeHash,
-      record.personId,
-      record.expiresAt,
-      Number(record.used)
-    );
-  }
+  db.query(
+    "INSERT OR REPLACE INTO group_settings (id, passcode) VALUES (1, ?)"
+  ).run(store.passcode ?? null);
 };
+
+const GROUP_SETTINGS = `CREATE TABLE IF NOT EXISTS group_settings (
+  id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1), passcode TEXT
+)`;
 
 export const initializeTrustDatabase = (input: {
   readonly target: string;
@@ -105,6 +100,20 @@ export const initializeTrustDatabase = (input: {
           db.run("ALTER TABLE api_keys_node_scope RENAME TO api_keys");
         }).immediate();
       }
+      // Every read passes here, so the write lock is taken only while the
+      // Group Passcode table is missing.
+      if (
+        !db
+          .query(
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'group_settings'"
+          )
+          .get()
+      ) {
+        db.transaction(() => {
+          db.run("DROP TABLE IF EXISTS invites");
+          db.run(GROUP_SETTINGS);
+        }).immediate();
+      }
       return;
     }
     db.run(`CREATE TABLE IF NOT EXISTS people (
@@ -117,10 +126,7 @@ export const initializeTrustDatabase = (input: {
       scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin', 'node')), person_id TEXT NOT NULL REFERENCES people(id),
       added_at TEXT NOT NULL, last_used_at TEXT
     )`);
-    db.run(`CREATE TABLE IF NOT EXISTS invites (
-      digest TEXT PRIMARY KEY NOT NULL, person_id TEXT NOT NULL REFERENCES people(id),
-      expires_at TEXT NOT NULL, used INTEGER NOT NULL
-    )`);
+    db.run(GROUP_SETTINGS);
     db.run(
       "CREATE TABLE IF NOT EXISTS trust_migrations (id INTEGER PRIMARY KEY CHECK (id = 1))"
     );
@@ -181,16 +187,17 @@ const readStore = (db: Database, decode: typeof decodeTrust): TrustStore => {
       "SELECT id, digest AS tokenHash, label, scope, person_id AS personId, added_at AS addedAt, last_used_at AS lastUsedAt FROM api_keys ORDER BY rowid"
     )
     .all();
-  const invites = db
-    .query<
-      { codeHash: string; personId: string; expiresAt: string; used: number },
-      []
-    >(
-      "SELECT digest AS codeHash, person_id AS personId, expires_at AS expiresAt, used FROM invites ORDER BY rowid"
+  const settings = db
+    .query<{ passcode: string | null }, []>(
+      "SELECT passcode FROM group_settings WHERE id = 1"
     )
-    .all()
-    .map((record) => ({ ...record, used: Boolean(record.used) }));
-  return decode({ invites, keys, people, version: 2 });
+    .get();
+  return decode({
+    keys,
+    passcode: settings?.passcode ?? null,
+    people,
+    version: 2,
+  });
 };
 
 export const readTrustDatabase = (
