@@ -4,7 +4,7 @@ The Worker at `https://orbis.p11a.xyz/api/*` forwards requests to one SQLite Dur
 
 `createPortableApp` composes the HTTP routes with an injected database, Audio service, audio response, audio release operation, and stream signing secret. The Bun `createApp` wrapper supplies the local implementations. The Group supplies its SQLite driver and trust adapter, persists Download requests without running a local worker, and redirects audio to the audio node. Its bundle excludes Bun, filesystem access, and local download backends.
 
-Presence, Queue signals, Device Links, and the failed-key limit live in the Group. The limit uses `CF-Connecting-IP`. Events retain the 30-second heartbeat and end when the caller's key is revoked. Requests produce JSON logs.
+Presence, Queue signals, Sign-in Codes, and the failed-key limit live in the Group's memory, so a restart cancels pending Sign-in Codes. The limit uses `CF-Connecting-IP`. Events retain the 30-second heartbeat and end when the caller's key is revoked. Requests produce JSON logs.
 
 ## Worker configuration
 
@@ -78,30 +78,23 @@ The API test command also runs the audio node, grant, and recovery journeys agai
 
 ## Recover Host access
 
-Set `RECOVERY_ENABLED=true` after verifying the Host email and Access team URL. Until enabled, recovery returns `401` and Alchemy creates no Access resources. Alchemy creates an Access application for exactly `orbis.p11a.xyz/api/recovery`. Its allow policy names `RECOVERY_HOST_EMAIL`, permits only the email one-time PIN provider, and expires sessions after 15 minutes. Other API paths keep Bearer-key authentication. Set `ACCESS_ISSUER` to the account's exact `https://<team>.cloudflareaccess.com` origin. Alchemy passes the recovery application's audience to the Worker as `ACCESS_AUDIENCE` and exports `recoveryAudience` in the deployment outputs.
+Recovery gives the Host a Sign-in Code when no signed-in device is left ([ADR 0020](../../docs/adr/0020-sign-in-by-group-passcode-and-sign-in-code.md)). It uses Vanta's node key, which can already export all Group data, so recovery adds no new power.
 
-By default the stack looks up the account's existing one-time PIN provider without managing it. If the account has none, explicitly set `RECOVERY_CREATE_OTP=true` to create one. Keep that setting while the stack manages the provider. A created provider has a retain policy, so removing the declaration or destroying this stack cannot delete an account login method that another application may use. Existing providers never require adoption.
-
-Review the plan with the actual Host email, issuer, and existing API configuration before deployment:
+On Vanta, load the node key from the backup environment file and run the command:
 
 ```sh
-cd apps/web
-bun run deploy --dry-run
+cd ~/Developer/orbis-service
+bash -c 'set -a; . ~/.config/orbis-backup.env; exec bun run --cwd apps/server trust recover'
 ```
 
-After deployment, sign in with the Host email and emailed code, then mint an admin key:
+The command calls `POST https://orbis.p11a.xyz/api/recovery`. Use `--url <API URL>` to call another Group. It reads the key only from `ORBIS_NODE_KEY`, never from its arguments, so the key stays out of shell history and the process list. It prints the code and its expiry time. Type the code on the new device within 10 minutes. The device receives its own daily key for the Host.
 
-```sh
-cloudflared access login https://orbis.p11a.xyz/api/recovery
-bun run --cwd apps/server trust recover --url https://orbis.p11a.xyz/api --label "Host recovery"
-```
+`/api/recovery` accepts only `POST` with a node key. A missing, unknown, daily, or admin key is refused. Recovery restores the Host Person if it was removed, or creates it in an empty Group. It does not create or revoke keys, so revoke a lost device from Settings after signing in. Responses are not cached.
 
-On a headless machine, open the login URL that `cloudflared` prints on another device. The recovery command reads the cached application token with `cloudflared access token`, calls the protected endpoint, and prints the new admin key once. Store that key in the password manager and paste it into the web admin page. For an existing headless Access session, the command also accepts `ORBIS_ACCESS_TOKEN` through the environment. Do not put it in command arguments or logs; unset it after use.
+A Host who loses every device and access to Vanta cannot recover without redeploying.
 
-Recovery creates the Host when the Group is empty and mints a replacement if an old admin key's plaintext is lost. It preserves existing keys, so revoke lost keys from the admin page after signing in. The recovery command does not open or write a local database. `GET /api/recovery` cannot read data.
+Deploys before ADR 0020 could create a Cloudflare Access application for `/api/recovery`. The next deploy deletes that application. A one-time PIN provider created with `RECOVERY_CREATE_OTP` had a retain policy, so it stays in the account; delete it in the Cloudflare dashboard if nothing else uses it.
 
-The Worker rejects missing or invalid Access JWTs before calling the Group. The Group independently verifies the signature, issuer, audience, expiry, application-token type, and Host email before minting a key. The `Cf-Access-Authenticated-User-Email` header alone grants no access. These checks also apply through a `workers.dev` address that has no Access application in front of it. They follow Cloudflare's [JWT validation guidance](https://developers.cloudflare.com/cloudflare-one/access-controls/applications/http-apps/authorization-cookie/validating-json/) and [CLI authentication flow](https://developers.cloudflare.com/cloudflare-one/tutorials/cli/).
-
-`bun apps/api/e2e/recovery.ts` runs a real workerd HTTP journey with a temporary signing key and intercepted public-key endpoint. It checks rejected claims, origin protection, first and replacement admin keys, normal-route isolation, and the CLI without a local database. The result is `.cache/api-recovery/<run>/result.json`; it contains no JWTs or key tokens. A local success does not verify the live email-code flow or deployed Access policy.
+`bun apps/api/e2e/recovery.ts` runs a workerd HTTP journey against a disposable Group. It checks that missing, unknown, and daily keys are refused, that the node key returns a code, that the code redeems once for a Host key that reaches `/admin/people`, that the node key cannot call a client route, and that the CLI reads the key only from its environment. The result is `.cache/api-recovery/<run>/result.json`; it contains no keys or codes.
 
 The web deployment also passes `AUDIO_NODE_URL` as `ORBIS_AUDIO_URL`, so its media Content Security Policy can follow Group audio redirects to the node.
