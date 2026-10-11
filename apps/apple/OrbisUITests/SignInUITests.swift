@@ -242,35 +242,43 @@ final class SignInUITests: XCTestCase {
     record("host")
   }
 
-  /// A friend's Auto Download follows them across a relaunch, and their Settings has no Host
-  /// sections.
+  /// A friend's Auto Download shows what the service stores, a change follows them across a
+  /// relaunch, and their Settings has no Host sections. The journey starts from whatever the
+  /// lane seeded and leaves it as it found it.
   func testAFriendsSettingsKeepAutoDownloadAndHaveNoHostSections() throws {
     let friend = try friendService()
+    let stored = try friend.autoDownload()
+    let switchValue = { (enabled: Bool) in enabled ? "1" : "0" }
     let app = launch(service: friend, signedIn: true)
     openSettings(app)
     let toggle = app.switches["auto-download"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-    XCTAssertEqual(toggle.value as? String, "1")
-    capture("auto-download-default-on")
+    XCTAssertEqual(toggle.value as? String, switchValue(stored), "the toggle shows the stored value")
+    capture("auto-download-as-stored")
     toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-    XCTAssertTrue(waitUntil(timeout: 10) { toggle.value as? String == "0" })
-    let off = try friend.autoDownload(becomes: false)
-    XCTAssertFalse(off)
-    capture("auto-download-off")
+    XCTAssertTrue(waitUntil(timeout: 10) { toggle.value as? String == switchValue(!stored) })
+    let afterChange = try friend.autoDownload(becomes: !stored)
+    XCTAssertEqual(afterChange, !stored, "the change reaches the service")
+    capture("auto-download-changed")
     assertNoHostSections(app)
     capture("friend-settings-end")
     app.terminate()
     app.launch()
     openSettings(app)
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
-    let reopenedOff = toggle.value as? String == "0"
-    XCTAssertTrue(reopenedOff)
-    capture("auto-download-off-reopened")
+    let afterRelaunch = toggle.value as? String == switchValue(!stored)
+    XCTAssertTrue(afterRelaunch, "the change survives a relaunch")
+    capture("auto-download-changed-reopened")
     toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
-    let on = try friend.autoDownload(becomes: true)
-    XCTAssertTrue(on)
-    capture("auto-download-restored-on")
-    steps = [["afterOff": off, "afterOn": on, "name": "auto download", "offAfterRelaunch": reopenedOff]]
+    let restored = try friend.autoDownload(becomes: stored)
+    XCTAssertEqual(restored, stored, "the journey restores the stored value")
+    capture("auto-download-restored")
+    steps = [
+      [
+        "afterChange": afterChange, "afterRelaunch": afterRelaunch, "name": "auto download",
+        "restored": restored, "stored": stored,
+      ]
+    ]
     record("auto-download-settings")
   }
 

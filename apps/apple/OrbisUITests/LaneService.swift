@@ -20,6 +20,11 @@ struct LaneService {
 
   struct Preferences: Decodable { let autoDownload: Bool }
 
+  func autoDownload() throws -> Bool {
+    let preferences: Preferences = try send("GET", "me", nil)
+    return preferences.autoDownload
+  }
+
   func autoDownload(becomes expected: Bool) throws -> Bool {
     let deadline = Date().addingTimeInterval(10)
     repeat {
