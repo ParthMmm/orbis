@@ -11,6 +11,8 @@ import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
+import { signInWithKey } from "./helpers.mjs";
+
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-player");
 const devicePort = 4511;
@@ -195,9 +197,7 @@ try {
           : null;
       });
 
-    await page.goto(`${webUrl}/sign-in`);
-    await page.getByLabel("API key").fill(key);
-    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
+    await signInWithKey(page, webUrl, key);
     await page.getByRole("heading", { name: "Library" }).waitFor();
 
     await page.getByRole("button", { name: "Actions for First set" }).click();

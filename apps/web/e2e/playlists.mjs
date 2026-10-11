@@ -8,6 +8,8 @@ import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
+import { signInWithKey } from "./helpers.mjs";
+
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-playlists");
 const devicePort = 4491;
@@ -163,9 +165,7 @@ try {
           );
         });
       });
-      await page.goto(`${webUrl}/sign-in`);
-      await page.getByLabel("API key").fill(keys[who]);
-      await page.getByRole("button", { exact: true, name: "Sign in" }).click();
+      await signInWithKey(page, webUrl, keys[who]);
       await page.getByRole("heading", { name: "Library" }).waitFor();
       return page;
     };

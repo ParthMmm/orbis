@@ -1,6 +1,7 @@
-// List and revoke devices against a real Orbis API: the built web client in `vite
-// preview` calls a throwaway server whose trust store holds two of the Host's daily
-// keys, the Host's admin key, and a key for a second Person.
+// List, add, and revoke devices against a real Orbis API: the built web client in
+// `vite preview` calls a throwaway server whose trust store holds two of the Host's
+// daily keys, an admin key from before ADR 0020, and a key for a second Person. A second browser
+// signs in with a Sign-in Code from the Devices page.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -10,6 +11,8 @@ import path from "node:path";
 import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
+
+import { signInWithKey, textOf } from "./helpers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-devices");
@@ -127,9 +130,7 @@ try {
     const deviceList = page.getByRole("list", { name: "Your devices" });
     const deviceNames = () => deviceList.getByRole("heading").allTextContents();
 
-    await page.goto(webUrl);
-    await page.getByLabel("API key").fill(tokens.laptop);
-    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
+    await signInWithKey(page, webUrl, tokens.laptop);
     await page.getByRole("heading", { name: "Library" }).waitFor();
     step("the Laptop key signs in");
 
@@ -138,7 +139,7 @@ try {
     await deviceList.getByRole("heading", { name: "Phone" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/devices");
     const listed = await deviceNames();
-    assert.deepEqual(listed.toSorted(), ["Laptop", "Phone"]);
+    assert.deepEqual(listed.toSorted(), ["Laptop", "Phone", "Recovery"]);
     const laptopRow = deviceList
       .getByRole("listitem")
       .filter({ has: page.getByRole("heading", { name: "Laptop" }) });
@@ -146,7 +147,7 @@ try {
     assert.equal(await deviceList.getByText("This device").count(), 1);
     await page.screenshot({ path: path.join(artifacts, "devices.png") });
     step(
-      "Devices lists Laptop (This device) and Phone, not the admin key or alice's key"
+      "Devices lists Laptop (This device), Phone, and the old admin key Recovery (ADR 0020), not alice's key"
     );
 
     await page.getByRole("button", { name: "Revoke Phone" }).click();
@@ -158,7 +159,8 @@ try {
     await deviceList
       .getByRole("heading", { name: "Phone" })
       .waitFor({ state: "detached" });
-    assert.deepEqual(await deviceNames(), ["Laptop"]);
+    const afterPhone = await deviceNames();
+    assert.deepEqual(afterPhone.toSorted(), ["Laptop", "Recovery"]);
     assert.equal(await meStatus(tokens.phone), 401);
     assert.equal(await meStatus(tokens.alice), 200);
     assert.equal(await meStatus(tokens.admin), 200);
@@ -166,6 +168,72 @@ try {
     step(
       "revoking Phone after confirming removes it, and the API refuses the Phone key"
     );
+
+    const shownCode = page.getByRole("status", { name: "Your sign-in code" });
+    await page.getByRole("button", { name: "Sign in another device" }).click();
+    await shownCode.waitFor();
+    const firstCode = await textOf(shownCode);
+    assert.match(firstCode, /^[A-Z0-9]{4}-[A-Z0-9]{4}$/u);
+    await page.getByText("Works once, until").waitFor();
+    await page.getByRole("button", { name: "Get a new code" }).click();
+    await page.waitForFunction(
+      (previous) =>
+        document
+          .querySelector('[aria-label="Your sign-in code"]')
+          ?.textContent.trim() !== previous,
+      firstCode
+    );
+    const code = await textOf(shownCode);
+    assert.match(code, /^[A-Z0-9]{4}-[A-Z0-9]{4}$/u);
+    await page.screenshot({ path: path.join(artifacts, "sign-in-code.png") });
+    step(
+      "Sign in another device shows a code as ABCD-EFGH, and Get a new code replaces it",
+      {
+        code,
+      }
+    );
+
+    const newDevice = await browser.newContext();
+    const other = await newDevice.newPage();
+    await other.goto(webUrl);
+    const codeForm = other.getByRole("form", { name: "Sign in with a code" });
+    await codeForm
+      .getByLabel("Sign-in code")
+      .fill(code.toLowerCase().replace("-", " "));
+    await codeForm.getByRole("button", { name: "Sign in" }).click();
+    await other.getByRole("heading", { name: "Library" }).waitFor();
+    await other.getByText("Signed in as host").waitFor();
+    assert.notEqual(
+      await other.evaluate(() => localStorage.getItem("orbis.apiKey")),
+      null
+    );
+    await other.screenshot({ path: path.join(artifacts, "redeemed.png") });
+    await page.reload();
+    await deviceList.getByRole("heading", { name: /^Chrome on /u }).waitFor();
+    const namesAfterRedeem = await deviceNames();
+    assert.equal(namesAfterRedeem.length, 3);
+    step(
+      "another browser types the code in lower case with a space, signs in as host, and appears on Devices under its browser name"
+    );
+
+    const thirdDevice = await browser.newContext();
+    const third = await thirdDevice.newPage();
+    await third.goto(webUrl);
+    const thirdForm = third.getByRole("form", { name: "Sign in with a code" });
+    await thirdForm.getByLabel("Sign-in code").fill(code);
+    const reused = third.waitForResponse(
+      (response) => new URL(response.url()).pathname === "/sign-in/code"
+    );
+    await thirdForm.getByRole("button", { name: "Sign in" }).click();
+    const reusedResponse = await reused;
+    assert.equal(reusedResponse.status(), 404);
+    const { message } = await reusedResponse.json();
+    assert.equal(await textOf(thirdForm.getByRole("alert")), message);
+    await thirdDevice.close();
+    await newDevice.close();
+    step("the same code does not work twice, and the page shows why", {
+      message,
+    });
 
     await page.getByRole("button", { name: "Revoke Laptop" }).click();
     await dialog.getByRole("heading", { name: "Revoke Laptop?" }).waitFor();

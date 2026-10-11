@@ -1,6 +1,7 @@
 // The Host manages the Group from the admin page against a real Orbis API: the built
-// web client in `vite preview` calls a throwaway server whose trust store holds the
-// Host with one daily key and one admin key.
+// web client in `vite preview` calls a throwaway server whose Group holds the Host
+// and alice, each with one daily key. Fresh browsers join and sign in with what the
+// page shows.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -11,14 +12,17 @@ import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
+import { signInWithKey, textOf } from "./helpers.mjs";
+
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-admin");
 const devicePort = 4441;
 const webPort = 3341;
 const apiUrl = `http://127.0.0.1:${devicePort}`;
 const webUrl = `http://127.0.0.1:${webPort}`;
-const dailyKey = randomBytes(24).toString("base64url");
-const adminKey = randomBytes(24).toString("base64url");
+const hostKey = randomBytes(24).toString("base64url");
+const aliceKey = randomBytes(24).toString("base64url");
+const passcode = "river stone";
 
 const waitFor = async (url) => {
   for (let attempt = 0; attempt < 150; attempt += 1) {
@@ -35,7 +39,7 @@ const waitFor = async (url) => {
   throw new Error(`${url} did not start`);
 };
 
-// What the API itself says about a key, outside the browser.
+// What the API itself says, outside the browser.
 const callApi = async (pathname, key) => {
   const response = await fetch(`${apiUrl}${pathname}`, {
     headers: { authorization: `Bearer ${key}` },
@@ -43,20 +47,25 @@ const callApi = async (pathname, key) => {
   return { body: await response.json(), status: response.status };
 };
 
-// Where the page keeps the admin key: only this tab's sessionStorage.
-const storedAdminKey = (target) =>
-  target.evaluate(() => ({
-    local: localStorage.getItem("orbis.adminKey"),
-    session: sessionStorage.getItem("orbis.adminKey"),
-  }));
+const tryJoin = async (page, username, value) => {
+  const form = page.getByRole("form", { name: "Join Orbis" });
+  await form.getByLabel("Username").fill(username);
+  await form.getByLabel("Group Passcode").fill(value);
+  const answer = page.waitForResponse(
+    (response) => new URL(response.url()).pathname === "/sign-in/join"
+  );
+  await form.getByRole("button", { name: "Join" }).click();
+  const response = await answer;
+  return { body: await response.json(), form, status: response.status() };
+};
 
-const keyRecord = (id, label, key, scope) => ({
+const keyRecord = (id, label, personId, key) => ({
   addedAt: new Date().toISOString(),
   id,
   label,
   lastUsedAt: null,
-  personId: "host",
-  scope,
+  personId,
+  scope: "daily",
   tokenHash: createHash("sha256").update(key).digest("hex"),
 });
 
@@ -65,10 +74,13 @@ await writeFile(
   path.join(dataDirectory, "devices.json"),
   JSON.stringify({
     keys: [
-      keyRecord("host-daily", "Host browser", dailyKey, "daily"),
-      keyRecord("host-admin", "Host admin", adminKey, "admin"),
+      keyRecord("host-daily", "Host browser", "host", hostKey),
+      keyRecord("alice-daily", "Alice phone", "alice", aliceKey),
     ],
-    people: [{ id: "host", removed: false, username: "host" }],
+    people: [
+      { id: "host", removed: false, username: "host" },
+      { id: "alice", removed: false, username: "alice" },
+    ],
     version: 2,
   })
 );
@@ -108,118 +120,165 @@ try {
   await mkdir(artifacts, { recursive: true });
   const browser = await chromium.launch({ headless: true });
   try {
-    const context = await browser.newContext({
-      permissions: ["clipboard-read", "clipboard-write"],
-    });
     const violations = [];
-    await context.exposeFunction("reportViolation", (text) =>
-      violations.push(text)
-    );
-    await context.addInitScript(() => {
-      document.addEventListener("securitypolicyviolation", (event) => {
-        window.reportViolation(
-          `${event.violatedDirective} ${event.blockedURI}`
-        );
+    const openContext = async (options = {}) => {
+      const context = await browser.newContext(options);
+      await context.exposeFunction("reportViolation", (text) =>
+        violations.push(text)
+      );
+      await context.addInitScript(() => {
+        document.addEventListener("securitypolicyviolation", (event) => {
+          window.reportViolation(
+            `${event.violatedDirective} ${event.blockedURI}`
+          );
+        });
       });
-    });
-    const page = await context.newPage();
-    const shot = (name) =>
-      page.screenshot({ path: path.join(artifacts, `${name}.png`) });
-    const unlock = async (value) => {
-      await page.getByLabel("Admin key").fill(value);
-      await page.getByRole("button", { name: "Unlock" }).click();
+      return context;
     };
-    const manage = (username) =>
-      page.getByRole("button", { exact: true, name: `Manage ${username}` });
-    const selected = page.getByRole("region", { name: "Selected Person" });
+    // A browser with no key, at the sign-in page.
+    const freshBrowser = async () => {
+      const context = await openContext();
+      const page = await context.newPage();
+      await page.goto(webUrl);
+      await page.getByRole("heading", { name: "Sign in to Orbis" }).waitFor();
+      return { context, page };
+    };
 
-    await page.goto(`${webUrl}/sign-in`);
-    await page.getByLabel("API key").fill(dailyKey);
-    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
-    await page.getByRole("heading", { name: "Library" }).waitFor();
-    step("the Host signs in with their daily key");
-
-    await page
-      .getByRole("navigation", { name: "Main" })
-      .getByRole("link", {
-        name: "Admin",
-      })
-      .click();
-    await page.getByRole("heading", { name: "Manage your Group" }).waitFor();
-    assert.equal(new URL(page.url()).pathname, "/admin");
-    await shot("locked");
-    step("the Admin link opens the locked admin page");
-
-    await unlock(dailyKey);
-    await page
-      .getByRole("alert")
-      .getByText("An admin key is required.")
-      .waitFor();
-    assert.deepEqual(await storedAdminKey(page), {
-      local: null,
-      session: null,
-    });
-    await unlock("not-a-real-key");
-    await page
-      .getByRole("alert")
-      .getByText("An admin key is required.")
-      .waitFor();
-    assert.deepEqual(await storedAdminKey(page), {
-      local: null,
-      session: null,
-    });
-    await shot("refused");
-    step("the daily key and an unknown key are refused and not stored");
-
-    await unlock(adminKey);
-    await page.getByRole("heading", { name: "People" }).waitFor();
-    await manage("host").waitFor();
-    assert.deepEqual(await storedAdminKey(page), {
-      local: null,
-      session: adminKey,
-    });
-    step("the admin key unlocks the page and lives in sessionStorage only");
-
-    await page.reload();
-    await page.getByRole("heading", { name: "People" }).waitFor();
-    step("a reload in the same tab stays unlocked");
-
-    await page.getByLabel("New Person username").fill("alice");
-    await page.getByRole("button", { name: "Add Person" }).click();
-    await manage("alice").waitFor();
-    const people = await callApi("/admin/people", adminKey);
-    assert.ok(people.body.people.some((person) => person.username === "alice"));
-    step("the Host adds alice, and the API lists her");
-
-    // Hold alice's key list back so the Host's newer selection answers first.
-    await page.route("**/admin/people/*/keys", async (route) => {
-      if (route.request().url().includes("/people/host/")) {
-        await route.continue();
-        return;
-      }
-      await setTimeout(400);
-      await route.continue();
-    });
-    await manage("alice").click();
-    await manage("host").click();
-    await selected.getByRole("heading", { name: "host" }).waitFor();
-    await setTimeout(700);
+    const friend = await openContext();
+    const friendPage = await friend.newPage();
+    await signInWithKey(friendPage, webUrl, aliceKey);
+    await friendPage.getByText("Signed in as alice").waitFor();
+    const friendNav = friendPage.getByRole("navigation", { name: "Main" });
+    await friendNav.getByRole("link", { name: "Devices" }).waitFor();
     assert.equal(
-      await selected.getByRole("heading", { name: "alice" }).count(),
+      await friendNav.getByRole("link", { name: "Admin" }).count(),
       0
     );
-    await page.unroute("**/admin/people/*/keys");
-    step("a slow key list for alice never replaces the newer host selection");
+    await friendPage.screenshot({ path: path.join(artifacts, "friend.png") });
+    await friendPage.goto(`${webUrl}/admin`);
+    await friendPage.getByRole("heading", { name: "Library" }).waitFor();
+    assert.equal(new URL(friendPage.url()).pathname, "/");
+    assert.equal(
+      await friendPage.getByRole("heading", { name: "Group Passcode" }).count(),
+      0
+    );
+    await friend.close();
+    step("a friend sees no Admin link, and /admin sends them to the Library");
 
-    await manage("alice").click();
-    await selected.getByRole("heading", { name: "alice" }).waitFor();
-    await selected.getByText("No keys yet.").waitFor();
-    await page.getByLabel("Key label").fill("Alice phone");
-    await page.getByRole("button", { name: "Mint key" }).click();
-    const issued = selected.getByRole("status");
-    await issued.getByText("Orbis will not show it again.").waitFor();
-    const shown = await issued.locator("code").textContent();
-    const token = shown.trim();
+    const host = await openContext({
+      permissions: ["clipboard-read", "clipboard-write"],
+    });
+    const page = await host.newPage();
+    const shot = (name) =>
+      page.screenshot({ path: path.join(artifacts, `${name}.png`) });
+    await signInWithKey(page, webUrl, hostKey);
+    await page.getByText("Signed in as host").waitFor();
+    await page
+      .getByRole("navigation", { name: "Main" })
+      .getByRole("link", { name: "Admin" })
+      .click();
+    await page.getByRole("heading", { name: "Admin" }).waitFor();
+    assert.equal(new URL(page.url()).pathname, "/admin");
+    const passcodeSection = page.getByRole("region", {
+      name: "Group Passcode",
+    });
+    await passcodeSection.getByText("Joining is closed.").waitFor();
+    assert.equal(await page.getByLabel("Admin key").count(), 0);
+    assert.deepEqual(
+      await page.evaluate(() => [
+        sessionStorage.getItem("orbis.adminKey"),
+        localStorage.getItem("orbis.adminKey"),
+      ]),
+      [null, null]
+    );
+    await shot("closed");
+    step(
+      "the Host sees the Admin link, and the page opens on their own key with joining closed"
+    );
+
+    await passcodeSection.getByLabel("New passcode").fill(passcode);
+    await passcodeSection.getByRole("button", { name: "Save" }).click();
+    await passcodeSection.getByText(passcode, { exact: true }).waitFor();
+    assert.equal(await textOf(passcodeSection.locator("code")), passcode);
+    const stored = await callApi("/admin/passcode", hostKey);
+    assert.deepEqual(stored.body, { passcode });
+    await shot("passcode");
+    step("the Host sets the Group Passcode, and the page and the API show it");
+
+    const carol = await freshBrowser();
+    const joined = await tryJoin(carol.page, "carol", passcode);
+    assert.equal(joined.status, 201);
+    await carol.page.getByText("Signed in as carol").waitFor();
+    await carol.context.close();
+    const people = page.getByRole("list", { name: "People in the Group" });
+    await page.reload();
+    await people.getByRole("heading", { name: "carol" }).waitFor();
+    step(
+      "a new browser joins as carol with that passcode, and People lists her"
+    );
+
+    await passcodeSection
+      .getByRole("button", { name: "Close joining" })
+      .click();
+    await passcodeSection.getByText("Joining is closed.").waitFor();
+    const dave = await freshBrowser();
+    const refused = await tryJoin(dave.page, "dave", passcode);
+    assert.equal(refused.status, 403);
+    assert.equal(
+      await textOf(refused.form.getByRole("alert")),
+      refused.body.message
+    );
+    await dave.context.close();
+    step("Close joining makes the old passcode fail with the API's message", {
+      message: refused.body.message,
+    });
+
+    const reloads = [];
+    const watchReload = (request) => {
+      if (new URL(request.url()).pathname === "/admin/people") {
+        reloads.push(request.url());
+      }
+    };
+    page.on("request", watchReload);
+    await page
+      .getByRole("button", { name: "Show sign-in code for alice" })
+      .click();
+    const aliceCode = page.getByRole("status", {
+      name: "Sign-in code for alice",
+    });
+    await aliceCode.waitFor();
+    page.off("request", watchReload);
+    assert.deepEqual(reloads, []);
+    const code = await textOf(aliceCode);
+    assert.match(code, /^[A-Z0-9]{4}-[A-Z0-9]{4}$/u);
+    await shot("people");
+    const recovered = await freshBrowser();
+    const codeForm = recovered.page.getByRole("form", {
+      name: "Sign in with a code",
+    });
+    await codeForm.getByLabel("Sign-in code").fill(code);
+    await codeForm.getByRole("button", { name: "Sign in" }).click();
+    await recovered.page.getByText("Signed in as alice").waitFor();
+    await recovered.context.close();
+    step(
+      "the Host shows a sign-in code for alice without reloading the page, and it signs a new browser in as alice",
+      {
+        code,
+      }
+    );
+
+    const keys = page.getByRole("list", { name: "Keys" });
+    await page.reload();
+    await keys.getByText("Alice phone").waitFor();
+    await page
+      .getByLabel("Person", { exact: true })
+      .selectOption({ label: "alice" });
+    await page.getByLabel("Key label").fill("Raycast");
+    await page.getByRole("button", { name: "Create key" }).click();
+    const issued = page.getByRole("status").filter({
+      hasText: "Orbis will not show it again.",
+    });
+    const token = await textOf(issued.locator("code"));
     assert.ok(token.length >= 32);
     await issued.getByRole("button", { name: "Copy key" }).click();
     await issued.getByRole("button", { name: "Copied" }).waitFor();
@@ -227,75 +286,57 @@ try {
       await page.evaluate(() => navigator.clipboard.readText()),
       token
     );
-    await shot("issued-key");
     const me = await callApi("/me", token);
     assert.equal(me.status, 200);
     assert.equal(me.body.username, "alice");
-    step(
-      "the Host mints 'Alice phone', copies it once, and it signs in as alice"
-    );
-
+    await keys.getByText("Raycast").waitFor();
+    await shot("keys");
     await issued.getByRole("button", { name: "Done" }).click();
     assert.equal(await page.getByText(token).count(), 0);
-    await manage("host").click();
-    await manage("alice").click();
-    await selected.getByText("Last used").waitFor();
-    assert.equal(await page.getByText(token).count(), 0);
-    step("Done hides the key for good, and the list shows when it was used");
+    step(
+      "the Host creates a Raycast key for alice, copies it once, and it signs in as alice"
+    );
 
-    await selected.getByRole("button", { name: "Revoke Alice phone" }).click();
-    await selected.getByText("No keys yet.").waitFor();
-    const revoked = await callApi("/me", token);
-    assert.equal(revoked.status, 401);
-    step("revoking 'Alice phone' makes the API refuse it");
+    const revokeDialog = page.getByRole("alertdialog");
+    await keys
+      .getByRole("button", { name: "Revoke Raycast for alice" })
+      .click();
+    await revokeDialog.getByText("signed out as alice").waitFor();
+    await revokeDialog
+      .getByRole("button", { exact: true, name: "Revoke" })
+      .click();
+    await keys.getByText("Raycast").waitFor({ state: "detached" });
+    const afterRevoke = await callApi("/me", token);
+    assert.equal(afterRevoke.status, 401);
+    step("revoking the Raycast key after confirming makes the API refuse it");
 
-    await selected.getByRole("button", { name: "Remove alice" }).click();
+    assert.equal(
+      await page.getByRole("button", { name: "Remove host" }).count(),
+      0
+    );
+    await page.getByRole("button", { name: "Remove carol" }).click();
     const dialog = page.getByRole("alertdialog");
     await dialog.getByText("You cannot undo it.").waitFor();
     // The dialog fades in; capture it once the fade ends.
     await page.waitForFunction(() => document.getAnimations().length === 0);
-    await shot("remove-alice");
+    await shot("remove-carol");
     await dialog.getByRole("button", { name: "Cancel" }).click();
     await dialog.waitFor({ state: "detached" });
-    await manage("alice").waitFor();
-    await selected.getByRole("button", { name: "Remove alice" }).click();
-    const removed = page.waitForResponse(
-      (response) =>
-        response.request().method() === "DELETE" &&
-        response.url().startsWith(`${apiUrl}/admin/people/`)
-    );
+    await people.getByRole("heading", { name: "carol" }).waitFor();
+    await page.getByRole("button", { name: "Remove carol" }).click();
     await dialog.getByRole("button", { exact: true, name: "Remove" }).click();
-    const removedResponse = await removed;
-    assert.equal(removedResponse.status(), 200);
     await dialog.waitFor({ state: "detached" });
-    await manage("alice").waitFor({ state: "detached" });
-    const remaining = await callApi("/admin/people", adminKey);
+    await people
+      .getByRole("heading", { name: "carol" })
+      .waitFor({ state: "detached" });
+    const remaining = await callApi("/admin/people", hostKey);
     assert.deepEqual(
-      remaining.body.people.map((person) => person.username),
-      ["host"]
+      remaining.body.people.map((person) => person.username).toSorted(),
+      ["alice", "host"]
     );
-    await shot("people");
-    step("Cancel keeps alice; confirming removes her from the Group");
-
-    await page.getByRole("button", { name: "Lock" }).click();
-    await page.getByRole("heading", { name: "Manage your Group" }).waitFor();
-    assert.deepEqual(await storedAdminKey(page), {
-      local: null,
-      session: null,
-    });
-    step("Lock clears the admin key from the tab");
-
-    await unlock(adminKey);
-    await page.getByRole("heading", { name: "People" }).waitFor();
-    const other = await context.newPage();
-    await other.goto(`${webUrl}/admin`);
-    await other.getByRole("heading", { name: "Manage your Group" }).waitFor();
-    assert.deepEqual(await storedAdminKey(other), {
-      local: null,
-      session: null,
-    });
-    await other.close();
-    step("a new tab does not get the admin key");
+    step(
+      "the Host cannot remove themselves; Cancel keeps carol, and confirming removes her"
+    );
 
     assert.deepEqual(violations, []);
     step("no Content Security Policy violations");
