@@ -4,6 +4,8 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { Schema } from "effect";
+
 import { createApp } from "./app.js";
 import { hashToken, mutateTrustStore, readTrustStrict } from "./identity.js";
 import { request } from "./test-http.js";
@@ -394,6 +396,94 @@ test("an existing trust database drops Invites and keeps the passcode across res
     }
   } finally {
     await second.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("a key stored as admin reports Presence after the upgrade and keeps Host powers", async () => {
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-identity-"));
+  const databasePath = path.join(directory, "library.sqlite");
+  const devicesPath = path.join(directory, "devices.json");
+  const database = new Database(databasePath, { create: true });
+  try {
+    database.exec(PRE_PASSCODE_TRUST);
+    database
+      .query(
+        "INSERT INTO api_keys VALUES ('host-iphone', ?, 'iPhone', 'admin', 'host', '2026-01-01T00:00:00.000Z', NULL)"
+      )
+      .run(hashToken("pre-passcode-iphone"));
+  } finally {
+    database.close();
+  }
+  // Without key-use writes, nothing rewrites the trust tables, so only the
+  // upgrade itself can turn the stored admin key into a daily one.
+  const app = createApp({ databasePath, devicesPath, recordKeyUse: false });
+  const host = { authorization: "Bearer pre-passcode-iphone" };
+  try {
+    const saved = await request(app, {
+      headers: host,
+      method: "POST",
+      payload: { tags: [], url: "https://www.youtube.com/watch?v=abcdefghijk" },
+      url: "/sets",
+    });
+    expect(saved.statusCode).toBe(201);
+    const set = Schema.decodeUnknownSync(Schema.Struct({ id: Schema.String }))(
+      saved.json()
+    );
+    const position = await request(app, {
+      headers: host,
+      method: "PUT",
+      payload: { seconds: 30 },
+      url: `/sets/${set.id}/position`,
+    });
+    expect(position.statusCode).toBe(200);
+    const library = new Database(databasePath);
+    try {
+      library
+        .query(
+          "UPDATE sets SET download_state = 'ready', retained_audio_format = 'm4a', retained_audio_bytes = 1234 WHERE id = ?"
+        )
+        .run(set.id);
+    } finally {
+      library.close();
+    }
+    const queued = await request(app, {
+      headers: host,
+      method: "PUT",
+      payload: { setId: set.id },
+      url: "/queue/active",
+    });
+    expect(queued.statusCode).toBe(200);
+    const played = await request(app, {
+      headers: host,
+      method: "POST",
+      payload: {
+        actionId: "a1",
+        actionNumber: 1,
+        kind: "play",
+        sessionId: "iphone-s1",
+        setId: set.id,
+      },
+      url: "/presence/actions",
+    });
+    expect(played.statusCode).toBe(200);
+    expect(played.json()).toMatchObject({ outcome: "accepted" });
+    const people = await request(app, {
+      headers: host,
+      method: "GET",
+      url: "/admin/people",
+    });
+    expect(people.statusCode).toBe(200);
+    const upgraded = new Database(databasePath, { readonly: true });
+    try {
+      expect(
+        upgraded.query("SELECT DISTINCT scope FROM api_keys").all()
+      ).toEqual([{ scope: "daily" }]);
+    } finally {
+      upgraded.close();
+    }
+  } finally {
+    await app.dispose();
     await rm(directory, { force: true, recursive: true });
   }
 });

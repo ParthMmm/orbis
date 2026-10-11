@@ -100,8 +100,8 @@ export const initializeTrustDatabase = (input: {
           db.run("ALTER TABLE api_keys_node_scope RENAME TO api_keys");
         }).immediate();
       }
-      // Every read passes here, so the write lock is taken only while the
-      // Group Passcode table is missing.
+      // Every read passes here, so the write lock is taken only once: while
+      // the ADR 0020 upgrade has not run.
       if (
         !db
           .query(
@@ -111,6 +111,7 @@ export const initializeTrustDatabase = (input: {
       ) {
         db.transaction(() => {
           db.run("DROP TABLE IF EXISTS invites");
+          db.run("UPDATE api_keys SET scope = 'daily' WHERE scope = 'admin'");
           db.run(GROUP_SETTINGS);
         }).immediate();
       }

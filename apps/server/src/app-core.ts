@@ -1240,7 +1240,7 @@ export const createPortableApp = (options: {
                     params.id,
                     input.seconds
                   );
-                  if (caller.keyId !== null && caller.scope === "daily") {
+                  if (caller.keyId !== null) {
                     yield* presence.recordLegacyReport(
                       { keyId: caller.keyId, personId: caller.person.id },
                       params.id
@@ -1490,7 +1490,7 @@ export const createPortableApp = (options: {
             )
           )
       );
-      // Host powers belong to the Host Person, whatever the key's scope (ADR 0020).
+      // Host powers belong to the Host Person (ADR 0020).
       const requireHost = Effect.gen(function* verifyHost() {
         const caller = yield* SetCaller;
         if (caller.keyId === null || caller.person.id !== HOST_PERSON_ID) {
@@ -1845,7 +1845,7 @@ export const createPortableApp = (options: {
               Effect.gen(function* actOnPresence() {
                 const caller = yield* SetCaller;
                 const { keyId } = caller;
-                if (keyId === null || caller.scope !== "daily") {
+                if (keyId === null) {
                   return yield* new LibraryError({
                     message: "Sign in with a device key.",
                     statusCode: 403,

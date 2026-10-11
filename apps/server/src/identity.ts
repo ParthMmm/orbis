@@ -49,8 +49,13 @@ const TrustFile = Schema.Struct({
 });
 
 export type PersonRecord = typeof Person.Type;
-export type KeyRecord = typeof Key.Type;
-export type TrustStore = typeof TrustFile.Type;
+/** A stored `admin` key decodes as `daily`: one kind of Person key (ADR 0020). */
+export type KeyRecord = Omit<typeof Key.Type, "scope"> & {
+  readonly scope: "daily" | "node";
+};
+export type TrustStore = Omit<typeof TrustFile.Type, "keys"> & {
+  readonly keys: readonly KeyRecord[];
+};
 export type AccessMode = "device";
 
 export const HOST_PERSON_ID = "host";
@@ -70,7 +75,7 @@ export type AccessDecision =
       readonly kind: "accepted";
       readonly keyId: string | null;
       readonly person: PersonRecord;
-      readonly scope: "daily" | "admin";
+      readonly scope: "daily";
     }
   | {
       readonly kind: "rejected";
@@ -101,7 +106,16 @@ export const decodeTrust = (raw: typeof Schema.Unknown.Type): TrustStore => {
   const parsed = Schema.decodeUnknownSync(
     Schema.Union([LegacyTrustFile, TrustFile])
   )(raw);
-  return parsed.version === 1 ? fromLegacy(parsed) : parsed;
+  if (parsed.version === 1) {
+    return fromLegacy(parsed);
+  }
+  return {
+    ...parsed,
+    keys: parsed.keys.map((key) => ({
+      ...key,
+      scope: key.scope === "node" ? "node" : "daily",
+    })),
+  };
 };
 
 export const migrateTrustStore = (

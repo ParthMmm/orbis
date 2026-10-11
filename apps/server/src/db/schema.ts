@@ -338,7 +338,7 @@ export const apiKeys = sqliteTable("api_keys", {
   personId: text("person_id")
     .notNull()
     .references(() => people.id),
-  scope: text("scope", { enum: ["daily", "admin", "node"] }).notNull(),
+  scope: text("scope", { enum: ["daily", "node"] }).notNull(),
 });
 
 export const groupSettings = sqliteTable("group_settings", {
