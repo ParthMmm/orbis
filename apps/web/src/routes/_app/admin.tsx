@@ -349,18 +349,22 @@ const Keys = ({
               <div className="mr-auto flex min-w-0 flex-col">
                 <span className="truncate font-medium">{key.label}</span>
                 <span className="text-muted-foreground text-xs">
-                  {owner} · {lastUsed(key)}
+                  {key.scope === "node" ? "Audio node" : owner} ·{" "}
+                  {lastUsed(key)}
                 </span>
               </div>
-              <Confirm
-                action="Revoke"
-                busy={busy}
-                description={`Whatever uses this key is signed out as ${owner} the next time it contacts Orbis.`}
-                label={`Revoke ${key.label} for ${owner}`}
-                onConfirm={() => change(() => revokeKey(session, key.id))}
-                title={`Revoke ${key.label}?`}
-                trigger="Revoke"
-              />
+              {/* Vanta's audio node stops serving audio without its key. */}
+              {key.scope === "node" ? null : (
+                <Confirm
+                  action="Revoke"
+                  busy={busy}
+                  description={`Whatever uses this key is signed out as ${owner} the next time it contacts Orbis.`}
+                  label={`Revoke ${key.label} for ${owner}`}
+                  onConfirm={() => change(() => revokeKey(session, key.id))}
+                  title={`Revoke ${key.label}?`}
+                  trigger="Revoke"
+                />
+              )}
             </li>
           );
         })}

@@ -76,6 +76,15 @@ await writeFile(
     keys: [
       keyRecord("host-daily", "Host browser", "host", hostKey),
       keyRecord("alice-daily", "Alice phone", "alice", aliceKey),
+      {
+        ...keyRecord(
+          "vanta-node",
+          "Vanta",
+          "host",
+          randomBytes(24).toString("base64url")
+        ),
+        scope: "node",
+      },
     ],
     people: [
       { id: "host", removed: false, username: "host" },
@@ -270,6 +279,9 @@ try {
     const keys = page.getByRole("list", { name: "Keys" });
     await page.reload();
     await keys.getByText("Alice phone").waitFor();
+    const nodeRow = keys.getByRole("listitem").filter({ hasText: "Vanta" });
+    await nodeRow.getByText("Audio node").waitFor();
+    assert.equal(await nodeRow.getByRole("button").count(), 0);
     await page
       .getByLabel("Person", { exact: true })
       .selectOption({ label: "alice" });
@@ -294,7 +306,7 @@ try {
     await issued.getByRole("button", { name: "Done" }).click();
     assert.equal(await page.getByText(token).count(), 0);
     step(
-      "the Host creates a Raycast key for alice, copies it once, and it signs in as alice"
+      "Vanta's key shows as Audio node with no Revoke; the Host creates a Raycast key for alice, copies it once, and it signs in as alice"
     );
 
     const revokeDialog = page.getByRole("alertdialog");
