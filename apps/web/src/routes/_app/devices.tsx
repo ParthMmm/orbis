@@ -5,6 +5,8 @@ import {
 } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { Problem } from "@/components/problem";
+import { SignInCode } from "@/components/sign-in-code";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -25,10 +27,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { listDevices, revokeDevice } from "@/lib/devices";
+import { listDevices, requestSignInCode, revokeDevice } from "@/lib/devices";
 import type { Device } from "@/lib/devices";
-import { FAILURE_MESSAGES } from "@/lib/orbis";
+import { FAILURE_MESSAGES, problemFor } from "@/lib/orbis";
 import type { ApiResult } from "@/lib/orbis";
+import type { IssuedSignInCode } from "@/lib/sign-in";
 import { forgetKey } from "@/lib/stored-key";
 import type { Session } from "@/routes/_app";
 
@@ -97,7 +100,7 @@ const DeviceRow = ({
             <AlertDialogTitle>Revoke {device.label}?</AlertDialogTitle>
             <AlertDialogDescription>
               {device.current
-                ? "This is the device you are using. Revoking it signs you out here, and you need a new key to sign in again."
+                ? "This is the device you are using. Revoking it signs you out here. To sign in again, use a code from another device."
                 : "That device is signed out the next time it contacts Orbis."}
             </AlertDialogDescription>
           </AlertDialogHeader>
@@ -122,6 +125,45 @@ const DeviceRow = ({
   );
 };
 
+const SignInAnotherDevice = ({ session }: { readonly session: Session }) => {
+  const [code, setCode] = useState<IssuedSignInCode | null>(null);
+  const [problem, setProblem] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+  const request = async () => {
+    setPending(true);
+    setProblem(null);
+    const result = await requestSignInCode(session);
+    setPending(false);
+    if (result.ok) {
+      setCode(result.value);
+    } else {
+      setProblem(problemFor(result));
+    }
+  };
+  return (
+    <div className="flex flex-col gap-4">
+      {code === null ? null : (
+        <>
+          <SignInCode issued={code} label="Your sign-in code" />
+          <p className="text-muted-foreground text-sm">
+            On the new device, open Orbis, choose Sign in with a code, and type
+            this code.
+          </p>
+        </>
+      )}
+      <Problem message={problem} />
+      <Button
+        className="self-start"
+        disabled={pending}
+        onClick={request}
+        variant={code === null ? "default" : "outline"}
+      >
+        {code === null ? "Sign in another device" : "Get a new code"}
+      </Button>
+    </div>
+  );
+};
+
 const Devices = ({
   devices,
   session,
@@ -140,7 +182,8 @@ const Devices = ({
           longer use.
         </CardDescription>
       </CardHeader>
-      <CardContent>
+      <CardContent className="flex flex-col gap-4">
+        <SignInAnotherDevice session={session} />
         {devices.ok ? (
           <ul aria-label="Your devices" className="divide-y">
             {devices.value.devices.map((device) => (

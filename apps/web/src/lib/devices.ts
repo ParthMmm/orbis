@@ -10,6 +10,10 @@ export type Device = Extract<
   { ok: true }
 >["value"]["devices"][number];
 
+/** A one-time code that signs another device in as this Person (ADR 0020). */
+export const requestSignInCode = (credentials: Credentials) =>
+  callOrbis(credentials, (client) => client.devices.signInCode());
+
 /** Revokes one of the Person's own keys. Revoking the current one signs this browser out. */
 export const revokeDevice = (credentials: Credentials, id: string) =>
   callOrbis(credentials, (client) => client.devices.revoke({ params: { id } }));
