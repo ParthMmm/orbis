@@ -3,7 +3,7 @@ import XCTest
 /// Drives Playlist authoring against the lane service: create, add membership, remove, and
 /// confirm the Set remains in the Library.
 final class PlaylistUITests: XCTestCase {
-  private func launch(paired: Bool = false) throws -> XCUIApplication {
+  private func launch() throws -> XCUIApplication {
     let environment = ProcessInfo.processInfo.environment
     guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
       let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
@@ -11,10 +11,9 @@ final class PlaylistUITests: XCTestCase {
       throw XCTSkip("the lane must supply ORBIS_UI_TEST_ADDRESS and ORBIS_UI_TEST_TOKEN")
     }
     let app = XCUIApplication()
-    app.launchArguments.append("-orbisResetSettings")
-    if paired {
-      app.launchArguments.append(contentsOf: ["-orbisPairedWith", address, token])
-    }
+    app.launchArguments = [
+      "-orbisResetSettings", "-orbisServiceAddress", address, "-orbisPairedWith", token,
+    ]
     app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
     app.launchEnvironment["ORBIS_UI_TEST_ADDRESS"] = address
     app.launchEnvironment["ORBIS_UI_TEST_TOKEN"] = token
@@ -118,7 +117,7 @@ final class PlaylistUITests: XCTestCase {
       try service.deletePlaylist(playlist.id)
     }
 
-    let app = try launch(paired: true)
+    let app = try launch()
     openPlaylists(in: app)
     let empty = app.descendants(matching: .any)["playlists-empty"]
     XCTAssertTrue(empty.waitForExistence(timeout: 30), "the empty list must keep its identifier")
@@ -154,7 +153,7 @@ final class PlaylistUITests: XCTestCase {
     let (first, second, third) = (sets[0], sets[1], sets[2])
     var steps: [[String: Any]] = []
 
-    let app = try launch(paired: true)
+    let app = try launch()
     openPlaylist(named: playlist.name, in: app)
     let rows = sets.map { app.descendants(matching: .any)["playlist-member-\($0.id)"] }
     for row in rows {
@@ -205,7 +204,7 @@ final class PlaylistUITests: XCTestCase {
     let confusablePlaylist = try service.createPlaylist(named: "recent-\(playlist.name)")
     var steps: [[String: Any]] = []
 
-    let app = try launch(paired: true)
+    let app = try launch()
     selectTab("Library", in: app)
     let row = app.descendants(matching: .any)["set-row-\(set.id)"]
     XCTAssertTrue(
@@ -316,7 +315,7 @@ final class PlaylistUITests: XCTestCase {
   }
 
   func testCreatesAddsRemovesAndPreservesTheSet() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
 
     openPlaylists(in: app)
     let create = app.buttons["playlist-create"]
