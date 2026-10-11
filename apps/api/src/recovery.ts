@@ -1,57 +1,34 @@
-import { randomBytes } from "node:crypto";
-
-import { Schema } from "effect";
-
 import {
-  hashToken,
   HOST_PERSON_ID,
   mutateTrustStore,
   readTrustStrict,
 } from "../../server/src/identity.js";
-import type { KeyRecord } from "../../server/src/identity.js";
-import { accessDenied, authorizedRecovery } from "./access.js";
-import type { AccessConfiguration } from "./access.js";
+import { nodeKeyId } from "./node.js";
 
-const Payload = Schema.Struct({
-  label: Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100)),
-});
-export const recoverAdmin = async (
+const noStore = { "cache-control": "no-store" };
+
+/**
+ * Recovers the Host with Vanta's node key (ADR 0020). The node key can already
+ * export every row, so a Sign-in Code for the Host gives it no new power.
+ */
+export const recoverHost = (
   request: Request,
-  env: AccessConfiguration,
-  trustPath: string
-): Promise<Response> => {
-  if (!(await authorizedRecovery(request, env))) {
-    return accessDenied();
-  }
+  trustPath: string,
+  issueSignInCode: (
+    personId: string
+  ) => { readonly code: string; readonly expiresAt: string } | null
+): Response => {
   if (request.method !== "POST") {
     return new Response(null, {
-      headers: { allow: "POST", "cache-control": "no-store" },
+      headers: { allow: "POST", ...noStore },
       status: 405,
     });
   }
-  let label: string;
-  try {
-    const input = Schema.decodeUnknownSync(Payload)(await request.json());
-    label = input.label.trim();
-    if (!label) {
-      throw new Error("Empty label.");
-    }
-  } catch {
-    return Response.json(
-      { message: "Choose a label with 1 to 100 characters." },
-      { status: 400 }
-    );
+  const keyId = nodeKeyId(request, trustPath);
+  if (keyId instanceof Response) {
+    keyId.headers.set("cache-control", "no-store");
+    return keyId;
   }
-  const token = Buffer.from(randomBytes(32)).toString("base64url");
-  const key: KeyRecord = {
-    addedAt: new Date().toISOString(),
-    id: Buffer.from(randomBytes(6)).toString("hex"),
-    label,
-    lastUsedAt: null,
-    personId: HOST_PERSON_ID,
-    scope: "admin",
-    tokenHash: hashToken(token),
-  };
   mutateTrustStore(
     trustPath,
     () => readTrustStrict(trustPath),
@@ -67,15 +44,15 @@ export const recoverAdmin = async (
             ...store.people,
             { id: HOST_PERSON_ID, removed: false, username: "host" },
           ];
-      return {
-        store: { ...store, keys: [...store.keys, key], people },
-        value: undefined,
-      };
+      return { store: { ...store, people }, value: undefined };
     }
   );
-  const { tokenHash: _digest, ...publicKey } = key;
-  return Response.json(
-    { ...publicKey, token },
-    { headers: { "cache-control": "no-store" }, status: 201 }
-  );
+  const issued = issueSignInCode(HOST_PERSON_ID);
+  if (!issued) {
+    return Response.json(
+      { message: "Too many Sign-in Codes are waiting. Try again soon." },
+      { headers: noStore, status: 503 }
+    );
+  }
+  return Response.json(issued, { headers: noStore, status: 201 });
 };
