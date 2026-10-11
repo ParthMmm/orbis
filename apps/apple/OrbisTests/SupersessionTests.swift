@@ -107,9 +107,9 @@ final class SupersessionTests: XCTestCase {
       "typing without submitting does not change what the results answer to")
   }
 
-  /// Forgetting a device ends every request the old service could still answer, and leaves
+  /// Signing out ends every request the service could still answer, and leaves
   /// nothing selected that belonged to it.
-  func testForgettingResetsEverythingThatBelongedToTheService() async {
+  func testSigningOutResetsEverythingThatBelongedToTheService() async {
     let filed = set(id: "1", title: "Night session")
     let model = AppModel(
       client: OrbisClient(
@@ -127,7 +127,7 @@ final class SupersessionTests: XCTestCase {
     await model.runSearch()
     XCTAssertEqual(model.searchResultsFor, "night")
 
-    model.forget()
+    model.signOut()
 
     XCTAssertNil(model.client)
     XCTAssertEqual(model.library, .idle)
@@ -139,13 +139,12 @@ final class SupersessionTests: XCTestCase {
     XCTAssertNil(model.openedSetId)
     XCTAssertNil(model.reveal)
     XCTAssertNil(model.revealFailure)
-    XCTAssertFalse(model.isEditingConnection)
   }
 
-  /// Forgetting ends the sidebar's read as well as the Library's. A Playlists answer that was
+  /// Signing out ends the sidebar's read as well as the Library's. A Playlists answer that was
   /// already out must not put the old service's Playlists back into a device that no longer
   /// holds it.
-  func testAPlaylistsResponseThatArrivesAfterForgettingCannotPublish() async throws {
+  func testAPlaylistsResponseThatArrivesAfterSigningOutCannotPublish() async throws {
     let releasePlaylists = DispatchSemaphore(value: 0)
     let playlistsBody = #"{"playlists":[{"id":"p1","name":"Long drives","setCount":4}]}"#
     let setsBody = libraryBody(title: "Night session")
@@ -163,7 +162,7 @@ final class SupersessionTests: XCTestCase {
     let read = Task { await model.loadPlaylists() }
     try await waitForARequest()
 
-    model.forget()
+    model.signOut()
     releasePlaylists.signal()
     await read.value
 
@@ -196,38 +195,5 @@ final class SupersessionTests: XCTestCase {
       return XCTFail("the Library must be read again so the download shows")
     }
     XCTAssertEqual(sets.map(\.downloadState), ["downloading"])
-  }
-
-  /// Leaving the connection screen dismisses the test that is still out, so a late answer
-  /// cannot replace the pairing this device already trusts.
-  func testAClosedConnectionEditorCannotCommitALateConnectionTest() async throws {
-    let releaseTest = DispatchSemaphore(value: 0)
-    let model = AppModel(
-      client: OrbisClient(
-        address: URL(string: "https://vanta.example.ts.net")!,
-        token: "token",
-        session: StubProtocol.session { request in
-          if request.url?.path() == "/health" {
-            _ = releaseTest.wait(timeout: .now() + 10)
-            return (200, #"{"status":"ok"}"#)
-          }
-          return (500, "{}")
-        }
-      ), settings: MemoryClientSettings())
-    model.editConnection()
-    model.connectionAddress = "https://other.example.ts.net"
-    model.connectionToken = "typed on this screen"
-
-    let work = Task { await model.connect() }
-    try await waitForARequest()
-
-    model.closeConnectionEditor()
-    releaseTest.signal()
-    await work.value
-
-    XCTAssertEqual(
-      model.client?.address.absoluteString, "https://vanta.example.ts.net",
-      "a dismissed connection test must not replace the working pairing")
-    XCTAssertNil(model.connectionFailure)
   }
 }

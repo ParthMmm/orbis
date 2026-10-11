@@ -158,7 +158,7 @@ enum SetPresentation {
   /// The two timestamp shapes the service sends. A formatter is expensive to build, and one
   /// is built for every visible row on every render, so the pair is built once and reused.
   @MainActor
-  private enum DateParsing {
+  enum DateParsing {
     private static let fractional: ISO8601DateFormatter = {
       let formatter = ISO8601DateFormatter()
       formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]

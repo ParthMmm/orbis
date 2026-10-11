@@ -25,9 +25,9 @@ enum OrbisError: Error, Equatable {
     case .unreachable:
       "Cannot reach your library. Check your internet connection and try again."
     case .notPaired:
-      "This device is not signed in to your library. Sign in again or paste a new key."
+      "This device is not signed in to your library. Sign out in Settings and sign in again."
     case .refused:
-      "The service refused the request. Check the address points at your Orbis service."
+      "The service refused the request."
     case .duplicate:
       "That set is already in your library."
     case .cancelled:
@@ -41,7 +41,7 @@ enum OrbisError: Error, Equatable {
     case .storageRefused:
       "This device would not save the pairing, so nothing was changed. Try again."
     case .badAddress:
-      "Enter the full service address, including https://."
+      "This build's service address is not a valid URL."
     }
   }
 }
@@ -123,32 +123,102 @@ extension OrbisError {
   }
 }
 
-struct PersonPreferences: Codable, Equatable, Sendable {
+extension OrbisFailure {
+  /// What a sign-in or Settings request failed with. The service explains a refusal, such as a
+  /// wrong Group Passcode, a taken username, or an expired code, in a sentence meant for the
+  /// person, so that sentence is shown as it came.
+  static func explaining(_ error: any Error, at address: URL) -> OrbisFailure {
+    let known = (error as? OrbisError) ?? .unreachable
+    guard case .server(let status, let message) = known, (400..<500).contains(status),
+      !message.isEmpty
+    else { return known.failure(at: address) }
+    return OrbisFailure(
+      title: "Orbis could not do that", message: message, symbol: "hand.raised",
+      isRetryable: status == 429, address: address.absoluteString)
+  }
+}
+
+/// The Orbis service this app is built for (ADR 0020). The address is not a secret and is not
+/// stored: a fresh install asks only for a sign-in.
+enum OrbisService {
+  static let address = URL(string: "https://orbis.p11a.xyz/api")!
+
+  /// The address this launch talks to. A Debug journey points it at the lane's service with
+  /// `-orbisServiceAddress <address>`, and a Debug Mac build at the service its development
+  /// token belongs to; every other build uses the built-in one.
+  static func address(for arguments: [String]) -> URL {
+    #if DEBUG
+      if let flag = arguments.firstIndex(of: "-orbisServiceAddress"),
+        arguments.indices.contains(flag + 1),
+        let url = URL(string: arguments[flag + 1]), OrbisClient.accepts(url)
+      {
+        return url
+      }
+      if let development = ClientSettings.developmentConfiguration,
+        let url = URL(string: development.address), OrbisClient.accepts(url)
+      {
+        return url
+      }
+    #endif
+    return address
+  }
+}
+
+/// The signed-in Person, as `/me` answers.
+struct Me: Codable, Equatable, Sendable {
   let autoDownload: Bool
+  let host: Bool
+  let id: String
+  let social: Bool
+  let username: String
+}
+
+/// A change to the signed-in Person. Absent fields are left as they are.
+struct MeUpdate: Encodable {
+  var autoDownload: Bool?
+  var social: Bool?
+  var username: String?
+}
+
+struct GroupPerson: Decodable, Equatable, Identifiable, Sendable {
   let id: String
   let username: String
 }
 
-private struct AutoDownloadUpdate: Encodable {
-  let autoDownload: Bool
+/// A one-time code another device types to sign in as the same Person (ADR 0020).
+struct SignInCode: Decodable, Equatable, Sendable {
+  let code: String
+  let expiresAt: String
+
+  /// `ABCDEFGH` as `ABCD-EFGH`, which is easier to read aloud and type.
+  var formatted: String {
+    code.count == 8 ? "\(code.prefix(4))-\(code.suffix(4))" : code
+  }
+
+  /// What a person typed, as the service compares it: `abcd efgh` and `ABCD-EFGH` are the
+  /// same code.
+  static func normalized(_ typed: String) -> String {
+    typed.uppercased().filter { $0.isLetter || $0.isNumber }
+  }
 }
 
-/// A Device Link this device started. The poll secret is what collects the key, so it stays in
-/// memory and is never shown.
-struct DeviceLinkStart: Decodable, Equatable, Sendable {
-  let userCode: String
-  let pollSecret: String
+private struct SignedIn: Decodable {
+  let key: String
 }
 
-enum DeviceLinkPoll: Equatable, Sendable {
-  case pending
-  case expired
-  case approved(key: String)
+private struct GroupPasscode: Codable {
+  let passcode: String?
+
+  // Synthesized encoding drops a nil field, and the service reads a missing passcode as a bad
+  // request rather than as closing joining.
+  func encode(to encoder: any Encoder) throws {
+    var container = encoder.container(keyedBy: CodingKeys.self)
+    try container.encode(passcode, forKey: .passcode)
+  }
 }
 
-private struct DeviceLinkPollAnswer: Decodable {
-  let status: String
-  let key: String?
+private struct GroupPeople: Decodable {
+  let people: [GroupPerson]
 }
 
 /// Talks to the Orbis service. Every request carries the device token, and the same
@@ -162,14 +232,6 @@ struct OrbisClient: Sendable {
     self.address = address
     self.token = token
     self.session = session
-  }
-
-  static func address(from input: String) throws -> URL {
-    let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard let url = URL(string: trimmed), accepts(url) else {
-      throw OrbisError.badAddress
-    }
-    return url
   }
 
   /// An address is accepted only when it would carry the pairing safely: TLS, or the
@@ -187,43 +249,72 @@ struct OrbisClient: Sendable {
   private static let decoder = JSONDecoder()
   private static let encoder = JSONEncoder()
 
-  func preferences() async throws -> PersonPreferences {
+  func me() async throws -> Me {
     let response = try await send(path: "me", method: "GET", body: nil)
-    return try Self.decode(PersonPreferences.self, from: response)
+    return try Self.decode(Me.self, from: response)
   }
 
-  func updateAutoDownload(_ enabled: Bool) async throws -> PersonPreferences {
-    let body = try Self.encoder.encode(AutoDownloadUpdate(autoDownload: enabled))
+  func updateMe(_ update: MeUpdate) async throws -> Me {
+    let body = try Self.encoder.encode(update)
     let response = try await send(path: "me", method: "PATCH", body: body)
-    return try Self.decode(PersonPreferences.self, from: response)
+    return try Self.decode(Me.self, from: response)
   }
 
-  /// Starts a Device Link (ADR 0016). Needs no key: `signedOut` clients call it.
-  func startDeviceLink(label: String) async throws -> DeviceLinkStart {
-    let body = try Self.encoder.encode(["label": label])
-    let response = try await send(path: "device-links", method: "POST", body: body)
-    return try Self.decode(DeviceLinkStart.self, from: response)
+  // MARK: - Signing in (ADR 0020)
+
+  /// Joins the Group as a new Person with the Group Passcode. Needs no key: a signed-out client
+  /// calls it, and the answer is this device's key.
+  func join(username: String, passcode: String, label: String) async throws -> String {
+    let body = try Self.encoder.encode([
+      "label": label, "passcode": passcode, "username": username,
+    ])
+    let response = try await send(path: "sign-in/join", method: "POST", body: body)
+    return try Self.decode(SignedIn.self, from: response).key
   }
 
-  /// Asks whether a Device Link was approved. The key arrives once, in the first answer after
-  /// approval.
-  func pollDeviceLink(secret: String) async throws -> DeviceLinkPoll {
-    let body = try Self.encoder.encode(["pollSecret": secret])
-    let response = try await send(path: "device-links/poll", method: "POST", body: body)
-    let answer = try Self.decode(DeviceLinkPollAnswer.self, from: response)
-    switch answer.status {
-    case "pending": return .pending
-    case "expired": return .expired
-    case "approved":
-      guard let key = answer.key, !key.isEmpty else { throw OrbisError.malformed }
-      return .approved(key: key)
-    default: throw OrbisError.malformed
-    }
+  /// Signs in as the Person who showed `code` on another device. Needs no key.
+  func redeem(code: String, label: String) async throws -> String {
+    let body = try Self.encoder.encode(["code": code, "label": label])
+    let response = try await send(path: "sign-in/code", method: "POST", body: body)
+    return try Self.decode(SignedIn.self, from: response).key
   }
 
-  func health() async throws -> String {
-    let response = try await send(path: "health", method: "GET", body: nil)
-    return try Self.decode(HealthResponse.self, from: response).status
+  /// A code another device types to sign in as this Person.
+  func signInCode() async throws -> SignInCode {
+    let response = try await send(path: "me/sign-in-codes", method: "POST", body: nil)
+    return try Self.decode(SignInCode.self, from: response)
+  }
+
+  // MARK: - The Host's controls
+
+  /// A code that signs a device in as `personId`, which is how a friend who lost every device
+  /// gets back in.
+  func signInCode(for personId: String) async throws -> SignInCode {
+    let response = try await send(
+      path: "admin/people/\(personId)/sign-in-codes", method: "POST", body: nil)
+    return try Self.decode(SignInCode.self, from: response)
+  }
+
+  /// The Group Passcode, or nil while joining is closed.
+  func passcode() async throws -> String? {
+    let response = try await send(path: "admin/passcode", method: "GET", body: nil)
+    return try Self.decode(GroupPasscode.self, from: response).passcode
+  }
+
+  /// Sets the Group Passcode. Nil closes joining.
+  func setPasscode(_ passcode: String?) async throws -> String? {
+    let body = try Self.encoder.encode(GroupPasscode(passcode: passcode))
+    let response = try await send(path: "admin/passcode", method: "PUT", body: body)
+    return try Self.decode(GroupPasscode.self, from: response).passcode
+  }
+
+  func people() async throws -> [GroupPerson] {
+    let response = try await send(path: "admin/people", method: "GET", body: nil)
+    return try Self.decode(GroupPeople.self, from: response).people
+  }
+
+  func removePerson(_ id: String) async throws {
+    _ = try await send(path: "admin/people/\(id)", method: "DELETE", body: nil)
   }
 
   func library(query: String = "", playlistId: String? = nil) async throws -> [SavedSet] {
@@ -443,8 +534,8 @@ struct OrbisClient: Sendable {
     }
     var request = URLRequest(url: url)
     request.httpMethod = method
-    // A device that has no key yet sends none: the Device Link routes are the only ones that
-    // answer without one.
+    // A device that has no key yet sends none: join and redeem are the only routes that answer
+    // without one.
     if !token.isEmpty {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
@@ -502,6 +593,10 @@ struct OrbisClient: Sendable {
     case 401:
       throw OrbisError.notPaired
     case 403:
+      // A refusal the service explains, such as a wrong Group Passcode, keeps its sentence.
+      if let message = (try? Self.decoder.decode(ServerMessage.self, from: data))?.message {
+        throw OrbisError.server(status: 403, message: message)
+      }
       throw OrbisError.refused
     case 409:
       let message = (try? Self.decoder.decode(ServerMessage.self, from: data))?.message

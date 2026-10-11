@@ -68,7 +68,7 @@ nonisolated public struct FailureReport: Equatable, Sendable {
     return lines.joined(separator: "\n")
   }
 
-  static var appVersion: String {
+  public static var appVersion: String {
     let info = Bundle.main.infoDictionary
     let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
     let build = info?["CFBundleVersion"] as? String ?? "?"

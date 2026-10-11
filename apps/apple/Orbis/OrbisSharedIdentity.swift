@@ -1,8 +1,7 @@
 import Foundation
 
-/// Shared App Group and keychain identity for the main app and share extension.
+/// Shared keychain identity for the main app and share extension.
 enum OrbisSharedIdentity {
-  static let appGroup = "group.app.orbis.client"
   static let keychainService = "app.orbis.client"
   static let keychainAccount = "device-token"
   /// Team-prefixed access group from entitlements (`$(AppIdentifierPrefix)app.orbis.client`).
