@@ -331,7 +331,7 @@ const AdminKey = Schema.Struct({
   label: Schema.String,
   lastUsedAt: Schema.NullOr(Schema.String),
   personId: Schema.String,
-  scope: Schema.Literals(["daily", "admin", "node"]),
+  scope: Schema.Literals(["daily", "node"]),
 });
 
 export const DeviceSchema = Schema.Struct({
