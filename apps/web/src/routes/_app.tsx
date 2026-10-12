@@ -36,7 +36,9 @@ const AppShell = ({ session }: { readonly session: Session }) => {
           aria-label="Main"
           className="order-3 flex w-full flex-wrap gap-x-4 gap-y-2 text-sm sm:order-none sm:w-auto"
         >
-          {NAV_ITEMS.map((item) => (
+          {NAV_ITEMS.filter(
+            (item) => session.person.host || !item.hostOnly
+          ).map((item) => (
             <Link
               activeOptions={{ exact: true }}
               activeProps={{ "aria-current": "page", className: "font-medium" }}
