@@ -12,6 +12,5 @@ export class SetCaller extends Context.Service<
       readonly social?: boolean;
       readonly username: string;
     };
-    readonly scope: "daily";
   }
 >()("Orbis/SetCaller") {}

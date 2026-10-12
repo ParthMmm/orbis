@@ -36,6 +36,11 @@ const Key = Schema.Struct({
   scope: Schema.Literals(["daily", "admin", "node"]),
   tokenHash: TokenHash,
 });
+const SignInCode = Schema.Struct({
+  code: Schema.String,
+  expiresAt: Schema.String,
+  personId: Schema.String,
+});
 const LegacyTrustFile = Schema.Struct({
   devices: Schema.Array(LegacyDevice),
   version: Schema.Literal(1),
@@ -45,10 +50,12 @@ const TrustFile = Schema.Struct({
   /** Plain text so the Host can read it back (ADR 0020). Absent or null closes joining. */
   passcode: Schema.optionalKey(Schema.NullOr(Schema.String)),
   people: Schema.Array(Person),
+  signInCodes: Schema.optionalKey(Schema.Array(SignInCode)),
   version: Schema.Literal(2),
 });
 
 export type PersonRecord = typeof Person.Type;
+export type SignInCodeRecord = typeof SignInCode.Type;
 /** A stored `admin` key decodes as `daily`: one kind of Person key (ADR 0020). */
 export type KeyRecord = Omit<typeof Key.Type, "scope"> & {
   readonly scope: "daily" | "node";
@@ -75,7 +82,6 @@ export type AccessDecision =
       readonly kind: "accepted";
       readonly keyId: string | null;
       readonly person: PersonRecord;
-      readonly scope: "daily";
     }
   | {
       readonly kind: "rejected";
@@ -187,11 +193,7 @@ const authenticate = (input: {
   readonly mode: AccessMode;
   readonly store: TrustStore;
   readonly requiredScope?: "node";
-}):
-  | Exclude<AccessDecision, { kind: "accepted" }>
-  | (Omit<Extract<AccessDecision, { kind: "accepted" }>, "scope"> & {
-      readonly scope: KeyRecord["scope"];
-    }) => {
+}): AccessDecision => {
   if (input.hasOrigin) {
     return rejected(LOCAL_ONLY, 403);
   }
@@ -214,7 +216,7 @@ const authenticate = (input: {
       return rejected("This key cannot access this route.", 403);
     }
     return key && person
-      ? { keyId: key.id, kind: "accepted", person, scope: key.scope }
+      ? { keyId: key.id, kind: "accepted", person }
       : rejected(NOT_PAIRED, 401);
   }
   return rejected(LOCAL_ONLY, 403);
@@ -226,16 +228,7 @@ export const decideNodeAccess = (
 
 export const decideAccess = (
   input: Omit<Parameters<typeof authenticate>[0], "requiredScope">
-): AccessDecision => {
-  const decision = authenticate(input);
-  if (decision.kind === "rejected") {
-    return decision;
-  }
-  if (decision.scope === "node") {
-    return rejected("This key cannot access this route.", 403);
-  }
-  return { ...decision, scope: decision.scope };
-};
+): AccessDecision => authenticate(input);
 
 export const markKeyUsed = (
   storePath: string | undefined,

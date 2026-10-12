@@ -108,9 +108,7 @@ export class Group extends DurableObject<Environment> {
 
   override fetch(request: Request): Promise<Response> {
     if (new URL(request.url).pathname === "/recovery") {
-      return Promise.resolve(
-        recoverHost(request, this.ctx.id.toString(), this.app.issueSignInCode)
-      );
+      return Promise.resolve(recoverHost(request, this.ctx.id.toString()));
     }
     if (new URL(request.url).pathname === "/node") {
       return Promise.resolve(this.node.accept(request));

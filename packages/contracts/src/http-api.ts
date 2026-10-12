@@ -668,7 +668,7 @@ export const OrbisApi = PlaylistApi.add(
           "signInCodeFor",
           "/admin/people/:id/sign-in-codes",
           {
-            error: [NotFound, ServiceUnavailable],
+            error: [NotFound, InternalError],
             params: SetId,
             success: SignInCodeSchema.pipe(HttpApiSchema.status(201)),
           }
@@ -686,7 +686,6 @@ export const OrbisApi = PlaylistApi.add(
       .middleware(SetAccess)
   )
   .add(
-    // Redeem and join carry no key; the new device has none yet.
     HttpApiGroup.make("signIn").add(
       HttpApiEndpoint.post("redeem", "/sign-in/code", {
         error: [BadRequest, NotFound, TooManyRequests, InternalError],
@@ -719,7 +718,7 @@ export const OrbisApi = PlaylistApi.add(
           success: DeviceSchema,
         }),
         HttpApiEndpoint.post("signInCode", "/me/sign-in-codes", {
-          error: ServiceUnavailable,
+          error: InternalError,
           success: SignInCodeSchema.pipe(HttpApiSchema.status(201)),
         })
       )

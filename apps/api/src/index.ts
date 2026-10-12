@@ -29,7 +29,6 @@ export default {
     if (url.pathname !== "/recovery") {
       return forward();
     }
-    // Recovery runs outside the app's request log, so it is recorded here.
     const logging = { pretty: false, silent: false };
     configureLogging(logging);
     const logger = startRequestLog({
