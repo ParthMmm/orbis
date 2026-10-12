@@ -1,4 +1,5 @@
-import { formatSignInCode } from "@/lib/sign-in";
+import { formatSignInCode } from "@orbis/contracts";
+
 import type { IssuedSignInCode } from "@/lib/sign-in";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });

@@ -9,16 +9,8 @@ import { callOrbisWithoutKey } from "@/lib/orbis";
 
 export type IssuedSignInCode = typeof SignInCodeSchema.Type;
 
-/** Shows `ABCDEFGH` as `ABCD-EFGH`, which is easier to read aloud and type. */
-export const formatSignInCode = (code: string): string =>
-  code.length === 8 ? `${code.slice(0, 4)}-${code.slice(4)}` : code;
-
-/** Accepts `abcd-efgh`, `ABCD EFGH`, and the like. */
-export const normalizeSignInCode = (typed: string): string =>
-  typed.replaceAll(/[^a-z0-9]/giu, "").toUpperCase();
-
 /** The key's label on the Devices list, such as "Safari on Mac". */
-export const browserLabel = (userAgent: string): string => {
+const browserLabel = (userAgent: string): string => {
   const browser =
     [
       ["Edg/", "Edge"],
