@@ -36,28 +36,33 @@ const Key = Schema.Struct({
   scope: Schema.Literals(["daily", "admin", "node"]),
   tokenHash: TokenHash,
 });
-/** An Invite (ADR 0016): the store keeps the code's `sha256`, never the code. */
-const Invite = Schema.Struct({
-  codeHash: TokenHash,
+const SignInCode = Schema.Struct({
+  code: Schema.String,
   expiresAt: Schema.String,
   personId: Schema.String,
-  used: Schema.Boolean,
 });
 const LegacyTrustFile = Schema.Struct({
   devices: Schema.Array(LegacyDevice),
   version: Schema.Literal(1),
 });
 const TrustFile = Schema.Struct({
-  invites: Schema.optionalKey(Schema.Array(Invite)),
   keys: Schema.Array(Key),
+  /** Plain text so the Host can read it back (ADR 0020). Absent or null closes joining. */
+  passcode: Schema.optionalKey(Schema.NullOr(Schema.String)),
   people: Schema.Array(Person),
+  signInCodes: Schema.optionalKey(Schema.Array(SignInCode)),
   version: Schema.Literal(2),
 });
 
 export type PersonRecord = typeof Person.Type;
-export type KeyRecord = typeof Key.Type;
-export type InviteRecord = typeof Invite.Type;
-export type TrustStore = typeof TrustFile.Type;
+export type SignInCodeRecord = typeof SignInCode.Type;
+/** A stored `admin` key decodes as `daily`: one kind of Person key (ADR 0020). */
+export type KeyRecord = Omit<typeof Key.Type, "scope"> & {
+  readonly scope: "daily" | "node";
+};
+export type TrustStore = Omit<typeof TrustFile.Type, "keys"> & {
+  readonly keys: readonly KeyRecord[];
+};
 export type AccessMode = "device";
 
 export const HOST_PERSON_ID = "host";
@@ -77,7 +82,6 @@ export type AccessDecision =
       readonly kind: "accepted";
       readonly keyId: string | null;
       readonly person: PersonRecord;
-      readonly scope: "daily" | "admin";
     }
   | {
       readonly kind: "rejected";
@@ -108,7 +112,16 @@ export const decodeTrust = (raw: typeof Schema.Unknown.Type): TrustStore => {
   const parsed = Schema.decodeUnknownSync(
     Schema.Union([LegacyTrustFile, TrustFile])
   )(raw);
-  return parsed.version === 1 ? fromLegacy(parsed) : parsed;
+  if (parsed.version === 1) {
+    return fromLegacy(parsed);
+  }
+  return {
+    ...parsed,
+    keys: parsed.keys.map((key) => ({
+      ...key,
+      scope: key.scope === "node" ? "node" : "daily",
+    })),
+  };
 };
 
 export const migrateTrustStore = (
@@ -158,7 +171,10 @@ export const readTrustRegistry = (
   }
 };
 
-const matchesTokenHash = (storedHash: string, presented: string): boolean => {
+export const matchesTokenHash = (
+  storedHash: string,
+  presented: string
+): boolean => {
   const stored = Buffer.from(storedHash, "hex");
   const digest = Buffer.from(hashToken(presented), "hex");
   return stored.length === digest.length && timingSafeEqual(stored, digest);
@@ -177,11 +193,7 @@ const authenticate = (input: {
   readonly mode: AccessMode;
   readonly store: TrustStore;
   readonly requiredScope?: "node";
-}):
-  | Exclude<AccessDecision, { kind: "accepted" }>
-  | (Omit<Extract<AccessDecision, { kind: "accepted" }>, "scope"> & {
-      readonly scope: KeyRecord["scope"];
-    }) => {
+}): AccessDecision => {
   if (input.hasOrigin) {
     return rejected(LOCAL_ONLY, 403);
   }
@@ -204,7 +216,7 @@ const authenticate = (input: {
       return rejected("This key cannot access this route.", 403);
     }
     return key && person
-      ? { keyId: key.id, kind: "accepted", person, scope: key.scope }
+      ? { keyId: key.id, kind: "accepted", person }
       : rejected(NOT_PAIRED, 401);
   }
   return rejected(LOCAL_ONLY, 403);
@@ -216,16 +228,7 @@ export const decideNodeAccess = (
 
 export const decideAccess = (
   input: Omit<Parameters<typeof authenticate>[0], "requiredScope">
-): AccessDecision => {
-  const decision = authenticate(input);
-  if (decision.kind === "rejected") {
-    return decision;
-  }
-  if (decision.scope === "node") {
-    return rejected("This key cannot access this route.", 403);
-  }
-  return { ...decision, scope: decision.scope };
-};
+): AccessDecision => authenticate(input);
 
 export const markKeyUsed = (
   storePath: string | undefined,

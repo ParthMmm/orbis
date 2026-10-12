@@ -338,16 +338,20 @@ export const apiKeys = sqliteTable("api_keys", {
   personId: text("person_id")
     .notNull()
     .references(() => people.id),
-  scope: text("scope", { enum: ["daily", "admin", "node"] }).notNull(),
+  scope: text("scope", { enum: ["daily", "node"] }).notNull(),
 });
 
-export const invites = sqliteTable("invites", {
-  digest: text("digest").primaryKey(),
+export const groupSettings = sqliteTable("group_settings", {
+  id: integer("id").primaryKey(),
+  passcode: text("passcode"),
+});
+
+export const signInCodes = sqliteTable("sign_in_codes", {
+  code: text("code").primaryKey(),
   expiresAt: text("expires_at").notNull(),
   personId: text("person_id")
     .notNull()
     .references(() => people.id),
-  used: integer("used", { mode: "boolean" }).notNull(),
 });
 
 export const trustMigrations = sqliteTable("trust_migrations", {

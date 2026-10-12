@@ -88,7 +88,6 @@ const NotFound = ErrorBody.pipe(HttpApiSchema.status(404));
 const Conflict = ErrorBody.pipe(HttpApiSchema.status(409));
 const RangeNotSatisfiable = Schema.Void.pipe(HttpApiSchema.status(416));
 const InternalError = ErrorBody.pipe(HttpApiSchema.status(500));
-const Gone = ErrorBody.pipe(HttpApiSchema.status(410));
 const TooManyRequests = ErrorBody.pipe(HttpApiSchema.status(429));
 const ServiceUnavailable = ErrorBody.pipe(HttpApiSchema.status(503));
 const SearchValue = Schema.Union([Schema.String, Schema.Array(Schema.String)]);
@@ -260,6 +259,7 @@ export const PresenceConflictSchema = Schema.Struct({
 
 export const MeSchema = Schema.Struct({
   autoDownload: Schema.Boolean,
+  host: Schema.Boolean,
   id: Schema.String,
   social: Schema.Boolean,
   username: Schema.String,
@@ -320,7 +320,6 @@ export const AdminPersonPayload = Schema.Struct({
 });
 export const AdminKeyPayload = Schema.Struct({
   label: Schema.String.check(Schema.isMaxLength(100)),
-  scope: Schema.optionalKey(Schema.Literals(["daily", "admin"])),
 });
 const AdminPerson = Schema.Struct({
   id: Schema.String,
@@ -332,7 +331,7 @@ const AdminKey = Schema.Struct({
   label: Schema.String,
   lastUsedAt: Schema.NullOr(Schema.String),
   personId: Schema.String,
-  scope: Schema.Literals(["daily", "admin", "node"]),
+  scope: Schema.Literals(["daily", "node"]),
 });
 
 export const DeviceSchema = Schema.Struct({
@@ -342,47 +341,33 @@ export const DeviceSchema = Schema.Struct({
   label: Schema.String,
   lastUsedAt: Schema.NullOr(Schema.String),
 });
-/** A Device Link (ADR 0016): a new device's code, approved from a signed-in one. */
-export const DeviceLinkStartPayload = Schema.Struct({
-  label: Schema.String.check(Schema.isMaxLength(100)),
-});
-export const DeviceLinkStartSchema = Schema.Struct({
-  expiresAt: Schema.String,
-  pollSecret: Schema.String,
-  userCode: Schema.String,
-});
-export const DeviceLinkCodePayload = Schema.Struct({
-  userCode: Schema.String.check(Schema.isMaxLength(20)),
-});
-export const DeviceLinkSchema = Schema.Struct({
-  expiresAt: Schema.String,
-  label: Schema.String,
-});
-export const DeviceLinkPollPayload = Schema.Struct({
-  pollSecret: Schema.String.check(Schema.isMaxLength(200)),
-});
-/** An Invite (ADR 0016): a one-time code the Host sends, claimed for a daily key. */
-export const InviteSchema = Schema.Struct({
+/** A Sign-in Code (ADR 0020): shown on a signed-in device, typed on a new one. */
+export const SignInCodeSchema = Schema.Struct({
   code: Schema.String,
   expiresAt: Schema.String,
 });
-export const InviteClaimPayload = Schema.Struct({
-  code: Schema.String.check(Schema.isMaxLength(200)),
+export const RedeemSignInCodePayload = Schema.Struct({
+  code: Schema.String.check(Schema.isMaxLength(20)),
   label: Schema.String.check(Schema.isMaxLength(100)),
 });
-export const InviteClaimSchema = Schema.Struct({
+/** Joining the Group with the Group Passcode (ADR 0020). */
+export const JoinPayload = Schema.Struct({
+  label: Schema.String.check(Schema.isMaxLength(100)),
+  passcode: Schema.String.check(Schema.isMaxLength(100)),
+  username: Schema.String.check(Schema.isMaxLength(40)),
+});
+/** The new device's key, returned once, and the Person it signs in as. */
+export const SignedInSchema = Schema.Struct({
   key: Schema.String,
   person: VisiblePerson,
 });
-export const DeviceLinkPollSchema = Schema.Union([
-  Schema.Struct({ status: Schema.Literal("pending") }),
-  Schema.Struct({ status: Schema.Literal("expired") }),
-  Schema.Struct({
-    key: Schema.String,
-    person: VisiblePerson,
-    status: Schema.Literal("approved"),
-  }),
-]);
+/** `null` while joining is closed. */
+export const GroupPasscodeSchema = Schema.Struct({
+  passcode: Schema.NullOr(Schema.String),
+});
+export const GroupPasscodePayload = Schema.Struct({
+  passcode: Schema.NullOr(Schema.String.check(Schema.isMaxLength(100))),
+});
 
 export const SetsApi = HttpApi.make("orbis").add(
   HttpApiGroup.make("sets")
@@ -679,28 +664,44 @@ export const OrbisApi = PlaylistApi.add(
           params: SetId,
           success: AdminKey,
         }),
-        HttpApiEndpoint.post("createInvite", "/admin/people/:id/invites", {
-          error: [NotFound, InternalError],
-          params: SetId,
-          success: InviteSchema.pipe(HttpApiSchema.status(201)),
+        HttpApiEndpoint.post(
+          "signInCodeFor",
+          "/admin/people/:id/sign-in-codes",
+          {
+            error: [NotFound, InternalError],
+            params: SetId,
+            success: SignInCodeSchema.pipe(HttpApiSchema.status(201)),
+          }
+        ),
+        HttpApiEndpoint.get("passcode", "/admin/passcode", {
+          error: InternalError,
+          success: GroupPasscodeSchema,
+        }),
+        HttpApiEndpoint.put("setPasscode", "/admin/passcode", {
+          error: [BadRequest, InternalError],
+          payload: GroupPasscodePayload,
+          success: GroupPasscodeSchema,
         })
       )
       .middleware(SetAccess)
   )
   .add(
-    // Claim carries no key; the new device has none yet.
-    HttpApiGroup.make("invites").add(
-      HttpApiEndpoint.post("claim", "/invites/claim", {
+    HttpApiGroup.make("signIn").add(
+      HttpApiEndpoint.post("redeem", "/sign-in/code", {
+        error: [BadRequest, NotFound, TooManyRequests, InternalError],
+        payload: RedeemSignInCodePayload,
+        success: SignedInSchema,
+      }),
+      HttpApiEndpoint.post("join", "/sign-in/join", {
         error: [
           BadRequest,
-          NotFound,
+          Forbidden,
           Conflict,
-          Gone,
           TooManyRequests,
           InternalError,
         ],
-        payload: InviteClaimPayload,
-        success: InviteClaimSchema,
+        payload: JoinPayload,
+        success: SignedInSchema.pipe(HttpApiSchema.status(201)),
       })
     )
   )
@@ -715,35 +716,13 @@ export const OrbisApi = PlaylistApi.add(
           error: [NotFound, InternalError],
           params: SetId,
           success: DeviceSchema,
+        }),
+        HttpApiEndpoint.post("signInCode", "/me/sign-in-codes", {
+          error: InternalError,
+          success: SignInCodeSchema.pipe(HttpApiSchema.status(201)),
         })
       )
       .middleware(SetAccess)
-  )
-  .add(
-    // Start and poll carry no key; the new device has none yet. Lookup and
-    // approve run as the signed-in Person who approves the device.
-    HttpApiGroup.make("deviceLinks").add(
-      HttpApiEndpoint.post("start", "/device-links", {
-        error: [BadRequest, TooManyRequests, ServiceUnavailable],
-        payload: DeviceLinkStartPayload,
-        success: DeviceLinkStartSchema.pipe(HttpApiSchema.status(201)),
-      }),
-      HttpApiEndpoint.post("poll", "/device-links/poll", {
-        error: [BadRequest, NotFound, TooManyRequests, InternalError],
-        payload: DeviceLinkPollPayload,
-        success: DeviceLinkPollSchema,
-      }),
-      HttpApiEndpoint.post("lookup", "/device-links/lookup", {
-        error: [BadRequest, NotFound, Conflict, Gone],
-        payload: DeviceLinkCodePayload,
-        success: DeviceLinkSchema,
-      }).middleware(SetAccess),
-      HttpApiEndpoint.post("approve", "/device-links/approve", {
-        error: [BadRequest, NotFound, Conflict, Gone],
-        payload: DeviceLinkCodePayload,
-        success: DeviceLinkSchema,
-      }).middleware(SetAccess)
-    )
   )
   .add(
     HttpApiGroup.make("events")

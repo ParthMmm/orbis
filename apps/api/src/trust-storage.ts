@@ -38,21 +38,26 @@ const readStore = (
       "SELECT id, digest AS tokenHash, label, scope, person_id AS personId, added_at AS addedAt, last_used_at AS lastUsedAt FROM api_keys ORDER BY rowid"
     )
     .toArray();
-  const invites = storage.sql
-    .exec<{
-      codeHash: string;
-      personId: string;
-      expiresAt: string;
-      used: number;
-    }>(
-      "SELECT digest AS codeHash, person_id AS personId, expires_at AS expiresAt, used FROM invites ORDER BY rowid"
+  const [settings] = storage.sql
+    .exec<{ passcode: string | null }>(
+      "SELECT passcode FROM group_settings WHERE id = 1"
     )
-    .toArray()
-    .map((invite) => ({ ...invite, used: Boolean(invite.used) }));
-  return decode({ invites, keys, people, version: 2 });
+    .toArray();
+  const signInCodes = storage.sql
+    .exec(
+      "SELECT code, person_id AS personId, expires_at AS expiresAt FROM sign_in_codes ORDER BY rowid"
+    )
+    .toArray();
+  return decode({
+    keys,
+    passcode: settings?.passcode ?? null,
+    people,
+    signInCodes,
+    version: 2,
+  });
 };
 const writeStore = (storage: DurableObjectStorage, store: TrustStore) => {
-  storage.sql.exec("DELETE FROM invites");
+  storage.sql.exec("DELETE FROM sign_in_codes");
   storage.sql.exec("DELETE FROM api_keys");
   storage.sql.exec("DELETE FROM people");
   for (const person of store.people) {
@@ -78,15 +83,18 @@ const writeStore = (storage: DurableObjectStorage, store: TrustStore) => {
       key.lastUsedAt
     );
   }
-  for (const invite of store.invites ?? []) {
+  for (const code of store.signInCodes ?? []) {
     storage.sql.exec(
-      "INSERT INTO invites (digest, person_id, expires_at, used) VALUES (?, ?, ?, ?)",
-      invite.codeHash,
-      invite.personId,
-      invite.expiresAt,
-      Number(invite.used)
+      "INSERT INTO sign_in_codes (code, person_id, expires_at) VALUES (?, ?, ?)",
+      code.code,
+      code.personId,
+      code.expiresAt
     );
   }
+  storage.sql.exec(
+    "INSERT OR REPLACE INTO group_settings (id, passcode) VALUES (1, ?)",
+    store.passcode ?? null
+  );
 };
 
 export const registerTrustStorage = (

@@ -20,6 +20,7 @@ const Samples = Schema.Struct({
   library: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
   me: Schema.Struct({
     autoDownload: Schema.Boolean,
+    host: Schema.optionalKey(Schema.Boolean),
     id: Schema.String,
     social: Schema.Boolean,
     username: Schema.String,
@@ -197,6 +198,9 @@ const sampleFor = (operationId: string) => {
   if (operationId === "devices.revoke") {
     return device;
   }
+  if (operationId === "devices.signInCode") {
+    return { code: "ABCD2345", expiresAt: "2026-09-29T00:10:00.000Z" };
+  }
   if (operationId === "presence.act") {
     return {
       outcome: "accepted",
@@ -209,6 +213,10 @@ const sampleFor = (operationId: string) => {
         state: "playing",
       },
     };
+  }
+  // The Apple fixture gains `host` when the Apple apps adopt ADR 0020.
+  if (sampleKeyFor(operationId) === "me") {
+    return { host: samples.me.id === "host", ...samples.me };
   }
   return samples[sampleKeyFor(operationId)];
 };
@@ -234,11 +242,10 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         if (!["get", "post", "put", "patch", "delete"].includes(method)) {
           continue;
         }
-        // The Swift client has no Device Link or Invite types until the Apple apps adopt them.
+        // The Swift client has no sign-in or admin types until the Apple apps adopt them.
         if (
           operation.operationId.startsWith("admin.") ||
-          operation.operationId.startsWith("deviceLinks.") ||
-          operation.operationId.startsWith("invites.")
+          operation.operationId.startsWith("signIn.")
         ) {
           continue;
         }
@@ -273,7 +280,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(45);
+    expect(checked).toBe(46);
   } finally {
     await app.dispose();
   }

@@ -92,11 +92,8 @@ export const createApp = (
     /** How long after a Playback Position report a Person still counts as listening. */
     presenceWindowMs?: number;
     presence?: PresenceOptions & { journal?: Layer.Layer<PresenceJournal> };
-    /** How long a Device Link stays open. Tests shorten it to prove expiry. */
-    deviceLinkTtlMs?: number;
-    deviceLinkNow?: () => number;
-    /** How long an Invite stays claimable. Tests shorten it to prove expiry. */
-    inviteTtlMs?: number;
+    /** The clock Sign-in Codes expire by. Tests move it to prove expiry. */
+    signInCodeNow?: () => number;
     /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
     shortLinkFetch?: (url: string, signal: AbortSignal) => Promise<Response>;
     titleReviser?: Layer.Layer<TitleReviser>;
