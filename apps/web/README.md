@@ -84,16 +84,16 @@ The migration spec [#137](https://github.com/ParthMmm/orbis/issues/137) has thir
 | --- | --- |
 | [#138](https://github.com/ParthMmm/orbis/issues/138), Cloudflare scaffold | Production build and Alchemy production dry-run. Stack `OrbisWeb`, resource `Web`, stage `prod`, and domain `orbis.p11a.xyz` keep their identity after the directory rename. |
 | [#139](https://github.com/ParthMmm/orbis/issues/139), web Origin | Production web traffic is same-origin. `apps/server/src/fixture-server.test.ts` limits disposable browser fixtures to one exact Origin. |
-| [#140](https://github.com/ParthMmm/orbis/issues/140), key sign-in | `e2e/sign-in.mjs`, `.cache/web-sign-in`. |
+| [#140](https://github.com/ParthMmm/orbis/issues/140), key sign-in | `e2e/sign-in.mjs`, `.cache/web-sign-in`: joining, a Sign-in Code, the API's refusals, saved-key expiry, and sign-out. |
 | [#141](https://github.com/ParthMmm/orbis/issues/141), admin | `e2e/admin-journey.mjs`, `.cache/web-admin`. |
-| [#142](https://github.com/ParthMmm/orbis/issues/142), Invites | Replaced by joining with the Group Passcode (ADR 0020): `e2e/sign-in.mjs` and `e2e/admin-journey.mjs`. |
-| [#143](https://github.com/ParthMmm/orbis/issues/143), Device Link | Replaced by Sign-in Codes (ADR 0020): `e2e/devices.mjs` and `e2e/admin-journey.mjs`. |
+| [#142](https://github.com/ParthMmm/orbis/issues/142), Invites | Joining with the Group Passcode: `e2e/sign-in.mjs` and `e2e/admin-journey.mjs`. |
+| [#143](https://github.com/ParthMmm/orbis/issues/143), Device Link | Sign-in Codes: `e2e/devices.mjs` and `e2e/admin-journey.mjs`. |
 | [#144](https://github.com/ParthMmm/orbis/issues/144), Devices | `e2e/devices.mjs`, `.cache/web-devices`, and server key HTTP tests. A second browser signs in with a code from the Devices page. |
 | [#145](https://github.com/ParthMmm/orbis/issues/145), Library | `e2e/journey.mjs`, `.cache/web-library`. |
 | [#146](https://github.com/ParthMmm/orbis/issues/146), player and queue | `e2e/live-queue.mjs`, `.cache/web-player`. |
 | [#147](https://github.com/ParthMmm/orbis/issues/147), Playlists | `e2e/playlists.mjs`, `.cache/web-playlists`, and server Collaborative HTTP tests. Deploy the matching API before the new Playlist client. |
 | [#148](https://github.com/ParthMmm/orbis/issues/148), Social | `e2e/shared-audio.mjs`, `.cache/web-social`. |
-| [#149](https://github.com/ParthMmm/orbis/issues/149), Apple Device Link | Separate Apple change. Run `node scripts/native-lanes.mjs --journeys` on that branch. This cutover does not verify an Apple build. |
+| [#149](https://github.com/ParthMmm/orbis/issues/149), Apple Device Link | The Apple apps sign in with a Sign-in Code or the Group Passcode. `node scripts/native-lanes.mjs --journeys` verifies them; the web suite does not. |
 | [#150](https://github.com/ParthMmm/orbis/issues/150), cutover | Four original browser groups above and production acceptance recorded on the issue. |
 
 Live rollout not performed by this repository change. The production dry-run reads the existing Cloudflare deployment without applying changes. Record the approved Vanta update, handler removal, live browser playback, and status output separately before closing the cutover issue.
