@@ -196,7 +196,7 @@ try {
           label: "Bun parity",
           lastUsedAt: null,
           personId: "host",
-          scope: "admin",
+          scope: "daily",
           tokenHash: hashToken(bunToken),
         },
       ],
