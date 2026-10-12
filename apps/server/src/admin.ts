@@ -247,7 +247,10 @@ export const redeemSignInCode = (
       );
       const signInCodes = live.filter((code) => code !== found);
       if (!person) {
-        return { store: { ...store, signInCodes }, value: null };
+        const pruned = signInCodes.length !== (store.signInCodes ?? []).length;
+        return pruned
+          ? { store: { ...store, signInCodes }, value: null }
+          : { value: null };
       }
       const key = newDailyKey(person.id, label);
       return {

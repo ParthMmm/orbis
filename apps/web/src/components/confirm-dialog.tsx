@@ -40,7 +40,13 @@ export const ConfirmDialog = ({
   readonly trigger: string;
 }) => {
   const [open, setOpen] = useState(false);
-  const { busy, problem, run } = useApiCall();
+  const { busy, problem, refuse, run } = useApiCall();
+  const openChange = (next: boolean) => {
+    setOpen(next);
+    if (next) {
+      refuse(null);
+    }
+  };
   const confirm = async () => {
     if ((await run(call)) !== null) {
       setOpen(false);
@@ -48,7 +54,7 @@ export const ConfirmDialog = ({
     }
   };
   return (
-    <AlertDialog onOpenChange={setOpen} open={open}>
+    <AlertDialog onOpenChange={openChange} open={open}>
       <AlertDialogTrigger
         render={<Button aria-label={label} size="sm" variant="outline" />}
       >

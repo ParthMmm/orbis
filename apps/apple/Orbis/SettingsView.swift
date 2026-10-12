@@ -51,6 +51,7 @@ final class SettingsModel {
   var codeFailure: OrbisFailure?
   var hostFailure: OrbisFailure?
   var isSaving = false
+  private var loadedToken: String?
 
   init(app: AppModel) {
     self.app = app
@@ -58,8 +59,12 @@ final class SettingsModel {
 
   func load() async {
     guard app.isConfigured else { return }
+    if loadedToken != app.client?.token {
+      loadedToken = app.client?.token
+      forgetPerson()
+    }
     code = nil
-    me = .loading
+    if case .loaded = me {} else { me = .loading }
     guard
       let person = await settingsRequest(
         app, { if let failure = $0 { self.me = .failed(failure) } }, { try await $0.me() })
@@ -70,6 +75,18 @@ final class SettingsModel {
     async let passcodeLoad: Void = loadPasscode()
     async let peopleLoad: Void = loadPeople()
     _ = await (passcodeLoad, peopleLoad)
+  }
+
+  private func forgetPerson() {
+    me = .idle
+    passcode = nil
+    username = ""
+    passcodeDraft = ""
+    people = .idle
+    accountFailure = nil
+    downloadsFailure = nil
+    codeFailure = nil
+    hostFailure = nil
   }
 
   func loadPasscode() async {

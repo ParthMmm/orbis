@@ -139,7 +139,7 @@ export const initializeTrustDatabase = (input: {
     )`);
     db.run(`CREATE TABLE IF NOT EXISTS api_keys (
       id TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
-      scope TEXT NOT NULL CHECK (scope IN ('daily', 'node')), person_id TEXT NOT NULL REFERENCES people(id),
+      scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin', 'node')), person_id TEXT NOT NULL REFERENCES people(id),
       added_at TEXT NOT NULL, last_used_at TEXT
     )`);
     db.run(GROUP_SETTINGS);
