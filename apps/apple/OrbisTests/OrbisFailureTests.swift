@@ -23,9 +23,7 @@ final class OrbisFailureTests: XCTestCase {
   func testAServerFaultCanBeRetriedAndAClientMistakeCannot() {
     XCTAssertTrue(OrbisError.server(status: 500, message: "Busy.").failure().isRetryable)
     XCTAssertFalse(OrbisError.server(status: 400, message: "No.").failure().isRetryable)
-    XCTAssertFalse(OrbisError.notPaired.failure().isRetryable)
-    XCTAssertFalse(OrbisError.refused.failure().isRetryable)
-    XCTAssertFalse(OrbisError.badAddress.failure().isRetryable)
+    XCTAssertFalse(OrbisError.notSignedIn.failure().isRetryable)
     XCTAssertFalse(OrbisError.notOrbis.failure().isRetryable)
     XCTAssertTrue(OrbisError.unreachable.failure().isRetryable)
   }

@@ -2,6 +2,10 @@ import Foundation
 import Observation
 import OrbisDesign
 
+#if canImport(UIKit)
+  import UIKit
+#endif
+
 /// What a screen is showing. Keeps loading, failure, and the two distinct empty cases
 /// explicit instead of inferring them from a list being empty.
 enum Loadable<Value: Equatable>: Equatable {
@@ -25,21 +29,16 @@ enum Loadable<Value: Equatable>: Equatable {
 final class AppModel {
   private(set) var client: OrbisClient?
 
-  var connectionAddress: String
-  var connectionToken = ""
-  var connectionFailure: OrbisFailure?
-  var isTestingConnection = false
+  /// The service this device signs in to (ADR 0020).
+  let serviceAddress: URL
 
-  /// The service a fresh install signs in to (ADR 0015). A stored address wins over it, so an
-  /// existing pairing keeps the address it was made with.
-  let builtInAddress: URL
+  var isSigningIn = false
+  /// Why the last sign-in failed, said under the button.
+  var signInFailure: OrbisFailure?
 
-  /// The name the approving device sees for this one.
-  var deviceLinkLabel = ""
-  var deviceLink: DeviceLinkState = .idle
-  /// Why the last Device Link step failed, said under the code.
-  var deviceLinkFailure: OrbisFailure?
-  private var deviceLinkTask: Task<Void, Never>?
+  /// iOS presents Settings as a sheet from the gear on Home and Library. The Mac has a Settings
+  /// scene instead.
+  var isShowingSettings = false
 
   var library: Loadable<[SavedSet]> = .idle {
     didSet { refreshDerivedState() }
@@ -103,12 +102,6 @@ final class AppModel {
       })
   }
 
-  /// True when this device already holds a token, which makes the token field optional: a
-  /// wrong address is corrected without pairing again. Held as state rather than asked of
-  /// the keychain on every render, because a view body must not block on credential
-  /// storage; the model refreshes it whenever the pairing changes.
-  private(set) var hasStoredToken: Bool
-
   /// How many times a cancelled load has been restarted without a success in between.
   private var reloadsAfterCancellation = 0
 
@@ -118,7 +111,6 @@ final class AppModel {
   private var searchGeneration = 0
   private var playlistGeneration = 0
   private var queueGeneration = 0
-  private var connectionGeneration = 0
   private var tracklistGeneration = 0
 
   /// What the person has pasted but not filed yet, and what the last filing said.
@@ -177,12 +169,7 @@ final class AppModel {
 
   var destination: Destination = .home
 
-  /// True while the connection screen is open over a configured library. An address that stops
-  /// working used to leave Forget this device as the only way back to it, which throws away a
-  /// working token to fix a typo.
-  var isEditingConnection = false
-
-  /// Where this model keeps the pairing. Held per model, so a test hands a model a store of its
+  /// Where this model keeps the key. Held per model, so a test hands a model a store of its
   /// own instead of writing the device's real one.
   private let settings: any ClientSettingsStore
 
@@ -190,60 +177,61 @@ final class AppModel {
   /// because one Set plays at a time.
   private var positionReporter: Task<Void, Never>?
 
-  init(settings: any ClientSettingsStore = ClientSettings.forCurrentProcess()) {
+  /// Every client this model makes uses this session, so a test injects one session and it
+  /// covers signing in too.
+  private let session: URLSession
+
+  init(
+    settings: any ClientSettingsStore = ClientSettings.forCurrentProcess(),
+    session: URLSession = .shared
+  ) {
     self.settings = settings
-    // A journey lane starts from a clean install so it exercises the connection screen.
-    Self.resetSettings(ifRequestedBy: ProcessInfo.processInfo.arguments, in: settings)
+    self.session = session
+    let arguments = ProcessInfo.processInfo.arguments
+    Self.resetSettings(ifRequestedBy: arguments, in: settings)
     #if DEBUG
-      Self.pair(ifRequestedBy: ProcessInfo.processInfo.arguments, in: settings)
+      Self.signIn(ifRequestedBy: arguments, in: settings)
     #endif
     // A lane that checks a filtered Library opens already filtered, which is how the no-matches
     // state is reached without a tag that has no Sets.
-    let arguments = ProcessInfo.processInfo.arguments
     if let flag = arguments.firstIndex(of: "-orbisStartTagFiltered"),
       arguments.indices.contains(flag + 1)
     {
       activeTag = arguments[flag + 1]
     }
-    builtInAddress = OrbisService.address(for: arguments)
-    connectionAddress = settings.serviceAddress ?? builtInAddress.absoluteString
-    deviceLinkLabel = DeviceLink.defaultLabel
-    client = settings.configuredClient()
-    hasStoredToken = settings.deviceToken?.isEmpty == false
+    serviceAddress = OrbisService.address(for: arguments)
+    client = settings.configuredClient(address: serviceAddress, session: session)
     refreshDerivedState()
     wirePlayerToQueue()
   }
 
-  /// A model already paired with a service. The launch screen and the settings file are the real
+  /// A model already signed in to a service. The launch screen and the settings file are the real
   /// path; this one exists so tests and previews can drive a change without either.
   init(client: OrbisClient, settings: any ClientSettingsStore) {
     self.settings = settings
     self.client = client
-    builtInAddress = OrbisService.address
-    connectionAddress = client.address.absoluteString
-    hasStoredToken = settings.deviceToken?.isEmpty == false
+    session = client.session
+    serviceAddress = client.address
     refreshDerivedState()
     wirePlayerToQueue()
   }
 
   /// Clears the store the model was given when the launch arguments ask for a fresh install.
   /// Settings-only, so the reset can be proven against a supplied store rather than by
-  /// starting an app that is already paired with a device.
+  /// starting an app that is already signed in.
   static func resetSettings(ifRequestedBy arguments: [String], in settings: any ClientSettingsStore) {
     guard arguments.contains("-orbisResetSettings") else { return }
-    settings.serviceAddress = nil
     settings.store(deviceToken: nil)
   }
 
   #if DEBUG
-    /// A journey that is not about pairing starts paired, so it skips typing the address and
-    /// token. `-orbisPairedWith <address> <token>`.
-    static func pair(ifRequestedBy arguments: [String], in settings: any ClientSettingsStore) {
-      guard let flag = arguments.firstIndex(of: "-orbisPairedWith"),
-        arguments.indices.contains(flag + 2)
+    /// A journey that is not about signing in starts signed in, so it skips the sign-in screen.
+    /// `-orbisSignedInWith <token>`; the address is `-orbisServiceAddress`.
+    static func signIn(ifRequestedBy arguments: [String], in settings: any ClientSettingsStore) {
+      guard let flag = arguments.firstIndex(of: "-orbisSignedInWith"),
+        arguments.indices.contains(flag + 1)
       else { return }
-      settings.serviceAddress = arguments[flag + 1]
-      settings.store(deviceToken: arguments[flag + 2])
+      settings.store(deviceToken: arguments[flag + 1])
     }
   #endif
 
@@ -283,203 +271,76 @@ final class AppModel {
     activeCreator = nil
   }
 
-  /// Tests the connection before storing anything, so a wrong address or token never
-  /// replaces a working configuration.
-  func connect() async {
-    connectionGeneration += 1
-    let generation = connectionGeneration
-    connectionFailure = nil
-    isTestingConnection = true
-    // A superseded test leaves the flag alone, because a newer test still owns it.
-    defer {
-      if generation == connectionGeneration {
-        isTestingConnection = false
-      }
-    }
-    // An empty field means keep the token this device already holds, which is what correcting
-    // an address needs. A typed token replaces it.
-    let typed = connectionToken.trimmingCharacters(in: .whitespacesAndNewlines)
-    let token = typed.isEmpty ? (settings.deviceToken ?? "") : typed
-    guard !token.isEmpty else {
-      connectionFailure = OrbisError.notPaired.failure(at: URL(string: connectionAddress))
-      return
-    }
-    do {
-      let url = try OrbisClient.address(from: connectionAddress)
-      // The candidate keeps the session the model already uses, so tests inject one session
-      // and it covers the connection test too.
-      let candidate = OrbisClient(
-        address: url, token: token, session: client?.session ?? .shared)
-      _ = try await candidate.health()
-      // The screen that opened this test may be gone, and a newer test may have started;
-      // neither may replace what this device trusts.
-      guard generation == connectionGeneration, !Task.isCancelled else { return }
-      // A device that would not hold the token changes nothing and says so where it was typed.
-      guard await adopt(candidate) else {
-        connectionFailure = OrbisError.storageRefused.failure(at: url)
-        return
-      }
-    } catch let error as OrbisError {
-      guard generation == connectionGeneration else { return }
-      connectionFailure = error.failure(at: URL(string: connectionAddress))
-    } catch {
-      guard generation == connectionGeneration else { return }
-      connectionFailure = OrbisError.unreachable.failure(at: URL(string: connectionAddress))
-    }
+  /// The two ways a device signs in (ADR 0020).
+  enum SignIn {
+    /// A new Person joins the Group with the Group Passcode.
+    case join(username: String, passcode: String)
+    /// A Sign-in Code another device, or the Host, showed.
+    case code(String)
   }
 
-  /// Makes `candidate` this device's pairing and loads what it holds. The key is stored before
-  /// anything commits, so a device that would not hold it changes nothing and answers false.
-  private func adopt(_ candidate: OrbisClient) async -> Bool {
-    guard settings.store(deviceToken: candidate.token) else { return false }
-    settings.serviceAddress = candidate.address.absoluteString
-    connectionAddress = candidate.address.absoluteString
-    client = candidate
-    hasStoredToken = true
-    isEditingConnection = false
-    // A different service is a different set of downloads: nothing here asks the new service
-    // about a Set it has never heard of.
-    stopDownloadWatches()
-    audioStates.removeAll()
-    tracklistGeneration += 1
-    tracklists.removeAll()
+  /// Signs this device in and stores the key it receives. The key goes to the keychain before
+  /// anything commits, so a device that would not hold it stays signed out and says so.
+  func signIn(_ request: SignIn) async {
+    guard !isSigningIn else { return }
+    signInFailure = nil
+    isSigningIn = true
+    defer { isSigningIn = false }
+    let signedOut = OrbisClient(address: serviceAddress, token: "", session: session)
+    let label = String(Self.deviceLabel.prefix(100))
+    let key: String
+    do {
+      switch request {
+      case .join(let username, let passcode):
+        key = try await signedOut.join(
+          username: username.trimmingCharacters(in: .whitespacesAndNewlines),
+          passcode: passcode.trimmingCharacters(in: .whitespacesAndNewlines), label: label)
+      case .code(let typed):
+        key = try await signedOut.redeem(code: SignInCode.normalized(typed), label: label)
+      }
+    } catch {
+      signInFailure = OrbisFailure.explaining(error, at: serviceAddress)
+      return
+    }
+    guard settings.store(deviceToken: key) else {
+      signInFailure = OrbisError.storageRefused.failure(at: serviceAddress)
+      return
+    }
+    client = OrbisClient(address: serviceAddress, token: key, session: session)
     await loadLibrary()
-    // The sidebar reads playlists separately from the library, so pairing fills both.
     await loadPlaylists()
-    // Playback is shared state: another device may be the one that is playing.
     await loadQueue()
-    return true
   }
 
-  /// Signs this device in with a Device Link (ADR 0016): asks the service for a code, shows it,
-  /// and asks every couple of seconds until a signed-in device approves it. The key arrives
-  /// once and goes straight to the keychain.
-  func startDeviceLink() {
-    deviceLinkTask?.cancel()
-    deviceLinkFailure = nil
-    let label = deviceLinkLabel.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !label.isEmpty else {
-      deviceLink = .idle
-      deviceLinkFailure = OrbisFailure(
-        title: "Name this device", message: "Name this device to get a code.",
-        symbol: "pencil", isRetryable: false)
-      return
-    }
-    let address = (try? OrbisClient.address(from: connectionAddress)) ?? builtInAddress
-    let signedOut = OrbisClient(address: address, token: "", session: client?.session ?? .shared)
-    deviceLink = .starting
-    deviceLinkTask = Task { await runDeviceLink(signedOut, label: String(label.prefix(100))) }
+  /// The name this device has on the Person's Devices list.
+  private static var deviceLabel: String {
+    #if canImport(UIKit)
+      "Orbis on \(UIDevice.current.name)"
+    #else
+      "Orbis on \(Host.current().localizedName ?? "Mac")"
+    #endif
   }
 
-  func cancelDeviceLink() {
-    deviceLinkTask?.cancel()
-    deviceLinkTask = nil
-    deviceLink = .idle
-    deviceLinkFailure = nil
-  }
-
-  private func runDeviceLink(_ signedOut: OrbisClient, label: String) async {
-    let started: DeviceLinkStart
-    do {
-      started = try await signedOut.startDeviceLink(label: label)
-    } catch {
-      guard !Task.isCancelled else { return }
-      deviceLink = .idle
-      deviceLinkFailure = Self.failure(error, at: signedOut.address)
-      return
-    }
-    guard !Task.isCancelled else { return }
-    deviceLink = .waiting(userCode: started.userCode)
-    while true {
-      do {
-        try await Task.sleep(for: DeviceLink.pollInterval)
-      } catch {
-        return
-      }
-      let answer: DeviceLinkPoll
-      do {
-        answer = try await signedOut.pollDeviceLink(secret: started.pollSecret)
-      } catch OrbisError.server(let status, _) where status == 404 || status == 410 {
-        // The service no longer knows this link, usually because it restarted.
-        guard !Task.isCancelled else { return }
-        deviceLink = .expired
-        return
-      } catch {
-        guard !Task.isCancelled else { return }
-        // A passing failure: say why, and keep asking.
-        let failure = Self.failure(error, at: signedOut.address)
-        if deviceLinkFailure != failure { deviceLinkFailure = failure }
-        continue
-      }
-      guard !Task.isCancelled else { return }
-      if deviceLinkFailure != nil { deviceLinkFailure = nil }
-      switch answer {
-      case .pending:
-        continue
-      case .expired:
-        deviceLink = .expired
-        return
-      case .approved(let key):
-        let paired = OrbisClient(
-          address: signedOut.address, token: key, session: signedOut.session)
-        deviceLink = .idle
-        deviceLinkTask = nil
-        if await adopt(paired) == false {
-          deviceLinkFailure = OrbisError.storageRefused.failure(at: signedOut.address)
-        }
-        return
-      }
-    }
-  }
-
-  private static func failure(_ error: any Error, at address: URL) -> OrbisFailure {
-    ((error as? OrbisError) ?? .unreachable).failure(at: address)
-  }
-
-  /// Opens the connection screen with the address in place and the token left out. Leaving the
-  /// token field empty keeps the token this device already has, so a wrong address can be
-  /// corrected without pairing again.
-  func editConnection() {
-    // The screen reopening is itself a change of mind: a connection test that was already
-    // out belongs to the screen that closed, not to this one.
-    connectionGeneration += 1
-    connectionAddress = settings.serviceAddress ?? connectionAddress
-    connectionToken = ""
-    connectionFailure = nil
-    isEditingConnection = true
-  }
-
-  func closeConnectionEditor() {
-    // Closing dismisses a connection test that is still out, so its answer cannot commit
-    // into a screen the person has already left.
-    connectionGeneration += 1
-    connectionFailure = nil
-    isEditingConnection = false
-  }
-
-  func forget() {
-    // Everything the old service could still answer becomes unpublishable the moment this
-    // runs, so no pending response repopulates a pairing this device no longer holds.
-    connectionGeneration += 1
+  /// Forgets this device's key and everything the signed-in Person's library put on screen.
+  func signOut() {
+    // Everything the service could still answer becomes unpublishable the moment this runs, so
+    // no pending response repopulates a library this device is no longer signed in to.
     libraryGeneration += 1
     searchGeneration += 1
     playlistGeneration += 1
     queueGeneration += 1
-    // Audio still playing comes from a service this device no longer holds a token for, and a
-    // download the old service is running is the same: nothing here may keep asking about it.
+    // Audio still playing comes from a key this device no longer holds, and a download the
+    // service is running is the same: nothing here may keep asking about it.
     audioPlayer.stop()
     stopDownloadWatches()
     stopReportingPosition()
     audioStates.removeAll()
     tracklistGeneration += 1
     tracklists.removeAll()
-    cancelDeviceLink()
-    settings.serviceAddress = nil
     settings.store(deviceToken: nil)
     client = nil
-    connectionToken = ""
-    connectionAddress = builtInAddress.absoluteString
-    hasStoredToken = false
+    signInFailure = nil
+    isShowingSettings = false
     library = .idle
     search = .idle
     searchResultsFor = nil
@@ -495,7 +356,6 @@ final class AppModel {
     openedSets = [:]
     reveal = nil
     revealFailure = nil
-    isEditingConnection = false
   }
 
   func loadLibrary() async {

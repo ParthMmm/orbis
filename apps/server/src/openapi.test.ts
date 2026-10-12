@@ -20,7 +20,7 @@ const Samples = Schema.Struct({
   library: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
   me: Schema.Struct({
     autoDownload: Schema.Boolean,
-    host: Schema.optionalKey(Schema.Boolean),
+    host: Schema.Boolean,
     id: Schema.String,
     social: Schema.Boolean,
     username: Schema.String,
@@ -214,10 +214,6 @@ const sampleFor = (operationId: string) => {
       },
     };
   }
-  // The Apple fixture gains `host` when the Apple apps adopt ADR 0020.
-  if (sampleKeyFor(operationId) === "me") {
-    return { host: samples.me.id === "host", ...samples.me };
-  }
   return samples[sampleKeyFor(operationId)];
 };
 
@@ -242,7 +238,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         if (!["get", "post", "put", "patch", "delete"].includes(method)) {
           continue;
         }
-        // The Swift client has no sign-in or admin types until the Apple apps adopt them.
+        // The Swift fixture holds no sign-in or admin samples.
         if (
           operation.operationId.startsWith("admin.") ||
           operation.operationId.startsWith("signIn.")

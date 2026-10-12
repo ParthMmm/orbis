@@ -20,6 +20,11 @@ struct LaneService {
 
   struct Preferences: Decodable { let autoDownload: Bool }
 
+  func autoDownload() throws -> Bool {
+    let preferences: Preferences = try send("GET", "me", nil)
+    return preferences.autoDownload
+  }
+
   func autoDownload(becomes expected: Bool) throws -> Bool {
     let deadline = Date().addingTimeInterval(10)
     repeat {
@@ -153,10 +158,6 @@ struct LaneService {
     return try set(id: id)?.playbackPositionSeconds ?? 0
   }
 
-  /// What a signed-in device sees of a Device Link before it approves: the name the new device
-  /// gave itself.
-  struct DeviceLink: Decodable { let label: String }
-
   struct Device: Decodable {
     let id: String
     let label: String
@@ -165,14 +166,43 @@ struct LaneService {
 
   private struct Devices: Decodable { let devices: [Device] }
 
-  func lookupDeviceLink(_ userCode: String) throws -> DeviceLink {
-    try send("POST", "device-links/lookup", ["userCode": userCode])
+  struct SignInCode: Decodable { let code: String }
+
+  struct Person: Decodable {
+    let id: String
+    let username: String
   }
 
-  /// Approves a Device Link as this lane's Person, the way the web's Add a device page does.
-  /// Answers the status, so a second approval can be shown to fail.
-  func approveDeviceLink(_ userCode: String) throws -> Int {
-    try status("POST", "device-links/approve", ["userCode": userCode])
+  private struct People: Decodable { let people: [Person] }
+  private struct Passcode: Decodable { let passcode: String? }
+
+  /// A Sign-in Code for this lane's Person, as Settings on another device would show it.
+  func signInCode() throws -> String {
+    let code: SignInCode = try send("POST", "me/sign-in-codes", nil)
+    return code.code
+  }
+
+  /// The Group Passcode. Host only.
+  func passcode() throws -> String? {
+    let answer: Passcode = try send("GET", "admin/passcode", nil)
+    return answer.passcode
+  }
+
+  /// Sets the Group Passcode. Host only; nil closes joining.
+  func setPasscode(_ passcode: String?) throws {
+    let value: Any = passcode.map { $0 as Any } ?? NSNull()
+    let _: Passcode = try send("PUT", "admin/passcode", ["passcode": value])
+  }
+
+  /// Everyone in the Group. Host only.
+  func people() throws -> [Person] {
+    let answer: People = try send("GET", "admin/people", nil)
+    return answer.people
+  }
+
+  /// Adds a Person without a device, for a journey that removes one. Host only.
+  func addPerson(_ username: String) throws -> Person {
+    try send("POST", "admin/people", ["username": username])
   }
 
   func devices() throws -> [Device] {
@@ -227,5 +257,34 @@ struct LaneService {
     }.resume()
     guard done.wait(timeout: .now() + 20) == .success else { throw URLError(.timedOut) }
     return try JSONDecoder().decode(Response.self, from: result.get())
+  }
+}
+
+extension XCTestCase {
+  /// Launches Orbis against `address`, signed in with `token` when one is given. Settings live
+  /// in memory, so nothing a journey stores outlives the launch, unless `keychain` asks for the
+  /// device's real storage, which starts cleared.
+  func launchOrbis(
+    address: String, token: String? = nil, keychain: Bool = false, arguments: [String] = []
+  ) -> XCUIApplication {
+    let app = XCUIApplication()
+    app.launchArguments = ["-orbisServiceAddress", address] + arguments
+    if let token {
+      app.launchArguments += ["-orbisSignedInWith", token]
+    }
+    if keychain {
+      app.launchArguments.append("-orbisResetSettings")
+    } else {
+      app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
+    }
+    app.launch()
+    return app
+  }
+
+  func capture(_ name: String) {
+    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    attachment.name = name
+    attachment.lifetime = .keepAlways
+    add(attachment)
   }
 }

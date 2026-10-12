@@ -66,7 +66,7 @@ export type TrustStore = Omit<typeof TrustFile.Type, "keys"> & {
 export type AccessMode = "device";
 
 export const HOST_PERSON_ID = "host";
-const HOST_PERSON: PersonRecord = {
+export const HOST_PERSON: PersonRecord = {
   id: HOST_PERSON_ID,
   removed: false,
   username: "host",

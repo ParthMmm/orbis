@@ -1,20 +1,17 @@
 import Foundation
 import Security
 
-/// Where the pairing lives: the service address and the device token.
+/// Where the device's key lives. The address is not stored; every build knows it
+/// (`OrbisService.address(for:)`).
 ///
-/// The app reads and writes settings through this interface, so a test can hand a model a
-/// store of its own and prove what the app does without reaching a real pairing. The address
-/// is not a secret and may live in defaults; the token is a credential and belongs in the
-/// keychain.
+/// The app reads and writes the key through this interface, so a test can hand a model a store
+/// of its own and prove what the app does without reaching a real key.
 @MainActor
 protocol ClientSettingsStore: AnyObject {
-  var serviceAddress: String? { get set }
-
-  /// The stored device token, or nil when this device holds no pairing.
+  /// The stored device token, or nil when this device holds no key.
   var deviceToken: String? { get }
 
-  /// Stores the pairing, answering whether this device really holds it. A write that fails
+  /// Stores the key, answering whether this device really holds it. A write that fails
   /// must not read as a saved token: the caller learns the truth here instead of on the
   /// next launch.
   @discardableResult
@@ -22,48 +19,28 @@ protocol ClientSettingsStore: AnyObject {
 }
 
 extension ClientSettingsStore {
-  var isConfigured: Bool {
-    serviceAddress?.isEmpty == false && deviceToken?.isEmpty == false
-  }
-
-  func configuredClient(session: URLSession = .shared) -> OrbisClient? {
-    guard let address = serviceAddress, let token = deviceToken,
-      let url = URL(string: address), OrbisClient.accepts(url), !token.isEmpty
-    else { return nil }
-    return OrbisClient(address: url, token: token, session: session)
+  func configuredClient(address: URL, session: URLSession = .shared) -> OrbisClient? {
+    guard let token = deviceToken, !token.isEmpty else { return nil }
+    return OrbisClient(address: address, token: token, session: session)
   }
 }
 
-/// The device's own storage: the address in defaults and the token in the keychain, with a
-/// development file as a fallback for a build on the developer's Mac.
+/// The device's own storage: the token in the keychain, with a development file as a fallback
+/// for a build on the developer's Mac.
 @MainActor
 final class LiveClientSettings: ClientSettingsStore {
-  static let addressKey = "orbis.serviceAddress"
-
-  private let defaults: UserDefaults
   private let keychain: KeychainStore
-  private let developmentConfiguration: () -> (address: String, token: String)?
+  private let developmentToken: () -> String?
 
-  /// Dependencies are explicit so a test can supply a defaults suite of its own, a keychain
-  /// namespace of its own, and a provider that answers nil. The provider is held rather than
-  /// called, so constructing a store never opens the development file.
-  init(
-    defaults: UserDefaults,
-    keychain: KeychainStore,
-    developmentConfiguration: @escaping () -> (address: String, token: String)?
-  ) {
-    self.defaults = defaults
+  /// The provider is held rather than called, so constructing a store never opens the
+  /// development file, and a test supplies one that answers nil.
+  init(keychain: KeychainStore, developmentToken: @escaping () -> String?) {
     self.keychain = keychain
-    self.developmentConfiguration = developmentConfiguration
-  }
-
-  var serviceAddress: String? {
-    get { defaults.string(forKey: Self.addressKey) ?? developmentConfiguration()?.address }
-    set { defaults.set(newValue, forKey: Self.addressKey) }
+    self.developmentToken = developmentToken
   }
 
   var deviceToken: String? {
-    keychain.read() ?? developmentConfiguration()?.token
+    keychain.read() ?? developmentToken()
   }
 
   @discardableResult
@@ -76,11 +53,10 @@ final class LiveClientSettings: ClientSettingsStore {
   }
 }
 
-/// A store that keeps the pairing in memory and nowhere else. Two instances never share
-/// state, so what a test writes cannot reach another test or a real pairing.
+/// A store that keeps the key in memory and nowhere else. Two instances never share
+/// state, so what a test writes cannot reach another test or a real key.
 @MainActor
 final class MemoryClientSettings: ClientSettingsStore {
-  var serviceAddress: String?
   private var token: String?
 
   var deviceToken: String? { token }
@@ -93,12 +69,12 @@ final class MemoryClientSettings: ClientSettingsStore {
 }
 
 /// The store the running app should use. The Debug path keeps tests off the device's real
-/// pairing; a release build always uses the device's own storage.
+/// key; a release build always uses the device's own storage.
 enum ClientSettings {
-  /// A development convenience. A build on this machine reads the service address and a device
-  /// token from `~/.orbis/config.json`, so neither is retyped after a settings reset or a
-  /// fresh install. The file sits outside the repository, so no credential is committed, and
-  /// a stored value always wins over it.
+  /// A development convenience. A build on this machine reads a device token, and the service
+  /// that token belongs to, from `~/.orbis/config.json`, so neither is retyped after a sign-out
+  /// or a fresh install. The file sits outside the repository, so no credential is committed,
+  /// and a stored key always wins over its token.
   ///
   /// macOS only, because the file is a path on the Mac and a phone has no such home directory.
   static var developmentConfiguration: (address: String, token: String)? {
@@ -144,7 +120,7 @@ enum ClientSettings {
 
   /// Selects the store for a Debug process. Memory mode and a recognized test host both
   /// select memory without calling the live constructor, so no test can reach a real
-  /// pairing even when the override is missing or mistyped.
+  /// key even when the override is missing or mistyped.
   @MainActor
   static func makeForProcess(
     environment: [String: String],
@@ -157,15 +133,11 @@ enum ClientSettings {
     return liveStore()
   }
 
-  /// The device's own storage: the App Group defaults and the shared keychain identity, so
-  /// the share extension can read the same pairing. A first launch migrates any address that
-  /// still lives in the process defaults, and any token that still lives outside the access
+  /// The device's own storage: the shared keychain identity, so the share extension can read
+  /// the same key. A first launch migrates any token that still lives outside the access
   /// group.
   @MainActor
   private static func makeLiveStore() -> any ClientSettingsStore {
-    let sharedDefaults =
-      UserDefaults(suiteName: OrbisSharedIdentity.appGroup) ?? .standard
-    migrateAddressIfNeeded(into: sharedDefaults)
     let sharedKeychain = KeychainStore(
       service: OrbisSharedIdentity.keychainService,
       account: OrbisSharedIdentity.keychainAccount,
@@ -173,24 +145,9 @@ enum ClientSettings {
     )
     migrateTokenIfNeeded(into: sharedKeychain)
     return LiveClientSettings(
-      defaults: sharedDefaults,
       keychain: sharedKeychain,
-      developmentConfiguration: { developmentConfiguration }
+      developmentToken: { developmentConfiguration?.token }
     )
-  }
-
-  /// Copies a pairing address out of the process defaults when the App Group has none yet.
-  @MainActor
-  static func migrateAddressIfNeeded(
-    into shared: UserDefaults,
-    legacy: UserDefaults = .standard,
-    key: String = LiveClientSettings.addressKey
-  ) {
-    guard shared.string(forKey: key) == nil,
-      let legacyAddress = legacy.string(forKey: key),
-      !legacyAddress.isEmpty
-    else { return }
-    shared.set(legacyAddress, forKey: key)
   }
 
   /// Copies a token that was stored without an access group into the shared keychain item.
@@ -247,7 +204,7 @@ struct LiveKeychainOperations: KeychainOperations {
 
 /// One keychain namespace, named by its service and account. Production supplies the app's own
 /// identity; a test supplies a unique `app.orbis.tests.<UUID>` service, so nothing it writes
-/// can reach a real pairing. The Security calls arrive through an injected adapter, which is
+/// can reach a real key. The Security calls arrive through an injected adapter, which is
 /// how a test proves a write failure without touching a real keychain.
 @MainActor
 struct KeychainStore {
@@ -296,7 +253,7 @@ struct KeychainStore {
     attributes[kSecValueData as String] = Data(token.utf8)
     // Update first, so a token that is already held stays held even when a write fails.
     // Adding only when there is nothing to update keeps a failed first save from reading
-    // as a stored pairing.
+    // as a stored key.
     switch operations.update(query: identity, attributes: attributes) {
     case errSecSuccess:
       return true
@@ -308,7 +265,7 @@ struct KeychainStore {
       return operations.add(attributes: addAttributes) == errSecSuccess
     default:
       // Any other status means the stored item is still there and still holds the old token.
-      // Deleting what could not be updated would throw away a working pairing, and the add
+      // Deleting what could not be updated would throw away a working key, and the add
       // that followed could fail too, so the write reports failure and changes nothing. A
       // duplicate on the add above is the same answer for the same reason: another writer's
       // item is not this write's to remove.

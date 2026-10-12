@@ -1,5 +1,6 @@
 import { issueSignInCode } from "../../server/src/admin.js";
 import {
+  HOST_PERSON,
   HOST_PERSON_ID,
   mutateTrustStore,
   readTrustStrict,
@@ -24,14 +25,15 @@ export const recoverHost = (request: Request, trustPath: string): Response => {
     keyId.headers.set("cache-control", "no-store");
     return keyId;
   }
-  const host = readTrustStrict(trustPath).people.find(
-    (person) => person.id === HOST_PERSON_ID
-  );
-  if (!host || host.removed) {
-    mutateTrustStore(
-      trustPath,
-      () => readTrustStrict(trustPath),
-      (store) => ({
+  mutateTrustStore(
+    trustPath,
+    () => readTrustStrict(trustPath),
+    (store) => {
+      const host = store.people.find((person) => person.id === HOST_PERSON_ID);
+      if (host && !host.removed) {
+        return { value: undefined };
+      }
+      return {
         store: {
           ...store,
           people: host
@@ -40,15 +42,12 @@ export const recoverHost = (request: Request, trustPath: string): Response => {
                   ? { ...person, removed: false }
                   : person
               )
-            : [
-                ...store.people,
-                { id: HOST_PERSON_ID, removed: false, username: "host" },
-              ],
+            : [...store.people, HOST_PERSON],
         },
         value: undefined,
-      })
-    );
-  }
+      };
+    }
+  );
   return Response.json(issueSignInCode(trustPath, HOST_PERSON_ID, Date.now()), {
     headers: noStore,
     status: 201,
