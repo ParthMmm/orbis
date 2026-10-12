@@ -284,6 +284,9 @@ try {
     await revokeDialog
       .getByRole("button", { exact: true, name: "Revoke" })
       .click();
+    // The open dialog hides the Keys list from role queries, so wait for it to
+    // close (it closes only after the API answers) before looking at the list.
+    await revokeDialog.waitFor({ state: "detached" });
     await keys.getByText("Raycast").waitFor({ state: "detached" });
     const afterRevoke = await callApi("/me", token);
     assert.equal(afterRevoke.status, 401);
