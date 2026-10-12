@@ -116,9 +116,9 @@ final class OrbisClientTests: XCTestCase {
 
   func testFailuresMapToActionableCases() async {
     let cases: [(Int, String, OrbisError)] = [
-      (401, #"{"message":"nope"}"#, .notPaired),
+      (401, #"{"message":"nope"}"#, .notSignedIn),
       (403, #"{"message":"nope"}"#, .server(status: 403, message: "nope")),
-      (403, "{}", .refused),
+      (403, "{}", .server(status: 403, message: "")),
       (409, #"{"message":"This set is already in your library."}"#, .duplicate),
       (500, #"{"message":"Broken."}"#, .server(status: 500, message: "Broken.")),
       (200, "not json", .malformed),

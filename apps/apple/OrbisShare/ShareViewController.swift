@@ -193,8 +193,8 @@ struct ShareConfirmationView: View {
       return
     }
     link = found
-    guard let client = settings.configuredClient() else {
-      status = "Open Orbis and pair this device first."
+    guard let client = settings.configuredClient(address: ShareCapture.serviceAddress) else {
+      status = "Open Orbis and sign in first."
       return
     }
     playlists = (try? await client.playlists()) ?? []
@@ -223,12 +223,10 @@ struct ShareConfirmationView: View {
       dismiss()
     case .duplicate:
       status = OrbisError.duplicate.message
-    case .unsupported:
-      status = "Orbis only accepts YouTube and SoundCloud links."
     case .unreachable(let message), .failure(let message):
       status = "\(message) The link is on your clipboard."
     case .notConfigured:
-      status = "Open Orbis and pair this device first."
+      status = "Open Orbis and sign in first."
     }
   }
 }

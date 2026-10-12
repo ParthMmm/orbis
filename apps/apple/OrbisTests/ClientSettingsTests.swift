@@ -88,11 +88,11 @@ final class ClientSettingsTests: XCTestCase {
     let (settings, cleanup) = isolatedLiveSettings()
     defer { cleanup() }
 
-    XCTAssertNil(settings.configuredClient())
+    XCTAssertNil(settings.configuredClient(address: OrbisService.address))
 
     XCTAssertTrue(settings.store(deviceToken: "synthetic-first-token"))
     XCTAssertEqual(settings.deviceToken, "synthetic-first-token")
-    XCTAssertNotNil(settings.configuredClient())
+    XCTAssertNotNil(settings.configuredClient(address: OrbisService.address))
 
     XCTAssertTrue(settings.store(deviceToken: "synthetic-second-token"))
     XCTAssertEqual(
@@ -101,7 +101,7 @@ final class ClientSettingsTests: XCTestCase {
 
     XCTAssertTrue(settings.store(deviceToken: nil))
     XCTAssertNil(settings.deviceToken)
-    XCTAssertNil(settings.configuredClient())
+    XCTAssertNil(settings.configuredClient(address: OrbisService.address))
   }
 
   func testClearingOneIsolatedNamespaceLeavesAnotherAlone() {

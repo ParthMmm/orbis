@@ -5,29 +5,24 @@ import OrbisDesign
 /// recovery action is decided in one place rather than in every view.
 enum OrbisError: Error, Equatable {
   case unreachable
-  case notPaired
-  case refused
+  case notSignedIn
   case duplicate
   /// The view that started the request went away before it finished. Not a failure, and never
   /// shown to anyone, because the screen that replaces it loads on its own.
   case cancelled
   case server(status: Int, message: String)
   case malformed
-  /// A web server answered instead of Orbis. Usually the address is missing the port the
-  /// service runs on, which is worth saying rather than calling the answer unreadable.
+  /// A web server answered instead of Orbis, such as a proxy's error page.
   case notOrbis
-  /// The device refused to hold the pairing, so nothing was saved and nothing was changed.
+  /// The device refused to hold the key, so nothing was saved and nothing was changed.
   case storageRefused
-  case badAddress
 
   var message: String {
     switch self {
     case .unreachable:
       "Cannot reach your library. Check your internet connection and try again."
-    case .notPaired:
+    case .notSignedIn:
       "This device is not signed in to your library. Sign out in Settings and sign in again."
-    case .refused:
-      "The service refused the request."
     case .duplicate:
       "That set is already in your library."
     case .cancelled:
@@ -37,11 +32,9 @@ enum OrbisError: Error, Equatable {
     case .malformed:
       "The service sent a response this app does not understand. Update the app."
     case .notOrbis:
-      "Something answered at that address, but it was not Orbis. A web page came back instead."
+      "Something other than Orbis answered. A web page came back instead."
     case .storageRefused:
-      "This device would not save the pairing, so nothing was changed. Try again."
-    case .badAddress:
-      "This build's service address is not a valid URL."
+      "This device would not save the key, so nothing was changed. Try again."
     }
   }
 }
@@ -59,25 +52,17 @@ extension OrbisError {
         symbol: "wifi.exclamationmark",
         isRetryable: true
       )
-    case .notPaired:
+    case .notSignedIn:
       failure = OrbisFailure(
-        title: "This device is not paired",
+        title: "This device is not signed in",
         message: message,
         symbol: "key.slash",
         isRetryable: false
       )
-    case .refused:
-      failure = OrbisFailure(
-        title: "The service refused the request",
-        message: message,
-        symbol: "hand.raised",
-        isRetryable: false
-      )
     case .malformed:
       failure = OrbisFailure(
-        title: "That address is not your library",
-        message:
-          "\(message) Check that the address points at Orbis itself, and that the service is not older or newer than this app.",
+        title: "Orbis sent an answer this app cannot read",
+        message: message,
         symbol: "doc.questionmark",
         isRetryable: false
       )
@@ -90,25 +75,17 @@ extension OrbisError {
       )
     case .notOrbis:
       failure = OrbisFailure(
-        title: "That address is a web page, not Orbis",
-        message:
-          "\(message) Check that the address carries the port your Orbis service runs on, because a bare host name is usually answered by whatever else runs there.",
+        title: "A web page answered, not Orbis",
+        message: message,
         symbol: "globe",
         isRetryable: false
       )
     case .storageRefused:
       failure = OrbisFailure(
-        title: "This device could not save the pairing",
+        title: "This device could not save the key",
         message: message,
         symbol: "key.slash",
         isRetryable: true
-      )
-    case .badAddress:
-      failure = OrbisFailure(
-        title: "That is not a service address",
-        message: message,
-        symbol: "questionmark.circle",
-        isRetryable: false
       )
     case .duplicate, .cancelled:
       failure = OrbisFailure(
@@ -190,15 +167,17 @@ struct SignInCode: Decodable, Equatable, Sendable {
   let code: String
   let expiresAt: String
 
+  static let length = 8
+
   /// `ABCDEFGH` as `ABCD-EFGH`, which is easier to read aloud and type.
   var formatted: String {
-    code.count == 8 ? "\(code.prefix(4))-\(code.suffix(4))" : code
+    code.count == Self.length ? "\(code.prefix(4))-\(code.suffix(4))" : code
   }
 
   /// What a person typed, as the service compares it: `abcd efgh` and `ABCD-EFGH` are the
   /// same code.
   static func normalized(_ typed: String) -> String {
-    typed.uppercased().filter { $0.isLetter || $0.isNumber }
+    typed.uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
   }
 }
 
@@ -209,8 +188,7 @@ private struct SignedIn: Decodable {
 private struct GroupPasscode: Codable {
   let passcode: String?
 
-  // Synthesized encoding drops a nil field, and the service reads a missing passcode as a bad
-  // request rather than as closing joining.
+  // Synthesized encoding drops nil; the service needs an explicit null to close joining.
   func encode(to encoder: any Encoder) throws {
     var container = encoder.container(keyedBy: CodingKeys.self)
     try container.encode(passcode, forKey: .passcode)
@@ -234,7 +212,7 @@ struct OrbisClient: Sendable {
     self.session = session
   }
 
-  /// An address is accepted only when it would carry the pairing safely: TLS, or the
+  /// An address is accepted only when it would carry the key safely: TLS, or the
   /// loopback service the server itself trusts, which is what the temporary lane services
   /// run on.
   static func accepts(_ url: URL) -> Bool {
@@ -529,13 +507,12 @@ struct OrbisClient: Sendable {
     // Resolving against the address would drop its last path segment, so an address such as
     // the Funnel address with `/api` would lose `/api`. Join the strings instead.
     let root = address.absoluteString
+    // Only an id the service never sends could make this fail.
     guard let url = URL(string: root.hasSuffix("/") ? root + path : root + "/" + path) else {
-      throw OrbisError.badAddress
+      throw OrbisError.malformed
     }
     var request = URLRequest(url: url)
     request.httpMethod = method
-    // A device that has no key yet sends none: join and redeem are the only routes that answer
-    // without one.
     if !token.isEmpty {
       request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     }
@@ -591,13 +568,7 @@ struct OrbisClient: Sendable {
     case 200..<300:
       return data
     case 401:
-      throw OrbisError.notPaired
-    case 403:
-      // A refusal the service explains, such as a wrong Group Passcode, keeps its sentence.
-      if let message = (try? Self.decoder.decode(ServerMessage.self, from: data))?.message {
-        throw OrbisError.server(status: 403, message: message)
-      }
-      throw OrbisError.refused
+      throw OrbisError.notSignedIn
     case 409:
       let message = (try? Self.decoder.decode(ServerMessage.self, from: data))?.message
       if message == "This set is already in your library." {

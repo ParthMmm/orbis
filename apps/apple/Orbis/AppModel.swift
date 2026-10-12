@@ -169,7 +169,7 @@ final class AppModel {
 
   var destination: Destination = .home
 
-  /// Where this model keeps the pairing. Held per model, so a test hands a model a store of its
+  /// Where this model keeps the key. Held per model, so a test hands a model a store of its
   /// own instead of writing the device's real one.
   private let settings: any ClientSettingsStore
 
@@ -187,11 +187,10 @@ final class AppModel {
   ) {
     self.settings = settings
     self.session = session
-    // A journey lane starts from a clean install so it exercises the sign-in screen.
     let arguments = ProcessInfo.processInfo.arguments
     Self.resetSettings(ifRequestedBy: arguments, in: settings)
     #if DEBUG
-      Self.pair(ifRequestedBy: arguments, in: settings)
+      Self.signIn(ifRequestedBy: arguments, in: settings)
     #endif
     // A lane that checks a filtered Library opens already filtered, which is how the no-matches
     // state is reached without a tag that has no Sets.
@@ -206,7 +205,7 @@ final class AppModel {
     wirePlayerToQueue()
   }
 
-  /// A model already paired with a service. The launch screen and the settings file are the real
+  /// A model already signed in to a service. The launch screen and the settings file are the real
   /// path; this one exists so tests and previews can drive a change without either.
   init(client: OrbisClient, settings: any ClientSettingsStore) {
     self.settings = settings
@@ -219,7 +218,7 @@ final class AppModel {
 
   /// Clears the store the model was given when the launch arguments ask for a fresh install.
   /// Settings-only, so the reset can be proven against a supplied store rather than by
-  /// starting an app that is already paired with a device.
+  /// starting an app that is already signed in.
   static func resetSettings(ifRequestedBy arguments: [String], in settings: any ClientSettingsStore) {
     guard arguments.contains("-orbisResetSettings") else { return }
     settings.store(deviceToken: nil)
@@ -227,9 +226,9 @@ final class AppModel {
 
   #if DEBUG
     /// A journey that is not about signing in starts signed in, so it skips the sign-in screen.
-    /// `-orbisPairedWith <token>`; the address is `-orbisServiceAddress`.
-    static func pair(ifRequestedBy arguments: [String], in settings: any ClientSettingsStore) {
-      guard let flag = arguments.firstIndex(of: "-orbisPairedWith"),
+    /// `-orbisSignedInWith <token>`; the address is `-orbisServiceAddress`.
+    static func signIn(ifRequestedBy arguments: [String], in settings: any ClientSettingsStore) {
+      guard let flag = arguments.firstIndex(of: "-orbisSignedInWith"),
         arguments.indices.contains(flag + 1)
       else { return }
       settings.store(deviceToken: arguments[flag + 1])
@@ -309,9 +308,7 @@ final class AppModel {
     }
     client = OrbisClient(address: serviceAddress, token: key, session: session)
     await loadLibrary()
-    // The sidebar reads playlists separately from the library, so signing in fills both.
     await loadPlaylists()
-    // Playback is shared state: another device may be the one that is playing.
     await loadQueue()
   }
 

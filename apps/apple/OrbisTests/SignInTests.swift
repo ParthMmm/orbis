@@ -115,7 +115,7 @@ final class SignInTests: XCTestCase {
   /// A code is read aloud and typed on another device, so case, spaces, and the dash must not
   /// matter, and it is shown in two halves.
   func testACodeIsTypedLooselyAndShownInHalves() {
-    for typed in ["ABCD-EFGH", "abcd efgh", " abcdEFGH\n", "ab cd-ef gh"] {
+    for typed in ["ABCD-EFGH", "abcd efgh", " abcdEFGH\n", "ab cd-ef gh", "abcd–efgh"] {
       XCTAssertEqual(SignInCode.normalized(typed), "ABCDEFGH", typed)
     }
     XCTAssertEqual(

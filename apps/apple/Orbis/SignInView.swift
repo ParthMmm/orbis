@@ -22,14 +22,14 @@ struct SignInView: View {
           Button {
             choice = .join
           } label: {
-            Text("I'm new").frame(maxWidth: .infinity)
+            Text("I'm New").frame(maxWidth: .infinity)
           }
           .buttonStyle(OrbisPrimaryButtonStyle())
           .accessibilityIdentifier("signin-new")
           Button {
             choice = .code
           } label: {
-            Text("I have a code").frame(maxWidth: .infinity)
+            Text("I Have a Code").frame(maxWidth: .infinity)
           }
           .buttonStyle(OrbisSecondaryButtonStyle())
           .accessibilityIdentifier("signin-have-code")
@@ -62,8 +62,7 @@ private struct JoinForm: View {
   }
 
   private var canJoin: Bool {
-    !username.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-      && !passcode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.isSigningIn
+    !username.isEmpty && !passcode.isEmpty && !model.isSigningIn
   }
 
   var body: some View {
@@ -82,7 +81,7 @@ private struct JoinForm: View {
           .onSubmit(join)
           .accessibilityIdentifier("signin-passcode")
       } footer: {
-        Text("Choose the name your friends see. Your Host tells you the Group Passcode.")
+        Text("Ask your Host for the Group Passcode.")
       }
       Section {
         Button(action: join) {
@@ -109,7 +108,7 @@ private struct CodeForm: View {
   @FocusState private var focus: Bool?
 
   private var canRedeem: Bool {
-    SignInCode.normalized(code).count == 8 && !model.isSigningIn
+    SignInCode.normalized(code).count == SignInCode.length && !model.isSigningIn
   }
 
   var body: some View {
@@ -128,7 +127,7 @@ private struct CodeForm: View {
           .accessibilityIdentifier("signin-code")
       } footer: {
         Text(
-          "On a device where you use Orbis, open Settings and choose Sign in another device. Lost every device? Your Host can show you a code."
+          "On a device where you use Orbis, open Settings and choose Sign in another device. Lost every device? Your Host can show you a Sign-in Code."
         )
       }
       Section {
@@ -201,8 +200,6 @@ extension View {
         model.signInFailure = nil
         focus.wrappedValue = first
       }
-      // A refusal is written under the button, which on a phone is where the keyboard sits. Put
-      // the keyboard away so the answer, and the way to copy it, are on screen.
       .onChange(of: model.signInFailure) { _, failure in
         if failure != nil { focus.wrappedValue = nil }
       }
