@@ -19,15 +19,12 @@ final class SignInUITests: XCTestCase {
     let username = "journey-\(Self.suffix())"
     try host.setPasscode(passcode)
 
-    // No `ORBIS_TEST_SETTINGS=memory`: the key must reach the keychain, because the relaunch
-    // below reads it back. The reset at each end keeps the lane simulator clean.
-    let app = XCUIApplication()
-    app.launchArguments = ["-orbisResetSettings", "-orbisServiceAddress", host.address]
-    app.launch()
+    // The key must reach the keychain, because the relaunch below reads it back.
+    let app = launchOrbis(address: host.address, keychain: true)
 
     let new = app.buttons["signin-new"]
-    XCTAssertTrue(new.waitForExistence(timeout: 30), "a fresh install must offer I'm new")
-    XCTAssertTrue(app.buttons["signin-have-code"].exists, "and I have a code")
+    XCTAssertTrue(new.waitForExistence(timeout: 30), "a fresh install must offer I'm New")
+    XCTAssertTrue(app.buttons["signin-have-code"].exists, "and I Have a Code")
     XCTAssertEqual(
       app.textFields.count + app.secureTextFields.count, 0,
       "the first screen asks for no address, key, or device name\n\(app.debugDescription)")
@@ -110,7 +107,7 @@ final class SignInUITests: XCTestCase {
   func testACodeFromAnotherDeviceSignsIn() throws {
     let friend = try friendService()
     let devicesBefore = Set(try friend.devices().map(\.id))
-    let app = launch(service: friend, signedIn: false)
+    let app = launchOrbis(address: friend.address)
 
     let haveCode = app.buttons["signin-have-code"]
     XCTAssertTrue(haveCode.waitForExistence(timeout: 30))
@@ -152,10 +149,7 @@ final class SignInUITests: XCTestCase {
   }
 
   func testAnUnreachableServiceNamesTheRecoveryAction() throws {
-    let app = XCUIApplication()
-    app.launchArguments = ["-orbisResetSettings", "-orbisServiceAddress", "http://127.0.0.1:1"]
-    app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
-    app.launch()
+    let app = launchOrbis(address: "http://127.0.0.1:1")
 
     let haveCode = app.buttons["signin-have-code"]
     XCTAssertTrue(haveCode.waitForExistence(timeout: 30))
@@ -182,7 +176,7 @@ final class SignInUITests: XCTestCase {
     let host = try LaneService()
     try host.setPasscode("lane-before")
     let leaving = try host.addPerson("journey-leaving-\(Self.suffix())")
-    let app = launch(service: host, signedIn: true)
+    let app = launchOrbis(address: host.address, token: host.token)
 
     openSettings(app)
     let passcode = app.textFields["settings-passcode"]
@@ -249,7 +243,7 @@ final class SignInUITests: XCTestCase {
     let friend = try friendService()
     let stored = try friend.autoDownload()
     let switchValue = { (enabled: Bool) in enabled ? "1" : "0" }
-    let app = launch(service: friend, signedIn: true)
+    let app = launchOrbis(address: friend.address, token: friend.token)
     openSettings(app)
     let toggle = app.switches["auto-download"]
     XCTAssertTrue(toggle.waitForExistence(timeout: 10))
@@ -289,17 +283,6 @@ final class SignInUITests: XCTestCase {
       !token.isEmpty
     else { throw XCTSkip("The lane must supply the settings Person") }
     return try LaneService(tokenOverride: token)
-  }
-
-  private func launch(service: LaneService, signedIn: Bool) -> XCUIApplication {
-    let app = XCUIApplication()
-    app.launchArguments = ["-orbisResetSettings", "-orbisServiceAddress", service.address]
-    if signedIn {
-      app.launchArguments += ["-orbisPairedWith", service.token]
-    }
-    app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
-    app.launch()
-    return app
   }
 
   private func openSettings(_ app: XCUIApplication) {
@@ -359,13 +342,6 @@ final class SignInUITests: XCTestCase {
 
   private static func suffix() -> String {
     String(UUID().uuidString.prefix(6)).lowercased()
-  }
-
-  private func capture(_ name: String) {
-    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
   }
 
   private func step(_ name: String, _ detail: [String: Any] = [:]) {

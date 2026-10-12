@@ -4,28 +4,8 @@ import XCTest
 /// confirm the Set remains in the Library.
 final class PlaylistUITests: XCTestCase {
   private func launch() throws -> XCUIApplication {
-    let environment = ProcessInfo.processInfo.environment
-    guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
-      let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
-    else {
-      throw XCTSkip("the lane must supply ORBIS_UI_TEST_ADDRESS and ORBIS_UI_TEST_TOKEN")
-    }
-    let app = XCUIApplication()
-    app.launchArguments = [
-      "-orbisResetSettings", "-orbisServiceAddress", address, "-orbisPairedWith", token,
-    ]
-    app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
-    app.launchEnvironment["ORBIS_UI_TEST_ADDRESS"] = address
-    app.launchEnvironment["ORBIS_UI_TEST_TOKEN"] = token
-    app.launch()
-    return app
-  }
-
-  private func capture(_ name: String) {
-    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
+    let service = try LaneService()
+    return launchOrbis(address: service.address, token: service.token)
   }
 
   /// Same symbol tap as `LibraryUITests.selectTab`.

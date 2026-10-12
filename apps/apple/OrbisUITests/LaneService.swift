@@ -259,3 +259,32 @@ struct LaneService {
     return try JSONDecoder().decode(Response.self, from: result.get())
   }
 }
+
+extension XCTestCase {
+  /// Launches Orbis against `address`, signed in with `token` when one is given. Settings live
+  /// in memory, so nothing a journey stores outlives the launch, unless `keychain` asks for the
+  /// device's real storage, which starts cleared.
+  func launchOrbis(
+    address: String, token: String? = nil, keychain: Bool = false, arguments: [String] = []
+  ) -> XCUIApplication {
+    let app = XCUIApplication()
+    app.launchArguments = ["-orbisServiceAddress", address] + arguments
+    if let token {
+      app.launchArguments += ["-orbisSignedInWith", token]
+    }
+    if keychain {
+      app.launchArguments.append("-orbisResetSettings")
+    } else {
+      app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
+    }
+    app.launch()
+    return app
+  }
+
+  func capture(_ name: String) {
+    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
+    attachment.name = name
+    attachment.lifetime = .keepAlways
+    add(attachment)
+  }
+}

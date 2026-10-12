@@ -4,31 +4,10 @@ import XCTest
 /// environment, and each journey starts signed in.
 final class LibraryUITests: XCTestCase {
   private func launch(filteringBy tag: String? = nil) throws -> XCUIApplication {
-    let environment = ProcessInfo.processInfo.environment
-    guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
-      let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
-    else {
-      throw XCTSkip("the lane must supply ORBIS_UI_TEST_ADDRESS and ORBIS_UI_TEST_TOKEN")
-    }
-    let app = XCUIApplication()
-    app.launchArguments = [
-      "-orbisResetSettings", "-orbisServiceAddress", address, "-orbisPairedWith", token,
-    ]
-    if let tag {
-      app.launchArguments.append(contentsOf: ["-orbisStartTagFiltered", tag])
-    }
-    app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
-    app.launchEnvironment["ORBIS_UI_TEST_ADDRESS"] = address
-    app.launchEnvironment["ORBIS_UI_TEST_TOKEN"] = token
-    app.launch()
-    return app
-  }
-
-  private func capture(_ name: String) {
-    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
+    let service = try LaneService()
+    return launchOrbis(
+      address: service.address, token: service.token,
+      arguments: tag.map { ["-orbisStartTagFiltered", $0] } ?? [])
   }
 
   private func record(_ name: String, _ values: [String: Any]) throws {
