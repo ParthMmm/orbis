@@ -6,19 +6,19 @@ struct OrbisApp: App {
   @State private var model = OrbisSession.model
 
   var body: some Scene {
-    WindowGroup {
-      RootView(model: model)
-    }
     #if os(macOS)
+      WindowGroup {
+        RootView(model: model)
+      }
       .defaultSize(width: 1000, height: 700)
       .windowToolbarStyle(.unified)
-    #endif
-    #if os(macOS)
       Settings {
-        NavigationStack {
-          SettingsView(model: model)
-        }
-        .frame(width: 480, height: 620)
+        SettingsScreen(model: model)
+          .frame(width: 480, height: 620)
+      }
+    #else
+      WindowGroup {
+        RootView(model: model)
       }
     #endif
   }
@@ -78,15 +78,7 @@ struct RootView: View {
     #if os(iOS)
       .task { await uncoverWhenFirstLoadSettles() }
       .sheet(isPresented: $model.isShowingSettings) {
-        NavigationStack {
-          SettingsView(model: model)
-          .toolbar {
-            ToolbarItem(placement: .confirmationAction) {
-              Button("Done") { model.isShowingSettings = false }
-              .accessibilityIdentifier("settings-done")
-            }
-          }
-        }
+        SettingsScreen(model: model) { model.isShowingSettings = false }
       }
     #endif
   }
