@@ -20,7 +20,7 @@ test("the disposable HTTP fixture requires its key and accepts one exact Origin"
           label: "Disposable HTTP fixture",
           lastUsedAt: null,
           personId: "host",
-          scope: "admin",
+          scope: "daily",
           tokenHash: hashToken(token),
         },
       ],

@@ -4,7 +4,7 @@ The Worker at `https://orbis.p11a.xyz/api/*` forwards requests to one SQLite Dur
 
 `createPortableApp` composes the HTTP routes with an injected database, Audio service, audio response, audio release operation, and stream signing secret. The Bun `createApp` wrapper supplies the local implementations. The Group supplies its SQLite driver and trust adapter, persists Download requests without running a local worker, and redirects audio to the audio node. Its bundle excludes Bun, filesystem access, and local download backends.
 
-Presence, Queue signals, Sign-in Codes, and the failed-key limit live in the Group's memory, so a restart cancels pending Sign-in Codes. The limit uses `CF-Connecting-IP`. Events retain the 30-second heartbeat and end when the caller's key is revoked. Requests produce JSON logs.
+Presence, Queue signals, and the failed-key limit live in the Group's memory. Sign-in Codes live in the trust tables, so a restart or eviction keeps them. The limit uses `CF-Connecting-IP`. Events retain the 30-second heartbeat and end when the caller's key is revoked. Requests produce JSON logs.
 
 ## Worker configuration
 
@@ -89,11 +89,11 @@ bash -c 'set -a; . ~/.config/orbis-backup.env; exec bun run --cwd apps/server tr
 
 The command calls `POST https://orbis.p11a.xyz/api/recovery`. Use `--url <API URL>` to call another Group. It reads the key only from `ORBIS_NODE_KEY`, never from its arguments, so the key stays out of shell history and the process list. It prints the code and its expiry time. Type the code on the new device within 10 minutes. The device receives its own daily key for the Host.
 
-`/api/recovery` accepts only `POST` with a node key. A missing, unknown, daily, or admin key is refused. Recovery restores the Host Person if it was removed, or creates it in an empty Group. It does not create or revoke keys, so revoke a lost device from Settings after signing in. Responses are not cached.
+`/api/recovery` accepts only `POST`. The route refuses a missing, unknown, or daily key. Responses carry `Cache-Control: no-store`. Recovery restores the Host Person if it was removed, or creates it in an empty Group. It does not create or revoke keys, so revoke a lost device from Settings after signing in.
 
 A Host who loses every device and access to Vanta cannot recover without redeploying.
 
-Deploys before ADR 0020 could create a Cloudflare Access application for `/api/recovery`. The next deploy deletes that application. A one-time PIN provider created with `RECOVERY_CREATE_OTP` had a retain policy, so it stays in the account; delete it in the Cloudflare dashboard if nothing else uses it.
+The next deploy deletes the Cloudflare Access application for `/api/recovery`. It keeps the one-time PIN provider that `RECOVERY_CREATE_OTP` created. Delete that provider in the Cloudflare dashboard if nothing else uses it.
 
 `bun apps/api/e2e/recovery.ts` runs a workerd HTTP journey against a disposable Group. It checks that missing, unknown, and daily keys are refused, that the node key returns a code, that the code redeems once for a Host key that reaches `/admin/people`, that the node key cannot call a client route, and that the CLI reads the key only from its environment. The result is `.cache/api-recovery/<run>/result.json`; it contains no keys or codes.
 

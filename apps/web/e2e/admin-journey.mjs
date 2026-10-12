@@ -4,15 +4,20 @@
 // page shows.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
-import { signInWithKey, textOf } from "./helpers.mjs";
+import {
+  keyRecord,
+  signInWithKey,
+  submitForm,
+  textOf,
+  waitFor,
+} from "./helpers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-admin");
@@ -24,21 +29,6 @@ const hostKey = randomBytes(24).toString("base64url");
 const aliceKey = randomBytes(24).toString("base64url");
 const passcode = "river stone";
 
-const waitFor = async (url) => {
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await fetch(url);
-      return;
-    } catch {
-      // Not listening yet.
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await setTimeout(100);
-  }
-  throw new Error(`${url} did not start`);
-};
-
 // What the API itself says, outside the browser.
 const callApi = async (pathname, key) => {
   const response = await fetch(`${apiUrl}${pathname}`, {
@@ -49,25 +39,12 @@ const callApi = async (pathname, key) => {
 
 const tryJoin = async (page, username, value) => {
   const form = page.getByRole("form", { name: "Join Orbis" });
-  await form.getByLabel("Username").fill(username);
-  await form.getByLabel("Group Passcode").fill(value);
-  const answer = page.waitForResponse(
-    (response) => new URL(response.url()).pathname === "/sign-in/join"
-  );
-  await form.getByRole("button", { name: "Join" }).click();
-  const response = await answer;
-  return { body: await response.json(), form, status: response.status() };
+  const answer = await submitForm(form, "/sign-in/join", {
+    "Group Passcode": value,
+    Username: username,
+  });
+  return { ...answer, form };
 };
-
-const keyRecord = (id, label, personId, key) => ({
-  addedAt: new Date().toISOString(),
-  id,
-  label,
-  lastUsedAt: null,
-  personId,
-  scope: "daily",
-  tokenHash: createHash("sha256").update(key).digest("hex"),
-});
 
 const dataDirectory = await mkdtemp(path.join(tmpdir(), "orbis-admin-"));
 await writeFile(
@@ -76,15 +53,13 @@ await writeFile(
     keys: [
       keyRecord("host-daily", "Host browser", "host", hostKey),
       keyRecord("alice-daily", "Alice phone", "alice", aliceKey),
-      {
-        ...keyRecord(
-          "vanta-node",
-          "Vanta",
-          "host",
-          randomBytes(24).toString("base64url")
-        ),
-        scope: "node",
-      },
+      keyRecord(
+        "vanta-node",
+        "Vanta",
+        "host",
+        randomBytes(24).toString("base64url"),
+        "node"
+      ),
     ],
     people: [
       { id: "host", removed: false, username: "host" },
@@ -192,14 +167,6 @@ try {
       name: "Group Passcode",
     });
     await passcodeSection.getByText("Joining is closed.").waitFor();
-    assert.equal(await page.getByLabel("Admin key").count(), 0);
-    assert.deepEqual(
-      await page.evaluate(() => [
-        sessionStorage.getItem("orbis.adminKey"),
-        localStorage.getItem("orbis.adminKey"),
-      ]),
-      [null, null]
-    );
     await shot("closed");
     step(
       "the Host sees the Admin link, and the page opens on their own key with joining closed"
@@ -250,10 +217,10 @@ try {
     };
     page.on("request", watchReload);
     await page
-      .getByRole("button", { name: "Show sign-in code for alice" })
+      .getByRole("button", { name: "Show Sign-in Code for alice" })
       .click();
     const aliceCode = page.getByRole("status", {
-      name: "Sign-in code for alice",
+      name: "Sign-in Code for alice",
     });
     await aliceCode.waitFor();
     page.off("request", watchReload);
@@ -265,12 +232,12 @@ try {
     const codeForm = recovered.page.getByRole("form", {
       name: "Sign in with a code",
     });
-    await codeForm.getByLabel("Sign-in code").fill(code);
+    await codeForm.getByLabel("Sign-in Code").fill(code);
     await codeForm.getByRole("button", { name: "Sign in" }).click();
     await recovered.page.getByText("Signed in as alice").waitFor();
     await recovered.context.close();
     step(
-      "the Host shows a sign-in code for alice without reloading the page, and it signs a new browser in as alice",
+      "the Host shows a Sign-in Code for alice without reloading the page, and it signs a new browser in as alice",
       {
         code,
       }
@@ -317,6 +284,9 @@ try {
     await revokeDialog
       .getByRole("button", { exact: true, name: "Revoke" })
       .click();
+    // The open dialog hides the Keys list from role queries, so wait for it to
+    // close (it closes only after the API answers) before looking at the list.
+    await revokeDialog.waitFor({ state: "detached" });
     await keys.getByText("Raycast").waitFor({ state: "detached" });
     const afterRevoke = await callApi("/me", token);
     assert.equal(afterRevoke.status, 401);

@@ -8,13 +8,13 @@ import { Schema } from "effect";
 
 import { addKey, addPerson } from "./admin.js";
 import { createApp } from "./app.js";
-import { emptyTrustStore, hashToken } from "./identity.js";
+import { emptyTrustStore } from "./identity.js";
+import { storedKey } from "./test-app.js";
 import { request } from "./test-http.js";
 
 // Ways the Devices routes can fail, written before the routes:
 // 1. The list shows another Person's keys.
-// 2. The list shows a node key, or hides the Host's old admin-scope key,
-//    which is one of the Host's devices since ADR 0020.
+// 2. The list shows a node key, or hides a key stored as admin.
 // 3. The list shows a token hash.
 // 4. `current` marks the wrong key, or more than one key.
 // 5. A Person revokes another Person's key, or learns that the id exists (403).
@@ -26,20 +26,6 @@ import { request } from "./test-http.js";
 
 const ADMIN_TOKEN = "devices-legacy-admin";
 const NODE_TOKEN = "devices-node";
-const storedKey = (
-  id: string,
-  label: string,
-  scope: "admin" | "node",
-  token: string
-) => ({
-  addedAt: "2026-01-01T00:00:00.000Z",
-  id,
-  label,
-  lastUsedAt: null,
-  personId: "host",
-  scope,
-  tokenHash: hashToken(token),
-});
 
 const call = (
   app: ReturnType<typeof createApp>,
@@ -72,8 +58,14 @@ const setup = async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-devices-"));
   const databasePath = path.join(directory, "library.sqlite");
   const devicesPath = path.join(directory, "devices.json");
-  const admin = storedKey("legacy-admin", "Recovery", "admin", ADMIN_TOKEN);
-  const node = storedKey("vanta-node", "Vanta", "node", NODE_TOKEN);
+  const admin = storedKey(
+    "legacy-admin",
+    "host",
+    ADMIN_TOKEN,
+    "admin",
+    "Recovery"
+  );
+  const node = storedKey("vanta-node", "host", NODE_TOKEN, "node", "Vanta");
   await writeFile(
     devicesPath,
     JSON.stringify({ ...emptyTrustStore(), keys: [admin, node] })

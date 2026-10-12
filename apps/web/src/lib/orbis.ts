@@ -151,9 +151,9 @@ export type Person = Extract<
 export const FAILURE_MESSAGES: Readonly<Record<ApiFailure, string>> = {
   conflict: "That change conflicts with what Orbis already has.",
   failed: "Orbis could not complete the request. Try again.",
-  forbidden: "That API key cannot do this.",
+  forbidden: "You cannot do this.",
   limited: "Orbis is busy right now. Try again in a minute.",
-  rejected: "That API key does not work.",
+  rejected: "Sign in again.",
   // No response at all; on a tailnet device this is often Chrome blocking the
   // call until the Person allows local network access.
   unreachable:

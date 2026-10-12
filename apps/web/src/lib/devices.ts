@@ -1,7 +1,7 @@
 import { callOrbis } from "@/lib/orbis";
 import type { Credentials } from "@/lib/orbis";
 
-/** The signed-in Person's daily keys, one per device. Admin keys never appear. */
+/** The signed-in Person's daily keys, one per device. */
 export const listDevices = (credentials: Credentials) =>
   callOrbis(credentials, (client) => client.devices.list());
 

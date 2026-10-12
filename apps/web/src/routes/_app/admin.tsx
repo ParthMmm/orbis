@@ -2,20 +2,10 @@ import { createFileRoute, redirect, useRouter } from "@tanstack/react-router";
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Problem } from "@/components/problem";
 import { RouteProblem } from "@/components/route-problem";
 import { SignInCode } from "@/components/sign-in-code";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -37,44 +27,11 @@ import {
   signInCodeFor,
 } from "@/lib/admin";
 import type { AdminData, AdminKey, AdminPerson } from "@/lib/admin";
+import { lastUsedText } from "@/lib/dates";
 import { formField } from "@/lib/form";
-import { problemFor } from "@/lib/orbis";
-import type { ApiResult } from "@/lib/orbis";
 import type { IssuedSignInCode } from "@/lib/sign-in";
+import { useApiCall } from "@/lib/use-api-call";
 import type { Session } from "@/routes/_app";
-
-/**
- * One section's admin calls. `run` keeps a failure for the section to show;
- * `change` also reloads the page's data after a call that changed the Group.
- */
-const useAdminCall = () => {
-  const router = useRouter();
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const run = async <A,>(
-    call: () => Promise<ApiResult<A>>
-  ): Promise<A | null> => {
-    setBusy(true);
-    setProblem(null);
-    const result = await call();
-    setBusy(false);
-    if (!result.ok) {
-      setProblem(problemFor(result));
-      return null;
-    }
-    return result.value;
-  };
-  const change = async <A,>(
-    call: () => Promise<ApiResult<A>>
-  ): Promise<A | null> => {
-    const value = await run(call);
-    if (value !== null) {
-      await router.invalidate();
-    }
-    return value;
-  };
-  return { busy, change, problem, refuse: setProblem, run };
-};
 
 const Section = ({
   children,
@@ -105,7 +62,7 @@ const Passcode = ({
   readonly passcode: string | null;
   readonly session: Session;
 }) => {
-  const { busy, change, problem, refuse } = useAdminCall();
+  const { busy, change, problem, refuse } = useApiCall();
   const save = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const form = event.currentTarget;
@@ -142,7 +99,6 @@ const Passcode = ({
             id="new-passcode"
             maxLength={100}
             name="passcode"
-            required
             spellCheck={false}
           />
           <Button disabled={busy} type="submit">
@@ -165,47 +121,6 @@ const Passcode = ({
   );
 };
 
-/** A destructive action behind a confirmation dialog. */
-const Confirm = ({
-  action,
-  busy,
-  description,
-  label,
-  onConfirm,
-  title,
-  trigger,
-}: {
-  readonly action: string;
-  readonly busy: boolean;
-  readonly description: string;
-  readonly label: string;
-  readonly onConfirm: () => void;
-  readonly title: string;
-  readonly trigger: string;
-}) => (
-  <AlertDialog>
-    <AlertDialogTrigger
-      aria-label={label}
-      disabled={busy}
-      render={<Button size="sm" variant="outline" />}
-    >
-      {trigger}
-    </AlertDialogTrigger>
-    <AlertDialogContent>
-      <AlertDialogHeader>
-        <AlertDialogTitle>{title}</AlertDialogTitle>
-        <AlertDialogDescription>{description}</AlertDialogDescription>
-      </AlertDialogHeader>
-      <AlertDialogFooter>
-        <AlertDialogCancel>Cancel</AlertDialogCancel>
-        <AlertDialogAction onClick={onConfirm} variant="destructive">
-          {action}
-        </AlertDialogAction>
-      </AlertDialogFooter>
-    </AlertDialogContent>
-  </AlertDialog>
-);
-
 const PersonRow = ({
   person,
   session,
@@ -213,7 +128,8 @@ const PersonRow = ({
   readonly person: AdminPerson;
   readonly session: Session;
 }) => {
-  const { busy, change, problem, run } = useAdminCall();
+  const router = useRouter();
+  const { busy, problem, run } = useApiCall();
   const [code, setCode] = useState<IssuedSignInCode | null>(null);
   const isHost = person.id === session.person.id;
   const showCode = async () => {
@@ -228,21 +144,22 @@ const PersonRow = ({
         <h3 className="mr-auto font-medium">{person.username}</h3>
         {isHost ? <Badge variant="secondary">You</Badge> : null}
         <Button
-          aria-label={`Show sign-in code for ${person.username}`}
+          aria-label={`Show Sign-in Code for ${person.username}`}
           disabled={busy}
           onClick={showCode}
           size="sm"
           variant="outline"
         >
-          Show sign-in code
+          Show Sign-in Code
         </Button>
         {isHost ? null : (
-          <Confirm
+          <ConfirmDialog
             action="Remove"
-            busy={busy}
+            call={() => removePerson(session, person.id)}
             description="This deletes their keys, Library, Playlists, Listening Queue, and Listen History. You cannot undo it."
             label={`Remove ${person.username}`}
-            onConfirm={() => change(() => removePerson(session, person.id))}
+            onDone={() => router.invalidate()}
+            pendingAction="Removing…"
             title={`Remove ${person.username}?`}
             trigger={`Remove ${person.username}`}
           />
@@ -251,18 +168,13 @@ const PersonRow = ({
       {code === null ? null : (
         <SignInCode
           issued={code}
-          label={`Sign-in code for ${person.username}`}
+          label={`Sign-in Code for ${person.username}`}
         />
       )}
       <Problem message={problem} />
     </li>
   );
 };
-
-const lastUsed = (key: AdminKey): string =>
-  key.lastUsedAt === null
-    ? "Never used"
-    : `Last used ${new Date(key.lastUsedAt).toLocaleString()}`;
 
 const CreatedKey = ({
   onDone,
@@ -314,7 +226,8 @@ const Keys = ({
   readonly people: readonly AdminPerson[];
   readonly session: Session;
 }) => {
-  const { busy, change, problem, refuse } = useAdminCall();
+  const router = useRouter();
+  const { busy, change, problem, refuse } = useApiCall();
   const [token, setToken] = useState<string | null>(null);
   const usernames = new Map(
     people.map((person) => [person.id, person.username])
@@ -350,17 +263,18 @@ const Keys = ({
                 <span className="truncate font-medium">{key.label}</span>
                 <span className="text-muted-foreground text-xs">
                   {key.scope === "node" ? "Audio node" : owner} ·{" "}
-                  {lastUsed(key)}
+                  {lastUsedText(key.lastUsedAt)}
                 </span>
               </div>
               {/* Vanta's audio node stops serving audio without its key. */}
               {key.scope === "node" ? null : (
-                <Confirm
+                <ConfirmDialog
                   action="Revoke"
-                  busy={busy}
+                  call={() => revokeKey(session, key.id)}
                   description={`Whatever uses this key is signed out as ${owner} the next time it contacts Orbis.`}
                   label={`Revoke ${key.label} for ${owner}`}
-                  onConfirm={() => change(() => revokeKey(session, key.id))}
+                  onDone={() => router.invalidate()}
+                  pendingAction="Revoking…"
                   title={`Revoke ${key.label}?`}
                   trigger="Revoke"
                 />
@@ -388,7 +302,6 @@ const Keys = ({
               id="key-label"
               maxLength={100}
               name="label"
-              required
             />
           </div>
         </div>
@@ -415,7 +328,7 @@ const AdminPage = ({
     <h1 className="text-2xl font-medium">Admin</h1>
     <Passcode passcode={data.passcode} session={session} />
     <Section
-      description="Show a sign-in code to add a device for someone, or to let a friend who lost every device back in."
+      description="Show a Sign-in Code to sign in a device for any Person."
       id="people-title"
       title="People"
     >

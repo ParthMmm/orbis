@@ -1,3 +1,4 @@
+import { normalizeSignInCode, SIGN_IN_CODE_LENGTH } from "@orbis/contracts";
 import {
   createFileRoute,
   getRouteApi,
@@ -5,7 +6,6 @@ import {
   useNavigate,
 } from "@tanstack/react-router";
 import { Schema } from "effect";
-import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
 
 import { Problem } from "@/components/problem";
@@ -21,14 +21,10 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Separator } from "@/components/ui/separator";
 import { formField } from "@/lib/form";
-import { problemFor } from "@/lib/orbis";
 import type { ApiResult } from "@/lib/orbis";
-import {
-  joinGroup,
-  normalizeSignInCode,
-  redeemSignInCode,
-} from "@/lib/sign-in";
+import { joinGroup, redeemSignInCode } from "@/lib/sign-in";
 import { readKey, storeKey } from "@/lib/stored-key";
+import { useApiCall } from "@/lib/use-api-call";
 
 const SignInSearch = Schema.Struct({
   notice: Schema.optionalKey(Schema.Literal("expired")),
@@ -36,45 +32,47 @@ const SignInSearch = Schema.Struct({
 
 const signInRoute = getRouteApi("/sign-in");
 
-type Attempt =
-  | { readonly ok: true; readonly key: string }
-  | { readonly ok: false; readonly problem: string };
+const typedCode = (form: FormData) =>
+  normalizeSignInCode(formField(form, "code"));
 
-const refuse = (problem: string): Attempt => ({ ok: false, problem });
-
-const attempted = (result: ApiResult<{ readonly key: string }>): Attempt =>
-  result.ok ? { key: result.value.key, ok: true } : refuse(problemFor(result));
-
-/** One way in: its fields, its own problem line, and one submit button. */
+/**
+ * One way in: its fields, its own problem line, and one submit button. `check`
+ * names what is missing before any call.
+ */
 const SignInForm = ({
+  call,
+  check,
   children,
   description,
-  onSubmit,
   pendingLabel,
   submitLabel,
   title,
 }: {
+  readonly call: (
+    form: FormData
+  ) => Promise<ApiResult<{ readonly key: string }>>;
+  readonly check: (form: FormData) => string | null;
   readonly children: ReactNode;
   readonly description: string;
-  readonly onSubmit: (form: FormData) => Promise<Attempt>;
   readonly pendingLabel: string;
   readonly submitLabel: string;
   readonly title: string;
 }) => {
   const navigate = useNavigate();
-  const [problem, setProblem] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { busy, problem, refuse, run } = useApiCall();
   const submit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setPending(true);
-    const result = await onSubmit(new FormData(event.currentTarget));
-    if (!result.ok) {
-      setProblem(result.problem);
-      setPending(false);
+    const form = new FormData(event.currentTarget);
+    const missing = check(form);
+    if (missing !== null) {
+      refuse(missing);
       return;
     }
-    storeKey(result.key);
-    await navigate({ to: "/" });
+    const signedIn = await run(() => call(form));
+    if (signedIn !== null) {
+      storeKey(signedIn.key);
+      await navigate({ to: "/" });
+    }
   };
   return (
     <form aria-label={title} className="flex flex-col gap-4" onSubmit={submit}>
@@ -84,8 +82,8 @@ const SignInForm = ({
       </div>
       {children}
       <Problem message={problem} />
-      <Button disabled={pending} type="submit">
-        {pending ? pendingLabel : submitLabel}
+      <Button disabled={busy} type="submit">
+        {busy ? pendingLabel : submitLabel}
       </Button>
     </form>
   );
@@ -94,19 +92,6 @@ const SignInForm = ({
 const SignIn = () => {
   const { apiUrl } = signInRoute.useRouteContext();
   const { notice } = signInRoute.useSearch();
-  const redeem = async (form: FormData) => {
-    const code = normalizeSignInCode(formField(form, "code"));
-    return code.length === 8
-      ? attempted(await redeemSignInCode(apiUrl, code))
-      : refuse("Enter the eight-character code from your other device.");
-  };
-  const join = async (form: FormData) => {
-    const username = formField(form, "username");
-    const passcode = formField(form, "passcode");
-    return username === "" || passcode === ""
-      ? refuse("Choose a username and enter the Group Passcode.")
-      : attempted(await joinGroup(apiUrl, username, passcode));
-  };
   return (
     <main className="flex min-h-svh items-center justify-center p-6">
       <Card className="w-full max-w-sm">
@@ -122,14 +107,19 @@ const SignIn = () => {
         </CardHeader>
         <CardContent className="flex flex-col gap-6">
           <SignInForm
+            call={(form) => redeemSignInCode(apiUrl, typedCode(form))}
+            check={(form) =>
+              typedCode(form).length === SIGN_IN_CODE_LENGTH
+                ? null
+                : "Enter the eight-character code from your other device."
+            }
             description="On a device where you use Orbis, open Devices and choose Sign in another device."
-            onSubmit={redeem}
             pendingLabel="Signing in…"
             submitLabel="Sign in"
             title="Sign in with a code"
           >
             <div className="flex flex-col gap-2">
-              <Label htmlFor="sign-in-code">Sign-in code</Label>
+              <Label htmlFor="sign-in-code">Sign-in Code</Label>
               <Input
                 autoCapitalize="characters"
                 autoComplete="one-time-code"
@@ -144,8 +134,20 @@ const SignIn = () => {
           </SignInForm>
           <Separator />
           <SignInForm
-            description="New here? Ask the Host for the Group Passcode."
-            onSubmit={join}
+            call={(form) =>
+              joinGroup(
+                apiUrl,
+                formField(form, "username"),
+                formField(form, "passcode")
+              )
+            }
+            check={(form) =>
+              formField(form, "username") === "" ||
+              formField(form, "passcode") === ""
+                ? "Choose a username and enter the Group Passcode."
+                : null
+            }
+            description="Ask your Host for the Group Passcode."
             pendingLabel="Joining…"
             submitLabel="Join"
             title="Join Orbis"

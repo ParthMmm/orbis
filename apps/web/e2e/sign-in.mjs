@@ -3,7 +3,7 @@
 // holds the Host with one daily key.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,7 +11,14 @@ import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
-import { signInWithKey, textOf } from "./helpers.mjs";
+import {
+  keyRecord,
+  signInWithKey,
+  storedKey,
+  submitForm,
+  textOf,
+  waitFor,
+} from "./helpers.mjs";
 
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-sign-in");
@@ -21,21 +28,6 @@ const apiUrl = `http://127.0.0.1:${devicePort}`;
 const webUrl = `http://127.0.0.1:${webPort}`;
 const hostKey = randomBytes(24).toString("base64url");
 const passcode = "river stone";
-
-const waitFor = async (url) => {
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await fetch(url);
-      return;
-    } catch {
-      // Not listening yet.
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await setTimeout(100);
-  }
-  throw new Error(`${url} did not start`);
-};
 
 const openJoining = async () => {
   const response = await fetch(`${apiUrl}/admin/passcode`, {
@@ -61,17 +53,7 @@ const dataDirectory = await mkdtemp(path.join(tmpdir(), "orbis-sign-in-"));
 await writeFile(
   path.join(dataDirectory, "devices.json"),
   JSON.stringify({
-    keys: [
-      {
-        addedAt: new Date().toISOString(),
-        id: "journey-key",
-        label: "Sign-in journey",
-        lastUsedAt: null,
-        personId: "host",
-        scope: "daily",
-        tokenHash: createHash("sha256").update(hostKey).digest("hex"),
-      },
-    ],
+    keys: [keyRecord("journey-key", "Sign-in journey", "host", hostKey)],
     people: [{ id: "host", removed: false, username: "host" }],
     version: 2,
   })
@@ -128,55 +110,29 @@ try {
     });
     const shot = (name) =>
       page.screenshot({ path: path.join(artifacts, `${name}.png`) });
-    const storedKey = () =>
-      page.evaluate(() => localStorage.getItem("orbis.apiKey"));
     const codeForm = page.getByRole("form", { name: "Sign in with a code" });
     const joinForm = page.getByRole("form", { name: "Join Orbis" });
-
-    // Submits a form and returns the API's answer, so a step can check that the
-    // page shows the API's own explanation.
-    const submit = async (form, pathname, fields) => {
-      for (const [label, value] of Object.entries(fields)) {
-        // eslint-disable-next-line no-await-in-loop
-        await form.getByLabel(label).fill(value);
-      }
-      const answer = page.waitForResponse(
-        (response) =>
-          new URL(response.url()).pathname === pathname &&
-          response.request().method() === "POST"
-      );
-      await form.getByRole("button").click();
-      const response = await answer;
-      return {
-        body: await response.json(),
-        payload: response.request().postDataJSON(),
-        status: response.status(),
-      };
-    };
     const join = (username, value) =>
-      submit(joinForm, "/sign-in/join", {
+      submitForm(joinForm, "/sign-in/join", {
         "Group Passcode": value,
         Username: username,
       });
     const redeem = (code) =>
-      submit(codeForm, "/sign-in/code", { "Sign-in code": code });
+      submitForm(codeForm, "/sign-in/code", { "Sign-in Code": code });
     const expectRefusal = async (form, answer, status) => {
       assert.equal(answer.status, status);
       assert.notEqual(answer.body.message ?? "", "");
       assert.equal(await textOf(form.getByRole("alert")), answer.body.message);
-      assert.equal(await storedKey(), null);
+      assert.equal(await storedKey(page), null);
     };
 
     await page.goto(webUrl);
     await page.getByRole("heading", { name: "Sign in to Orbis" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/sign-in");
-    await codeForm.getByLabel("Sign-in code").waitFor();
+    await codeForm.getByLabel("Sign-in Code").waitFor();
     await joinForm.getByLabel("Group Passcode").waitFor();
-    assert.equal(await page.getByLabel("API key").count(), 0);
     await shot("signed-out");
-    step(
-      "a signed-out visit to / shows a code form and a join form, and no key field"
-    );
+    step("a signed-out visit to / shows a code form and a join form");
 
     const closed = await join("bob", "anything");
     await expectRefusal(joinForm, closed, 403);
@@ -202,7 +158,7 @@ try {
     assert.equal(joined.status, 201);
     await page.getByRole("heading", { name: "Library" }).waitFor();
     await page.getByText("Signed in as bob").waitFor();
-    assert.equal(await storedKey(), joined.body.key);
+    assert.equal(await storedKey(page), joined.body.key);
     assert.match(joined.payload.label, /^Chrome on /u);
     await page.reload();
     await page.getByRole("heading", { name: "Library" }).waitFor();
@@ -214,7 +170,7 @@ try {
 
     await page.getByRole("button", { name: "Sign out" }).click();
     await page.getByRole("heading", { name: "Sign in to Orbis" }).waitFor();
-    assert.equal(await storedKey(), null);
+    assert.equal(await storedKey(page), null);
     step("sign out clears the key");
 
     let sentCode = false;
@@ -222,7 +178,7 @@ try {
       sentCode ||= new URL(request.url()).pathname === "/sign-in/code";
     };
     page.on("request", watchCode);
-    await codeForm.getByLabel("Sign-in code").fill("abc");
+    await codeForm.getByLabel("Sign-in Code").fill("abc");
     await codeForm.getByRole("button").click();
     await codeForm
       .getByRole("alert")
@@ -247,7 +203,7 @@ try {
       .getByRole("alert")
       .getByText("Your saved key no longer works.")
       .waitFor();
-    assert.equal(await storedKey(), null);
+    assert.equal(await storedKey(page), null);
     step("a saved key the API rejects is dropped with a notice");
 
     await signInWithKey(page, webUrl, hostKey);
@@ -259,7 +215,7 @@ try {
       .getByRole("alert")
       .getByText("Orbis could not be reached.")
       .waitFor();
-    assert.equal(await storedKey(), hostKey);
+    assert.equal(await storedKey(page), hostKey);
     await shot("unreachable");
     step("an unreachable API keeps the key and says why");
 

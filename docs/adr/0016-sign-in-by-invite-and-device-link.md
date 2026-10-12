@@ -1,6 +1,6 @@
 # Sign in by Invite and Device Link, and keep one API key per device
 
-Superseded by ADR 0020 on 2026-10-10. Invites and Device Links were removed.
+Superseded by ADR 0020 on 2026-10-10. ADR 0020 removed Invites and Device Links.
 
 A Person's data already follows them across devices: every request acts as a Person (ADR 0008), so each of their devices reads and changes the same Library, Playlists, Listening Queue, and Playback Positions. What does not scale is getting a key onto each device. The Host mints a key, copies it, and sends it, once per device, and the Apple TV has no good way to paste one. Orbis gains two ways for a device to obtain its own key. The credential stays the same: one labeled, revocable API key per device.
 

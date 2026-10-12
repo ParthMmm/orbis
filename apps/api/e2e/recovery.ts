@@ -5,6 +5,7 @@
 //   key gets a Sign-in Code.
 // - GET reads or issues anything.
 // - The response is cacheable, or the code does not redeem to a Host key.
+// - The code is lost when the Group restarts before it is redeemed.
 // - The redeemed key cannot reach the Host's routes, or the code works twice.
 // - The node key reaches a client route.
 // - The CLI takes the key from argv, prints it, or fails to print the code.
@@ -14,6 +15,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { Miniflare } from "miniflare";
+import type { MiniflareOptions } from "miniflare";
 
 const NODE_KEY = "vanta-node-token";
 const FRIEND_KEY = "friend-daily-token";
@@ -34,7 +36,7 @@ const bundle = await Bun.build({
 assert.equal(bundle.success, true, String(bundle.logs));
 const [output] = bundle.outputs;
 assert.ok(output);
-const runtime = new Miniflare({
+const miniflareOptions = {
   bindings: {
     AUDIO_NODE_URL: "https://audio.example",
     STREAM_GRANT_SECRET: "ab".repeat(32),
@@ -45,7 +47,8 @@ const runtime = new Miniflare({
   durableObjectsPersist: path.join(artifact, "storage"),
   modules: true,
   script: await output.text(),
-});
+} satisfies MiniflareOptions;
+let runtime = new Miniflare(miniflareOptions);
 const call = (
   route: string,
   options: { method?: string; key?: string; body?: unknown } = {}
@@ -94,6 +97,8 @@ try {
   assert.match(issued.code, CODE);
   assert.ok(Date.parse(issued.expiresAt) > Date.now() + 9 * 60 * 1000);
 
+  await runtime.dispose();
+  runtime = new Miniflare(miniflareOptions);
   const signedIn = await redeem(issued.code);
   assert.equal(signedIn.status, 200, await signedIn.clone().text());
   const { key, person } = await signedIn.json();
@@ -149,6 +154,7 @@ try {
         cliNeedsEnvironmentKey: true,
         cliRecovery: true,
         codeSingleUse: true,
+        codeSurvivesGroupRestart: true,
         getRefused: read.status,
         nodeKeyOnClientRoute: nodeOnClient,
         recoveredKeyReachesAdmin: true,

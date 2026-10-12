@@ -43,14 +43,21 @@ const readStore = (
       "SELECT passcode FROM group_settings WHERE id = 1"
     )
     .toArray();
+  const signInCodes = storage.sql
+    .exec(
+      "SELECT code, person_id AS personId, expires_at AS expiresAt FROM sign_in_codes ORDER BY rowid"
+    )
+    .toArray();
   return decode({
     keys,
     passcode: settings?.passcode ?? null,
     people,
+    signInCodes,
     version: 2,
   });
 };
 const writeStore = (storage: DurableObjectStorage, store: TrustStore) => {
+  storage.sql.exec("DELETE FROM sign_in_codes");
   storage.sql.exec("DELETE FROM api_keys");
   storage.sql.exec("DELETE FROM people");
   for (const person of store.people) {
@@ -74,6 +81,14 @@ const writeStore = (storage: DurableObjectStorage, store: TrustStore) => {
       key.personId,
       key.addedAt,
       key.lastUsedAt
+    );
+  }
+  for (const code of store.signInCodes ?? []) {
+    storage.sql.exec(
+      "INSERT INTO sign_in_codes (code, person_id, expires_at) VALUES (?, ?, ?)",
+      code.code,
+      code.personId,
+      code.expiresAt
     );
   }
   storage.sql.exec(

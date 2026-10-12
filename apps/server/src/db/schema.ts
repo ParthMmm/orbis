@@ -346,6 +346,14 @@ export const groupSettings = sqliteTable("group_settings", {
   passcode: text("passcode"),
 });
 
+export const signInCodes = sqliteTable("sign_in_codes", {
+  code: text("code").primaryKey(),
+  expiresAt: text("expires_at").notNull(),
+  personId: text("person_id")
+    .notNull()
+    .references(() => people.id),
+});
+
 export const trustMigrations = sqliteTable("trust_migrations", {
   id: integer("id").primaryKey(),
 });

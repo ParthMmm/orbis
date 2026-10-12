@@ -37,7 +37,7 @@ await writeFile(
         label: "Fixture",
         lastUsedAt: null,
         personId: "host",
-        scope: "admin",
+        scope: "daily",
         tokenHash: hashToken(token),
       },
       {

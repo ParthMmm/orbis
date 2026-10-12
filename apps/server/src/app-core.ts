@@ -52,13 +52,14 @@ import {
   addKey,
   addPerson,
   AdminError,
+  issueSignInCode,
   joinGroup,
   listDevices,
   listKeys,
   listPeople,
   readPasscode,
+  redeemSignInCode,
   removePerson,
-  requireCurrentPerson,
   revokeDevice,
   revokeKey,
   setPasscode,
@@ -108,7 +109,6 @@ import type { PresenceOptions } from "./presence.js";
 import { QueueSignals } from "./queue-signals.js";
 import { Queue } from "./queue.js";
 import { expandShortLink } from "./short-link.js";
-import { makeSignInCodes } from "./sign-in-code.js";
 import { Stats } from "./stats.js";
 import { issueStreamGrant, verifyStreamGrant } from "./stream-grant-core.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
@@ -163,7 +163,7 @@ const grantAccess = (
     (candidate) => candidate.id === personId && !candidate.removed
   );
   return person
-    ? { keyId: null, kind: "accepted", person, scope: "daily" }
+    ? { keyId: null, kind: "accepted", person }
     : { kind: "rejected", message: "Invalid stream grant.", statusCode: 401 };
 };
 
@@ -316,19 +316,7 @@ export const createPortableApp = (options: {
       previous.count > FAILED_KEY_LIMIT
     );
   };
-  const signInCodes = makeSignInCodes(options.signInCodeNow);
-  const issueSignInCode = (personId: string) =>
-    Effect.suspend(() => {
-      const issued = signInCodes.issue(personId);
-      return issued
-        ? Effect.succeed(HttpServerResponse.jsonUnsafe(issued, { status: 201 }))
-        : Effect.fail(
-            new LibraryError({
-              message: "Too many Sign-in Codes are waiting. Try again soon.",
-              statusCode: 503,
-            })
-          );
-    });
+  const signInCodeNow = options.signInCodeNow ?? Date.now;
   const { database } = options;
   const libraryOptions = {
     people: () => readTrustRegistry(trustPath).store.people,
@@ -1490,7 +1478,6 @@ export const createPortableApp = (options: {
             )
           )
       );
-      // Host powers belong to the Host Person (ADR 0020).
       const requireHost = Effect.gen(function* verifyHost() {
         const caller = yield* SetCaller;
         if (caller.keyId === null || caller.person.id !== HOST_PERSON_ID) {
@@ -1520,6 +1507,13 @@ export const createPortableApp = (options: {
         });
       const adminCall = <A>(action: (storePath: string) => A) =>
         Effect.andThen(requireHost, trustCall(action));
+      const issueCodeFor = (personId: string) =>
+        Effect.map(
+          trustCall((storePath) =>
+            issueSignInCode(storePath, personId, signInCodeNow())
+          ),
+          (issued) => HttpServerResponse.jsonUnsafe(issued, { status: 201 })
+        );
       // Devices act for the Person behind a key. A stream grant has no key, so
       // it is refused.
       const deviceCall = <A>(
@@ -1570,7 +1564,7 @@ export const createPortableApp = (options: {
               withFailureResponse(
                 Effect.gen(function* issueOwnSignInCode() {
                   const { person } = yield* SetCaller;
-                  return yield* issueSignInCode(person.id);
+                  return yield* issueCodeFor(person.id);
                 })
               )
             )
@@ -1699,9 +1693,7 @@ export const createPortableApp = (options: {
           )
           .handleRaw("signInCodeFor", ({ params }) =>
             withFailureResponse(
-              adminCall((storePath) =>
-                requireCurrentPerson(storePath, params.id)
-              ).pipe(Effect.andThen(issueSignInCode(params.id)))
+              Effect.andThen(requireHost, issueCodeFor(params.id))
             )
           )
           .handleRaw("passcode", () =>
@@ -1724,34 +1716,16 @@ export const createPortableApp = (options: {
         handlers
           .handleRaw("redeem", () =>
             withFailureResponse(
-              Effect.gen(function* redeemSignInCode() {
+              Effect.gen(function* redeemCode() {
                 const input = yield* HttpServerRequest.schemaBodyJson(
                   RedeemSignInCodePayload
                 );
-                // Checked before the code is spent, so a blank name keeps it.
-                if (input.label.trim() === "") {
-                  return yield* new LibraryError({
-                    message: "Name this device.",
-                    statusCode: 400,
-                  });
-                }
-                const personId = signInCodes.redeem(input.code);
-                if (personId === null) {
+                const signedIn = yield* trustCall((storePath) =>
+                  redeemSignInCode(storePath, input, signInCodeNow())
+                );
+                if (signedIn === null) {
                   return yield* invalidSignInCode();
                 }
-                const signedIn = yield* trustCall((storePath) => {
-                  const key = addKey(storePath, personId, input);
-                  const { username } = requireCurrentPerson(
-                    storePath,
-                    personId
-                  );
-                  return { key: key.token, person: { id: personId, username } };
-                }).pipe(
-                  Effect.catchIf(
-                    (error) => error.statusCode === 404,
-                    () => Effect.fail(invalidSignInCode())
-                  )
-                );
                 return HttpServerResponse.jsonUnsafe(signedIn);
               })
             )
@@ -2018,7 +1992,6 @@ export const createPortableApp = (options: {
         await Effect.runPromise(presenceService.expire(Date.now()));
       }
     },
-    issueSignInCode: signInCodes.issue,
     handler: async (
       request: Request,
       mode: AccessMode,

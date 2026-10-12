@@ -1,4 +1,10 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
+
+import {
+  normalizeSignInCode,
+  SIGN_IN_CODE_ALPHABET,
+  SIGN_IN_CODE_LENGTH,
+} from "@orbis/contracts";
 
 import {
   hashToken,
@@ -30,9 +36,6 @@ const requirePerson = (store: TrustStore, id: string): PersonRecord => {
   }
   return person;
 };
-
-export const requireCurrentPerson = (path: string, id: string) =>
-  requirePerson(read(path), id);
 
 export const listPeople = (path: string) =>
   read(path)
@@ -185,6 +188,79 @@ export const joinGroup = (
     }
   );
 
+const SIGN_IN_CODE_TTL_MS = 10 * 60 * 1000;
+
+const newSignInCode = () =>
+  Array.from(
+    { length: SIGN_IN_CODE_LENGTH },
+    () => SIGN_IN_CODE_ALPHABET[randomInt(SIGN_IN_CODE_ALPHABET.length)]
+  ).join("");
+
+const liveSignInCodes = (store: TrustStore, now: number) =>
+  (store.signInCodes ?? []).filter((code) => Date.parse(code.expiresAt) > now);
+
+/** Issues a Person's Sign-in Code (ADR 0020), replacing their earlier one. */
+export const issueSignInCode = (path: string, personId: string, now: number) =>
+  mutateTrustStore(
+    path,
+    () => read(path),
+    (store) => {
+      requirePerson(store, personId);
+      const others = liveSignInCodes(store, now).filter(
+        (code) => code.personId !== personId
+      );
+      let code = newSignInCode();
+      while (others.some((other) => other.code === code)) {
+        code = newSignInCode();
+      }
+      const issued = {
+        code,
+        expiresAt: new Date(now + SIGN_IN_CODE_TTL_MS).toISOString(),
+      };
+      return {
+        store: { ...store, signInCodes: [...others, { ...issued, personId }] },
+        value: issued,
+      };
+    }
+  );
+
+/**
+ * Spends a Sign-in Code and adds the new device's key in one mutation, so a
+ * code is never spent without a key. Null for an unknown or expired code, or
+ * one whose Person was removed.
+ */
+export const redeemSignInCode = (
+  path: string,
+  input: { readonly code: string; readonly label: string },
+  now: number
+) => {
+  const label = validLabel(input.label);
+  const presented = normalizeSignInCode(input.code);
+  return mutateTrustStore(
+    path,
+    () => read(path),
+    (store) => {
+      const live = liveSignInCodes(store, now);
+      const found = live.find((code) => code.code === presented);
+      const person = store.people.find(
+        (candidate) => candidate.id === found?.personId && !candidate.removed
+      );
+      const signInCodes = live.filter((code) => code !== found);
+      if (!person) {
+        return { store: { ...store, signInCodes }, value: null };
+      }
+      const key = newDailyKey(person.id, label);
+      return {
+        store: { ...store, keys: [...store.keys, key.record], signInCodes },
+        value: {
+          key: key.created.token,
+          person: { id: person.id, username: person.username },
+        },
+      };
+    }
+  );
+};
+
 export const readPasscode = (path: string) => ({
   passcode: read(path).passcode ?? null,
 });
@@ -254,6 +330,9 @@ export const removePerson = (path: string, id: string) => {
           keys: store.keys.filter((key) => key.personId !== id),
           people: store.people.map((candidate) =>
             candidate.id === id ? { ...candidate, removed: true } : candidate
+          ),
+          signInCodes: (store.signInCodes ?? []).filter(
+            (code) => code.personId !== id
           ),
         },
         value: { id: person.id, username: person.username },

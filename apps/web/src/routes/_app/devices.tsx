@@ -5,19 +5,9 @@ import {
 } from "@tanstack/react-router";
 import { useState } from "react";
 
+import { ConfirmDialog } from "@/components/confirm-dialog";
 import { Problem } from "@/components/problem";
 import { SignInCode } from "@/components/sign-in-code";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-  AlertDialogTrigger,
-} from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,16 +17,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { formatDate, lastUsedText } from "@/lib/dates";
 import { listDevices, requestSignInCode, revokeDevice } from "@/lib/devices";
 import type { Device } from "@/lib/devices";
-import { FAILURE_MESSAGES, problemFor } from "@/lib/orbis";
+import { problemFor } from "@/lib/orbis";
 import type { ApiResult } from "@/lib/orbis";
 import type { IssuedSignInCode } from "@/lib/sign-in";
 import { forgetKey } from "@/lib/stored-key";
+import { useApiCall } from "@/lib/use-api-call";
 import type { Session } from "@/routes/_app";
-
-const dateFormat = new Intl.DateTimeFormat(undefined, { dateStyle: "medium" });
-const formatDate = (iso: string) => dateFormat.format(new Date(iso));
 
 const DeviceRow = ({
   device,
@@ -47,24 +36,12 @@ const DeviceRow = ({
 }) => {
   const router = useRouter();
   const navigate = useNavigate();
-  const [open, setOpen] = useState(false);
-  const [pending, setPending] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  const revoke = async () => {
-    setPending(true);
-    setProblem(null);
-    const result = await revokeDevice(session, device.id);
-    if (!result.ok) {
-      setProblem(FAILURE_MESSAGES[result.failure]);
-      setPending(false);
-      return;
-    }
+  const revoked = async () => {
     if (device.current) {
       forgetKey();
       await navigate({ to: "/sign-in" });
       return;
     }
-    setOpen(false);
     await router.invalidate();
   };
   return (
@@ -77,74 +54,41 @@ const DeviceRow = ({
           ) : null}
         </div>
         <p className="text-muted-foreground text-sm">
-          Added {formatDate(device.addedAt)} ·{" "}
-          {device.lastUsedAt === null
-            ? "Never used"
-            : `Last used ${formatDate(device.lastUsedAt)}`}
+          Added {formatDate(device.addedAt)} · {lastUsedText(device.lastUsedAt)}
         </p>
       </div>
-      <AlertDialog onOpenChange={setOpen} open={open}>
-        <AlertDialogTrigger
-          render={
-            <Button
-              aria-label={`Revoke ${device.label}`}
-              size="sm"
-              variant="outline"
-            />
-          }
-        >
-          Revoke
-        </AlertDialogTrigger>
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Revoke {device.label}?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {device.current
-                ? "This is the device you are using. Revoking it signs you out here. To sign in again, use a code from another device."
-                : "That device is signed out the next time it contacts Orbis."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          {problem === null ? null : (
-            <p className="text-destructive text-sm" role="alert">
-              {problem}
-            </p>
-          )}
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              disabled={pending}
-              onClick={revoke}
-              variant="destructive"
-            >
-              {pending ? "Revoking…" : "Revoke"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
+      <ConfirmDialog
+        action="Revoke"
+        call={() => revokeDevice(session, device.id)}
+        description={
+          device.current
+            ? "This is the device you are using. Revoking it signs you out here. To sign in again, use a Sign-in Code from another device."
+            : "That device is signed out the next time it contacts Orbis."
+        }
+        label={`Revoke ${device.label}`}
+        onDone={revoked}
+        pendingAction="Revoking…"
+        title={`Revoke ${device.label}?`}
+        trigger="Revoke"
+      />
     </li>
   );
 };
 
 const SignInAnotherDevice = ({ session }: { readonly session: Session }) => {
   const [code, setCode] = useState<IssuedSignInCode | null>(null);
-  const [problem, setProblem] = useState<string | null>(null);
-  const [pending, setPending] = useState(false);
+  const { busy, problem, run } = useApiCall();
   const request = async () => {
-    setPending(true);
-    setProblem(null);
-    const result = await requestSignInCode(session);
-    setPending(false);
-    if (result.ok) {
-      setCode(result.value);
-    } else {
-      setProblem(problemFor(result));
+    const issued = await run(() => requestSignInCode(session));
+    if (issued !== null) {
+      setCode(issued);
     }
   };
   return (
     <div className="flex flex-col gap-4">
       {code === null ? null : (
         <>
-          <SignInCode issued={code} label="Your sign-in code" />
+          <SignInCode issued={code} label="Your Sign-in Code" />
           <p className="text-muted-foreground text-sm">
             On the new device, open Orbis, choose Sign in with a code, and type
             this code.
@@ -154,7 +98,7 @@ const SignInAnotherDevice = ({ session }: { readonly session: Session }) => {
       <Problem message={problem} />
       <Button
         className="self-start"
-        disabled={pending}
+        disabled={busy}
         onClick={request}
         variant={code === null ? "default" : "outline"}
       >
@@ -191,9 +135,7 @@ const Devices = ({
             ))}
           </ul>
         ) : (
-          <p className="text-destructive text-sm" role="alert">
-            {FAILURE_MESSAGES[devices.failure]}
-          </p>
+          <Problem message={problemFor(devices)} />
         )}
       </CardContent>
     </Card>

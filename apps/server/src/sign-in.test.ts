@@ -7,11 +7,12 @@
 //   Host's routes.
 // - The passcode is not readable back, not trimmed, does not survive a
 //   restart, or a blank one leaves joining open.
-// - A Sign-in Code yields a key twice, after 10 minutes, after a restart, or
-//   for a Person removed since it was issued.
+// - A Sign-in Code yields a key twice, after 10 minutes, or for a Person
+//   removed since it was issued.
+// - A Sign-in Code is lost when the Group restarts, or an earlier code for
+//   the same Person still works after a new one is issued.
 // - A blank device name spends the code without minting a key.
-// - A friend's key reaches /admin, or the Host's old admin-scope key stops
-//   working there.
+// - A friend's key reaches /admin, or a second Host key does not.
 // - A node key reaches the client routes.
 // - Guessing codes or passcodes is not limited, a key on the request skips
 //   the limit, or a client over the limit spends a real code.
@@ -25,28 +26,14 @@ import { Schema } from "effect";
 
 import { createApp } from "./app.js";
 import { hashToken, readTrustStrict } from "./identity.js";
+import { storedKey } from "./test-app.js";
 import { request } from "./test-http.js";
 
 const HOST_DAILY = "sign-in-host-daily";
-const HOST_ADMIN = "sign-in-host-admin";
+const HOST_LAPTOP = "sign-in-host-laptop";
 const FRIEND_DAILY = "sign-in-friend-daily";
 const NODE = "sign-in-node";
 const TEN_MINUTES = 10 * 60 * 1000;
-
-const seedKey = (
-  id: string,
-  personId: string,
-  token: string,
-  scope: string
-) => ({
-  addedAt: "2026-01-01T00:00:00.000Z",
-  id,
-  label: id,
-  lastUsedAt: null,
-  personId,
-  scope,
-  tokenHash: hashToken(token),
-});
 
 const setup = async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-sign-in-"));
@@ -55,10 +42,10 @@ const setup = async () => {
     devicesPath,
     JSON.stringify({
       keys: [
-        seedKey("host-daily", "host", HOST_DAILY, "daily"),
-        seedKey("host-admin", "host", HOST_ADMIN, "admin"),
-        seedKey("friend-daily", "friend", FRIEND_DAILY, "daily"),
-        seedKey("host-node", "host", NODE, "node"),
+        storedKey("host-daily", "host", HOST_DAILY, "daily"),
+        storedKey("host-laptop", "host", HOST_LAPTOP, "daily"),
+        storedKey("friend-daily", "friend", FRIEND_DAILY, "daily"),
+        storedKey("host-node", "host", NODE, "node"),
       ],
       people: [
         { id: "host", removed: false, username: "host" },
@@ -225,9 +212,9 @@ test("only the Host reads or sets the passcode, and it survives a restart", asyn
     }
     expect(await statusOf(setPasscode(first, "x".repeat(101)))).toBe(400);
     expect(
-      await bodyOf(call(first, "GET", "/admin/passcode", { key: HOST_ADMIN }))
+      await bodyOf(call(first, "GET", "/admin/passcode", { key: HOST_LAPTOP }))
     ).toEqual({ passcode: null });
-    expect(await statusOf(setPasscode(first, "kept", HOST_ADMIN))).toBe(200);
+    expect(await statusOf(setPasscode(first, "kept", HOST_LAPTOP))).toBe(200);
   } finally {
     await first.dispose();
   }
@@ -300,22 +287,27 @@ test("a Sign-in Code adds a device for its Person, once", async () => {
   }
 });
 
-test("a Sign-in Code expires after 10 minutes and does not survive a restart", async () => {
+test("a Person has one Sign-in Code, which survives a restart and expires after 10 minutes", async () => {
   const { cleanup, clock, open, store } = await setup();
   const first = open();
   let restarted: App | undefined;
   try {
-    const late = await issueOwn(first, HOST_DAILY);
-    const inTime = await issueOwn(first, HOST_DAILY);
-    clock.now += TEN_MINUTES - 1;
-    expect(await statusOf(redeem(first, inTime.code))).toBe(200);
-    clock.now += 1;
-    expect(await statusOf(redeem(first, late.code))).toBe(404);
+    const replaced = await issueOwn(first, HOST_DAILY);
+    const friend = await issueOwn(first, FRIEND_DAILY);
+    const current = await issueOwn(first, HOST_LAPTOP);
+    expect(store().signInCodes?.map((code) => code.personId)).toEqual([
+      "friend",
+      "host",
+    ]);
+    expect(await statusOf(redeem(first, replaced.code))).toBe(404);
 
-    const beforeRestart = await issueOwn(first, HOST_DAILY);
     await first.dispose();
     restarted = open();
-    expect(await statusOf(redeem(restarted, beforeRestart.code))).toBe(404);
+    clock.now += TEN_MINUTES - 1;
+    expect(await statusOf(redeem(restarted, current.code))).toBe(200);
+    clock.now += 1;
+    expect(await statusOf(redeem(restarted, friend.code))).toBe(404);
+    expect(store().signInCodes).toEqual([]);
     expect(store().keys).toHaveLength(5);
   } finally {
     await (restarted ?? first).dispose();
@@ -344,7 +336,7 @@ test("the Host issues a Sign-in Code for any current Person", async () => {
       ).toBe(404);
     }
 
-    const issued = await call(app, "POST", url, { key: HOST_ADMIN });
+    const issued = await call(app, "POST", url, { key: HOST_LAPTOP });
     expect(issued.statusCode).toBe(201);
     const { code } = decodeCode(issued.json());
     const result = decodeSignedIn(await bodyOf(redeem(app, code)));
@@ -370,7 +362,7 @@ test("Host powers follow the Host Person, and node keys stay off client routes",
   const { cleanup, open } = await setup();
   const app = open();
   try {
-    for (const key of [HOST_DAILY, HOST_ADMIN]) {
+    for (const key of [HOST_DAILY, HOST_LAPTOP]) {
       // oxlint-disable-next-line no-await-in-loop
       const me = await call(app, "GET", "/me", { key });
       expect(me.json()).toMatchObject({ host: true, id: "host" });
@@ -380,7 +372,7 @@ test("Host powers follow the Host Person, and node keys stay off client routes",
       ).toBe(200);
     }
     const created = await call(app, "POST", "/admin/people/friend/keys", {
-      key: HOST_ADMIN,
+      key: HOST_LAPTOP,
       payload: { label: "Laptop", scope: "admin" },
     });
     expect(created.statusCode).toBe(201);
