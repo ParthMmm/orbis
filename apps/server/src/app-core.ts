@@ -99,6 +99,7 @@ import {
   makeRequestLogMiddleware,
   safeRequestPath,
   startRequestLog,
+  withWideEvent,
 } from "./logging.js";
 import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
@@ -417,6 +418,7 @@ export const createPortableApp = (options: {
                 Effect.interruptible,
                 Effect.provideService(Database, db),
                 Effect.provideService(Versos, versos),
+                withWideEvent({ job: "tracklist", set: id }, options.logging),
                 Effect.ensuring(
                   Effect.sync(() => {
                     runningTracklists.delete(id);
@@ -476,6 +478,7 @@ export const createPortableApp = (options: {
                     )
                   ),
           }),
+          withWideEvent({ job: "set-details", set: set.id }, options.logging),
           Effect.forkIn(scope),
           Effect.asVoid
         )
