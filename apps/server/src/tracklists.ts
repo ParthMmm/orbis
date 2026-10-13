@@ -174,6 +174,9 @@ export const runClaimedTracklist = Effect.fn("Tracklists.runClaimed")(
       if (requested._tag === "Failure") {
         if (requested.failure.reason === "not-configured") {
           yield* releaseClaim(claim, "pending");
+          yield* Effect.logWarning(
+            "set Tracklist skipped: Versos is not configured"
+          ).pipe(Effect.annotateLogs({ set: claim.id }));
           return "pending" as const;
         }
         yield* releaseClaim(claim, "failed");
