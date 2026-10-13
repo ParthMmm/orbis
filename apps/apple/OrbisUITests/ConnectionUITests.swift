@@ -1,23 +1,14 @@
 import XCTest
 
-final class ConnectionUITests: XCTestCase {
+final class ConnectionUITests: LibraryJourney {
+  /// Home is the first tab, so the Library tab is selected and waited for before its actions
+  /// menu is looked for. One tap at launch can land before the tab bar settles.
   private func openSettings(_ app: XCUIApplication) {
-    let library = app.tabBars.buttons["Library"]
-    XCTAssertTrue(library.waitForExistence(timeout: 15))
-    let frame = library.frame
-    app.coordinate(withNormalizedOffset: .zero)
-      .withOffset(CGVector(dx: frame.midX, dy: frame.minY + 18)).tap()
+    openLibrary(in: app)
     let actions = app.buttons["library-actions"]
     XCTAssertTrue(actions.waitForExistence(timeout: 10))
     actions.tap()
     app.buttons["library-connection-settings"].tap()
-  }
-
-  private func capture(_ name: String) {
-    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
   }
 
   func testAutoDownloadFollowsThePersonAfterRelaunch() throws {

@@ -121,7 +121,7 @@ final class PlaylistEditingUITests: PlaylistJourney {
     let afterRemove = try storedOrder(of: playlist.id, in: service, becomes: kept)
     steps.append(["step": "remove first", "expected": kept, "stored": afterRemove])
     XCTAssertEqual(afterRemove, kept, "removal must drop only that Set and keep the others' order")
-    XCTAssertFalse(rows[0].waitForExistence(timeout: 5), "the removed row must leave the playlist")
+    XCTAssertTrue(rows[0].waitForNonExistence(timeout: 5), "the removed row must leave the playlist")
     XCTAssertLessThan(
       rows[2].frame.minY, rows[1].frame.minY, "the screen must show the order the service stored")
     capture("playlist-order-removed")

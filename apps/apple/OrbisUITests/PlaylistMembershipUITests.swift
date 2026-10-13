@@ -35,7 +35,7 @@ final class PlaylistMembershipUITests: PlaylistJourney {
     XCTAssertEqual(confusableChoices.count, 1, "a confusable name must have its own identifiable row")
     capture("add-to-playlist-sheet")
     choice.tap()
-    XCTAssertFalse(choice.waitForExistence(timeout: 5), "choosing a playlist must close the sheet")
+    XCTAssertTrue(choice.waitForNonExistence(timeout: 5), "choosing a playlist must close the sheet")
     let stored = try storedOrder(of: playlist.id, in: service, becomes: [set.id])
     steps.append(["step": "add from the Set page", "expected": [set.id], "stored": stored])
     XCTAssertEqual(stored, [set.id], "the service must store the membership")
@@ -78,7 +78,7 @@ final class PlaylistMembershipUITests: PlaylistJourney {
     capture("add-to-playlist-removed-through-recents")
 
     choice.tap()
-    XCTAssertFalse(choice.waitForExistence(timeout: 5), "adding through All Playlists must close the sheet")
+    XCTAssertTrue(choice.waitForNonExistence(timeout: 5), "adding through All Playlists must close the sheet")
     let afterReadd = try storedOrder(of: playlist.id, in: service, becomes: [set.id])
     steps.append(["step": "re-add through All Playlists", "expected": [set.id], "stored": afterReadd])
     XCTAssertEqual(afterReadd, [set.id], "re-adding through All Playlists must restore membership once")
@@ -105,8 +105,10 @@ final class PlaylistMembershipUITests: PlaylistJourney {
     capture("add-to-playlist-readded-through-all")
     app.buttons["Close"].tap()
 
+    // selectTab returns once Home's own bar shows, so the page has settled and a leaked Set
+    // would already be on screen.
     selectTab("Home", in: app)
-    let leaked = app.staticTexts["detail-title"].waitForExistence(timeout: 3)
+    let leaked = app.staticTexts["detail-title"].exists
     steps.append(["step": "Home shows its own page", "setPageOnHome": leaked])
     XCTAssertFalse(leaked, "a Set opened in the Library must not show on Home")
     // One tap: a second on the selected tab pops it to its root, which selectTab would do
