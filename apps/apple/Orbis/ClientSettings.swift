@@ -100,11 +100,19 @@ enum ClientSettings {
   /// fresh install. The file sits outside the repository, so no credential is committed, and
   /// a stored value always wins over it.
   ///
-  /// macOS only, because the file is a path on the Mac and a phone has no such home directory.
+  /// macOS and the iOS simulator only, because the file is a path on the Mac. The simulator
+  /// names the Mac's home directory in `SIMULATOR_HOST_HOME`, so an agent driving a simulator
+  /// build sees live data without typing the pairing. A phone has no such directory.
   static var developmentConfiguration: (address: String, token: String)? {
-    #if DEBUG && os(macOS)
-      let file = FileManager.default.homeDirectoryForCurrentUser
-        .appending(path: ".orbis/config.json")
+    #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+      #if os(macOS)
+        let home = FileManager.default.homeDirectoryForCurrentUser
+      #else
+        guard let hostHome = ProcessInfo.processInfo.environment["SIMULATOR_HOST_HOME"]
+        else { return nil }
+        let home = URL(filePath: hostHome, directoryHint: .isDirectory)
+      #endif
+      let file = home.appending(path: ".orbis/config.json")
       guard let data = try? Data(contentsOf: file),
         let json = try? JSONSerialization.jsonObject(with: data) as? [String: String],
         let address = json["serviceAddress"],

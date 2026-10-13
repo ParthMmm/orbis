@@ -16,6 +16,8 @@ For a Mac-hosted CLI session outside T3, select an explicit target:
 
 ## Use isolated data
 
+A Debug build on the Mac or the iOS simulator reads the live pairing from `~/.orbis/config.json` on the Mac, so it opens on the live library with no typed key. The file holds `serviceAddress` and `deviceToken`. A key stored in the app wins over the file. Use the live library to read, browse, and play only.
+
 For filing, renaming, and removal, use the native lane's disposable service and pairing. [Development](../development.md#find-the-implementation) identifies the fixture runner and client. The production library is in the Group, not the local development SQLite database.
 
 For a production acceptance check, use the issue's approved scope and existing key handling. Record the original pairing and restore it afterwards. Verify the restored connection before finishing.
