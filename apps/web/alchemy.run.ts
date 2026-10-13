@@ -2,9 +2,23 @@ import * as Alchemy from "alchemy";
 import * as Cloudflare from "alchemy/Cloudflare";
 import * as Config from "effect/Config";
 import * as Effect from "effect/Effect";
+import * as Option from "effect/Option";
 import * as Redacted from "effect/Redacted";
 
 const ORBIS_API_URL = "https://orbis.p11a.xyz/api";
+
+const SECRETS = [
+  "IMPORT_NODE_KEY_DIGEST",
+  "OPENROUTER_API_KEY",
+  "STREAM_GRANT_SECRET",
+  "VERSOS_API_KEY",
+  "YOUTUBE_API_KEY",
+] as const;
+
+const readSecret = Effect.fn(function* readSecret(name: string) {
+  const value = yield* Config.option(Config.String(name));
+  return value.pipe(Option.filter((text) => text !== ""));
+});
 
 export default Alchemy.Stack(
   "OrbisWeb",
@@ -13,6 +27,16 @@ export default Alchemy.Stack(
     state: Cloudflare.state(),
   },
   Effect.gen(function* deployWeb() {
+    const secrets: Record<string, Redacted.Redacted<string>> = {};
+    const kept: string[] = [];
+    for (const name of SECRETS) {
+      const value = yield* readSecret(name);
+      if (Option.isSome(value)) {
+        secrets[name] = Redacted.make(value.value);
+      } else {
+        kept.push(name);
+      }
+    }
     const web = yield* Cloudflare.Website.Vite("Web", {
       domain: "orbis.p11a.xyz",
       env: { ORBIS_API_URL, ORBIS_AUDIO_URL: Config.String("AUDIO_NODE_URL") },
@@ -22,28 +46,19 @@ export default Alchemy.Stack(
       env: {
         AUDIO_NODE_URL: Config.String("AUDIO_NODE_URL"),
         GROUP: Cloudflare.DurableObject("Group", { className: "Group" }),
-        IMPORT_NODE_KEY_DIGEST: Config.String("IMPORT_NODE_KEY_DIGEST").pipe(
-          Config.withDefault(""),
-          Config.map(Redacted.make)
+        VERSOS_URL: Config.String("VERSOS_URL").pipe(
+          Config.withDefault("https://versos.studio")
         ),
-        OPENROUTER_API_KEY: Config.String("OPENROUTER_API_KEY").pipe(
-          Config.withDefault(""),
-          Config.map(Redacted.make)
-        ),
-        STREAM_GRANT_SECRET: Config.Redacted("STREAM_GRANT_SECRET"),
-        VERSOS_API_KEY: Config.String("VERSOS_API_KEY").pipe(
-          Config.withDefault(""),
-          Config.map(Redacted.make)
-        ),
-        VERSOS_URL: Config.String("VERSOS_URL").pipe(Config.withDefault("")),
-        YOUTUBE_API_KEY: Config.String("YOUTUBE_API_KEY").pipe(
-          Config.withDefault(""),
-          Config.map(Redacted.make)
-        ),
+        ...secrets,
       },
       main: "../api/src/index.ts",
       routes: [{ pattern: "orbis.p11a.xyz/api/*", zoneName: "p11a.xyz" }],
     });
+    // An unset secret keeps the value already on Cloudflare, so a deploy needs
+    // only the secrets it changes.
+    for (const name of kept) {
+      yield* api.bind`${name}`({ bindings: [{ name, type: "inherit" }] });
+    }
     return {
       api: api.url,
       url: web.url,
