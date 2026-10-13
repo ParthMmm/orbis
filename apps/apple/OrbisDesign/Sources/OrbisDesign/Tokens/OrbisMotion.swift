@@ -23,6 +23,8 @@ public enum OrbisCurve: String, CaseIterable, Sendable {
   case immediate
   /// A finger on a control: fast enough to feel attached to the touch.
   case press
+  /// Something with weight landing: overshoots a little, the way a record settles.
+  case lively
 
   public var animation: Animation? {
     switch self {
@@ -30,6 +32,7 @@ public enum OrbisCurve: String, CaseIterable, Sendable {
     case .smooth: .smooth
     case .immediate: nil
     case .press: .snappy(duration: 0.15)
+    case .lively: .spring(response: 0.55, dampingFraction: 0.62)
     }
   }
 }
@@ -37,10 +40,11 @@ public enum OrbisCurve: String, CaseIterable, Sendable {
 /// The motions Orbis uses, named for what they mean rather than for how they look.
 ///
 /// A view asks for `filingSucceeded`, not for a bounce, so the Reduce Motion form is decided in
-/// one place and a redesign changes every use at once. Nothing here runs on appear and nothing
-/// loops: a motion is played by a change the person just made, and it ends on its own. The
-/// trigger for an effect must change only when the motion should play — a flag that returns to
-/// false would play it a second time on the way back.
+/// one place and a redesign changes every use at once. Nothing here runs on appear. A motion is
+/// played by a change the person just made, and it ends on its own, with two exceptions that
+/// last exactly as long as what they show: the bars while a Set plays, and the waveform while a
+/// link is read. The trigger for an effect must change only when the motion should play — a
+/// flag that returns to false would play it a second time on the way back.
 public enum OrbisMotion: String, CaseIterable, Sendable {
   /// A Source Link became a Set.
   case filingSucceeded
@@ -54,6 +58,10 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
   case downloadProgressed
   /// A card or row is under a finger.
   case pressed
+  /// A Set started or paused.
+  case playbackToggled
+  /// The mix moved on to its next Cue.
+  case cueChanged
 
   public var purpose: String {
     switch self {
@@ -64,6 +72,8 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
     case .pageTinted: "A page took its colour from the Set's artwork."
     case .downloadProgressed: "A Download the person asked for moved on."
     case .pressed: "A card or row is under a finger."
+    case .playbackToggled: "A Set started or paused."
+    case .cueChanged: "The mix moved on to its next Cue."
     }
   }
 
@@ -73,7 +83,9 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
     switch self {
     case .filingSucceeded: .bounce
     case .filingFailed: .wiggle
-    case .tagToggled, .playlistReordered, .pageTinted, .downloadProgressed, .pressed: nil
+    case .tagToggled, .playlistReordered, .pageTinted, .downloadProgressed, .pressed,
+      .playbackToggled, .cueChanged:
+      nil
     }
   }
 
@@ -89,8 +101,9 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
   public var curve: OrbisCurve {
     switch self {
     case .filingSucceeded, .filingFailed, .tagToggled: .snappy
-    case .playlistReordered, .pageTinted, .downloadProgressed: .smooth
+    case .playlistReordered, .pageTinted, .downloadProgressed, .cueChanged: .smooth
     case .pressed: .press
+    case .playbackToggled: .lively
     }
   }
 
@@ -153,6 +166,73 @@ private struct OrbisAnimationModifier<Trigger: Equatable>: ViewModifier {
   }
 }
 
+private struct OrbisSymbolReplaceModifier: ViewModifier {
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.orbisReduceMotion) private var forcedReduceMotion
+
+  func body(content: Content) -> some View {
+    if forcedReduceMotion ?? systemReduceMotion {
+      content.contentTransition(.opacity)
+    } else {
+      content.contentTransition(.symbolEffect(.replace))
+    }
+  }
+}
+
+private struct OrbisWorkingModifier: ViewModifier {
+  let isActive: Bool
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.orbisReduceMotion) private var forcedReduceMotion
+
+  func body(content: Content) -> some View {
+    content.symbolEffect(
+      .variableColor.iterative.dimInactiveLayers,
+      isActive: isActive && !(forcedReduceMotion ?? systemReduceMotion))
+  }
+}
+
+/// Three bars bouncing, the oldest sign that something is playing.
+///
+/// They move only while the Set plays, and stand still under Reduce Motion, where the bars
+/// still say "this one" without the movement. Callers set the height; the width is fixed.
+public struct EqualizerBars: View {
+  public let isPlaying: Bool
+  public var color: Color
+  @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+  @Environment(\.orbisReduceMotion) private var forcedReduceMotion
+
+  public init(isPlaying: Bool, color: Color = .orbis.tint) {
+    self.isPlaying = isPlaying
+    self.color = color
+  }
+
+  private static let speeds: [Double] = [7.3, 9.1, 6.2]
+  private static let phases: [Double] = [0, 1.7, 3.1]
+  private static let rest: [Double] = [0.55, 0.9, 0.4]
+
+  public var body: some View {
+    let animates = isPlaying && !(forcedReduceMotion ?? systemReduceMotion)
+    TimelineView(.animation(paused: !animates)) { context in
+      let t = context.date.timeIntervalSinceReferenceDate
+      HStack(alignment: .bottom, spacing: 2) {
+        ForEach(0..<3, id: \.self) { index in
+          let level =
+            animates
+            ? 0.3 + 0.7 * abs(sin(t * Self.speeds[index] / 2 + Self.phases[index]))
+            : Self.rest[index]
+          Capsule()
+            .fill(color)
+            .frame(width: 3)
+            .frame(maxHeight: .infinity, alignment: .bottom)
+            .scaleEffect(y: level, anchor: .bottom)
+        }
+      }
+    }
+    .frame(width: 13)
+    .accessibilityHidden(true)
+  }
+}
+
 extension View {
   /// Plays `motion` when `trigger` changes. The trigger should change only when the motion
   /// should play.
@@ -163,6 +243,17 @@ extension View {
   /// Settles `value`'s change with the curve `motion` names.
   public func orbisAnimation(_ motion: OrbisMotion, value: some Equatable) -> some View {
     modifier(OrbisAnimationModifier(motion: motion, trigger: value))
+  }
+
+  /// Swaps one symbol for the next, play for pause, by morphing it; a fade under Reduce Motion.
+  public func orbisSymbolReplace() -> some View {
+    modifier(OrbisSymbolReplaceModifier())
+  }
+
+  /// The waveform Orbis shows while it reads a link: it ripples while `isActive`, and holds
+  /// still under Reduce Motion.
+  public func orbisWorking(_ isActive: Bool) -> some View {
+    modifier(OrbisWorkingModifier(isActive: isActive))
   }
 
   /// Forces the Reduce Motion form, so a preview or a test can show both forms side by side.

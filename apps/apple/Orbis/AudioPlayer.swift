@@ -30,8 +30,14 @@ final class AudioPlayer {
   /// Who made the Set, for the artist line the system draws under the title.
   private(set) var currentArtist: String?
   private var cues: [Cue] = []
+  /// Where each Cue starts, for the marks along the seek bar.
+  var cueStarts: [TimeInterval] { cues.compactMap(\.startSeconds) }
   var currentCue: Cue? {
     cues.last { cue in cue.startSeconds.map { $0 <= elapsed } ?? false }
+  }
+  /// The Cue the mix moves into next, once it has a start time.
+  var nextCue: Cue? {
+    cues.first { cue in cue.startSeconds.map { $0 > elapsed } ?? false }
   }
   /// The Set's artwork, once it has arrived, for the lock screen, the Dynamic Island, and
   /// Control Center. Fetched after playback starts so a slow image never delays the sound.
@@ -359,6 +365,30 @@ final class AudioPlayer {
     move(to: clamped)
     elapsed = clamped
     publishNowPlaying(isPlaying: state == .playing)
+  }
+
+  /// Whether the Set's Tracklist has start times to step between.
+  var canSkipCues: Bool { !cueStarts.isEmpty }
+
+  /// Jumps to the start of the next Cue. Past the last one there is nowhere to go.
+  func skipToNextCue() {
+    guard let start = nextCue?.startSeconds else { return }
+    seek(to: start)
+  }
+
+  /// Jumps back the way a music player's back button does: to the start of this Cue, or to the
+  /// previous one when this one has barely begun.
+  func skipToPreviousCue() {
+    let starts = cueStarts.filter { $0 <= elapsed }
+    guard let current = starts.last else {
+      seek(to: 0)
+      return
+    }
+    if elapsed - current > 3 || starts.count < 2 {
+      seek(to: current)
+    } else {
+      seek(to: starts[starts.count - 2])
+    }
   }
 
   func setCues(_ cues: [Cue]) {

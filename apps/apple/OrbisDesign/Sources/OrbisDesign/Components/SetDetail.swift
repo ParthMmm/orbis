@@ -116,14 +116,6 @@ public struct SetDetail: View {
     return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
-  public static func metaLine(
-    source: String, length: String?, dates: Dates?, statistics: Statistics?
-  ) -> String {
-    ([source, length] + [factsLine(dates: dates, statistics: statistics)])
-      .compactMap { $0 }
-      .joined(separator: " · ")
-  }
-
   /// The line under the artwork: the source, then whatever the caller composed.
   public static func stampLine(source: String, subtitle: String?) -> String {
     [source, subtitle].compactMap { $0 }.joined(separator: " · ")
@@ -133,25 +125,25 @@ public struct SetDetail: View {
     ScrollView {
       VStack(spacing: 0) {
         Artwork(url: artwork, seed: title, size: .header)
-          .clipShape(.rect(cornerRadius: Radius.row))
-          .shadow(color: .black.opacity(0.3), radius: 18, y: 10)
-          .padding([.horizontal, .top])
-        VStack(spacing: 24) {
+          .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
+          .padding(.horizontal, 30)
+          .padding(.top, 8)
+        VStack(spacing: 20) {
           header
           transport
-          tracklist
           management
+          tracklist
         }
         .padding(.horizontal)
-        .padding(.top, 20)
-        .padding(.bottom)
+        .padding(.top, 18)
+        .padding(.bottom, 32)
       }
     }
-    .background { ArtworkBackdrop(url: artwork) }
+    .background(Color.orbis.paper)
   }
 
   private var header: some View {
-    VStack(spacing: 6) {
+    VStack(spacing: 2) {
       Text(title)
         .font(.orbis.title)
         .multilineTextAlignment(.center)
@@ -160,7 +152,7 @@ public struct SetDetail: View {
         .accessibilityIdentifier("detail-title")
       if let creator, !creator.isEmpty {
         let name = Text(creator)
-          .font(.title3.weight(.semibold))
+          .font(.title3)
           .foregroundStyle(Color.orbis.tint)
           .multilineTextAlignment(.center)
         if let showCreator {
@@ -172,12 +164,17 @@ public struct SetDetail: View {
           name
         }
       }
-      Text(Self.metaLine(source: source, length: length, dates: dates, statistics: statistics))
-        .font(.orbis.detail)
+      Text([source, length].compactMap { $0 }.joined(separator: " · ").uppercased())
+        .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .padding(.top, 2)
-        .accessibilityIdentifier("detail-facts")
+        .padding(.top, 4)
+      if let facts = Self.factsLine(dates: dates, statistics: statistics) {
+        Text(facts)
+          .font(.orbis.detail)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+          .accessibilityIdentifier("detail-facts")
+      }
       if failedToName {
         HStack(spacing: 6) {
           Text("Orbis could not name this set.")

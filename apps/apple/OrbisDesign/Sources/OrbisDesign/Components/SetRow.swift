@@ -268,12 +268,19 @@ private struct PlayGlyph: View {
   let playback: SetRow.Playback
 
   var body: some View {
-    Image(systemName: playback.symbol)
-      .font(.system(size: 13, weight: .bold))
-      .foregroundStyle(.white)
-      .frame(width: 32, height: 32)
-      .orbisGlass(radius: 16, interactive: true)
-      .accessibilityHidden(true)
+    Group {
+      if playback == .playing {
+        EqualizerBars(isPlaying: true, color: .white)
+          .frame(height: 12)
+      } else {
+        Image(systemName: playback.symbol)
+          .font(.system(size: 13, weight: .bold))
+          .foregroundStyle(.white)
+      }
+    }
+    .frame(width: 32, height: 32)
+    .orbisGlass(radius: 16, interactive: true)
+    .accessibilityHidden(true)
   }
 }
 

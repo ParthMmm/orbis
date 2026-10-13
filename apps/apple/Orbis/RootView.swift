@@ -228,6 +228,7 @@ struct NowPlayingBar: View {
     let player = model.audioPlayer
     MiniPlayer(
       title: player.currentTitle,
+      subtitle: player.currentCue.map { "\($0.title) · \($0.artist)" },
       artwork: player.currentSetId.flatMap { model.savedSet($0)?.artworkUrl }
         .flatMap(URL.init(string:)),
       isPlaying: player.state == .playing,
@@ -235,6 +236,7 @@ struct NowPlayingBar: View {
       surface: surface,
       transition: transition,
       toggle: { model.togglePlayback() },
+      next: player.nextCue == nil ? nil : { player.skipToNextCue() },
       open: open
     )
   }
@@ -593,13 +595,16 @@ struct DestinationView: View {
   /// Home: what is new and where to go, in rails, with a waiting link above them. The full
   /// collection is the Library tab.
   private var home: some View {
-    ScrollView {
-      VStack(alignment: .leading, spacing: 20) {
-        HomeRails(model: model)
-      }
-      .padding()
+    let rails = HomeRails(model: model)
+    return ScrollView {
+      rails
+        .padding(.horizontal)
+        .padding(.top, 8)
+        .padding(.bottom, 32)
     }
-    .background(Color.orbis.paper)
+    .background {
+      ArtworkGlow(url: rails.lead.flatMap(SetPresentation.pageArtwork), reach: 0.75)
+    }
     .scrollEdgeEffectStyle(.soft, for: .top)
     .scrollEdgeEffectStyle(.soft, for: .bottom)
     .sidebarPageTitle("Home")
@@ -666,23 +671,26 @@ struct DestinationView: View {
           .accessibilityLabel("Showing sets by \(creator.name). Clear.")
           .accessibilityIdentifier("creator-filter")
         }
-        Text("Tags")
-          .font(.orbis.sectionTitle)
-        TagGrid {
-          ForEach(model.availableTags, id: \.self) { tag in
-            let active = model.activeTag == tag
-            Button {
-              model.setTagFilter(active ? nil : tag)
-            } label: {
-              TagTile(
-                tag, count: model.tagCounts[tag] ?? 0,
-                category: SetPresentation.category(for: tag), active: active)
+        ScrollView(.horizontal, showsIndicators: false) {
+          HStack(spacing: 8) {
+            ForEach(model.availableTags, id: \.self) { tag in
+              let active = model.activeTag == tag
+              Button {
+                model.setTagFilter(active ? nil : tag)
+              } label: {
+                TagBadge(
+                  tag, count: model.tagCounts[tag] ?? 0,
+                  category: SetPresentation.category(for: tag), selected: active)
+              }
+              .buttonStyle(.plain)
+              .orbisAnimation(.tagToggled, value: active)
+              .accessibilityIdentifier("tag-filter-\(tag)")
             }
-            .buttonStyle(.plain)
-            .orbisAnimation(.tagToggled, value: active)
-            .accessibilityIdentifier("tag-filter-\(tag)")
           }
+          .padding(.horizontal, 16)
         }
+        .padding(.horizontal, -16)
+        .scrollClipDisabled()
       }
     )
   }
@@ -750,93 +758,51 @@ struct DestinationView: View {
   }
 }
 
-/// The Library's horizontal rails, in the shape a music app's home gives its sections: a
-/// heading over a row of cards that scrolls sideways while the page scrolls down. The cards
-/// are artwork, because a Set is recognised by its picture before its words.
+/// Home: the Set to go back to, then the rails a music app's home gives its sections. The page
+/// takes its light from the lead Set's artwork, so the glass on it has colour to bend.
 struct HomeRails: View {
   @Bindable var model: AppModel
 
   /// How far into the collection the recently-filed rail reaches. A rail shows what is new,
   /// not the whole library.
-  private static let recentLimit = 6
+  private static let recentLimit = 8
   /// The page's own padding, matched so a rail's first card lines up with the list under it.
   private static let edgeInset: CGFloat = 16
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 20) {
-      if !continueSets.isEmpty {
-        rail("Continue Listening") { continueCards }
-      }
-      if !recentSets.isEmpty {
-        rail("Recently filed") { recentCards }
-      }
-      if !model.playlistItems.isEmpty {
-        rail("Playlists") { playlistCards }
+    VStack(alignment: .leading, spacing: 36) {
+      #if os(iOS)
+        ClipboardBanner(model: model)
+      #endif
+      if let lead {
+        HomeHero(model: model, set: lead, isResume: !continueSets.isEmpty)
       }
       if !model.availableTags.isEmpty {
         tagRow
       }
+      if continueSets.count > 1 {
+        rail("Continue listening", subtitle: "Pick up where you left off.") { continueCards }
+      }
+      if !recentSets.isEmpty {
+        rail("Recently filed", subtitle: "The newest links in your library.") { recentCards }
+      }
+      if !model.playlistItems.isEmpty {
+        playlistGrid
+      }
     }
+  }
+
+  /// The Set Home leads with: the one most recently left part-way, or else the newest filed.
+  var lead: SavedSet? {
+    continueSets.first ?? recentSets.first
+  }
+
+  private var librarySets: [SavedSet] {
+    if case .loaded(let sets) = model.library { sets } else { [] }
   }
 
   private var continueSets: [SavedSet] {
-    guard case .loaded(let sets) = model.library else { return [] }
-    return SetPresentation.continueListening(sets)
-  }
-
-  private var continueCards: some View {
-    ForEach(continueSets) { set in
-      Button {
-        model.openSet(set.id)
-      } label: {
-        VStack(alignment: .leading, spacing: 0) {
-          Artwork(
-            url: SetPresentation.row(set).artwork, seed: set.title, size: .header,
-            progress: SetPresentation.progress(of: set))
-          VStack(alignment: .leading, spacing: 2) {
-            Text(set.title)
-              .font(.orbis.rowTitle)
-              .lineLimit(1)
-            if let left = SetPresentation.timeLeft(set) {
-              Text(left)
-                .font(.orbis.detail)
-                .monospacedDigit()
-                .foregroundStyle(.secondary)
-            }
-          }
-          .padding(12)
-          .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .frame(width: 260)
-        .background { ArtworkBackdrop(url: SetPresentation.row(set).artwork, style: .card) }
-        .clipShape(.rect(cornerRadius: Radius.list))
-      }
-      .buttonStyle(.orbisPressable)
-      .accessibilityElement(children: .ignore)
-      .accessibilityLabel([set.title, SetPresentation.timeLeft(set)].compactMap { $0 }.joined(separator: ", "))
-      .accessibilityIdentifier("continue-card-\(set.id)")
-    }
-  }
-
-  private var tagRow: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text("Tags")
-        .font(.orbis.sectionTitle)
-      ChipFlow {
-        ForEach(model.availableTags, id: \.self) { tag in
-          Button {
-            model.setTagFilter(tag)
-            model.openedSets[.library] = nil
-            model.destination = .library
-          } label: {
-            TagWord(tag, category: SetPresentation.category(for: tag))
-              .orbisRowHeight()
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("home-tag-\(tag)")
-        }
-      }
-    }
+    SetPresentation.continueListening(librarySets)
   }
 
   private var recentSets: [SavedSet] {
@@ -844,22 +810,28 @@ struct HomeRails: View {
     return Array(sets.prefix(Self.recentLimit))
   }
 
-  private func rail<Cards: View>(
-    _ name: String, @ViewBuilder cards: () -> Cards
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text(name)
-        .font(.orbis.sectionTitle)
-      ScrollView(.horizontal, showsIndicators: false) {
-        LazyHStack(alignment: .top, spacing: 12) { cards() }
-          .padding(.horizontal, Self.edgeInset)
+  private func card(_ set: SavedSet, detail: String?) -> SetCard {
+    let isCurrent = model.audioPlayer.currentSetId == set.id
+    return SetCard(
+      title: set.title,
+      detail: detail,
+      artwork: SetPresentation.row(set).artwork,
+      progress: SetPresentation.progress(of: set),
+      isCurrent: isCurrent,
+      isPlaying: isCurrent && model.audioPlayer.state == .playing
+    )
+  }
+
+  private var continueCards: some View {
+    ForEach(continueSets.dropFirst()) { set in
+      Button {
+        model.openSet(set.id)
+      } label: {
+        card(set, detail: SetPresentation.timeLeft(set))
       }
-      // The rail escapes the page's padding and runs to the screen's edges, the way a music
-      // app's rows bleed; the inner padding keeps the first card on the page's own margin.
-      .padding(.horizontal, -Self.edgeInset)
-      .scrollEdgeEffectStyle(.hard, for: .horizontal)
+      .buttonStyle(.orbisPressable)
+      .accessibilityIdentifier("continue-card-\(set.id)")
     }
-    .accessibilityElement(children: .contain)
   }
 
   private var recentCards: some View {
@@ -867,55 +839,229 @@ struct HomeRails: View {
       Button {
         model.openSet(set.id)
       } label: {
-        let presentation = SetPresentation.row(set)
-        Artwork(
-          url: presentation.artwork,
-          seed: presentation.title,
-          size: .rail,
-          progress: presentation.progress
-        )
-        // A rail is a raised surface of cards, not a listing parted by hairlines, so the
-        // artwork carries the row radius where the listing keeps its corners square.
-        .clipShape(.rect(cornerRadius: Radius.row))
+        card(
+          set,
+          detail: set.creator ?? set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil })
       }
       .buttonStyle(.orbisPressable)
       .accessibilityIdentifier("recent-card-\(set.id)")
     }
   }
 
-  private var playlistCards: some View {
-    ForEach(model.playlistItems) { playlist in
-      Button {
-        model.destination = .playlists
-        model.openPlaylist(playlist.id)
-        Task { await model.loadPlaylistMembers(playlist.id) }
-      } label: {
-        let category = SetPresentation.category(for: playlist.name)
-        // The same 16:9 box the artwork cards answer to, so the two rails share one line.
-        Color.clear
-          .aspectRatio(16 / 9, contentMode: .fit)
-          .frame(width: 150)
-          .overlay(alignment: .bottomLeading) {
-            VStack(alignment: .leading, spacing: 2) {
-              Text(playlist.name)
-                .font(.orbis.rowTitle)
-                .lineLimit(2)
-              Text(playlist.setCount, format: .number)
-                .font(.orbis.detail)
-                .foregroundStyle(.secondary)
+  /// Tags as a strip of glass chips under the lead Set, one tap from a filtered Library.
+  private var tagRow: some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      GlassEffectContainer(spacing: 8) {
+        HStack(spacing: 8) {
+          ForEach(model.availableTags, id: \.self) { tag in
+            let category = SetPresentation.category(for: tag)
+            Button {
+              model.setTagFilter(tag)
+              model.openedSets[.library] = nil
+              model.destination = .library
+            } label: {
+              HStack(spacing: 6) {
+                Circle().fill(category.dot).frame(width: 8, height: 8)
+                Text(tag)
+                  .font(.subheadline.weight(.semibold))
+                Text(model.tagCounts[tag] ?? 0, format: .number)
+                  .font(.caption.weight(.semibold))
+                  .monospacedDigit()
+                  .foregroundStyle(.secondary)
+              }
+              .padding(.horizontal, 14)
+              .frame(minHeight: 40)
+              .glassEffect(.regular.tint(category.dot.opacity(0.18)).interactive(), in: .capsule)
             }
-            .padding(10)
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("home-tag-\(tag)")
           }
-          .background(
-            category.dot.opacity(0.35),
-            in: .rect(cornerRadius: Radius.row)
-          )
+        }
+        .padding(.horizontal, Self.edgeInset)
+      }
+    }
+    .padding(.horizontal, -Self.edgeInset)
+    .scrollClipDisabled()
+  }
+
+  private var playlistGrid: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      SectionHeading("Playlists", subtitle: "Your sets, sorted for the moment.")
+      LazyVGrid(
+        columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
+        spacing: 18
+      ) {
+        ForEach(model.playlistItems) { playlist in
+          Button {
+            model.destination = .playlists
+            model.openPlaylist(playlist.id)
+            Task { await model.loadPlaylistMembers(playlist.id) }
+          } label: {
+            PlaylistSleeve(
+              name: playlist.name,
+              count: playlist.setCount,
+              artwork: librarySets.filter { $0.playlistIds.contains(playlist.id) }
+                .prefix(3).map { SetPresentation.row($0).artwork },
+              category: SetPresentation.category(for: playlist.name)
+            )
+          }
+          .buttonStyle(.orbisPressable)
+          .accessibilityIdentifier("playlist-card-\(playlist.id)")
+        }
+      }
+    }
+  }
+
+  private func rail<Cards: View>(
+    _ name: String, subtitle: String, @ViewBuilder cards: () -> Cards
+  ) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      SectionHeading(name, subtitle: subtitle)
+      ScrollView(.horizontal, showsIndicators: false) {
+        LazyHStack(alignment: .top, spacing: 14) { cards() }
+          .padding(.horizontal, Self.edgeInset)
+          .scrollTargetLayout()
+      }
+      // The rail escapes the page's padding and runs to the screen's edges, the way a music
+      // app's rows bleed; the inner padding keeps the first card on the page's own margin.
+      .padding(.horizontal, -Self.edgeInset)
+      .scrollTargetBehavior(.viewAligned)
+      .scrollClipDisabled()
+    }
+    .accessibilityElement(children: .contain)
+  }
+}
+
+/// The Set Home leads with, large: its artwork, its name, and one button that plays it.
+private struct HomeHero: View {
+  @Bindable var model: AppModel
+  let set: SavedSet
+  /// The Set was left part-way, so the button resumes and says how long is left.
+  let isResume: Bool
+
+  private var isCurrent: Bool { model.audioPlayer.currentSetId == set.id }
+  private var isPlaying: Bool { isCurrent && model.audioPlayer.state == .playing }
+  private var canPlay: Bool { self.set.downloadState == "ready" }
+
+  private var playLabel: String {
+    if isPlaying { return "Pause" }
+    if isResume, let left = SetPresentation.timeLeft(set) { return left }
+    return set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil } ?? "Play"
+  }
+
+  var body: some View {
+    VStack(spacing: 16) {
+      Button {
+        model.openSet(set.id)
+      } label: {
+        Artwork(
+          url: SetPresentation.pageArtwork(set), seed: set.title, size: .header,
+          progress: SetPresentation.progress(of: set)
+        )
+        .shadow(color: .black.opacity(0.45), radius: 28, y: 16)
       }
       .buttonStyle(.orbisPressable)
-      .accessibilityIdentifier("playlist-card-\(playlist.id)")
+      .accessibilityLabel("Open \(set.title)")
+      .accessibilityIdentifier("home-hero-\(set.id)")
+      VStack(spacing: 6) {
+        Eyebrow(isResume ? "Continue listening" : "Fresh in your library")
+        Text(set.title)
+          .font(.orbis.title)
+          .multilineTextAlignment(.center)
+          .lineLimit(3)
+        if let creator = set.creator, !creator.isEmpty {
+          Text(creator)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+      }
+      .frame(maxWidth: .infinity)
+      HStack(spacing: 10) {
+        if canPlay {
+          Button {
+            model.togglePlayback(set.id)
+          } label: {
+            Label(playLabel, systemImage: isPlaying ? "pause.fill" : "play.fill")
+              .font(.headline)
+              .monospacedDigit()
+              .orbisSymbolReplace()
+              .padding(.horizontal, 6)
+          }
+          .buttonStyle(.glassProminent)
+          .tint(Color.orbis.tint)
+          .controlSize(.large)
+          .sensoryFeedback(.impact(weight: .medium), trigger: isPlaying)
+          .accessibilityIdentifier("home-hero-play")
+        }
+        Button {
+          model.openSet(set.id)
+        } label: {
+          Label(canPlay ? "Details" : "Open set", systemImage: canPlay ? "ellipsis" : "arrow.right")
+            .font(.headline)
+            .labelStyle(.titleAndIcon)
+        }
+        .buttonStyle(.glass)
+        .controlSize(.large)
+      }
     }
   }
 }
+
+#if os(iOS)
+  /// A link on the clipboard, offered for filing in one tap. The clipboard is only asked whether
+  /// it holds something shaped like a web address, which needs no permission; the system Paste
+  /// button reads it, so filing never raises the paste prompt either.
+  private struct ClipboardBanner: View {
+    @Bindable var model: AppModel
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var offeredChange: Int?
+
+    var body: some View {
+      Group {
+        if offeredChange != nil {
+          HStack(spacing: 12) {
+            Image(systemName: "doc.on.clipboard")
+              .font(.title3)
+              .foregroundStyle(Color.orbis.tint)
+              .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 1) {
+              Text("A link is on your clipboard")
+                .font(.subheadline.weight(.semibold))
+              Text("File it to your library")
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+            PasteButton(payloadType: String.self) { pasted in
+              guard let text = pasted.first else { return }
+              offeredChange = nil
+              Task { await model.pasteAndFile(text) }
+            }
+            .labelStyle(.titleOnly)
+            .buttonBorderShape(.capsule)
+            .tint(Color.orbis.tint)
+            .accessibilityIdentifier("home-paste-and-file")
+          }
+          .padding(.horizontal, 14)
+          .padding(.vertical, 12)
+          .background(Color.orbis.paperRaised, in: .rect(cornerRadius: Radius.field))
+        }
+      }
+      .task(id: scenePhase) { await look() }
+    }
+
+    private func look() async {
+      let board = UIPasteboard.general
+      guard board.hasURLs || board.hasStrings else {
+        offeredChange = nil
+        return
+      }
+      let patterns = try? await board.detectedPatterns(for: [\.probableWebURL])
+      offeredChange =
+        board.hasURLs || patterns?.contains(\.probableWebURL) == true ? board.changeCount : nil
+    }
+  }
+#endif
 
 struct SearchDestination: View {
   @Bindable var model: AppModel

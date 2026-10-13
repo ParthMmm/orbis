@@ -35,6 +35,7 @@ struct FilingSheet: View {
       .toolbar { toolbar }
     }
     .presentationDetents([.medium, .large], selection: $detent)
+    .sensoryFeedback(.success, trigger: model.reveal?.set.id) { _, new in new != nil }
     .onChange(of: model.reveal != nil, initial: true) { _, hasReveal in
       if hasReveal { detent = .large }
     }
@@ -97,7 +98,11 @@ struct FilingSheet: View {
     if model.isFiling {
       Section {
         HStack(spacing: 10) {
-          ProgressView()
+          Image(systemName: "waveform")
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(Color.orbis.tint)
+            .orbisWorking(true)
+            .accessibilityHidden(true)
           Text("Reading the link…")
             .foregroundStyle(.secondary)
         }

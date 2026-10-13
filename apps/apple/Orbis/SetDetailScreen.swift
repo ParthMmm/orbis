@@ -70,16 +70,24 @@ struct SetDetailScreen: View {
   private func audioControl(_ set: SavedSet) -> some View {
     switch set.downloadState {
     case "ready":
-      VStack(spacing: 8) {
-        Transport(
-          player: model.audioPlayer,
-          fallbackDuration: set.durationSeconds.map(TimeInterval.init),
-          isCurrent: model.audioPlayer.currentSetId == set.id,
-          savedPosition: TimeInterval(set.playbackPositionSeconds),
-          start: { Task { await model.playSet(set.id) } },
-          leading: AnyView(queueActions(set)),
-          trailing: AnyView(AirPlayButton())
-        )
+      let isCurrent = model.audioPlayer.currentSetId == set.id
+      VStack(spacing: 12) {
+        HStack(spacing: 12) {
+          playButton(set, isCurrent: isCurrent)
+          queueActions(set)
+        }
+        if isCurrent {
+          Transport(
+            player: model.audioPlayer,
+            fallbackDuration: set.durationSeconds.map(TimeInterval.init),
+            showsControls: false,
+            cueStarts: model.tracklists[set.id]?.cues.compactMap(\.startSeconds) ?? []
+          )
+        } else if let left = SetPresentation.timeLeft(set) {
+          Text(left)
+            .font(.orbis.detail)
+            .foregroundStyle(.secondary)
+        }
         if let notice = model.queueNotice {
           Text(notice)
             .font(.orbis.detail)
@@ -99,23 +107,67 @@ struct SetDetailScreen: View {
     }
   }
 
+  /// Play, the way an album page offers it: one wide button that starts the Set, resumes it, or
+  /// pauses it when it is the one playing.
+  private func playButton(_ set: SavedSet, isCurrent: Bool) -> some View {
+    let player = model.audioPlayer
+    let isPlaying = isCurrent && (player.state == .playing || player.state == .loading)
+    let resumes = !isCurrent && set.playbackPositionSeconds > 0
+    return Button {
+      if !isCurrent {
+        Task { await model.playSet(set.id) }
+      } else if isPlaying {
+        player.pause()
+      } else {
+        player.resume()
+      }
+    } label: {
+      Label(
+        isPlaying ? "Pause" : resumes ? "Resume" : "Play",
+        systemImage: isPlaying ? "pause.fill" : "play.fill"
+      )
+      .orbisSymbolReplace()
+      .albumButton()
+    }
+    .buttonStyle(.plain)
+    .sensoryFeedback(.impact(weight: .medium), trigger: isPlaying)
+    .accessibilityIdentifier("detail-play-toggle")
+  }
+
   /// Where a Set goes when it is not the one being started now. Both actions are offered only for
   /// a Set whose audio is kept, because a Set that cannot play cannot be queued either.
   private func queueActions(_ set: SavedSet) -> some View {
     Menu {
-      Button("Play next") { Task { await model.playNext(set.id) } }
-        .accessibilityIdentifier("detail-play-next")
-      Button("Add to queue") { Task { await model.addToQueue(set.id) } }
-        .accessibilityIdentifier("detail-add-to-queue")
+      Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+        Task { await model.playNext(set.id) }
+      }
+      .accessibilityIdentifier("detail-play-next")
+      Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+        Task { await model.addToQueue(set.id) }
+      }
+      .accessibilityIdentifier("detail-add-to-queue")
     } label: {
-      Image(systemName: "text.badge.plus")
+      Label("Play Next", systemImage: "text.badge.plus")
+        .albumButton()
+    } primaryAction: {
+      Task { await model.playNext(set.id) }
     }
     .menuStyle(.button)
     .buttonStyle(.plain)
-    .accessibilityLabel("Queue this set")
+    .accessibilityHint("Hold for Add to Queue")
     .accessibilityIdentifier("detail-queue-actions")
   }
+}
 
+extension View {
+  /// The grey button an album page lays two of side by side, its words in the tint.
+  fileprivate func albumButton() -> some View {
+    font(.body.weight(.semibold))
+      .foregroundStyle(Color.orbis.tint)
+      .frame(maxWidth: .infinity, minHeight: 48)
+      .background(Color.orbis.paperRaised, in: .rect(cornerRadius: Radius.row))
+      .contentShape(.rect(cornerRadius: Radius.row))
+  }
 }
 
 private struct TracklistSection: View {
@@ -133,12 +185,15 @@ private struct TracklistSection: View {
           model.audioPlayer.currentSetId == set.id
           ? model.audioPlayer.currentCue?.position : nil
         VStack(alignment: .leading, spacing: 0) {
-          Text("Tracklist")
-            .font(.headline)
-            .padding(.bottom, 8)
+          Divider()
           ForEach(cues) { cue in
             cueRow(cue, selected: cue.position == selectedPosition)
+            Divider().padding(.leading, 38)
           }
+          Text(cues.count == 1 ? "1 track" : "\(cues.count) tracks")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+            .padding(.top, 12)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .contain)
@@ -178,29 +233,37 @@ private struct TracklistSection: View {
   }
 
   private func cueContent(_ cue: Cue, start: TimeInterval?, selected: Bool) -> some View {
-    HStack(spacing: 12) {
-      Text(start.map(SetPresentation.timestamp) ?? "")
-        .font(.orbis.detail.monospacedDigit())
-        .foregroundStyle(.secondary)
-        .frame(minWidth: 58, alignment: .leading)
-      AsyncImage(url: cue.artworkUrl.flatMap(URL.init(string:))) { image in
-        image.resizable().scaledToFill()
-      } placeholder: {
-        RoundedRectangle(cornerRadius: 5).fill(.quaternary)
+    HStack(spacing: 14) {
+      Group {
+        if selected {
+          EqualizerBars(isPlaying: model.audioPlayer.state == .playing)
+            .frame(height: 14)
+        } else {
+          Text(cue.position + 1, format: .number)
+            .font(.body)
+            .monospacedDigit()
+            .foregroundStyle(.secondary)
+        }
       }
-      .frame(width: 44, height: 44)
-      .clipShape(.rect(cornerRadius: 5))
-      .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(cue.title).font(.body.weight(selected ? .semibold : .regular))
-        Text(cue.artist).font(.orbis.detail).foregroundStyle(.secondary)
+      .frame(width: 24)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(cue.title)
+          .font(.body.weight(selected ? .semibold : .regular))
+        Text(cue.artist)
+          .font(.footnote)
+          .foregroundStyle(.secondary)
       }
       .lineLimit(1)
       Spacer(minLength: 0)
+      Text(start.map(SetPresentation.timestamp) ?? "")
+        .font(.subheadline)
+        .monospacedDigit()
+        .foregroundStyle(.secondary)
     }
-    .foregroundStyle(selected ? Color.orbis.tint : Color.primary)
-    .padding(.vertical, 6)
+    .frame(minHeight: 54)
     .contentShape(.rect)
+    .orbisAnimation(.cueChanged, value: selected)
   }
+
 
 }

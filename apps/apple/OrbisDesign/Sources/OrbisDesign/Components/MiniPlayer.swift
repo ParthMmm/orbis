@@ -16,6 +16,8 @@ public struct MiniPlayer: View {
   }
 
   public let title: String
+  /// The track playing inside the Set, when its Tracklist knows.
+  public let subtitle: String?
   public let artwork: URL?
   public let isPlaying: Bool
   /// How far listening got, from 0 to 1, for the hairline along the bottom edge.
@@ -24,20 +26,24 @@ public struct MiniPlayer: View {
   /// Where Now Playing zooms out of: the artwork, marked in this namespace.
   public let transition: Namespace.ID?
   public let toggle: () -> Void
+  /// Moves to the next track in the Set's Tracklist. Nil when there is no next track.
+  public let next: (() -> Void)?
   public let open: () -> Void
 
   public init(
-    title: String, artwork: URL? = nil, isPlaying: Bool,
+    title: String, subtitle: String? = nil, artwork: URL? = nil, isPlaying: Bool,
     progress: Double? = nil, surface: Surface = .floating, transition: Namespace.ID? = nil,
-    toggle: @escaping () -> Void, open: @escaping () -> Void
+    toggle: @escaping () -> Void, next: (() -> Void)? = nil, open: @escaping () -> Void
   ) {
     self.title = title
+    self.subtitle = subtitle
     self.artwork = artwork
     self.isPlaying = isPlaying
     self.progress = progress
     self.surface = surface
     self.transition = transition
     self.toggle = toggle
+    self.next = next
     self.open = open
   }
 
@@ -53,13 +59,22 @@ public struct MiniPlayer: View {
     HStack(spacing: 4) {
       Button(action: open) {
         HStack(spacing: 12) {
-          Artwork(url: artwork, seed: title, size: .row)
-            .frame(width: 62, height: 44)
-            .clipShape(.capsule)
+          Artwork(url: artwork, seed: title, size: .row, cornerRadius: 6)
+            .frame(width: 64, height: 36)
             .transitionSource(in: transition)
-          Text(title)
-            .font(.orbis.rowTitle)
-            .lineLimit(1)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(subtitle ?? title)
+              .font(.subheadline.weight(.semibold))
+              .lineLimit(1)
+              .contentTransition(.opacity)
+              .orbisAnimation(.cueChanged, value: subtitle)
+            if subtitle != nil {
+              Text(title)
+                .font(.footnote)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+          }
           Spacer(minLength: 0)
         }
         .contentShape(.rect)
@@ -67,16 +82,24 @@ public struct MiniPlayer: View {
       .buttonStyle(.plain)
       .accessibilityLabel("Now playing, \(title)")
       .accessibilityHint("Opens Now Playing")
-      AirPlayButton()
       Button(action: toggle) {
         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-          .font(.title3)
+          .font(.title2)
+          .orbisSymbolReplace()
           .frame(width: 44, height: 44)
       }
+      .sensoryFeedback(.impact(weight: .light), trigger: isPlaying)
       .buttonStyle(.plain)
-      .foregroundStyle(Color.orbis.tint)
+      .foregroundStyle(.primary)
       .accessibilityLabel(Self.toggleLabel(isPlaying: isPlaying))
       .accessibilityIdentifier("mini-player-toggle")
+      Button("Next track", systemImage: "forward.fill") { next?() }
+        .labelStyle(.iconOnly)
+        .font(.title3)
+        .frame(width: 44, height: 44)
+        .buttonStyle(.plain)
+        .disabled(next == nil)
+        .accessibilityIdentifier("mini-player-next")
     }
     .padding(.horizontal, 8)
     .frame(height: 60)
@@ -104,7 +127,8 @@ public struct MiniPlayer: View {
   VStack {
     Spacer()
     MiniPlayer(
-      title: "KETTAMA @ Creamfields 2026", isPlaying: true, progress: 0.34,
+      title: "KETTAMA @ Creamfields 2026", subtitle: "Overmono · So U Kno", isPlaying: true,
+      progress: 0.34,
       toggle: {}, open: {}
     )
     .padding()

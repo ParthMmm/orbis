@@ -559,11 +559,11 @@ final class LibraryUITests: XCTestCase {
     sleep(2)
     let beforePause = try service.set(id: seeded.id)?.playbackPositionSeconds ?? 0
     let pause = app.buttons.matching(
-      NSPredicate(format: "identifier == %@ AND label == %@", "now-playing", "Pause")
+      NSPredicate(format: "identifier == %@ AND label == %@", "now-playing-play-toggle", "Pause")
     ).firstMatch
     pause.tap()
     let resume = app.buttons.matching(
-      NSPredicate(format: "identifier == %@ AND label == %@", "now-playing", "Play")
+      NSPredicate(format: "identifier == %@ AND label == %@", "now-playing-play-toggle", "Play")
     ).firstMatch
     XCTAssertTrue(resume.waitForExistence(timeout: 4))
     capture("19-now-playing-paused")
@@ -652,6 +652,7 @@ final class LibraryUITests: XCTestCase {
     selectTab("Home", in: app, sidebarIdentifier: "sidebar-home")
     let tag = app.buttons["home-tag-techno"]
     XCTAssertTrue(tag.waitForExistence(timeout: 15), "Home must show the seeded tag")
+    capture("home")
     tapAtCentre(of: tag, in: app)
 
     let filter = app.buttons["tag-filter-techno"]
