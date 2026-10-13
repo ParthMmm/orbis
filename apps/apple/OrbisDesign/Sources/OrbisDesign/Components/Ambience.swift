@@ -22,7 +22,9 @@ public struct ArtworkGlow: View {
       ZStack {
         Color.orbis.paper
         AsyncImage(url: url) { phase in
-          if let image = phase.image {
+          if url == nil || phase.error != nil {
+            TintGlow()
+          } else if let image = phase.image {
             image
               .resizable()
               .aspectRatio(contentMode: .fill)
@@ -53,6 +55,22 @@ public struct ArtworkGlow: View {
         )
       }
     }
+    .ignoresSafeArea()
+    .accessibilityHidden(true)
+  }
+}
+
+/// A wash of the tint over the top of a page that has no artwork to take its light from, so the
+/// glass on Search, Settings, or a Set without a picture still has colour to bend.
+public struct TintGlow: View {
+  public init() {}
+
+  public var body: some View {
+    RadialGradient(
+      colors: [Color.orbis.tint.opacity(0.24), Color.orbis.tint.opacity(0.07), .clear],
+      center: .top, startRadius: 0, endRadius: 440
+    )
+    .background(Color.orbis.paper)
     .ignoresSafeArea()
     .accessibilityHidden(true)
   }

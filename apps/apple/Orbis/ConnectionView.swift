@@ -11,6 +11,9 @@ struct ConnectionView: View {
   @FocusState private var focus: Field?
   @State private var preferences: Loadable<PersonPreferences> = .idle
   @State private var isSavingPreferences = false
+  /// The address and key fields stay folded away until a person asks to change the service.
+  @State private var isChangingService = false
+  @State private var isConfirmingSignOut = false
 
   private enum Field {
     case address
@@ -20,28 +23,13 @@ struct ConnectionView: View {
   var body: some View {
     Form {
       if cancellable {
-        connectionSection
         Section {
-          Button {
-            Task { await model.connect() }
-          } label: {
-            if model.isTestingConnection {
-              ProgressView()
-            } else {
-              Text("Test connection")
-            }
-          }
-          .buttonStyle(OrbisPrimaryButtonStyle())
-          .disabled(
-            model.connectionAddress.isEmpty
-              || (model.connectionToken.isEmpty && !model.hasStoredToken)
-              || model.isTestingConnection
-          )
-          .accessibilityIdentifier("connection-test")
-
-          Button("Keep the library I have") { model.closeConnectionEditor() }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("connection-cancel")
+          serviceCard
+        }
+        .listRowBackground(Color.clear)
+        .listRowInsets(EdgeInsets())
+        if isChangingService {
+          connectionSection
         }
       } else {
         deviceLinkSection
@@ -75,6 +63,18 @@ struct ConnectionView: View {
         } footer: {
           Text("Download audio on your Orbis service when you save a Set. This applies to all your devices.")
         }
+
+        Section("Library") {
+          LabeledContent("Audio kept", value: keptCount == 1 ? "1 set" : "\(keptCount) sets")
+          LabeledContent("Tags", value: model.availableTags.count, format: .number)
+        }
+
+        Section {
+          Button("Sign out this device", role: .destructive) { isConfirmingSignOut = true }
+            .accessibilityIdentifier("connection-sign-out")
+        } footer: {
+          Text("Your library stays on your Orbis service. Sign in again with a code.")
+        }
       }
 
       if let failure = model.connectionFailure {
@@ -90,8 +90,27 @@ struct ConnectionView: View {
     }
     .formStyle(.grouped)
     .font(.orbis.body)
-    .background(Color.orbis.paper)
-    .navigationTitle(cancellable ? "Connect to Orbis" : "Sign in to Orbis")
+    .scrollContentBackground(.hidden)
+    .background { TintGlow() }
+    .navigationTitle(cancellable ? "Settings" : "Sign in to Orbis")
+    .toolbar {
+      #if os(iOS)
+        if cancellable {
+          ToolbarItem(placement: .cancellationAction) {
+            Button("Done") { model.closeConnectionEditor() }
+              .accessibilityIdentifier("connection-cancel")
+          }
+        }
+      #endif
+    }
+    .confirmationDialog(
+      "Sign out this device?", isPresented: $isConfirmingSignOut, titleVisibility: .visible
+    ) {
+      Button("Sign out", role: .destructive) { model.forget() }
+      Button("Keep it", role: .cancel) {}
+    } message: {
+      Text("The address and its token leave this device. Sign in again to come back.")
+    }
     .task { if cancellable { await loadPreferences() } }
     // A refusal is written under the button, which on a phone is where the keyboard sits. Put
     // the keyboard away so the answer, and the way to copy it, are actually on screen.
@@ -100,6 +119,86 @@ struct ConnectionView: View {
         focus = nil
       }
     }
+  }
+
+  private var keptCount: Int {
+    guard case .loaded(let sets) = model.library else { return 0 }
+    return sets.filter { $0.downloadState == "ready" }.count
+  }
+
+  /// Whether the library answered, read from the last load rather than asked again.
+  private var status: (label: String, color: Color) {
+    switch model.library {
+    case .loaded: ("Connected", .green)
+    case .failed: ("Cannot reach your service", OrbisColor.destructive)
+    case .idle, .loading: ("Checking", .secondary)
+    }
+  }
+
+  /// The service this device is signed in to, large, with a test of it and the way to change it.
+  private var serviceCard: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      HStack(spacing: 14) {
+        Image(systemName: "dot.radiowaves.left.and.right")
+          .font(.title2.weight(.semibold))
+          .foregroundStyle(.white)
+          .frame(width: 52, height: 52)
+          .background(Color.orbis.tint.gradient, in: .rect(cornerRadius: 16))
+          .accessibilityHidden(true)
+        VStack(alignment: .leading, spacing: 2) {
+          HStack(spacing: 6) {
+            Circle().fill(status.color).frame(width: 8, height: 8)
+            Text(status.label)
+          }
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(status.color)
+          Text(model.client?.address.host() ?? model.connectionAddress)
+            .font(.title3.weight(.bold))
+            .lineLimit(1)
+          Text("Orbis service")
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
+        }
+        .accessibilityElement(children: .combine)
+      }
+      HStack(spacing: 10) {
+        Button {
+          Task { await model.connect() }
+        } label: {
+          Group {
+            if model.isTestingConnection {
+              ProgressView()
+            } else {
+              Text("Test connection")
+            }
+          }
+          .font(.headline)
+          .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(Color.orbis.tint)
+        .disabled(
+          model.connectionAddress.isEmpty
+            || (model.connectionToken.isEmpty && !model.hasStoredToken)
+            || model.isTestingConnection
+        )
+        .accessibilityIdentifier("connection-test")
+        Button {
+          isChangingService.toggle()
+          if isChangingService { focus = .address }
+        } label: {
+          Text(isChangingService ? "Hide address" : "Change service")
+            .font(.headline)
+            .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.glass)
+        .tint(Color.orbis.tint)
+        .accessibilityIdentifier("connection-change")
+      }
+      .controlSize(.large)
+    }
+    .padding(18)
+    .glassEffect(.regular, in: .rect(cornerRadius: 22))
   }
 
   /// The address and the key of an existing pairing, for correcting either one.

@@ -96,7 +96,7 @@ public struct Artwork: View {
   ) -> some View {
     let radius = radius ?? size.radius
     return
-    Color.clear
+      Color.clear
       .aspectRatio(16 / 9, contentMode: .fit)
       .frame(width: size.width)
       .frame(maxWidth: size == .header ? .infinity : nil)

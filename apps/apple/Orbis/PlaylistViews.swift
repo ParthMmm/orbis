@@ -22,7 +22,6 @@ struct PlaylistsDestination: View {
       }
     }
     .sidebarPageTitle(model.openedPlaylistId == nil ? "Playlists" : "")
-    .largeTitleOnIOS()
     .toolbar {
       if model.openedPlaylistId == nil {
         ToolbarItem {
@@ -58,7 +57,18 @@ struct PlaylistsDestination: View {
       if model.playlists == .idle {
         await model.loadPlaylists()
       }
+      // The folders show their Sets' artwork, which the Library holds.
+      if case .idle = model.library {
+        await model.loadLibrary()
+      }
     }
+  }
+
+  /// The artwork of a Playlist's Sets, in Library order, for its folder.
+  private func artwork(of playlist: Playlist) -> [URL?] {
+    guard case .loaded(let sets) = model.library else { return [] }
+    return sets.filter { $0.playlistIds.contains(playlist.id) }
+      .prefix(3).map { SetPresentation.row($0).artwork }
   }
 
   private var playlistList: some View {
@@ -79,41 +89,78 @@ struct PlaylistsDestination: View {
           }
           .accessibilityIdentifier("playlists-empty")
         } else {
-          List {
-            ForEach(matchingPlaylists(items)) { playlist in
-              Button {
-                model.openPlaylist(playlist.id)
-                Task { await model.loadPlaylistMembers(playlist.id) }
-              } label: {
-                PlaylistRow(
-                  playlist.name,
-                  count: playlist.setCount,
-                  category: SetPresentation.category(for: playlist.name)
-                )
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .contentShape(Rectangle())
-              }
-              .buttonStyle(.plain)
-              .accessibilityIdentifier("playlist-row-\(playlist.name)")
-              .contextMenu {
-                Button("Rename", systemImage: "pencil") {
-                  renamingPlaylist = playlist
-                  renameDraft = playlist.name
-                }
-                Button("Delete", systemImage: "trash", role: .destructive) {
-                  deletingPlaylist = playlist
-                }
-              }
-            }
-          }
-          .accessibilityIdentifier("playlists-list")
+          playlistGrid(matchingPlaylists(items))
         }
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.orbis.paper)
+    .background {
+      ArtworkGlow(url: model.playlistItems.first.flatMap { artwork(of: $0).first ?? nil }, reach: 0.55)
+    }
+    .largeTitleOnIOS()
     .macPageSearch(text: $playlistQuery, prompt: "Find in Playlists")
     .macSearchToolbarBackground(isSearching: !playlistQuery.isEmpty)
+  }
+
+  /// Every Playlist as a folder with its Sets' artwork fanned out of it, and a last tile that
+  /// starts a new one.
+  private func playlistGrid(_ items: [Playlist]) -> some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 18) {
+        Text("Your sets, sorted for the moment.")
+          .font(.orbis.detail)
+          .foregroundStyle(.secondary)
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 14)], spacing: 22) {
+          ForEach(items) { playlist in
+            Button {
+              model.openPlaylist(playlist.id)
+              Task { await model.loadPlaylistMembers(playlist.id) }
+            } label: {
+              PlaylistSleeve(
+                name: playlist.name,
+                count: playlist.setCount,
+                artwork: artwork(of: playlist),
+                category: SetPresentation.category(for: playlist.name)
+              )
+            }
+            .buttonStyle(.orbisPressable)
+            .accessibilityIdentifier("playlist-row-\(playlist.name)")
+            .contextMenu {
+              Button("Rename", systemImage: "pencil") {
+                renamingPlaylist = playlist
+                renameDraft = playlist.name
+              }
+              Button("Delete", systemImage: "trash", role: .destructive) {
+                deletingPlaylist = playlist
+              }
+            }
+          }
+          Button(action: beginCreate) {
+            VStack(spacing: 8) {
+              Image(systemName: "plus")
+                .font(.title2.weight(.semibold))
+              Text("New playlist")
+                .font(.subheadline.weight(.semibold))
+            }
+            .foregroundStyle(Color.orbis.tint)
+            .frame(maxWidth: .infinity, minHeight: 150)
+            .background(
+              Color.orbis.paperRaised.opacity(0.6), in: .rect(cornerRadius: 20)
+            )
+            .overlay {
+              RoundedRectangle(cornerRadius: 20)
+                .strokeBorder(.tertiary, style: StrokeStyle(lineWidth: 1.5, dash: [6, 5]))
+            }
+            .contentShape(.rect(cornerRadius: 20))
+          }
+          .buttonStyle(.orbisPressable)
+          .accessibilityIdentifier("playlist-create-tile")
+        }
+      }
+      .padding()
+    }
+    .scrollEdgeEffectStyle(.soft, for: .top)
+    .accessibilityIdentifier("playlists-list")
   }
 
   private func matchingPlaylists(_ items: [Playlist]) -> [Playlist] {
@@ -183,6 +230,13 @@ struct PlaylistDetailView: View {
   @State private var renaming = false
   @State private var renameDraft = ""
   @State private var isConfirmingDelete = false
+  /// The play a person asked for while something else was playing, held until they confirm.
+  @State private var pendingPlay: PlayOrder?
+
+  private enum PlayOrder {
+    case inOrder
+    case shuffled
+  }
 
   var body: some View {
     Group {
@@ -205,7 +259,18 @@ struct PlaylistDetailView: View {
       }
     }
     .navigationTitle(playlist.name)
-    .largeTitleOnIOS()
+    .toolbarTitleDisplayMode(.inline)
+    .background {
+      ArtworkGlow(url: members.first.map { SetPresentation.row($0).artwork } ?? nil, reach: 0.6)
+    }
+    .confirmationDialog(
+      "Play this playlist?", isPresented: isConfirmingPlayBinding, titleVisibility: .visible
+    ) {
+      Button("Replace the queue") { startPlayback() }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("This replaces what is playing now.")
+    }
     .toolbar {
       ToolbarItem(placement: .cancellationAction) {
         Button {
@@ -262,8 +327,89 @@ struct PlaylistDetailView: View {
     }
   }
 
+  private var members: [SavedSet] {
+    if case .loaded(let sets) = model.playlistMembers { sets } else { [] }
+  }
+
+  private var isConfirmingPlayBinding: Binding<Bool> {
+    Binding(get: { pendingPlay != nil }, set: { if !$0 { pendingPlay = nil } })
+  }
+
+  /// Plays now, or asks first when something else is playing, since either way the queue is
+  /// replaced.
+  private func play(shuffled: Bool) {
+    pendingPlay = shuffled ? .shuffled : .inOrder
+    if !model.isPlayingNow { startPlayback() }
+  }
+
+  private func startPlayback() {
+    let order = pendingPlay
+    pendingPlay = nil
+    Task {
+      if order == .shuffled {
+        await model.shufflePlaylist(playlist.id)
+      } else {
+        await model.playPlaylist(playlist.id)
+      }
+    }
+  }
+
+  /// The Playlist, large: its Sets' artwork fanned out, its name and length, and the two ways to
+  /// play it.
+  private func hero(_ sets: [SavedSet]) -> some View {
+    let seconds = sets.compactMap(\.durationSeconds).reduce(0, +)
+    let count = sets.count == 1 ? "1 set" : "\(sets.count) sets"
+    return VStack(spacing: 14) {
+      SleeveFan(
+        seed: playlist.name,
+        artwork: sets.prefix(3).map { SetPresentation.row($0).artwork },
+        category: SetPresentation.category(for: playlist.name),
+        width: 200
+      )
+      .frame(height: 150)
+      VStack(spacing: 5) {
+        Eyebrow("Playlist")
+        Text(playlist.name)
+          .font(.orbis.title)
+          .multilineTextAlignment(.center)
+          .accessibilityAddTraits(.isHeader)
+        Text(seconds > 0 ? "\(count) · \(SetPresentation.length(seconds))" : count)
+          .font(.subheadline)
+          .foregroundStyle(.secondary)
+      }
+      HStack(spacing: 10) {
+        Button {
+          play(shuffled: false)
+        } label: {
+          Label("Play", systemImage: "play.fill")
+            .font(.headline)
+            .padding(.horizontal, 10)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(Color.orbis.tint)
+        .accessibilityIdentifier("playlist-play")
+        Button {
+          play(shuffled: true)
+        } label: {
+          Label("Shuffle", systemImage: "shuffle")
+            .font(.headline)
+            .padding(.horizontal, 6)
+        }
+        .buttonStyle(.glass)
+        .accessibilityIdentifier("playlist-shuffle")
+      }
+      .controlSize(.large)
+    }
+    .frame(maxWidth: .infinity)
+    .padding(.vertical, 8)
+  }
+
   private func memberList(_ sets: [SavedSet]) -> some View {
     List {
+      hero(sets)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .moveDisabled(true)
       ForEach(sets) { set in
         let presentation = SetPresentation.row(set)
         SetRow(
@@ -295,6 +441,7 @@ struct PlaylistDetailView: View {
         Task { await model.movePlaylistMembers(playlist.id, from: source, to: destination) }
       }
     }
+    .scrollContentBackground(.hidden)
     .scrollEdgeEffectStyle(.soft, for: .top)
     .scrollEdgeEffectStyle(.soft, for: .bottom)
     .accessibilityIdentifier("playlist-members")

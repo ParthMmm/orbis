@@ -94,8 +94,51 @@ public struct SetCard: View {
   }
 }
 
-/// A Tag as a soft pill in its own colour, with how many Sets carry it.
-public struct TagBadge: View {
+/// Up to three pieces of a Playlist's artwork, fanned out like sleeves pulled from a folder.
+/// With no artwork, a tinted card stands in.
+public struct SleeveFan: View {
+  let seed: String
+  let artwork: [URL?]
+  let category: OrbisColor.Category
+  let width: CGFloat
+
+  public init(seed: String, artwork: [URL?], category: OrbisColor.Category, width: CGFloat) {
+    self.seed = seed
+    self.artwork = Array(artwork.prefix(3))
+    self.category = category
+    self.width = width
+  }
+
+  private static let angles: [Double] = [-8, 5, -2]
+  /// Offsets as fractions of the width, so a large fan keeps the small one's shape.
+  private static let offsets: [CGSize] = [
+    .init(width: -0.2, height: 0.05), .init(width: 0.18, height: 0.02), .init(width: 0, height: -0.05),
+  ]
+
+  public var body: some View {
+    ZStack {
+      if artwork.isEmpty {
+        RoundedRectangle(cornerRadius: width / 8)
+          .fill(category.dot.opacity(0.3))
+          .frame(width: width, height: width * 9 / 16)
+      }
+      ForEach(Array(artwork.enumerated()), id: \.offset) { index, url in
+        let fraction = Self.offsets[index]
+        let shift = CGSize(width: fraction.width * width, height: fraction.height * width)
+        Artwork(url: url, seed: "\(seed)-\(index)", size: .header)
+          .frame(width: width)
+          .shadow(color: .black.opacity(0.3), radius: width / 18, y: width / 36)
+          .rotationEffect(.degrees(Self.angles[index]))
+          .offset(shift)
+      }
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+/// A Tag as a chip of tinted glass: its colour's dot, its name, and how many Sets carry it.
+/// Selected, the glass fills with the colour.
+public struct GlassTagChip: View {
   let name: String
   let count: Int?
   let category: OrbisColor.Category
@@ -112,18 +155,25 @@ public struct TagBadge: View {
 
   public var body: some View {
     HStack(spacing: 6) {
+      Circle()
+        .fill(selected ? Color.white : category.dot)
+        .frame(width: 8, height: 8)
       Text(name)
+        .font(.subheadline.weight(.semibold))
       if let count {
         Text(count, format: .number)
+          .font(.caption.weight(.semibold))
           .monospacedDigit()
-          .opacity(0.65)
+          .opacity(0.7)
       }
     }
-    .font(.subheadline.weight(.semibold))
-    .foregroundStyle(selected ? Color.white : category.text)
-    .padding(.horizontal, 13)
-    .frame(minHeight: 34)
-    .background(selected ? category.dot : category.soft, in: .capsule)
+    .foregroundStyle(selected ? Color.white : Color.primary)
+    .padding(.horizontal, 14)
+    .frame(minHeight: 40)
+    .glassEffect(
+      .regular.tint(selected ? category.dot : category.dot.opacity(0.18)).interactive(),
+      in: .capsule
+    )
     .contentShape(.capsule)
     .accessibilityElement(children: .combine)
     .accessibilityAddTraits(selected ? .isSelected : [])
@@ -145,29 +195,11 @@ public struct PlaylistSleeve: View {
     self.category = category
   }
 
-  private static let angles: [Double] = [-8, 5, -2]
-  private static let offsets: [CGSize] = [
-    .init(width: -22, height: 6), .init(width: 20, height: 2), .init(width: 0, height: -6),
-  ]
-
   public var body: some View {
     ZStack(alignment: .bottom) {
-      ZStack {
-        if artwork.isEmpty {
-          RoundedRectangle(cornerRadius: 14)
-            .fill(category.dot.opacity(0.3))
-            .frame(width: 110, height: 70)
-            .offset(y: -6)
-        }
-        ForEach(Array(artwork.enumerated()), id: \.offset) { index, url in
-          Artwork(url: url, seed: "\(name)-\(index)", size: .rail)
-            .frame(width: 112)
-            .shadow(color: .black.opacity(0.3), radius: 6, y: 3)
-            .rotationEffect(.degrees(Self.angles[index]))
-            .offset(Self.offsets[index])
-        }
-      }
-      .frame(maxHeight: .infinity, alignment: .top)
+      SleeveFan(seed: name, artwork: artwork, category: category, width: 112).frame(
+        maxHeight: .infinity, alignment: .top
+      )
       .padding(.top, 4)
       VStack(alignment: .leading, spacing: 2) {
         Text(name)
@@ -198,8 +230,8 @@ public struct PlaylistSleeve: View {
           isCurrent: true, isPlaying: true)
       }
       HStack {
-        TagBadge("techno", count: 12, category: .pink)
-        TagBadge("house", count: 9, category: .green, selected: true)
+        GlassTagChip("techno", count: 12, category: .pink)
+        GlassTagChip("house", count: 9, category: .green, selected: true)
       }
     }
     .padding()

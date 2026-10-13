@@ -506,7 +506,9 @@ struct DestinationView: View {
         select: { set in model.openSet(set.id) },
         currentSetId: model.audioPlayer.currentSetId,
         isPlaying: model.audioPlayer.state == .playing,
-        togglePlayback: { set in model.togglePlayback(set.id) }
+        togglePlayback: { set in model.togglePlayback(set.id) },
+        groupsByDay: model.librarySort == .newest,
+        backdrop: .artwork(libraryLead.flatMap(SetPresentation.pageArtwork))
       )
       .macPageSearch(text: $libraryQuery, prompt: "Find in Library")
       .macSearchToolbarBackground(isSearching: librarySearchIsActive)
@@ -573,10 +575,19 @@ struct DestinationView: View {
 
   private var librarySets: Loadable<[SavedSet]> {
     #if os(macOS)
-      matchingLibrary
+      let sets = matchingLibrary
     #else
-      model.visibleSets
+      let sets = model.visibleSets
     #endif
+    guard case .loaded(let loaded) = sets else { return sets }
+    return .loaded(model.librarySort.ordered(loaded))
+  }
+
+  /// The Set at the top of the Library as it is ordered and filtered now, which the page takes
+  /// its light from, so filtering by a Tag recolours the page.
+  private var libraryLead: SavedSet? {
+    guard case .loaded(let sets) = librarySets else { return nil }
+    return sets.first
   }
 
   private var librarySearchIsActive: Bool {
@@ -672,22 +683,24 @@ struct DestinationView: View {
           .accessibilityIdentifier("creator-filter")
         }
         ScrollView(.horizontal, showsIndicators: false) {
-          HStack(spacing: 8) {
-            ForEach(model.availableTags, id: \.self) { tag in
-              let active = model.activeTag == tag
-              Button {
-                model.setTagFilter(active ? nil : tag)
-              } label: {
-                TagBadge(
-                  tag, count: model.tagCounts[tag] ?? 0,
-                  category: SetPresentation.category(for: tag), selected: active)
+          GlassEffectContainer(spacing: 8) {
+            HStack(spacing: 8) {
+              ForEach(model.availableTags, id: \.self) { tag in
+                let active = model.activeTag == tag
+                Button {
+                  model.setTagFilter(active ? nil : tag)
+                } label: {
+                  GlassTagChip(
+                    tag, count: model.tagCounts[tag] ?? 0,
+                    category: SetPresentation.category(for: tag), selected: active)
+                }
+                .buttonStyle(.plain)
+                .orbisAnimation(.tagToggled, value: active)
+                .accessibilityIdentifier("tag-filter-\(tag)")
               }
-              .buttonStyle(.plain)
-              .orbisAnimation(.tagToggled, value: active)
-              .accessibilityIdentifier("tag-filter-\(tag)")
             }
+            .padding(.horizontal, 16)
           }
-          .padding(.horizontal, 16)
         }
         .padding(.horizontal, -16)
         .scrollClipDisabled()
@@ -727,6 +740,18 @@ struct DestinationView: View {
         }
         .accessibilityIdentifier("library-play-playlist")
       }
+    }
+    ToolbarItem {
+      Menu {
+        Picker("Sort by", selection: $model.librarySort) {
+          ForEach(LibrarySort.allCases) { sort in
+            Text(sort.rawValue).tag(sort)
+          }
+        }
+      } label: {
+        Label("Sort", systemImage: "arrow.up.arrow.down")
+      }
+      .accessibilityIdentifier("library-sort")
     }
     ToolbarItem {
       Button("Queue", systemImage: "list.bullet") { isShowingQueue = true }
@@ -854,24 +879,14 @@ struct HomeRails: View {
       GlassEffectContainer(spacing: 8) {
         HStack(spacing: 8) {
           ForEach(model.availableTags, id: \.self) { tag in
-            let category = SetPresentation.category(for: tag)
             Button {
               model.setTagFilter(tag)
               model.openedSets[.library] = nil
               model.destination = .library
             } label: {
-              HStack(spacing: 6) {
-                Circle().fill(category.dot).frame(width: 8, height: 8)
-                Text(tag)
-                  .font(.subheadline.weight(.semibold))
-                Text(model.tagCounts[tag] ?? 0, format: .number)
-                  .font(.caption.weight(.semibold))
-                  .monospacedDigit()
-                  .foregroundStyle(.secondary)
-              }
-              .padding(.horizontal, 14)
-              .frame(minHeight: 40)
-              .glassEffect(.regular.tint(category.dot.opacity(0.18)).interactive(), in: .capsule)
+              GlassTagChip(
+                tag, count: model.tagCounts[tag] ?? 0,
+                category: SetPresentation.category(for: tag))
             }
             .buttonStyle(.plain)
             .accessibilityIdentifier("home-tag-\(tag)")
@@ -1065,6 +1080,10 @@ private struct HomeHero: View {
 
 struct SearchDestination: View {
   @Bindable var model: AppModel
+  /// The last queries that found something, newest first, one per line. Kept on the device: they
+  /// are a convenience for this person here, not part of the library.
+  @AppStorage("orbis.recentSearches") private var recentSearches = ""
+  private static let recentLimit = 6
   /// The field is resigned before the query is cleared. SwiftUI does not push a programmatic
   /// change to a search field that is still first responder, so a clear that only set the
   /// binding left the old query on screen while the screen said nothing had been asked.
@@ -1079,6 +1098,24 @@ struct SearchDestination: View {
           model.clearSearch()
         }
       }
+      .onChange(of: model.searchResultsFor) { _, query in
+        if let query { remember(query) }
+      }
+      .task { await model.loadTracklistsForSearch() }
+  }
+
+  private var recentQueries: [String] {
+    recentSearches.split(separator: "\n").map(String.init)
+  }
+
+  private func remember(_ query: String) {
+    let kept = recentQueries.filter { $0.caseInsensitiveCompare(query) != .orderedSame }
+    recentSearches = ([query] + kept).prefix(Self.recentLimit).joined(separator: "\n")
+  }
+
+  private func search(for query: String) {
+    model.searchQuery = query
+    Task { await model.runSearch() }
   }
 
   private var searchPage: some View {
@@ -1102,10 +1139,12 @@ struct SearchDestination: View {
       if isUntouched {
         // Nothing has been asked yet, so nothing has failed. One line says what the field
         // searches; the field itself is the action.
-        ListingLabel(Self.prompt(total: model.totalCount))
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
-          .background(Color.orbis.paper)
-          .accessibilityIdentifier("search-untouched")
+        SearchStart(
+          model: model, prompt: Self.prompt(total: model.totalCount), recent: recentQueries,
+          search: search(for:), clearRecent: { recentSearches = "" }
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("search-untouched")
       } else {
         results
       }
@@ -1131,9 +1170,11 @@ struct SearchDestination: View {
   }
 
   private var results: some View {
-    SetList(
-      state: model.search,
-      heading: heading,
+    let top = topResult
+    let cues = model.cueMatches(for: model.searchResultsFor ?? "")
+    return SetList(
+      state: remainingResults,
+      heading: nil,
       empty: AnyView(
         NoResultsState(recoverLabel: "Clear search", recover: clear)
           .accessibilityIdentifier("search-no-results")
@@ -1145,7 +1186,8 @@ struct SearchDestination: View {
       // second one to reach.
       noMatches: nil,
       hero: nil,
-      aboveRows: matchingPlaylistRows,
+      aboveRows: top == nil && cues.isEmpty ? nil : AnyView(aboveResults(top)),
+      belowRows: cues.isEmpty ? nil : AnyView(TracklistMatches(model: model, matches: cues)),
       footer: searchFooter,
       retry: { await model.runSearch() },
       listIdentifier: "search-list",
@@ -1153,8 +1195,30 @@ struct SearchDestination: View {
       select: { set in model.openSet(set.id) },
       currentSetId: model.audioPlayer.currentSetId,
       isPlaying: model.audioPlayer.state == .playing,
-      togglePlayback: { set in model.togglePlayback(set.id) }
+      togglePlayback: { set in model.togglePlayback(set.id) },
+      backdrop: .artwork(top.flatMap(SetPresentation.pageArtwork))
     )
+  }
+
+  /// The best match leads, large, with its two quickest actions; the rest are rows under it.
+  private var topResult: SavedSet? {
+    if case .loaded(let sets) = model.search { sets.first } else { nil }
+  }
+
+  private var remainingResults: Loadable<[SavedSet]> {
+    if case .loaded(let sets) = model.search { .loaded(Array(sets.dropFirst())) } else { model.search }
+  }
+
+  private func aboveResults(_ top: SavedSet?) -> some View {
+    VStack(alignment: .leading, spacing: 14) {
+      heading
+        .font(.orbis.sectionTitle)
+        .accessibilityAddTraits(.isHeader)
+      if let top {
+        TopResult(model: model, set: top)
+      }
+      matchingPlaylistRows
+    }
   }
 
   private var matchingPlaylistRows: AnyView? {
@@ -1195,6 +1259,232 @@ struct SearchDestination: View {
   private var searchFooter: String {
     guard case .loaded(let sets) = model.search else { return "" }
     return sets.count == 1 ? "1 set" : "\(sets.count) sets"
+  }
+}
+
+/// Search before anything is asked: the Tags and creators to browse by, and the last queries,
+/// each one tap from a result.
+private struct SearchStart: View {
+  @Bindable var model: AppModel
+  let prompt: String
+  let recent: [String]
+  let search: (String) -> Void
+  let clearRecent: () -> Void
+
+  /// One Set per creator, the newest, whose artwork stands for them.
+  private var creators: [SavedSet] {
+    guard case .loaded(let sets) = model.library else { return [] }
+    var seen = Set<String>()
+    return sets.filter { set in
+      guard let name = set.creator, !name.isEmpty else { return false }
+      return seen.insert(name).inserted
+    }
+    .prefix(12)
+    .map { $0 }
+  }
+
+  var body: some View {
+    ScrollView {
+      VStack(alignment: .leading, spacing: 28) {
+        ListingLabel(prompt)
+        if !model.availableTags.isEmpty {
+          section("Tags") {
+            ChipFlow {
+              ForEach(model.availableTags, id: \.self) { tag in
+                Button {
+                  model.setTagFilter(tag)
+                  model.openedSets[.library] = nil
+                  model.destination = .library
+                } label: {
+                  GlassTagChip(
+                    tag, count: model.tagCounts[tag] ?? 0,
+                    category: SetPresentation.category(for: tag))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("search-tag-\(tag)")
+              }
+            }
+          }
+        }
+        if !creators.isEmpty {
+          section("Creators") {
+            ScrollView(.horizontal, showsIndicators: false) {
+              HStack(alignment: .top, spacing: 16) {
+                ForEach(creators) { set in
+                  Button {
+                    model.showCreator(of: set)
+                  } label: {
+                    VStack(spacing: 6) {
+                      Artwork(url: SetPresentation.row(set).artwork, seed: set.title, size: .header)
+                        .frame(width: 136)
+                        .frame(width: 76, height: 76)
+                        .clipShape(.circle)
+                        .shadow(color: .black.opacity(0.18), radius: 6, y: 3)
+                      Text(set.creator ?? "")
+                        .font(.footnote.weight(.medium))
+                        .lineLimit(1)
+                        .frame(width: 80)
+                    }
+                  }
+                  .buttonStyle(.orbisPressable)
+                  .accessibilityLabel("Sets by \(set.creator ?? "")")
+                }
+              }
+              .padding(.horizontal, 16)
+            }
+            .padding(.horizontal, -16)
+            .scrollClipDisabled()
+          }
+        }
+        if !recent.isEmpty {
+          VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+              SectionHeading("Recent")
+              Button("Clear", action: clearRecent)
+                .tint(Color.orbis.tint)
+            }
+            ForEach(recent, id: \.self) { query in
+              Button {
+                search(query)
+              } label: {
+                Label(query, systemImage: "clock")
+                  .font(.body)
+                  .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                  .contentShape(.rect)
+              }
+              .buttonStyle(.plain)
+              Divider()
+            }
+          }
+        }
+      }
+      .padding()
+    }
+    .background { TintGlow() }
+  }
+
+  private func section(_ title: String, @ViewBuilder content: () -> some View) -> some View {
+    VStack(alignment: .leading, spacing: 12) {
+      SectionHeading(title)
+      content()
+    }
+  }
+}
+
+/// The best match for a search, large, with Play and Play Next beside it.
+private struct TopResult: View {
+  @Bindable var model: AppModel
+  let set: SavedSet
+
+  var body: some View {
+    let isCurrent = model.audioPlayer.currentSetId == set.id
+    let isPlaying = isCurrent && model.audioPlayer.state == .playing
+    VStack(alignment: .leading, spacing: 12) {
+      Button {
+        model.openSet(set.id)
+      } label: {
+        HStack(spacing: 14) {
+          Artwork(
+            url: SetPresentation.row(set).artwork, seed: set.title, size: .rail,
+            progress: SetPresentation.progress(of: set))
+          VStack(alignment: .leading, spacing: 2) {
+            Text(set.title)
+              .font(.headline)
+              .lineLimit(3)
+              .foregroundStyle(isCurrent ? Color.orbis.tint : Color.primary)
+            Text(["Set", set.creator].compactMap { $0 }.joined(separator: " · "))
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
+          }
+          .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .contentShape(.rect)
+      }
+      .buttonStyle(.orbisPressable)
+      .accessibilityElement(children: .ignore)
+      .accessibilityLabel(set.title)
+      .accessibilityAddTraits(.isButton)
+      .accessibilityIdentifier("search-top-result")
+      if set.downloadState == "ready" {
+        HStack(spacing: 10) {
+          Button {
+            model.togglePlayback(set.id)
+          } label: {
+            Label(
+              isPlaying ? "Pause" : SetPresentation.timeLeft(set) ?? "Play",
+              systemImage: isPlaying ? "pause.fill" : "play.fill"
+            )
+            .font(.headline)
+            .monospacedDigit()
+            .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.glassProminent)
+          .tint(Color.orbis.tint)
+          Button {
+            Task { await model.playNext(set.id) }
+          } label: {
+            Label("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward")
+              .font(.headline)
+              .frame(maxWidth: .infinity)
+          }
+          .buttonStyle(.glass)
+          .tint(Color.orbis.tint)
+        }
+        .controlSize(.large)
+      }
+    }
+    .padding(14)
+    .glassEffect(.regular, in: .rect(cornerRadius: 22))
+  }
+}
+
+/// Tracks inside the library's Tracklists that match the search. Tapping one plays its Set from
+/// where that track starts.
+private struct TracklistMatches: View {
+  @Bindable var model: AppModel
+  let matches: [CueMatch]
+  private static let limit = 8
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 4) {
+      SectionHeading("In tracklists")
+      ForEach(matches.prefix(Self.limit)) { match in
+        Button {
+          Task { await model.playCue(match.cue, in: match.set.id) }
+        } label: {
+          HStack(spacing: 12) {
+            Image(systemName: "music.note")
+              .font(.body.weight(.semibold))
+              .foregroundStyle(Color.orbis.tint)
+              .frame(width: 40, height: 40)
+              .background(Color.orbis.tint.opacity(0.12), in: .circle)
+            VStack(alignment: .leading, spacing: 1) {
+              Text(match.cue.title)
+                .font(.body.weight(.semibold))
+                .lineLimit(1)
+              Text("\(match.cue.artist) · in \(match.set.title)")
+                .font(.subheadline)
+                .foregroundStyle(.secondary)
+                .lineLimit(1)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let start = match.cue.startSeconds {
+              Text(SetPresentation.timestamp(start))
+                .font(.subheadline)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+            }
+          }
+          .frame(minHeight: 56)
+          .contentShape(.rect)
+        }
+        .buttonStyle(.plain)
+        .disabled(match.cue.startSeconds == nil || match.set.downloadState != "ready")
+        .accessibilityHint("Plays the set from this track")
+        .accessibilityIdentifier("search-cue-\(match.id)")
+        Divider()
+      }
+    }
   }
 }
 

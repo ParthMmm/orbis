@@ -29,6 +29,8 @@ struct SetList: View {
   /// playlists — between the hero and the list header, the way a music app's home carries its
   /// sections. Absent on a screen that only reads.
   var rails: AnyView?
+  /// What follows the rows, such as the tracks a search found inside Tracklists.
+  var belowRows: AnyView?
   let footer: String
   let retry: () async -> Void
   /// What a journey or a manual pass reads this list by, so the two destinations do not
@@ -44,6 +46,17 @@ struct SetList: View {
   var isPlaying = false
   /// Starts, pauses, or resumes a Set from its row. Absent on a screen that only reads.
   var togglePlayback: ((SavedSet) -> Void)?
+  /// False when the list is in an order other than the day each Set was filed, where grouping
+  /// by day would scatter one day across the list.
+  var groupsByDay = true
+  /// What the page takes its light from: a Set's artwork, blurred behind the top of the list,
+  /// or plain paper.
+  var backdrop: Backdrop = .paper
+
+  enum Backdrop {
+    case paper
+    case artwork(URL?)
+  }
 
   @Environment(\.openURL) private var openURL
 
@@ -67,7 +80,12 @@ struct SetList: View {
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
-    .background(Color.orbis.paper)
+    .background {
+      switch backdrop {
+      case .paper: Color.orbis.paper.ignoresSafeArea()
+      case .artwork(let url): ArtworkGlow(url: url, reach: 0.55)
+      }
+    }
   }
 
   /// An empty Library and a filter that admits nothing are different states, and they were once
@@ -141,8 +159,11 @@ struct SetList: View {
         // rather than all at once. Sets group under the day they were filed, so the date is
         // structure rather than a value on every row.
         LazyVStack(alignment: .leading, spacing: 0) {
-          ForEach(Self.days(of: sets), id: \.day) { group in
-            ListingHeader(group.day)
+          ForEach(groupsByDay ? Self.days(of: sets) : [DayGroup(day: "", sets: sets)], id: \.day) {
+            group in
+            if !group.day.isEmpty {
+              ListingHeader(group.day)
+            }
             ForEach(Array(group.sets.enumerated()), id: \.element.id) { index, set in
               if index > 0 {
                 Divider()
@@ -150,6 +171,9 @@ struct SetList: View {
               row(set)
             }
           }
+        }
+        if let belowRows {
+          belowRows.padding(.top, 28)
         }
       }
       .padding()
