@@ -4,7 +4,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
-import { Effect, Layer, Redacted } from "effect";
+import { Effect, Layer, Logger, Redacted, References } from "effect";
 import type { WideEvent } from "evlog";
 
 import { backfillTracklists } from "./backfill-tracklists.js";
@@ -885,6 +885,73 @@ test("a Versos failure after the save response is logged in its own event", asyn
         set: id,
       }),
     ]);
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("an unconfigured Versos leaves the Set pending and says why", async () => {
+  const directory = await mkdtemp(
+    path.join(tmpdir(), "orbis-tracklists-unconfigured-")
+  );
+  const databasePath = path.join(directory, "library.sqlite");
+  const app = createApp({
+    databasePath,
+    metadata: Metadata.layerOf({
+      details: () => Effect.succeed(DETAILS),
+      enrich: () => Effect.die("title supplied by caller"),
+    }),
+  });
+  try {
+    const saved = await save(app);
+    expect(saved.statusCode).toBe(201);
+    const id = String(saved.json().id);
+    const db = new Sqlite(databasePath);
+    try {
+      await eventually(() => {
+        const row = db
+          .query<{ details_state: string }, [string]>(
+            "SELECT details_state FROM sets WHERE id = ?"
+          )
+          .get(id);
+        return Promise.resolve(row?.details_state === "filled" ? true : null);
+      });
+    } finally {
+      db.close();
+    }
+    await app.dispose();
+    const warnings: { message: unknown; set: unknown }[] = [];
+    const capture = Logger.make((options) => {
+      if (options.logLevel === "Warn") {
+        warnings.push({
+          message: options.message,
+          set: options.fiber.getRef(References.CurrentLogAnnotations).set,
+        });
+      }
+    });
+    const layers = Layer.mergeAll(
+      databaseLayer({
+        databasePath,
+        migrationsFolder: path.resolve(import.meta.dir, "../drizzle"),
+      }),
+      Versos.unconfigured(),
+      Logger.layer([capture])
+    );
+    const result = await Effect.runPromise(
+      backfillTracklists({ delayMillis: 0 }).pipe(Effect.provide(layers))
+    );
+    expect(result).toEqual({ attempted: 1, completed: 0 });
+    expect(warnings).toEqual([
+      { message: ["set Tracklist skipped: Versos is not configured"], set: id },
+    ]);
+    const reloaded = createApp({ databasePath });
+    try {
+      const tracklist = await read(reloaded, id);
+      expect(tracklist.json()).toEqual({ cues: [], state: "pending" });
+    } finally {
+      await reloaded.dispose();
+    }
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });
