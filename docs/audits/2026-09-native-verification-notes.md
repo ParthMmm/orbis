@@ -82,7 +82,7 @@ Assert the expected state by name — the heading text, the predicate, the frame
 
 ## Pairing a simulator to the real service
 
-The simulator shares the Mac's network stack, so a Tailscale address resolves and connects with no extra setup: MagicDNS resolved `vanta.example.ts.net` and `Test connection` succeeded on the first try. `~/.orbis/config.json` holds the pair this Mac already uses, but the iOS app cannot read it — that fallback is compiled for macOS only — so the address and token are typed on the connection screen like any first launch.
+The simulator shares the Mac's network stack, so a Tailscale address resolves and connects with no extra setup: MagicDNS resolved `vanta.example.ts.net` and `Test connection` succeeded on the first try. `~/.orbis/config.json` holds the pair this Mac already uses. At the time of these notes the iOS app could not read it, so the address and token were typed on the connection screen. A Debug simulator build now reads the file.
 
 Read the address and token from that file rather than printing them:
 
