@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import { Effect, Layer, Redacted } from "effect";
+import type { WideEvent } from "evlog";
 
 import { backfillTracklists } from "./backfill-tracklists.js";
 import { layer as databaseLayer } from "./db/database.js";
@@ -846,6 +847,44 @@ test("backfill requests an existing pending Set and skips the ready result on th
     } finally {
       await reloaded.dispose();
     }
+  } finally {
+    await app.dispose();
+    await rm(directory, { force: true, recursive: true });
+  }
+});
+
+test("a Versos failure after the save response is logged in its own event", async () => {
+  const events: WideEvent[] = [];
+  const directory = await mkdtemp(path.join(tmpdir(), "orbis-tracklists-log-"));
+  const app = createApp({
+    databasePath: path.join(directory, "library.sqlite"),
+    logging: { onEvent: (event) => events.push(event), silent: true },
+    metadata: Metadata.layerOf({
+      details: () => Effect.succeed(DETAILS),
+      enrich: () => Effect.die("title supplied by caller"),
+    }),
+    versos: Versos.layerOf({
+      poll: () => Effect.die("the request fails first"),
+      request: () => Effect.fail(new VersosError({ reason: "rejected" })),
+    }),
+  });
+  try {
+    const saved = await save(app);
+    expect(saved.statusCode).toBe(201);
+    const id = String(saved.json().id);
+    await waitForState(app, id, "failed");
+    const run = await eventually(() =>
+      Promise.resolve(events.find((event) => event.job === "tracklist") ?? null)
+    );
+    expect(run.set).toBe(id);
+    expect(run.logs).toEqual([
+      expect.objectContaining({
+        level: "warn",
+        message: "set Tracklist request failed",
+        reason: "rejected",
+        set: id,
+      }),
+    ]);
   } finally {
     await app.dispose();
     await rm(directory, { force: true, recursive: true });
