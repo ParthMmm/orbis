@@ -224,9 +224,9 @@
               } label: {
                 TVLyricLine(cue: cue, isCurrent: isCurrent, isHeard: isHeard)
               }
-              // The plain style draws its label in the tint.
-              .buttonStyle(.plain)
-              .tint(.white)
+              // No system style: its focus lift would grow a focused line past the playing one,
+              // so the line draws its own focus instead.
+              .buttonStyle(TVLyricButtonStyle())
               .focused($focusedCue, equals: cue.position)
               .accessibilityLabel(
                 "\(cue.title), \(cue.artist)"
@@ -254,12 +254,22 @@
     }
   }
 
+  /// The label as it is, with no lift, platter, or tint of the system's: the line it wraps shows
+  /// the focus itself.
+  private struct TVLyricButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+      configuration.label
+    }
+  }
+
   /// One line of the Tracklist, the way lyrics are drawn: the playing one bright and large, the
-  /// ones already heard dimmed.
+  /// ones already heard dimmed. The line under the remote sits on a translucent platter and
+  /// brightens, but never past the playing one.
   private struct TVLyricLine: View {
     let cue: Cue
     let isCurrent: Bool
     let isHeard: Bool
+    @Environment(\.isFocused) private var isFocused
 
     var body: some View {
       VStack(alignment: .leading, spacing: 4) {
@@ -274,10 +284,12 @@
         .monospacedDigit()
         .foregroundStyle(.secondary)
       }
-      .opacity(isCurrent ? 1 : isHeard ? 0.4 : 0.65)
+      .opacity(isCurrent ? 1 : isFocused ? 0.85 : isHeard ? 0.4 : 0.65)
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(.horizontal, 24)
       .padding(.vertical, 12)
+      .background(.white.opacity(isFocused ? 0.14 : 0), in: .rect(cornerRadius: Radius.row))
+      .orbisAnimation(.pressed, value: isFocused)
     }
   }
 

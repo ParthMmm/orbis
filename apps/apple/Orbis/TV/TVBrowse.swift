@@ -159,12 +159,7 @@
         press(tag)
       } label: {
         Label {
-          HStack(spacing: 8) {
-            Text(tag)
-            if let count {
-              Text(count, format: .number).monospacedDigit().opacity(0.7)
-            }
-          }
+          TVChipWords(tag: tag, count: count)
         } icon: {
           Circle().fill(category.dot).frame(width: 12, height: 12)
         }
@@ -175,6 +170,30 @@
       .accessibilityHint(hint ?? "")
       .accessibilityAddTraits(isSelected ? .isSelected : [])
       .accessibilityIdentifier("\(identifierPrefix)-\(tag)")
+    }
+  }
+
+  /// A chip's words. The glass style writes them in the tint, which is too faint on dark glass,
+  /// so unfocused they take the primary colour; focused, the system's light pill chooses.
+  private struct TVChipWords: View {
+    let tag: String
+    let count: Int?
+    @Environment(\.isFocused) private var isFocused
+
+    var body: some View {
+      let words = HStack(spacing: 8) {
+        Text(tag)
+        if let count {
+          Text(count, format: .number).monospacedDigit().opacity(0.7)
+        }
+      }
+      // `Color.primary`, not `.primary`: the hierarchical style would be a level of the tint
+      // the glass style hands down, which is the faint text being fixed.
+      if isFocused {
+        words
+      } else {
+        words.foregroundStyle(Color.primary)
+      }
     }
   }
 
