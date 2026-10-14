@@ -187,35 +187,58 @@ public struct PlaylistSleeve: View {
   let count: Int
   let artwork: [URL?]
   let category: OrbisColor.Category
+  /// How wide each piece of artwork in the fan is drawn, and how tall the whole folder stands.
+  /// The defaults fit a phone's grid; a television passes larger ones.
+  let fanWidth: CGFloat
+  let height: CGFloat
 
-  public init(name: String, count: Int, artwork: [URL?], category: OrbisColor.Category) {
+  public init(
+    name: String, count: Int, artwork: [URL?], category: OrbisColor.Category,
+    fanWidth: CGFloat = 112, height: CGFloat = 150
+  ) {
     self.name = name
     self.count = count
     self.artwork = Array(artwork.prefix(3))
     self.category = category
+    self.fanWidth = fanWidth
+    self.height = height
   }
+
+  /// The pocket and its words grow with the folder, so the proportions hold at any size.
+  private var scale: CGFloat { height / 150 }
 
   public var body: some View {
     ZStack(alignment: .bottom) {
-      SleeveFan(seed: name, artwork: artwork, category: category, width: 112).frame(
+      SleeveFan(seed: name, artwork: artwork, category: category, width: fanWidth).frame(
         maxHeight: .infinity, alignment: .top
       )
-      .padding(.top, 4)
+      .padding(.top, 4 * scale)
       VStack(alignment: .leading, spacing: 2) {
         Text(name)
-          .font(.subheadline.weight(.semibold))
+          .font(scale > 1 ? .title3.weight(.semibold) : .subheadline.weight(.semibold))
           .lineLimit(1)
         Text(count == 1 ? "1 set" : "\(count) sets")
-          .font(.caption)
+          .font(scale > 1 ? .body : .caption)
           .foregroundStyle(.secondary)
       }
-      .padding(12)
-      .frame(maxWidth: .infinity, minHeight: 74, alignment: .bottomLeading)
-      .glassEffect(.regular.tint(category.dot.opacity(0.35)), in: .rect(cornerRadius: 20))
+      .padding(12 * scale)
+      .frame(maxWidth: .infinity, minHeight: 74 * scale, alignment: .bottomLeading)
+      .background { pocket }
     }
-    .frame(height: 150)
+    .frame(height: height)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel("\(name), \(count == 1 ? "1 set" : "\(count) sets")")
+  }
+
+  /// The pocket the Sets are tucked into. Tinted glass, except on a television, where the folder
+  /// sits inside a focus platter that is glass already and the pocket is a plain tinted surface.
+  @ViewBuilder private var pocket: some View {
+    #if os(tvOS)
+      RoundedRectangle(cornerRadius: 20 * scale).fill(category.dot.opacity(0.3))
+    #else
+      Color.clear.glassEffect(
+        .regular.tint(category.dot.opacity(0.35)), in: .rect(cornerRadius: 20 * scale))
+    #endif
   }
 }
 
