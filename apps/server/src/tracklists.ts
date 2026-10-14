@@ -2,6 +2,7 @@ import type { Cue, Tracklist } from "@orbis/contracts";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { Duration, Effect } from "effect";
 
+import { insertBatches } from "./db/batches.js";
 import {
   libraryEntries,
   playlistSets,
@@ -15,8 +16,6 @@ import { Versos } from "./versos.js";
 
 const POLL_DELAYS_MS = [250, 500, 1000, 2000, 4000, 4000, 4000, 4000];
 const RUN_LEASE_MS = 5 * 60_000;
-// A Durable Object's SQLite binds at most 100 values in one statement, and a Cue row binds 7.
-const CUES_PER_INSERT = 14;
 
 interface TracklistClaim {
   readonly description: string | null;
@@ -135,14 +134,9 @@ const finishTracklist = (
         }
         yield* tx.delete(setCues).where(eq(setCues.setId, claim.id));
         if (result.state === "ready") {
-          for (let at = 0; at < result.cues.length; at += CUES_PER_INSERT) {
-            yield* tx
-              .insert(setCues)
-              .values(
-                result.cues
-                  .slice(at, at + CUES_PER_INSERT)
-                  .map((cue) => ({ ...cue, setId: claim.id }))
-              );
+          const rows = result.cues.map((cue) => ({ ...cue, setId: claim.id }));
+          for (const batch of insertBatches(setCues, rows)) {
+            yield* tx.insert(setCues).values(batch);
           }
         }
         return true;

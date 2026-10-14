@@ -3,6 +3,7 @@ import { and, asc, eq } from "drizzle-orm";
 import type { Stream } from "effect";
 import { Context, Effect, Layer } from "effect";
 
+import { insertBatches } from "./db/batches.js";
 import { playlistSets, playlists, queueEntries } from "./db/schema.js";
 import { Database } from "./db/service.js";
 import { LibraryError } from "./errors.js";
@@ -138,15 +139,14 @@ export class Queue extends Context.Service<
               yield* tx
                 .delete(queueEntries)
                 .where(eq(queueEntries.personId, personId));
-              if (ids.length > 0) {
-                yield* tx.insert(queueEntries).values(
-                  ids.map((setId, position) => ({
-                    isActive: setId === activeSetId,
-                    personId,
-                    position,
-                    setId,
-                  }))
-                );
+              const rows = ids.map((setId, position) => ({
+                isActive: setId === activeSetId,
+                personId,
+                position,
+                setId,
+              }));
+              for (const batch of insertBatches(queueEntries, rows)) {
+                yield* tx.insert(queueEntries).values(batch);
               }
             })
           );

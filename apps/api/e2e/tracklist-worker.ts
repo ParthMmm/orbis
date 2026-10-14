@@ -34,6 +34,26 @@ export class Group extends ProductionGroup {
       }
       return new Response("seeded");
     }
+    if (pathname === "/__seed-library") {
+      const now = new Date().toISOString();
+      for (let index = 0; index < 40; index += 1) {
+        const id = `library-set-${index}`;
+        this.ctx.storage.sql.exec(
+          `INSERT OR IGNORE INTO sets (id, url, title, source, tags, created_at, title_edited_by_user, details_state, download_state)
+           VALUES (?, ?, ?, 'youtube', '[]', ?, 1, 'filled', 'ready')`,
+          id,
+          `https://www.youtube.com/watch?v=${id}`,
+          id,
+          now
+        );
+        this.ctx.storage.sql.exec(
+          "INSERT OR IGNORE INTO library_entries (person_id, set_id, saved_at, tags) VALUES ('listener', ?, ?, '[]')",
+          id,
+          now
+        );
+      }
+      return new Response("seeded");
+    }
     return super.fetch(request);
   }
 }

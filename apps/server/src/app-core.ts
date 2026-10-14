@@ -66,6 +66,7 @@ import {
 } from "./admin.js";
 import { Audio } from "./audio-service.js";
 import type { AudioFile } from "./audio-service.js";
+import { insertBatches } from "./db/batches.js";
 import {
   listens,
   playlistEditors,
@@ -1099,14 +1100,16 @@ export const createPortableApp = (options: {
                       yield* tx
                         .delete(playlistEditors)
                         .where(eq(playlistEditors.playlistId, params.id));
-                      if (input.editorIds.length > 0) {
-                        yield* tx.insert(playlistEditors).values(
-                          input.editorIds.map((editorId) => ({
-                            creatorId: caller.person.id,
-                            editorId,
-                            playlistId: params.id,
-                          }))
-                        );
+                      const rows = input.editorIds.map((editorId) => ({
+                        creatorId: caller.person.id,
+                        editorId,
+                        playlistId: params.id,
+                      }));
+                      for (const batch of insertBatches(
+                        playlistEditors,
+                        rows
+                      )) {
+                        yield* tx.insert(playlistEditors).values(batch);
                       }
                     })
                   );
