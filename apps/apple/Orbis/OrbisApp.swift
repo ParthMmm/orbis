@@ -33,6 +33,9 @@ struct RootView: View {
   /// Coming back to the app is when a device learns what the other one has been playing, and where
   /// it left the Set it was playing.
   @Environment(\.scenePhase) private var scenePhase
+  /// The phase the last refresh task saw, so the one that runs as the window opens is told apart
+  /// from a return to the app.
+  @State private var observedPhase: ScenePhase?
 
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -66,14 +69,18 @@ struct RootView: View {
         await model.loadQueue()
       }
     }
-    .onChange(of: scenePhase) { _, phase in
-      guard phase == .active, model.isConfigured else { return }
+    // Keyed to the phase, so leaving the app cancels a refresh still in flight instead of letting
+    // it pile up under the next one.
+    .task(id: scenePhase) {
+      // The task also runs for the phase the window opens in, which is not a return to the app:
+      // the first load above covers that.
+      let previous = observedPhase
+      observedPhase = scenePhase
+      guard previous != nil, scenePhase == .active, model.isConfigured else { return }
       // Read quietly: a spinner over a list the person was already reading would be a flicker for
       // a refresh they did not ask for.
-      Task {
-        await model.loadQueue()
-        await model.refreshLibraryQuietly()
-      }
+      await model.loadQueue()
+      await model.refreshLibraryQuietly()
     }
     #if os(iOS)
       .task { await uncoverWhenFirstLoadSettles() }

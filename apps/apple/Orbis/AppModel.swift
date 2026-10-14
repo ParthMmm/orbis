@@ -798,7 +798,9 @@ final class AppModel {
       guard generation == queueGeneration, !Task.isCancelled else { return }
       queue = .loaded(loaded)
     } catch OrbisError.cancelled {
+      // A refresh cancelled by leaving the app keeps the queue already on screen.
       guard generation == queueGeneration else { return }
+      if case .loaded = queue { return }
       queue = .idle
     } catch let error as OrbisError {
       guard generation == queueGeneration else { return }
@@ -857,6 +859,9 @@ final class AppModel {
   /// a completion, a settled position — must not put a spinner where the list was.
   func refreshLibraryQuietly() async {
     guard let client else { return }
+    // A load already in flight will answer; taking its generation would leave its spinner up if
+    // this refresh then failed or was cancelled.
+    if case .loading = library { return }
     libraryGeneration += 1
     let generation = libraryGeneration
     guard let sets = try? await client.library(playlistId: selectedPlaylistId) else { return }
@@ -868,10 +873,9 @@ final class AppModel {
   /// Set is already the active one and pausing is part of the same Listen.
   func togglePlayback() {
     switch audioPlayer.state {
-    case .playing:
-      audioPlayer.pause()
-    case .loading, .paused:
-      audioPlayer.resume()
+    case .playing, .loading, .paused, .interrupted:
+      // A press while the Set loads is a pause: the person asked for quiet before it started.
+      audioPlayer.togglePlayPause()
     case .idle, .failed:
       // A Set that failed to play is not resumable, so the button starts it again.
       if let id = audioPlayer.currentSetId {
@@ -887,11 +891,7 @@ final class AppModel {
       Task { await playSet(id) }
       return
     }
-    if audioPlayer.state == .playing {
-      audioPlayer.pause()
-    } else {
-      audioPlayer.resume()
-    }
+    togglePlayback()
   }
 
   /// Closes the reveal, leaving nothing behind when the person filed the Set and walked away.
