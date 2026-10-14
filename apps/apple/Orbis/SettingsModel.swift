@@ -16,6 +16,7 @@ final class SettingsModel {
   var people: Loadable<[GroupPerson]> = .idle
   var code: SignInCode?
   var accountFailure: OrbisFailure?
+  var groupFailure: OrbisFailure?
   var downloadsFailure: OrbisFailure?
   var codeFailure: OrbisFailure?
   var hostFailure: OrbisFailure?
@@ -53,6 +54,7 @@ final class SettingsModel {
     passcodeDraft = ""
     people = .idle
     accountFailure = nil
+    groupFailure = nil
     downloadsFailure = nil
     codeFailure = nil
     hostFailure = nil

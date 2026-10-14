@@ -32,12 +32,15 @@ struct SettingsScreen: View {
   }
 }
 
-/// The signed-in Person's settings: their account, Downloads, and Devices, and for the Host the
-/// Group Passcode and People.
+/// The signed-in Person's settings: their account, the Group (for the Host, joining and People),
+/// Downloads, Devices, and signing out.
 struct SettingsView: View {
   let model: AppModel
   @Bindable var settings: SettingsModel
   @State private var isConfirmingSignOut = false
+  /// Set when the Host turns joining on, which needs a passcode first. Held here, because a
+  /// destination inside the form's lazy rows is ignored.
+  @State private var isEditingPasscode = false
 
   var body: some View {
     Group {
@@ -64,17 +67,21 @@ struct SettingsView: View {
         }
       case .loaded(let person):
         account(person)
+        group(person)
+        if person.host {
+          HostSections(
+            model: model, settings: settings, hostId: person.id, isEditingPasscode: $isEditingPasscode)
+        }
         downloads(person)
       }
-      library
       devices
-      if case .loaded(let person) = settings.me, person.host {
-        HostSections(model: model, settings: settings, hostId: person.id)
-      }
       Section {
+        Button("Sign Out", role: .destructive) { isConfirmingSignOut = true }
+          .accessibilityIdentifier("settings-sign-out")
       } footer: {
         Text("Orbis \(FailureReport.appVersion)")
           .frame(maxWidth: .infinity)
+          .padding(.top, 12)
           .accessibilityIdentifier("settings-version")
       }
     }
@@ -82,6 +89,7 @@ struct SettingsView: View {
     .font(.orbis.body)
     .scrollContentBackground(.hidden)
     .background { TintGlow() }
+    .navigationDestination(isPresented: $isEditingPasscode) { PasscodeEditor(settings: settings) }
     .confirmationDialog(
       "Sign out of Orbis?", isPresented: $isConfirmingSignOut, titleVisibility: .visible
     ) {
@@ -93,27 +101,47 @@ struct SettingsView: View {
     }
   }
 
+  /// Who is signed in, as a card that opens the page for changing the name.
   private func account(_ person: Me) -> some View {
     Section {
-      HStack {
-        TextField("Username", text: $settings.username)
-          .plainEntry()
-          .onSubmit { saveUsername(person) }
-          .accessibilityIdentifier("settings-username")
-        if trimmedUsername != person.username, !trimmedUsername.isEmpty {
-          Button("Save") { saveUsername(person) }
-            .disabled(settings.isSaving)
-            .accessibilityIdentifier("settings-username-save")
+      NavigationLink {
+        NameEditor(settings: settings, person: person)
+      } label: {
+        HStack(spacing: 14) {
+          PersonAvatar(person.username, diameter: 56)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(person.username)
+              .font(.title3.weight(.semibold))
+            Text(role(person))
+              .font(.orbis.detail)
+              .foregroundStyle(.secondary)
+          }
         }
+        .padding(.vertical, 4)
       }
-      Toggle("Social", isOn: setting(person.social, failure: \.accountFailure) { MeUpdate(social: $0) })
-        .disabled(settings.isSaving)
-        .accessibilityIdentifier("settings-social")
-      FailureRows(failure: settings.accountFailure, context: "changing settings", identifier: "settings-error")
+      .accessibilityIdentifier("settings-account")
+    }
+  }
+
+  private func role(_ person: Me) -> String {
+    guard person.host else { return "Member of the Group" }
+    guard case .loaded(let people) = settings.people else { return "Host" }
+    return people.count == 1 ? "Host · 1 person" : "Host · \(people.count) people"
+  }
+
+  private func group(_ person: Me) -> some View {
+    Section {
+      Toggle(
+        "Share with Group",
+        isOn: setting(person.social, failure: \.groupFailure) { MeUpdate(social: $0) }
+      )
+      .disabled(settings.isSaving)
+      .accessibilityIdentifier("settings-social")
+      FailureRows(failure: settings.groupFailure, context: "changing settings", identifier: "settings-error")
     } header: {
-      Text("Account")
+      Text("Group")
     } footer: {
-      Text("With Social on, People in your Group see your Sets, Playlists, and listening, and you see theirs.")
+      Text("Your Group sees your Sets, Playlists, and what you play, and you see theirs.")
     }
   }
 
@@ -125,20 +153,14 @@ struct SettingsView: View {
       )
       .disabled(settings.isSaving)
       .accessibilityIdentifier("auto-download")
+      LabeledContent("Audio kept", value: keptCount == 1 ? "1 set" : "\(keptCount) sets")
       FailureRows(
         failure: settings.downloadsFailure, context: "changing Auto Download",
         identifier: "auto-download-error")
     } header: {
       Text("Downloads")
     } footer: {
-      Text("Download audio on your Orbis service when you save a Set. This applies to all your devices.")
-    }
-  }
-
-  private var library: some View {
-    Section("Library") {
-      LabeledContent("Audio kept", value: keptCount == 1 ? "1 set" : "\(keptCount) sets")
-      LabeledContent("Tags", value: model.availableTags.count, format: .number)
+      Text("When you save a Set, Orbis keeps its audio so it is ready to play. This applies to all your devices.")
     }
   }
 
@@ -154,14 +176,12 @@ struct SettingsView: View {
         Button("New Code") { Task { await settings.makeCode() } }
           .accessibilityIdentifier("settings-sign-in-code-new")
       } else {
-        Button("Sign in another device") { Task { await settings.makeCode() } }
+        Button("Sign In Another Device") { Task { await settings.makeCode() } }
           .accessibilityIdentifier("settings-sign-in-another")
       }
       FailureRows(
         failure: settings.codeFailure, context: "making a Sign-in Code",
         identifier: "settings-code-error")
-      Button("Sign Out", role: .destructive) { isConfirmingSignOut = true }
-        .accessibilityIdentifier("settings-sign-out")
     } header: {
       Text("Devices")
     } footer: {
@@ -169,10 +189,6 @@ struct SettingsView: View {
         Text("On the new device, choose I Have a Code and type this.")
       }
     }
-  }
-
-  private var trimmedUsername: String {
-    settings.username.trimmingCharacters(in: .whitespacesAndNewlines)
   }
 
   private func setting(
@@ -183,44 +199,89 @@ struct SettingsView: View {
       get: { value },
       set: { enabled in Task { await settings.save(update(enabled), failure: failure) } })
   }
+}
 
-  private func saveUsername(_ person: Me) {
-    guard trimmedUsername != person.username, !trimmedUsername.isEmpty else { return }
-    let username = trimmedUsername
-    Task { await settings.save(MeUpdate(username: username), failure: \.accountFailure) }
+/// The page for changing the signed-in Person's name.
+private struct NameEditor: View {
+  @Bindable var settings: SettingsModel
+  let person: Me
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    Form {
+      Section {
+        TextField("Name", text: $settings.username)
+          .plainEntry()
+          .onSubmit(save)
+          .accessibilityIdentifier("settings-username")
+        FailureRows(failure: settings.accountFailure, context: "changing settings", identifier: "settings-error")
+      } footer: {
+        Text("People in your Group see this name.")
+      }
+    }
+    .formStyle(.grouped)
+    .font(.orbis.body)
+    .scrollContentBackground(.hidden)
+    .background { TintGlow() }
+    .navigationTitle("Name")
+    .toolbar {
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Save", action: save)
+          .disabled(trimmed.isEmpty || trimmed == person.username || settings.isSaving)
+          .accessibilityIdentifier("settings-username-save")
+      }
+    }
+    // Leaving without saving puts the stored name back.
+    .onDisappear {
+      if case .loaded(let current) = settings.me { settings.username = current.username }
+    }
+  }
+
+  private var trimmed: String {
+    settings.username.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func save() {
+    guard !trimmed.isEmpty, trimmed != person.username else { return }
+    let username = trimmed
+    Task {
+      await settings.save(MeUpdate(username: username), failure: \.accountFailure)
+      if settings.accountFailure == nil { dismiss() }
+    }
   }
 }
 
+/// The Host's rows: whether friends can join, with what passcode, and the People in the Group.
 private struct HostSections: View {
   let model: AppModel
   @Bindable var settings: SettingsModel
   let hostId: String
+  @Binding var isEditingPasscode: Bool
 
   var body: some View {
     Section {
-      TextField("Group Passcode", text: $settings.passcodeDraft)
-        .plainEntry()
-        .onSubmit { Task { await settings.setPasscode(trimmedDraft) } }
-        .accessibilityIdentifier("settings-passcode")
-      Button(settings.passcode == nil ? "Open Joining" : "Change Passcode") {
-        Task { await settings.setPasscode(trimmedDraft) }
-      }
-      .disabled(trimmedDraft.isEmpty || trimmedDraft == settings.passcode || settings.isSaving)
-      .accessibilityIdentifier("settings-passcode-save")
-      if settings.passcode != nil {
-        Button("Close Joining", role: .destructive) { Task { await settings.setPasscode(nil) } }
-          .disabled(settings.isSaving)
-          .accessibilityIdentifier("settings-passcode-clear")
+      Toggle("Allow Joining", isOn: joining)
+        .disabled(settings.isSaving)
+        .accessibilityIdentifier("settings-joining")
+      if let passcode = settings.passcode {
+        NavigationLink {
+          PasscodeEditor(settings: settings)
+        } label: {
+          LabeledContent("Group Passcode", value: passcode)
+        }
+        .accessibilityIdentifier("settings-passcode-row")
+        ShareLink(item: invitation(passcode)) {
+          Label("Invite a Friend", systemImage: "square.and.arrow.up")
+        }
+        .accessibilityIdentifier("settings-invite")
       }
       FailureRows(
         failure: settings.hostFailure, context: "managing the Group", identifier: "settings-host-error")
-    } header: {
-      Text("Group Passcode")
     } footer: {
       Text(
         settings.passcode == nil
-          ? "Joining is closed. Set a passcode and tell it to a friend so they can join."
-          : "Friends type this to join. Changing it does not sign anyone out."
+          ? "Joining is closed. Turn on Allow Joining and choose a Group Passcode so a friend can join."
+          : "Friends choose I'm New and type the Group Passcode. Changing it does not sign anyone out."
       )
       .accessibilityIdentifier("settings-passcode-state")
     }
@@ -233,13 +294,16 @@ private struct HostSections: View {
         FailureRows(failure: failure, context: "loading People", identifier: "settings-people-error")
         Button("Try Again") { Task { await settings.loadPeople() } }
       case .loaded(let people):
-        ForEach(people) { person in
+        ForEach(people.filter { $0.id != hostId }) { person in
           NavigationLink {
-            PersonView(model: model, person: person, isSelf: person.id == hostId) {
+            PersonView(model: model, person: person) {
               Task { await settings.loadPeople() }
             }
           } label: {
-            Text(person.id == hostId ? "\(person.username) (you)" : person.username)
+            HStack(spacing: 12) {
+              PersonAvatar(person.username, diameter: 32)
+              Text(person.username)
+            }
           }
           .accessibilityIdentifier("person-\(person.username)")
         }
@@ -247,17 +311,76 @@ private struct HostSections: View {
     }
   }
 
-  private var trimmedDraft: String {
-    settings.passcodeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+  /// On opens the passcode page, because joining needs a passcode; off closes joining at once.
+  private var joining: Binding<Bool> {
+    Binding(
+      get: { settings.passcode != nil },
+      set: { open in
+        if open {
+          isEditingPasscode = true
+        } else {
+          Task { await settings.setPasscode(nil) }
+        }
+      })
+  }
+
+  private func invitation(_ passcode: String) -> String {
+    "Join my Orbis Group: open Orbis, choose I'm New, and type the Group Passcode \(passcode)."
   }
 }
 
-/// One Person, as the Host sees them: a Sign-in Code for a new device, and removal.
+/// The page for setting the Group Passcode.
+private struct PasscodeEditor: View {
+  @Bindable var settings: SettingsModel
+  @Environment(\.dismiss) private var dismiss
+
+  var body: some View {
+    Form {
+      Section {
+        TextField("Group Passcode", text: $settings.passcodeDraft)
+          .plainEntry()
+          .onSubmit(save)
+          .accessibilityIdentifier("settings-passcode")
+        FailureRows(
+          failure: settings.hostFailure, context: "managing the Group", identifier: "settings-host-error")
+      } footer: {
+        Text("Use at least 8 characters. Friends type this to join.")
+      }
+    }
+    .formStyle(.grouped)
+    .font(.orbis.body)
+    .scrollContentBackground(.hidden)
+    .background { TintGlow() }
+    .navigationTitle("Group Passcode")
+    .toolbar {
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Save", action: save)
+          .disabled(trimmed.isEmpty || trimmed == settings.passcode || settings.isSaving)
+          .accessibilityIdentifier("settings-passcode-save")
+      }
+    }
+    // Leaving without saving puts the stored passcode back.
+    .onDisappear { settings.passcodeDraft = settings.passcode ?? "" }
+  }
+
+  private var trimmed: String {
+    settings.passcodeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  private func save() {
+    guard !trimmed.isEmpty, trimmed != settings.passcode else { return }
+    let next = trimmed
+    Task {
+      await settings.setPasscode(next)
+      if settings.passcode == next { dismiss() }
+    }
+  }
+}
+
+/// One other Person, as the Host sees them: a Sign-in Code for a new device, and removal.
 private struct PersonView: View {
   let model: AppModel
   let person: GroupPerson
-  /// The Host's own row, which can show a code but not remove itself.
-  let isSelf: Bool
   let removed: () -> Void
   @State private var code: SignInCode?
   @State private var failure: OrbisFailure?
@@ -274,15 +397,13 @@ private struct PersonView: View {
           .accessibilityIdentifier("person-show-code")
         FailureRows(failure: failure, context: "managing a Person", identifier: "person-error")
       } footer: {
-        Text("On \(isSelf ? "your" : "their") new device, choose I Have a Code and type this.")
+        Text("On their new device, choose I Have a Code and type this.")
       }
-      if !isSelf {
-        Section {
-          Button("Remove \(person.username)", role: .destructive) { isConfirmingRemoval = true }
-            .accessibilityIdentifier("person-remove")
-        } footer: {
-          Text("They leave the Group and are signed out on every device.")
-        }
+      Section {
+        Button("Remove \(person.username)", role: .destructive) { isConfirmingRemoval = true }
+          .accessibilityIdentifier("person-remove")
+      } footer: {
+        Text("They leave the Group and are signed out on every device.")
       }
     }
     .formStyle(.grouped)

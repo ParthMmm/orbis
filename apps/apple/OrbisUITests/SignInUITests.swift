@@ -75,9 +75,9 @@ final class SignInUITests: XCTestCase {
     step("a relaunch reads the key back from the keychain")
 
     openSettings(app)
-    let usernameSetting = app.textFields["settings-username"]
-    XCTAssertTrue(usernameSetting.waitForExistence(timeout: 15))
-    XCTAssertEqual(usernameSetting.value as? String, username)
+    let account = app.buttons["settings-account"]
+    XCTAssertTrue(account.waitForExistence(timeout: 15))
+    XCTAssertTrue(account.label.contains(username), "the account card names the Person: \(account.label)")
     let another = app.buttons["settings-sign-in-another"]
     reveal(another, in: app)
     another.tap()
@@ -184,14 +184,17 @@ final class SignInUITests: XCTestCase {
     let app = launchOrbis(address: host.address, token: host.token)
 
     openSettings(app)
-    let passcode = app.textFields["settings-passcode"]
-    reveal(passcode, in: app)
+    let passcodeRow = app.buttons["settings-passcode-row"]
+    reveal(passcodeRow, in: app)
     XCTAssertTrue(
-      waitUntil(timeout: 15) { passcode.value as? String == "lane-before" },
+      waitUntil(timeout: 15) { passcodeRow.label.contains("lane-before") },
       "the Host sees the current passcode\n\(app.debugDescription)")
     capture("01-host-settings")
     step("the Host's Settings shows the Group Passcode")
 
+    passcodeRow.tap()
+    let passcode = app.textFields["settings-passcode"]
+    XCTAssertTrue(passcode.waitForExistence(timeout: 10), "the passcode page offers a field")
     replaceText(in: passcode, with: "lane-after", app: app)
     app.buttons["settings-passcode-save"].tap()
     XCTAssertTrue(
@@ -227,9 +230,9 @@ final class SignInUITests: XCTestCase {
       waitUntil(timeout: 10) { !leavingRow.exists }, "and leaves the People list")
     step("the Host removes a Person after confirming")
 
-    let close = app.buttons["settings-passcode-clear"]
-    reveal(close, in: app)
-    close.tap()
+    let joining = app.switches["settings-joining"]
+    reveal(joining, in: app)
+    joining.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
     XCTAssertTrue(
       try waitUntil(timeout: 15) { try host.passcode() == nil }, "closing joining clears it")
     XCTAssertTrue(
@@ -304,7 +307,7 @@ final class SignInUITests: XCTestCase {
     XCTAssertTrue(version.exists, "Settings ends with the app version\n\(app.debugDescription)")
     XCTAssertTrue(version.label.hasPrefix("Orbis "), version.label)
     XCTAssertFalse(
-      app.textFields["settings-passcode"].exists, "a friend must not see the Group Passcode")
+      app.switches["settings-joining"].exists, "a friend must not see joining")
     XCTAssertEqual(
       app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'person-'")).count, 0,
       "a friend must not see People")
