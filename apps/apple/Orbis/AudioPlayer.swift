@@ -88,8 +88,8 @@ final class AudioPlayer {
     // remains is global, and only this player's own registrations are taken back.
     let center = MPRemoteCommandCenter.shared()
     let commands = [
-      center.playCommand, center.pauseCommand, center.skipBackwardCommand,
-      center.skipForwardCommand,
+      center.playCommand, center.pauseCommand, center.togglePlayPauseCommand,
+      center.skipBackwardCommand, center.skipForwardCommand,
     ]
     for command in commands {
       for target in commandTargets { command.removeTarget(target) }
@@ -207,7 +207,7 @@ final class AudioPlayer {
       } catch {
         return false
       }
-      if #available(iOS 27.0, *) {
+      if #available(iOS 27.0, tvOS 27.0, *) {
         return await withCheckedContinuation { continuation in
           session.activate(options: []) { activated, _ in
             continuation.resume(returning: activated)
@@ -229,7 +229,7 @@ final class AudioPlayer {
   private nonisolated static func endSession() async {
     #if !os(macOS)
       let session = AVAudioSession.sharedInstance()
-      if #available(iOS 27.0, *) {
+      if #available(iOS 27.0, tvOS 27.0, *) {
         await withCheckedContinuation { continuation in
           session.deactivate(options: .notifyOthersOnDeactivation) { _, _ in
             continuation.resume()
@@ -554,6 +554,17 @@ final class AudioPlayer {
       return .success
     }
     center.pauseCommand.isEnabled = true
+    // The one button on a headphone cable or the Siri Remote.
+    let toggle = center.togglePlayPauseCommand.addTarget { [weak self] _ in
+      guard let self else { return .noSuchContent }
+      if self.state == .playing {
+        self.pause()
+      } else {
+        self.resume()
+      }
+      return .success
+    }
+    center.togglePlayPauseCommand.isEnabled = true
     // The same skips as the transport beside Play, so the Lock Screen and the car offer them too.
     // The interval is set before the target, because the system reads it when the target arrives.
     center.skipBackwardCommand.preferredIntervals = [Self.skipBack as NSNumber]
@@ -568,7 +579,7 @@ final class AudioPlayer {
       return .success
     }
     center.skipForwardCommand.isEnabled = true
-    commandTargets = [play, pause, back, ahead]
+    commandTargets = [play, pause, toggle, back, ahead]
   }
 
   static let skipBack: TimeInterval = 15

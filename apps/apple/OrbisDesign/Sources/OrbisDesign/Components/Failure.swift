@@ -122,7 +122,9 @@ public struct CopyFailureButton: View {
 /// The clipboard, whichever platform is holding it.
 @MainActor
 func copyToPasteboard(_ text: String) {
-  #if canImport(UIKit)
+  #if os(tvOS)
+    // Apple TV has no pasteboard; the button that calls this is not drawn there.
+  #elseif canImport(UIKit)
     UIPasteboard.general.string = text
   #elseif canImport(AppKit)
     NSPasteboard.general.clearContents()
