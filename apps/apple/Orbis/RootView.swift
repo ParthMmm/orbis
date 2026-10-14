@@ -168,16 +168,13 @@ struct RootView: View {
 
     var body: some View {
       TabView(selection: tabSelection) {
-        ForEach([Destination.home, .library, .playlists, .people]) { destination in
+        // Search is a tab like the others, as in Apple Music. The search role would split it
+        // off into a circle that turns into a field, and the field belongs at the top of Search.
+        ForEach([Destination.home, .library, .playlists, .people, .search]) { destination in
           Tab(destination.rawValue, systemImage: destination.symbol, value: destination) {
             NavigationStack {
               DestinationView(model: model, destination: destination)
             }
-          }
-        }
-        Tab(value: Destination.search, role: .search) {
-          NavigationStack {
-            DestinationView(model: model, destination: .search)
           }
         }
       }
