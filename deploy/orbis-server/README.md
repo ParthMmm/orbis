@@ -49,10 +49,10 @@ A new Person joins with their username and the Group Passcode, which the Host se
 curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
   https://orbis.p11a.xyz/api/health
 curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
-  https://vanta.tail01d084.ts.net:10000/api/health
+  https://vanta.example.ts.net:10000/api/health
 curl --silent --show-error --output /dev/null --write-out '%{http_code}\n' \
   -H "Authorization: Bearer $ORBIS_DEVICE_TOKEN" \
-  https://vanta.tail01d084.ts.net:10000/api/sets
+  https://vanta.example.ts.net:10000/api/sets
 ```
 
 Expect `200` for both health requests and for `/api/sets` with a valid daily key. Inject the existing key without printing it or saving response data. On `/api/sets`, a missing key returns `403`, an invalid key returns `401`, and a node key returns `403`. Audio requires a signed stream grant from the Group.

@@ -1,6 +1,6 @@
 # Expose Orbis on the web through Tailscale Funnel
 
-Orbis gains a private web client that friends open with a link and nothing installed. The Bun/Effect/SQLite service, download worker, and Retained Audio stay on Vanta. Tailscale Funnel on port 10000 makes one address public, `https://vanta.tail01d084.ts.net:10000`, and Tailscale Serve routes it: `/api` to the device listener on `127.0.0.1:4311`, and `/` to the web client's built files. Funnel accepts only ports 443, 8443, and 10000; Caddy holds 443 and Jellyfin's Funnel holds 8443.
+Orbis gains a private web client that friends open with a link and nothing installed. The Bun/Effect/SQLite service, download worker, and Retained Audio stay on Vanta. Tailscale Funnel on port 10000 makes one address public, `https://vanta.example.ts.net:10000`, and Tailscale Serve routes it: `/api` to the device listener on `127.0.0.1:4311`, and `/` to the web client's built files. Funnel accepts only ports 443, 8443, and 10000; Caddy holds 443 and Jellyfin's Funnel holds 8443.
 
 The web client lives in `apps/web`, a Vite React SPA that starts from the desktop renderer in `apps/desktop/src`. The Electron app keeps working on the local listener until the web client reaches parity; retiring it is a later decision.
 

@@ -45,7 +45,7 @@ Native clients need no change until step 9 beyond accepting the same key. Their 
 - Grants: an expired, altered, or other-Set grant gets 401; a grant is refused on every other route.
 - Migration: a copy of the live database migrates, and the Host's Library, Playlists, queue, positions, and edited titles read back unchanged.
 - Backup: restore last night's backup to a scratch directory and start the service against it.
-- Funnel: from a phone on cellular, `https://vanta.tail01d084.ts.net:10000/api/health` returns 401 without a key and 200 with one, and a DJ set seeks without stalling.
+- Funnel: from a phone on cellular, `https://vanta.example.ts.net:10000/api/health` returns 401 without a key and 200 with one, and a DJ set seeks without stalling.
 - Exposure: `tailscale funnel status` lists only 8443 (Jellyfin) and 10000 (Orbis) as public.
 
 ## Out of scope
