@@ -41,7 +41,7 @@ Saving a link creates a Person's Library Entry. Auto Download starts a Download 
 | [`apps/server`](apps/server) | Shared Effect HTTP handlers, disposable SQLite test adapter, and production audio node |
 | [`apps/api`](apps/api) | Cloudflare API Worker and SQLite Group Durable Object |
 | [`apps/web`](apps/web) | TanStack Start web client and Alchemy deployment for web and API |
-| [`apps/apple/Orbis`](apps/apple/Orbis) | One SwiftUI app for iOS and macOS, with Home, Library, Playlists, People, and Search tabs, Now Playing, CarPlay, and a share extension. The Xcode project is generated with xcodegen |
+| [`apps/apple/Orbis`](apps/apple/Orbis) | One SwiftUI app for iOS and macOS, with Now Playing, CarPlay, and a share extension. Its tabs are Home, Library, Playlists, People, and Search. xcodegen generates the Xcode project |
 | [`apps/apple/OrbisDesign`](apps/apple/OrbisDesign) | Swift package with the design tokens, styles, and components |
 | [`apps/raycast`](apps/raycast) | Raycast commands: Save Current Tab and Save Clipboard |
 | [`packages/contracts`](packages/contracts) | Typed HTTP contract, derived client, and audio-node protocol |
