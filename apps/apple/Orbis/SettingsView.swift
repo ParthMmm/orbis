@@ -138,7 +138,7 @@ struct SettingsView: View {
     } header: {
       Text("Group")
     } footer: {
-      Text("Your Group sees your Sets, Playlists, and what you play, and you see theirs.")
+      Text("You and your Group see each other's Sets, Playlists, and listening.")
     }
   }
 
