@@ -348,6 +348,8 @@ final class AppModel {
     client = nil
     signInFailure = nil
     isShowingSettings = false
+    // The next sign-in starts on Home, so the first Set opened lands in the stack on screen.
+    destination = .home
     library = .idle
     search = .idle
     searchResultsFor = nil
@@ -1100,6 +1102,9 @@ final class AppModel {
 
   func openPlaylist(_ id: String) {
     playlistFailure = nil
+    // A page left open from the last Playlist must not be the first thing this one shows.
+    openedSets[.playlists] = nil
+    playlistMembers = .idle
     openedPlaylistId = id
   }
 
