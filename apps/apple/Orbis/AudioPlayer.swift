@@ -554,7 +554,6 @@ final class AudioPlayer {
       return .success
     }
     center.pauseCommand.isEnabled = true
-    // The one button on a headphone cable or the Siri Remote.
     let toggle = center.togglePlayPauseCommand.addTarget { [weak self] _ in
       guard let self else { return .noSuchContent }
       if self.state == .playing {

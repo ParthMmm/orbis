@@ -40,7 +40,6 @@
       }
     }
 
-    /// Search takes the system's search role, which owns the keyboard above the page.
     var role: TabRole? { self == .search ? .search : nil }
 
     var identifier: String {
@@ -69,7 +68,6 @@
       _tab = State(initialValue: TVTab(model.destination))
     }
 
-    /// Now Playing is a tab only while there is something to show in it.
     private var tabs: [TVTab] {
       TVTab.allCases.filter { $0 != .nowPlaying || model.audioPlayer.currentSetId != nil }
     }
@@ -102,8 +100,7 @@
       .onChange(of: model.audioPlayer.currentSetId) { _, id in
         if id == nil, tab == .nowPlaying { select(.home) }
       }
-      // A chip on Search or a Set page sends the person to the Library by setting the model's
-      // destination, the way it does on the phone; the bar follows.
+      // A chip sets the model's destination, the way it does on the phone; the bar follows.
       .onChange(of: model.destination) { _, destination in
         let next = TVTab(destination)
         if next != tab { tab = next }

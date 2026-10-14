@@ -132,7 +132,6 @@ targets:
         # under Contents/MacOS, so the SDK condition supplies the right one.
         TEST_HOST[sdk=macosx*]: "$(BUILT_PRODUCTS_DIR)/Orbis.app/Contents/MacOS/Orbis"
         BUNDLE_LOADER[sdk=macosx*]: "$(TEST_HOST)"
-        # These test the screens the TV build leaves out.
         "EXCLUDED_SOURCE_FILE_NAMES[sdk=appletv*]": AddToPlaylistTests.swift ClipboardLinkTests.swift
   OrbisUITests:
     type: bundle.ui-testing
@@ -149,8 +148,6 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.uitests
   OrbisTVUITests:
     type: bundle.ui-testing
-    # The TV journey drives the app with the Siri Remote, so it is its own bundle; it shares
-    # the lane's HTTP client with the iOS journeys.
     supportedDestinations: [tvOS]
     sources:
       - OrbisTVUITests

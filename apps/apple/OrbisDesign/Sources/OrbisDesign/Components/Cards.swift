@@ -204,7 +204,6 @@ public struct PlaylistSleeve: View {
     self.height = height
   }
 
-  /// The pocket and its words grow with the folder, so the proportions hold at any size.
   private var scale: CGFloat { height / 150 }
 
   public var body: some View {

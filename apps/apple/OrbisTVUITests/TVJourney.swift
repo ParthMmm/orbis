@@ -62,8 +62,6 @@ final class TVJourney: XCTestCase {
     XCTAssertTrue(pressUntil(.up, limit: 6) { app.tabBars.buttons.allElementsBoundByIndex.contains { $0.hasFocus } })
     XCTAssertTrue(pressUntil(.left, limit: 6) { libraryTab.hasFocus }, "The bar must reach Library")
     XCTAssertTrue(app.descendants(matching: .any)["tv-library"].waitForExistence(timeout: 15))
-    // Pressing a Tag filters the Library and must leave the focus on that chip, since the chip
-    // is one button whose tint changes rather than a button rebuilt in another style.
     let chip = app.buttons["tv-tag-techno"]
     XCTAssertTrue(moveFocus(to: chip, pressing: .down, limit: 2), "The Tag chip must take focus")
     remote.press(.select)
@@ -74,8 +72,6 @@ final class TVJourney: XCTestCase {
     sleep(1)
     XCTAssertTrue(chip.hasFocus, "Focus must stay on the Tag after the filter clears")
     XCTAssertTrue(tile.waitForExistence(timeout: 10))
-    // The chips row sits between the bar and the grid, so the tile is one row down; the seeded
-    // Set is the newest and leads the grid.
     XCTAssertTrue(moveFocus(to: tile, pressing: .down, limit: 3), "The seeded tile must take focus")
     XCTAssertTrue(moveFocus(to: tile, pressing: .left, limit: 3))
     remote.press(.select)
@@ -92,7 +88,6 @@ final class TVJourney: XCTestCase {
       XCTWaiter.wait(for: [labelled(play, "Pause")], timeout: 20), .completed,
       "Play must become Pause once the Set is in the player")
 
-    // Up to the bar, then along it to the Now Playing tab, which exists only while a Set plays.
     let nowPlayingTab = app.tabBars.buttons["Now Playing"]
     XCTAssertTrue(nowPlayingTab.waitForExistence(timeout: 10))
     XCTAssertTrue(pressUntil(.up, limit: 4) { app.tabBars.buttons.allElementsBoundByIndex.contains { $0.hasFocus } })
@@ -105,7 +100,6 @@ final class TVJourney: XCTestCase {
       "Now Playing must name the track or the Set\n\(app.debugDescription)")
     capture("tv-now-playing")
 
-    // Forward 30 moves the clock: the elapsed label is read before and after the press.
     let elapsed = app.staticTexts["now-playing-elapsed"]
     XCTAssertTrue(elapsed.waitForExistence(timeout: 10))
     let before = Self.seconds(elapsed.label)
@@ -132,7 +126,6 @@ final class TVJourney: XCTestCase {
       predicate: NSPredicate(format: "exists == false"),
       object: app.descendants(matching: .any)["queue-screen"])
     XCTAssertEqual(XCTWaiter.wait(for: [closed], timeout: 10), .completed, "Menu must close Up Next")
-    // The remote's play/pause button reaches the player from anywhere in the shell.
     remote.press(.playPause)
     XCTAssertEqual(XCTWaiter.wait(for: [labelled(toggle, "Play")], timeout: 10), .completed)
 
@@ -165,7 +158,6 @@ final class TVJourney: XCTestCase {
     capture("tv-home-set-page")
   }
 
-  /// Presses `button` until `element` has focus, at most `limit` times.
   private func moveFocus(to element: XCUIElement, pressing button: XCUIRemote.Button, limit: Int) -> Bool {
     pressUntil(button, limit: limit) { element.exists && element.hasFocus }
   }
@@ -183,7 +175,6 @@ final class TVJourney: XCTestCase {
     XCTNSPredicateExpectation(predicate: NSPredicate(format: "label == %@", label), object: element)
   }
 
-  /// "1:05" or "1:02:03" as seconds.
   private static func seconds(_ label: String) -> Int {
     label.split(separator: ":").compactMap { Int($0) }.reduce(0) { $0 * 60 + $1 }
   }

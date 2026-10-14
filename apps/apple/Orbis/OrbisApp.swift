@@ -274,7 +274,7 @@ extension View {
   }
 
   /// Searches as the query is typed, once typing pauses for 300 ms. A new keystroke cancels the
-  /// wait, so only the query the person stopped on is sent. Every platform's Search runs this.
+  /// wait, so only the query the person stopped on is sent.
   func searchesAsTyped(_ model: AppModel) -> some View {
     task(id: model.searchQuery) {
       let query = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)

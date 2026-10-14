@@ -12,7 +12,6 @@
       if case .loaded(let sets) = model.library { sets } else { [] }
     }
 
-    /// The same choice of lead and rails the phone's Home makes.
     private var home: HomeSelection {
       guard case .loaded(let visible) = model.visibleSets else {
         return HomeSelection(library: librarySets, visible: [])
@@ -99,7 +98,6 @@
   private struct TVHomeHero: View {
     @Bindable var model: AppModel
     let set: SavedSet
-    /// The Set was left part-way, so the button resumes and says how long is left.
     let isResume: Bool
     @FocusState private var focus: Focus?
 

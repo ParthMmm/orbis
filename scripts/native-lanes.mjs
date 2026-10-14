@@ -56,7 +56,6 @@ const only = [];
 // --only narrows a lane to one test, which is how a single journey is re-run after a failure
 // without running the remaining journeys.
 const onlyTest = argument("only");
-// The TV has one journey and one simulator, so it never clones.
 const parallelJourneys =
   journeysOnly && !macos && !tvos && !unitOnly && !onlyTest;
 const workerCount = parallelJourneys ? 2 : 1;

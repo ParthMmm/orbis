@@ -45,7 +45,6 @@
       } message: {
         Text("To sign in again, you need a Sign-in Code from another device or from your Host.")
       }
-      // Keyed on the key, so signing in as someone else reloads the Person this shows.
       .task(id: model.client?.token) { await settings.load() }
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("tv-settings")

@@ -132,8 +132,7 @@ struct FailureRows: View {
   }
 }
 
-/// A Sign-in Code, large enough to read across a room, with when it stops working. Shared with
-/// the TV's Settings, which has no text selection to offer.
+/// A Sign-in Code, large enough to read across a room, with when it stops working.
 struct SignInCodeView: View {
   let code: SignInCode
   let identifier: String

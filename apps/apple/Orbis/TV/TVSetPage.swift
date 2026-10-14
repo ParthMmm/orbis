@@ -35,8 +35,6 @@
           TVLoading()
         }
       }
-      // Said aloud, because a refusal or "Playing next" lands under the buttons, out of the way of
-      // a screen reader that is on them.
       .onChange(of: model.setFailure) { _, failure in
         if let failure { AccessibilityNotification.Announcement(failure.message).post() }
       }
@@ -112,8 +110,8 @@
       }
     }
 
-    /// Play, and where the Set goes when it is not the one being started now. A Set whose audio
-    /// is not kept offers the Download instead; the service does the work, so the TV may ask.
+    /// Play and the queue actions, or the Download when the audio is not kept yet; the service
+    /// does the work, so the TV may ask.
     @ViewBuilder private func actions(_ set: SavedSet) -> some View {
       HStack(spacing: 20) {
         if set.downloadState == "ready" {
@@ -165,27 +163,20 @@
       .accessibilityIdentifier("detail-play-toggle")
     }
 
-    /// The Download as a button the remote can press. `DownloadCapsule` answers a tap, which no
-    /// remote makes, so the TV draws the same phase and words as a glass button. It stays
-    /// focusable while the service works, so the progress can be read; pressing it then does
-    /// nothing, and Cancel beside it is where focus starts.
+    /// `DownloadCapsule` answers a tap, which no remote makes, so the TV draws its phase and words
+    /// itself: a button to start or retry, and while the service works a focusable progress label
+    /// beside Cancel.
     @ViewBuilder private func downloadButtons(_ set: SavedSet) -> some View {
       let phase = SetPresentation.downloadPhase(set.downloadState, live: model.audioStates[set.id])
-      let isWorking = isDownloading(set)
       let label = DownloadCapsule.label(for: phase)
-      Button {
-        if !isWorking { Task { await model.downloadAudio(set.id) } }
-      } label: {
-        Label(label, systemImage: phase == .failed ? "arrow.clockwise" : "arrow.down")
+      if isDownloading(set) {
+        Label(label, systemImage: "arrow.down")
           .monospacedDigit()
           .contentTransition(.numericText())
-      }
-      .buttonStyle(.glassProminent)
-      .tint(isWorking ? Color.orbis.tint.opacity(0.5) : Color.orbis.tint)
-      .focused($focus, equals: .play)
-      .accessibilityValue(isWorking ? label : "")
-      .accessibilityIdentifier(phase == .failed ? "detail-retry-download" : "detail-download")
-      if isWorking {
+          .padding(.horizontal, 28)
+          .padding(.vertical, 16)
+          .focusable()
+          .accessibilityIdentifier("detail-download")
         Button {
           Task { await model.cancelAudioDownload(set.id) }
         } label: {
@@ -194,6 +185,16 @@
         .buttonStyle(.glass)
         .focused($focus, equals: .cancel)
         .accessibilityIdentifier("detail-cancel-download")
+      } else {
+        Button {
+          Task { await model.downloadAudio(set.id) }
+        } label: {
+          Label(label, systemImage: phase == .failed ? "arrow.clockwise" : "arrow.down")
+        }
+        .buttonStyle(.glassProminent)
+        .tint(Color.orbis.tint)
+        .focused($focus, equals: .play)
+        .accessibilityIdentifier(phase == .failed ? "detail-retry-download" : "detail-download")
       }
     }
   }

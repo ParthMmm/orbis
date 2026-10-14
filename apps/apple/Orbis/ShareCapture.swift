@@ -77,9 +77,7 @@ enum ShareCapture {
   }
 
   static func preserveOnClipboard(_ text: String) {
-    #if os(tvOS)
-      // Apple TV has no pasteboard, and nothing files from one there.
-    #elseif canImport(UIKit)
+    #if canImport(UIKit) && !os(tvOS)
       UIPasteboard.general.string = text
     #elseif canImport(AppKit)
       NSPasteboard.general.clearContents()

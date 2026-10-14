@@ -54,8 +54,6 @@
       let isPlaying = player.state == .playing || player.state == .loading
       return HStack(alignment: .top, spacing: 80) {
         VStack(alignment: .leading, spacing: 28) {
-          // The artwork sits back while the Set is paused and steps forward when it plays, the
-          // way Apple Music's does: the state of the player, read from across the room.
           Artwork(url: SetPresentation.pageArtwork(set), seed: set.title, size: .header)
             .shadow(color: .black.opacity(0.45), radius: isPlaying ? 36 : 16, y: isPlaying ? 24 : 8)
             .scaleEffect(isPlaying ? 1 : 0.9)
@@ -78,7 +76,6 @@
       }
     }
 
-    /// Back, previous Cue, Play, next Cue, forward, as round glass buttons, and Up Next.
     private var transport: some View {
       let player = model.audioPlayer
       let isPlaying = player.state == .playing || player.state == .loading
@@ -130,7 +127,7 @@
           Text(cue.title)
             .font(.orbis.title)
             .lineLimit(1)
-            .accessibilityLabel("\(cue.title) · \(cue.artist)")
+            .accessibilityLabel("\(cue.title), \(cue.artist)")
             .accessibilityIdentifier("now-playing-cue")
           Text(set.title)
             .font(.title3)
@@ -154,8 +151,7 @@
   }
 
   /// The bar and the clock, in their own view because the player publishes elapsed time twice a
-  /// second and only this view should redraw with it. Not a control: the skips are the seek on a
-  /// remote. One element to a screen reader, which hears where the Set is and how long it runs.
+  /// second and only this view should redraw with it.
   private struct TVPlaybackProgress: View {
     let player: AudioPlayer
     let fallbackDuration: TimeInterval?
@@ -228,9 +224,7 @@
               } label: {
                 TVLyricLine(cue: cue, isCurrent: isCurrent, isHeard: isHeard)
               }
-              // Plain, so the line is bare words that the system lifts onto its light platter
-              // when focused; white, because the plain style would otherwise write the words in
-              // the tint.
+              // The plain style draws its label in the tint.
               .buttonStyle(.plain)
               .tint(.white)
               .focused($focusedCue, equals: cue.position)
@@ -244,8 +238,7 @@
             }
           }
         }
-        // Soft edges rather than a mask, which clipped the focus platter at the column's sides;
-        // the margins keep a focused line out of the faded band.
+        // The margins keep a focused line out of the faded band.
         .contentMargins(.vertical, 100, for: .scrollContent)
         .scrollEdgeEffectStyle(.soft, for: .vertical)
         .scrollClipDisabled()
@@ -288,9 +281,8 @@
     }
   }
 
-  /// The Listening Queue: what plays next, in order, with the Set playing now marked. Pressing an
-  /// entry starts it. Covers the whole screen, as Apple TV shows a modal list; Menu or Done closes
-  /// it, and Done is there so the empty and failed states still have something to focus.
+  /// The Listening Queue: what plays next, in order, with the Set playing now marked. Done is
+  /// there so the empty and failed states still have something to focus.
   struct TVQueue: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -320,7 +312,6 @@
       .environment(\.colorScheme, .dark)
       .accessibilityElement(children: .contain)
       .accessibilityIdentifier("queue-screen")
-      // Read again on open: the other device may be the one that changed it.
       .task { await model.loadQueue() }
     }
 

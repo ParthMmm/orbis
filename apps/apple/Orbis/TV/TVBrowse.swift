@@ -5,15 +5,12 @@
   /// The spacing the TV pages share, so a grid, a rail, and a hero line up with each other.
   @MainActor
   enum TVLayout {
-    /// Between cards, wide enough that a lifted card does not touch its neighbour.
     static let gap: CGFloat = 48
-    /// A grid's columns. A television has one width, and four tiles of the rail's size fill it.
     static let columns = Array(repeating: GridItem(.flexible(), spacing: gap, alignment: .top), count: 4)
     /// Room above and below a rail for the focus lift, which `scrollClipDisabled` lets escape.
     static let liftInset: CGFloat = 40
   }
 
-  /// The one open Set under a destination, as the binding a navigation destination reads.
   func openedSet(_ model: AppModel, _ destination: Destination) -> Binding<String?> {
     Binding(
       get: { model.openedSets[destination] },
@@ -21,7 +18,6 @@
     )
   }
 
-  /// A spinner a screen reader can name.
   struct TVLoading: View {
     var body: some View {
       ProgressView()
@@ -55,7 +51,6 @@
     let model: AppModel
     let set: SavedSet
     var detail: String?
-    /// `.tile` in a rail, where the card is its own width; `.header` in a grid, to fill the column.
     var size: Artwork.Size = .tile
 
     var body: some View {
@@ -137,7 +132,6 @@
     var selected: String?
     var identifierPrefix = "tv-tag"
     var hint: String?
-    /// Room above and below for the focus lift; a caller that already has it passes zero.
     var verticalInset: CGFloat = 24
     let press: (String) -> Void
 
@@ -156,9 +150,7 @@
       .focusSection()
     }
 
-    /// A chip is one glass button in the Tag's colour, so the system's own focus pill marks the
-    /// one under the remote and a press never rebuilds the button it is on; the Tag the Library
-    /// is filtered by carries the colour at full strength.
+    /// One style per chip, varied by tint: a press must not rebuild the button the focus is on.
     private func chip(_ tag: String) -> some View {
       let category = SetPresentation.category(for: tag)
       let isSelected = tag == selected
@@ -273,7 +265,7 @@
     }
   }
 
-  /// A Library with nothing in it yet. The TV files nothing, so it says where filing happens.
+  /// A Library with nothing in it yet.
   struct TVEmptyLibrary: View {
     var body: some View {
       ContentUnavailableView {
@@ -376,7 +368,6 @@
     @Bindable var model: AppModel
     let playlistId: String
     @FocusState private var focus: Focus?
-    /// The play a person asked for while something else was playing, held until they confirm.
     @State private var pendingPlay: PlayOrder?
 
     private enum Focus {
@@ -517,8 +508,6 @@
       Binding(get: { pendingPlay != nil }, set: { if !$0 { pendingPlay = nil } })
     }
 
-    /// Plays now, or asks first when something else is playing, since either way the queue is
-    /// replaced.
     private func play(shuffled: Bool) {
       pendingPlay = shuffled ? .shuffled : .inOrder
       if !model.isPlayingNow { startPlayback() }
@@ -544,13 +533,12 @@
 
     private static let cueLimit = 8
 
-    /// Nothing has been asked yet.
     private var isUntouched: Bool {
       if case .idle = model.search { return true }
       return false
     }
 
-    /// One Set per creator, the newest, whose artwork stands for them.
+    /// One Set per creator, the newest.
     private var creators: [SavedSet] {
       guard case .loaded(let sets) = model.library else { return [] }
       var seen = Set<String>()
@@ -674,7 +662,7 @@
       }
     }
 
-    /// A track found inside a Tracklist. Pressing it plays its Set from where that track starts.
+    /// A track found inside a Tracklist.
     private func cueRow(_ match: CueMatch) -> some View {
       Button {
         Task { await model.playCue(match.cue, in: match.set.id) }

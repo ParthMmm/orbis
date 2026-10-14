@@ -3,7 +3,7 @@
 - **ADR:** [`../adr/0012-tvos-client.md`](../adr/0012-tvos-client.md)
 - **Research:** [`../research/2026-09-26-tvos.md`](../research/2026-09-26-tvos.md)
 - **Related:** [`carplay-audio-module.md`](carplay-audio-module.md)
-- **Status:** ship order 0 and 1 landed on `feat/tvos-client`; 2 (Top Shelf) and 3 (pairing) are open.
+- **Status:** ship order 0 and 1 are implemented under `apps/apple/Orbis/TV`; 2 (Top Shelf) and 3 (pairing) are open.
 
 ## Problem Statement
 
