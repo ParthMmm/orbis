@@ -57,10 +57,12 @@
 
   /// The TV's root: the system top tab bar over the four places, Now Playing while a Set is in
   /// the player, and Settings. The Siri Remote's play/pause reaches the player from anywhere.
-  /// The tabs' pages follow in the commits after this one.
   struct TVShell: View {
     @Bindable var model: AppModel
     @State private var tab: TVTab
+    /// Up Next covers the whole shell, so playback ending while it is open cannot take the
+    /// presenting tab away under it.
+    @State private var isShowingQueue = false
 
     init(model: AppModel) {
       self.model = model
@@ -90,9 +92,7 @@
         ForEach(tabs) { tab in
           Tab(value: tab, role: tab.role) {
             NavigationStack {
-              Text(tab.label.0)
-                .font(.orbis.largeTitle)
-                .accessibilityIdentifier(tab.identifier)
+              content(for: tab)
             }
           } label: {
             tabLabel(tab)
@@ -108,6 +108,7 @@
         let next = TVTab(destination)
         if next != tab { tab = next }
       }
+      .fullScreenCover(isPresented: $isShowingQueue) { TVQueue(model: model) }
       .onPlayPauseCommand { model.togglePlayback() }
     }
 
@@ -119,6 +120,23 @@
           .accessibilityLabel(tab.label.0)
       } else {
         Label(tab.label.0, systemImage: tab.label.systemImage)
+      }
+    }
+
+    @ViewBuilder private func content(for tab: TVTab) -> some View {
+      switch tab {
+      case .settings:
+        TVSettings(model: model)
+      case .nowPlaying:
+        TVNowPlaying(model: model, isShowingQueue: $isShowingQueue)
+      case .home:
+        TVHome(model: model)
+      case .library:
+        TVLibrary(model: model)
+      case .playlists:
+        TVPlaylists(model: model)
+      case .search:
+        TVSearch(model: model)
       }
     }
   }

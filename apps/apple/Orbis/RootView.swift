@@ -895,19 +895,7 @@ struct SearchDestination: View {
         remember(model.searchQuery)
         Task { await model.runSearch() }
       }
-      // Searches as the query is typed, once typing pauses for 300 ms. A new keystroke cancels
-      // the wait, so only the query the person stopped on is sent.
-      .task(id: model.searchQuery) {
-        let query = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !query.isEmpty else {
-          model.clearSearch()
-          return
-        }
-        try? await Task.sleep(for: .milliseconds(300))
-        // A submit or a tapped suggestion may already have run this query.
-        guard !Task.isCancelled, query != model.searchResultsFor else { return }
-        await model.runSearch()
-      }
+      .searchesAsTyped(model)
       .task { await model.loadTracklistsForSearch() }
   }
 
