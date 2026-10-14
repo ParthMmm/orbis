@@ -194,9 +194,15 @@ struct CopyButton: View {
     .accessibilityIdentifier(identifier)
   }
 
+  /// Sized by the copy symbol, the wider of the two, so the checkmark does not move what sits
+  /// beside it.
   private var symbol: some View {
-    Image(systemName: copied ? "checkmark" : "doc.on.doc")
-      .foregroundStyle(Color.orbis.tint)
-      .contentTransition(.symbolEffect(.replace))
+    Image(systemName: "doc.on.doc")
+      .hidden()
+      .overlay {
+        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+          .foregroundStyle(Color.orbis.tint)
+          .contentTransition(.symbolEffect(.replace))
+      }
   }
 }
