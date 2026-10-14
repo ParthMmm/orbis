@@ -2,16 +2,16 @@
 
 enum GeneratedColor {
   static let paper = DynamicColor(
-    light: P3(0.9480, 0.9517, 0.9838),
-    dark: P3(0.0521, 0.0541, 0.0747),
-    increasedContrastLight: P3(0.9762, 0.9787, 1.0000),
-    increasedContrastDark: P3(0.0287, 0.0302, 0.0491)
+    light: P3(0.9934, 0.9934, 0.9934),
+    dark: P3(0.0169, 0.0169, 0.0199),
+    increasedContrastLight: P3(1.0000, 1.0000, 1.0000),
+    increasedContrastDark: P3(0.0000, 0.0000, 0.0000)
   )
   static let paperRaised = DynamicColor(
-    light: P3(0.9772, 0.9791, 0.9953),
-    dark: P3(0.0865, 0.0887, 0.1105),
-    increasedContrastLight: P3(0.9892, 0.9902, 0.9983),
-    increasedContrastDark: P3(0.0521, 0.0541, 0.0747)
+    light: P3(0.9555, 0.9556, 0.9663),
+    dark: P3(0.0897, 0.0898, 0.0971),
+    increasedContrastLight: P3(0.9660, 0.9660, 0.9768),
+    increasedContrastDark: P3(0.0679, 0.0679, 0.0750)
   )
   static let field = DynamicColor(
     light: P3(1.0000, 1.0000, 1.0000),
@@ -32,10 +32,10 @@ enum GeneratedColor {
     increasedContrastDark: P3(0.8319, 0.8485, 0.9659)
   )
   static let tint = DynamicColor(
-    light: P3(0.8352, 0.3291, 0.0158),
-    dark: P3(0.9970, 0.5425, 0.2532),
-    increasedContrastLight: P3(0.6519, 0.2623, 0.0496),
-    increasedContrastDark: P3(0.9991, 0.6720, 0.4792)
+    light: P3(0.4514, 0.2958, 0.9097),
+    dark: P3(0.6319, 0.5621, 0.9986),
+    increasedContrastLight: P3(0.3667, 0.1787, 0.8021),
+    increasedContrastDark: P3(0.7324, 0.7032, 0.9605)
   )
   static let categoryPinkText = DynamicColor(
     light: P3(0.6377, 0.1159, 0.2238),

@@ -6,9 +6,9 @@ import SwiftUI
 /// arrive as one. YouTube's `high` thumbnail is 480x360 with the picture letterboxed inside it,
 /// and an image left to size itself hands that 4:3 shape, bars and all, back to the box.
 ///
-/// Square-cornered, because the thumbnail is square-cornered where it came from and a listing
-/// parts its rows with hairlines rather than cards. Until the image arrives, or when there is
-/// none, a flat tone stands in, chosen from the title so the same Set keeps the same tone.
+/// Rounded, with a hairline inner edge so dark artwork does not dissolve into a dark page. Until
+/// the image arrives, or when there is none, a tone stands in, chosen from the title so the same
+/// Set keeps the same tone.
 ///
 /// A Set with a Playback Position that is not Finished carries a bar along the bottom edge,
 /// in the tint, the way a thumbnail shows how far a person got. Nothing else draws on the
@@ -20,16 +20,27 @@ public struct Artwork: View {
     case row
     /// The lead item, or a mini player's thumb: 120 points wide.
     case lead
-    /// A card in a horizontal rail on the Library's home: 150 points wide.
+    /// A small card, or artwork tucked in a Playlist's folder: 150 points wide.
     case rail
+    /// A card in a horizontal rail on Home: 168 points wide.
+    case card
     /// Across the top of a page: as wide as it is offered.
     case header
 
-    var width: CGFloat? {
+    var radius: CGFloat {
+      switch self {
+      case .row: Radius.artwork
+      case .lead, .rail, .card: Radius.button
+      case .header: Radius.cover
+      }
+    }
+
+    public var width: CGFloat? {
       switch self {
       case .row: 88
       case .lead: 120
       case .rail: 150
+      case .card: 168
       case .header: nil
       }
     }
@@ -41,12 +52,18 @@ public struct Artwork: View {
   public let size: Size
   /// How far listening got, from 0 to 1. Nothing is drawn when it is absent, zero, or done.
   public let progress: Double?
+  /// Overrides the size's corner radius, for artwork set inside a card that rounds it already.
+  public let cornerRadius: CGFloat?
 
-  public init(url: URL?, seed: String, size: Size = .row, progress: Double? = nil) {
+  public init(
+    url: URL?, seed: String, size: Size = .row, progress: Double? = nil,
+    cornerRadius: CGFloat? = nil
+  ) {
     self.url = url
     self.seed = seed
     self.size = size
     self.progress = progress
+    self.cornerRadius = cornerRadius
   }
 
   /// Whether a bar is worth drawing. A position that never started or already finished says
@@ -57,7 +74,7 @@ public struct Artwork: View {
   }
 
   public var body: some View {
-    Self.box(size: size) {
+    Self.box(size: size, radius: cornerRadius ?? size.radius) {
       image.overlay(alignment: .bottom) {
         if Self.showsProgress(progress), let progress {
           ProgressBar(fraction: progress)
@@ -75,14 +92,20 @@ public struct Artwork: View {
   ///
   /// Internal, so a test can put a letterboxed image in the real box and read the pixels back.
   static func box<Content: View>(
-    size: Size, @ViewBuilder content: () -> Content
+    size: Size, radius: CGFloat? = nil, @ViewBuilder content: () -> Content
   ) -> some View {
-    Color.clear
+    let radius = radius ?? size.radius
+    return
+      Color.clear
       .aspectRatio(16 / 9, contentMode: .fit)
       .frame(width: size.width)
       .frame(maxWidth: size == .header ? .infinity : nil)
       .overlay { content() }
-      .clipShape(.rect(cornerRadius: Radius.artwork))
+      .clipShape(.rect(cornerRadius: radius))
+      .overlay {
+        RoundedRectangle(cornerRadius: radius)
+          .strokeBorder(.white.opacity(0.12), lineWidth: 0.5)
+      }
   }
 
   @ViewBuilder private var image: some View {
@@ -101,7 +124,16 @@ public struct Artwork: View {
 
   private var placeholder: some View {
     // The tone comes from the same hash Tags use, so it is stable across launches.
-    OrbisColor.Category.forTag(seed).dot.opacity(0.35)
+    let tone = OrbisColor.Category.forTag(seed).dot
+    return LinearGradient(
+      colors: [tone.opacity(0.55), tone.opacity(0.2)],
+      startPoint: .topLeading, endPoint: .bottomTrailing
+    )
+    .overlay {
+      Image(systemName: "waveform")
+        .font(.title2.weight(.semibold))
+        .foregroundStyle(.white.opacity(0.35))
+    }
   }
 }
 

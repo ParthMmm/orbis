@@ -49,6 +49,8 @@ enum MotionPreview {
     case .pageTinted: "paintpalette"
     case .downloadProgressed: "arrow.down.circle"
     case .pressed: "hand.tap"
+    case .playbackToggled: "play.circle"
+    case .cueChanged: "music.note.list"
     }
   }
 
@@ -61,6 +63,8 @@ enum MotionPreview {
     case .pageTinted: "Tint the page"
     case .downloadProgressed: "Move the Download on"
     case .pressed: "Press"
+    case .playbackToggled: "Play"
+    case .cueChanged: "Next Cue"
     }
   }
 }

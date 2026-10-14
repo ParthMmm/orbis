@@ -163,6 +163,7 @@ struct SettingsView: View {
         account(person)
         downloads(person)
       }
+      library
       devices
       if case .loaded(let person) = settings.me, person.host {
         HostSections(model: model, settings: settings, hostId: person.id)
@@ -176,6 +177,8 @@ struct SettingsView: View {
     }
     .formStyle(.grouped)
     .font(.orbis.body)
+    .scrollContentBackground(.hidden)
+    .background { TintGlow() }
     .confirmationDialog(
       "Sign out of Orbis?", isPresented: $isConfirmingSignOut, titleVisibility: .visible
     ) {
@@ -227,6 +230,18 @@ struct SettingsView: View {
     } footer: {
       Text("Download audio on your Orbis service when you save a Set. This applies to all your devices.")
     }
+  }
+
+  private var library: some View {
+    Section("Library") {
+      LabeledContent("Audio kept", value: keptCount == 1 ? "1 set" : "\(keptCount) sets")
+      LabeledContent("Tags", value: model.availableTags.count, format: .number)
+    }
+  }
+
+  private var keptCount: Int {
+    guard case .loaded(let sets) = model.library else { return 0 }
+    return sets.filter { $0.downloadState == "ready" }.count
   }
 
   private var devices: some View {

@@ -81,6 +81,10 @@ final class AppModel {
 
   private(set) var tagCounts: [String: Int] = [:]
 
+  /// How the Library orders the Sets the filter admits. Held here rather than on the screen, so
+  /// leaving the tab and coming back keeps the order a person chose.
+  var librarySort: LibrarySort = .newest
+
   /// The Sets the filter admits. Unfiltered, it is the library itself. Held for the same
   /// reason as the tags: the body of every list reads it on every pass.
   private(set) var visibleSets: Loadable<[SavedSet]> = .idle
@@ -1274,6 +1278,62 @@ final class AppModel {
     }
   }
 
+  /// Tracks inside the library's Tracklists whose title or artist holds the query, with the Set
+  /// each plays in. Only Tracklists this device has loaded are read, so `loadTracklistsForSearch`
+  /// runs first.
+  func cueMatches(for query: String) -> [CueMatch] {
+    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty, case .loaded(let sets) = library else { return [] }
+    return sets.flatMap { set in
+      (tracklists[set.id]?.cues ?? [])
+        .filter {
+          $0.title.localizedCaseInsensitiveContains(query)
+            || $0.artist.localizedCaseInsensitiveContains(query)
+        }
+        .map { CueMatch(set: set, cue: $0) }
+    }
+  }
+
+  /// Reads every ready Tracklist the device has not loaded yet, a few at a time, so Search can
+  /// look inside them. One read per Set and no polling: a pending Tracklist has nothing to match.
+  func loadTracklistsForSearch() async {
+    guard let client, case .loaded(let sets) = library else { return }
+    let missing = sets.filter { $0.tracklistState == .ready && tracklists[$0.id] == nil }.map(\.id)
+    await withTaskGroup(of: (String, Tracklist?).self) { group in
+      var pending = missing[...]
+      for _ in 0..<4 {
+        guard let id = pending.popFirst() else { break }
+        group.addTask { (id, try? await client.tracklist(id)) }
+      }
+      while let (id, tracklist) = await group.next() {
+        if let tracklist { tracklists[id] = tracklist }
+        if let next = pending.popFirst() {
+          group.addTask { (next, try? await client.tracklist(next)) }
+        }
+      }
+    }
+  }
+
+  /// Plays a Playlist's playable members in a random order: the first starts now and the rest
+  /// follow it in the queue.
+  func shufflePlaylist(_ id: String) async {
+    guard let client, case .loaded(let members) = playlistMembers else { return }
+    let order = members.filter { $0.downloadState == "ready" }.shuffled()
+    guard let first = order.first else { return }
+    await playSet(first.id)
+    do {
+      for set in order.dropFirst() {
+        queue = .loaded(try await client.queueSet(set.id, placement: .end))
+      }
+    } catch OrbisError.cancelled {
+      return
+    } catch let error as OrbisError {
+      setFailure = error.failure(at: client.address)
+    } catch {
+      setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+  }
+
   /// Empties the search: the field, the results, and the name they answer to go together. A
   /// cleared field cannot leave a heading naming results that are no longer on screen, and the
   /// screen returns to the state it shows before anything was typed rather than waiting on a
@@ -1308,6 +1368,30 @@ enum Destination: String, CaseIterable, Identifiable, Hashable {
     case .playlists: "rectangle.stack"
     case .people: "person.2"
     case .search: "magnifyingglass"
+    }
+  }
+}
+
+/// A track found inside a Set's Tracklist.
+struct CueMatch: Identifiable {
+  let set: SavedSet
+  let cue: Cue
+  var id: String { "\(set.id)-\(cue.position)" }
+}
+
+/// The orders the Library offers. Newest is the order the service returns, grouped by day.
+enum LibrarySort: String, CaseIterable, Identifiable {
+  case newest = "Newest"
+  case title = "Title"
+  case longest = "Longest"
+
+  var id: Self { self }
+
+  func ordered(_ sets: [SavedSet]) -> [SavedSet] {
+    switch self {
+    case .newest: sets
+    case .title: sets.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    case .longest: sets.sorted { ($0.durationSeconds ?? 0) > ($1.durationSeconds ?? 0) }
     }
   }
 }

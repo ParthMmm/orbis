@@ -6,12 +6,14 @@ import SwiftUI
 ///
 /// Nested surfaces stay concentric: outer radius = inner radius + padding.
 ///
-/// Listings — the Library and a Set's rows — carry no radius at all: artwork is square and
-/// rows are parted by hairlines, not held in cards. `row`, `list` and `hero` are for the
-/// surfaces that remain raised: sheets, the paste hero, the playlist picker.
+/// Artwork is rounded like a record sleeve's corner, small in a row and larger on a card, so a
+/// Set reads as an object to pick up rather than a cell in a table. `row`, `list` and `hero`
+/// are for raised surfaces: cards, sheets, the paste hero, the playlist picker.
 public enum Radius {
-  /// Provider artwork in a listing. Square, like the thumbnail it came from.
-  public static let artwork: CGFloat = 0
+  /// Artwork in a listing row.
+  public static let artwork: CGFloat = 8
+  /// Artwork on a card or across the top of a page.
+  public static let cover: CGFloat = 12
   public static let chip: CGFloat = 6
   public static let sidebarRow: CGFloat = 8
   public static let button: CGFloat = 10
