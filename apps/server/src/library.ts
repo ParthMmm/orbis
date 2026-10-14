@@ -9,6 +9,7 @@ import { and, asc, count, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import { Context, Effect, Layer, Schema } from "effect";
 
 import { releaseAudio } from "./audio-release.js";
+import { insertBatches } from "./db/batches.js";
 import {
   downloadJobs,
   downloadRequesters,
@@ -1205,14 +1206,13 @@ export class Library extends Context.Service<
                   yield* tx
                     .delete(playlistSets)
                     .where(eq(playlistSets.playlistId, id));
-                  if (setIds.length > 0) {
-                    yield* tx.insert(playlistSets).values(
-                      setIds.map((setId, position) => ({
-                        playlistId: id,
-                        position,
-                        setId,
-                      }))
-                    );
+                  const rows = setIds.map((setId, position) => ({
+                    playlistId: id,
+                    position,
+                    setId,
+                  }));
+                  for (const batch of insertBatches(playlistSets, rows)) {
+                    yield* tx.insert(playlistSets).values(batch);
                   }
                   return currentRows.filter(
                     (row) => !setIds.includes(row.setId)
