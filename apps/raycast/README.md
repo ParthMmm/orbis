@@ -10,10 +10,19 @@ Both commands validate the link with the same canonical rule the server uses, so
 ## Setup
 
 1. From the repository root, run `bun install`, then `bun run --filter './apps/raycast' dev`. Raycast builds and registers the local extension.
-2. [Enroll a device on your Orbis server](../../deploy/orbis-server/README.md#enrol-a-device). Use a separate token for Raycast and keep it out of the repository.
+2. Get a key for Raycast. In Orbis Settings on a device you already use, show a Sign-in Code, then redeem it within 10 minutes:
+
+   ```sh
+   curl -s https://orbis.p11a.xyz/api/sign-in/code \
+     -H 'content-type: application/json' \
+     -d '{"code":"ABCD-EFGH","label":"Raycast"}'
+   ```
+
+   The response's `key` is the Device Token. Orbis shows it only once, so keep it out of the repository and out of chat. The device appears as "Raycast" on your Devices list.
+
 3. Run **Save Current Tab** or **Save Clipboard** in Raycast and enter the extension preferences when asked:
-   - **Orbis Service URL**: `https://vanta.example.ts.net:8444`. Tailscale must be connected. Include the port and no trailing punctuation.
-   - **Device Token**: the token from step 2. The extension only sends it over HTTPS.
+   - **Orbis Service URL**: keep the default, `https://orbis.p11a.xyz/api`. Add no trailing punctuation.
+   - **Device Token**: the key from step 2. The extension only sends it over HTTPS.
 4. Install the [Raycast Browser Extension](https://www.raycast.com/browser-extension) in the browser you want **Save Current Tab** to read. **Save Clipboard** does not need it.
 
 For one-shortcut capture, assign **Save Current Tab** a hotkey in Raycast Settings → Extensions → Orbis. The extension does not add a button inside YouTube.

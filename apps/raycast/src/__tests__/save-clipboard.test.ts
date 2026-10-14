@@ -109,7 +109,7 @@ test("Save Clipboard tells the user to pair again after an auth failure", async 
   await saveClipboard();
 
   expect(finalToast()).toMatchObject({
-    message: "Orbis rejected the device token. Pair this device again.",
+    message: "Orbis rejected the device token. Redeem a new Sign-in Code.",
     style: "failure",
   });
 });
@@ -124,6 +124,29 @@ test("Save Clipboard names a service failure by its status", async () => {
     message: "Orbis returned HTTP 500.",
     style: "failure",
   });
+});
+
+test("Save Clipboard shows the message the server gave for a refusal", async () => {
+  raycast.clipboard = "https://youtu.be/abcdefghijk";
+  mockFetch(() =>
+    Response.json({ message: "That source is not available." }, { status: 400 })
+  );
+
+  await saveClipboard();
+
+  expect(finalToast()).toMatchObject({
+    message: "That source is not available.",
+    style: "failure",
+  });
+});
+
+test("Save Clipboard reports a 201 as saved when it cannot decode the response", async () => {
+  raycast.clipboard = "https://youtu.be/abcdefghijk";
+  mockFetch(() => Response.json({ id: "saved-set" }, { status: 201 }));
+
+  await saveClipboard();
+
+  expect(finalToast()).toMatchObject({ style: "success", title: "Set saved" });
 });
 
 test("Save Clipboard sends nothing for an empty clipboard", async () => {
