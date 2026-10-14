@@ -29,9 +29,11 @@ final class AudioPlayer {
     case loading
     case playing
     case paused
-    /// A call, an alarm, or another app took the session while the Set was wanted. It plays
-    /// again when the interruption ends and the system says it may; a Set the person paused
-    /// first stays `.paused` instead, so the end of a call never starts it.
+    /// The sound stopped while the Set was wanted, and the person did not stop it: a call, an
+    /// alarm, or another app took the session, or the player stopped on its own. Only `pause()`
+    /// records the person's quiet as `.paused`, so the end of an interruption resumes this
+    /// state and never a Set the person paused. The player's own rate drop can arrive before
+    /// the interruption notice does, which is why it lands here and not in `.paused`.
     case interrupted
     case failed(String)
   }
@@ -578,12 +580,18 @@ final class AudioPlayer {
     )
   }
 
-  private func rateChanged(rate: Float) {
+  /// A rate the player reached by itself. A drop to zero the person did not ask for is the
+  /// system's, so it reads as `.interrupted`: `pause()` has already moved a pause of theirs to
+  /// `.paused` before the player reports it.
+  ///
+  /// Internal rather than private so a test can apply a change the system made, which it cannot
+  /// make an unloaded player report.
+  func rateChanged(rate: Float) {
     switch state {
     case .playing where rate == 0:
-      state = .paused
+      state = .interrupted
       publishNowPlaying(isPlaying: false)
-    case .paused where rate > 0:
+    case .paused where rate > 0, .interrupted where rate > 0:
       state = .playing
       publishNowPlaying(isPlaying: true)
     default:
@@ -591,15 +599,16 @@ final class AudioPlayer {
     }
   }
 
-  private func stallChanged(status: AVPlayer.TimeControlStatus) {
+  func stallChanged(status: AVPlayer.TimeControlStatus) {
     switch status {
     case .playing:
       if state == .loading {
         state = .playing
       }
     case .paused:
+      // As with the rate: the person's own pause is already `.paused` by the time this lands.
       if state == .playing {
-        state = .paused
+        state = .interrupted
       }
     case .waitingToPlayAtSpecifiedRate:
       if state == .playing || state == .loading {

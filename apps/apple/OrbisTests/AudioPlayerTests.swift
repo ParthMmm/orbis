@@ -247,5 +247,35 @@ final class AudioPlayerTests: XCTestCase {
       XCTAssertEqual(rate(player), 1)
       player.stop()
     }
+
+    /// When the system interrupts, AVPlayer drops its own rate, and that change can reach the
+    /// player before the interruption notification does. A stop the person did not ask for is not
+    /// their pause, so the end of the interruption still brings the Set back.
+    func testAnInterruptionThatArrivesAfterTheRateDropStillResumes() async {
+      let gate = SessionGate()
+      let player = AudioPlayer(session: gate.session)
+      player.play(set: set(), baseURL: silentAddress, token: "token")
+      await gate.waitForStart()
+      gate.release()
+      await player.sessionWork?.value
+      // The unloaded item cannot report playing, so the changes it would make are applied here.
+      player.stallChanged(status: .playing)
+      XCTAssertEqual(player.state, .playing)
+
+      // The system stops the player first.
+      player.rateChanged(rate: 0)
+      player.stallChanged(status: .paused)
+      interrupt(.began)
+      try? await Task.sleep(for: .milliseconds(50))
+      interrupt(.ended, shouldResume: true)
+      try? await Task.sleep(for: .milliseconds(50))
+
+      XCTAssertEqual(player.state, .loading, "the end of the interruption did not resume")
+      await gate.waitForStart(2)
+      gate.release()
+      await player.sessionWork?.value
+      XCTAssertEqual(rate(player), 1)
+      player.stop()
+    }
   #endif
 }
