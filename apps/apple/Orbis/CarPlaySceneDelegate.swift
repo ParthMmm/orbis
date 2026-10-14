@@ -3,7 +3,7 @@
   import OrbisDesign
   import UIKit
 
-  /// The car's Orbis: Home, Playlists, and Library tabs over the phone's player. The tabs are
+  /// The car's Orbis: Home, Library, and Playlists tabs over the phone's player. The tabs are
   /// built once per connection and refilled from a `CarPlayCatalog` whenever the model changes, so
   /// the tab bar and anything pushed on it stay put while the rows update.
   @MainActor
@@ -49,15 +49,19 @@
       nowPlaying.isUpNextButtonEnabled = false
       nowPlaying.add(self)
 
-      let tabs: [(CPListTemplate, Destination)] = [
-        (homeTab, .home), (playlistsTab, .playlists), (libraryTab, .library),
+      let templates: [Destination: CPListTemplate] = [
+        .home: homeTab, .library: libraryTab, .playlists: playlistsTab,
       ]
-      for (template, destination) in tabs {
-        template.tabTitle = destination.rawValue
-        template.tabImage = UIImage(systemName: destination.symbol)
+      // Ordered by `Destination`, the phone's tab order, so the car's tabs cannot drift from it.
+      let tabs = Destination.allCases.compactMap { destination in
+        templates[destination].map { template in
+          template.tabTitle = destination.rawValue
+          template.tabImage = UIImage(systemName: destination.symbol)
+          return template
+        }
       }
       interfaceController.setRootTemplate(
-        CPTabBarTemplate(templates: tabs.map(\.0)), animated: false, completion: nil)
+        CPTabBarTemplate(templates: tabs), animated: false, completion: nil)
 
       catalog = nil
       connection += 1
