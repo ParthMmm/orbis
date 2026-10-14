@@ -151,23 +151,30 @@ struct RootView: View {
   /// list scrolls.
   struct CompactShell: View {
     @Bindable var model: AppModel
+
+    /// A tap on the Search tab while Search is open asks for the field, rather than doing nothing.
+    private var tabSelection: Binding<Destination> {
+      Binding(
+        get: { model.destination },
+        set: { next in
+          if next == .search, model.destination == .search { model.searchFocusRequests += 1 }
+          model.destination = next
+        })
+    }
     /// Now Playing is a sheet over the whole shell, so it opens the same from any tab.
     @State private var isNowPlayingShown = false
     /// Now Playing grows out of the mini player's artwork and shrinks back into it.
     @Namespace private var nowPlaying
 
     var body: some View {
-      TabView(selection: $model.destination) {
-        ForEach([Destination.home, .library, .playlists, .people]) { destination in
+      TabView(selection: tabSelection) {
+        // Search is a tab like the others, as in Apple Music. The search role would split it
+        // off into a circle that turns into a field, and the field belongs at the top of Search.
+        ForEach([Destination.home, .library, .playlists, .people, .search]) { destination in
           Tab(destination.rawValue, systemImage: destination.symbol, value: destination) {
             NavigationStack {
               DestinationView(model: model, destination: destination)
             }
-          }
-        }
-        Tab(value: Destination.search, role: .search) {
-          NavigationStack {
-            DestinationView(model: model, destination: .search)
           }
         }
       }
@@ -1043,14 +1050,22 @@ struct SearchDestination: View {
   var body: some View {
     searchPage
       // On the screen, not the results: the results view is not there until a search has run.
-      .onSubmit(of: .search) { Task { await model.runSearch() } }
-      .onChange(of: model.searchQuery) { _, query in
-        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          model.clearSearch()
-        }
+      .onSubmit(of: .search) {
+        remember(model.searchQuery)
+        Task { await model.runSearch() }
       }
-      .onChange(of: model.searchResultsFor) { _, query in
-        if let query { remember(query) }
+      // Searches as the query is typed, once typing pauses for 300 ms. A new keystroke cancels
+      // the wait, so only the query the person stopped on is sent.
+      .task(id: model.searchQuery) {
+        let query = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+          model.clearSearch()
+          return
+        }
+        try? await Task.sleep(for: .milliseconds(300))
+        // A submit or a tapped suggestion may already have run this query.
+        guard !Task.isCancelled, query != model.searchResultsFor else { return }
+        await model.runSearch()
       }
       .task { await model.loadTracklistsForSearch() }
   }
@@ -1060,11 +1075,14 @@ struct SearchDestination: View {
   }
 
   private func remember(_ query: String) {
+    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return }
     let kept = recentQueries.filter { $0.caseInsensitiveCompare(query) != .orderedSame }
     recentSearches = ([query] + kept).prefix(Self.recentLimit).joined(separator: "\n")
   }
 
   private func search(for query: String) {
+    remember(query)
     model.searchQuery = query
     Task { await model.runSearch() }
   }
@@ -1080,8 +1098,14 @@ struct SearchDestination: View {
     #else
       searchBody
         .sidebarPageTitle("Search")
-        .searchable(text: $model.searchQuery, prompt: "Title, tag, or source link")
+        // At the top and always shown, the way Apple Music shows it, rather than folded into
+        // the tab bar where it reads as a tab and not a field.
+        .searchable(
+          text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always),
+          prompt: "Title, tag, or source link"
+        )
         .searchFocused($isFieldFocused)
+        .onChange(of: model.searchFocusRequests) { isFieldFocused = true }
     #endif
   }
 
