@@ -86,18 +86,16 @@ public struct MiniPlayer: View {
         Image(systemName: isPlaying ? "pause.fill" : "play.fill")
           .font(.title2)
           .orbisSymbolReplace()
-          .frame(width: 44, height: 44)
       }
       .sensoryFeedback(.impact(weight: .light), trigger: isPlaying)
-      .buttonStyle(.plain)
+      .buttonStyle(.orbisIcon)
       .foregroundStyle(.primary)
       .accessibilityLabel(Self.toggleLabel(isPlaying: isPlaying))
       .accessibilityIdentifier("mini-player-toggle")
       Button("Next track", systemImage: "forward.fill") { next?() }
         .labelStyle(.iconOnly)
         .font(.title3)
-        .frame(width: 44, height: 44)
-        .buttonStyle(.plain)
+        .buttonStyle(.orbisIcon)
         .disabled(next == nil)
         .accessibilityIdentifier("mini-player-next")
     }

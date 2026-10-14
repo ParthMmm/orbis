@@ -149,9 +149,8 @@ struct NowPlayingScreen: View {
           .accessibilityIdentifier("now-playing-queue")
       }
       .labelStyle(.iconOnly)
-      .buttonStyle(.plain)
+      .buttonStyle(.orbisIcon)
       .font(.title3)
-      .frame(height: 44)
       .padding(.horizontal, 12)
     }
     .padding(.horizontal, 24)

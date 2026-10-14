@@ -46,7 +46,7 @@ public struct TagListEditor: View {
             Button("Remove \(tag)", systemImage: "minus.circle.fill") { remove(tag) }
               .labelStyle(.iconOnly)
               .foregroundStyle(.secondary)
-              .buttonStyle(.plain)
+              .buttonStyle(.orbisIcon)
               .accessibilityIdentifier("tag-remove-\(tag)")
           }
         }
@@ -70,7 +70,7 @@ public struct TagListEditor: View {
           .labelStyle(.iconOnly)
           .font(.title3)
           .foregroundStyle(Color.orbis.tint)
-          .buttonStyle(.plain)
+          .buttonStyle(.orbisIcon)
           .disabled(TagInput.normalize(draft) == nil || isFull)
       }
     } footer: {

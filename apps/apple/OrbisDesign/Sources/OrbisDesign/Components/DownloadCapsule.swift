@@ -73,9 +73,7 @@ public struct DownloadCapsule: View {
             .labelStyle(.iconOnly)
             .font(.body.weight(.semibold))
             .foregroundStyle(.secondary)
-            .frame(width: 44, height: 44)
-            .contentShape(.rect)
-            .buttonStyle(.plain)
+            .buttonStyle(.orbisIcon)
             .accessibilityIdentifier("detail-cancel-download")
         }
         .padding(.trailing, 4)

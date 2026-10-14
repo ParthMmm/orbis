@@ -79,7 +79,7 @@ struct Transport: View {
             slot(trailing)
           }
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.orbisIcon)
         .labelStyle(.iconOnly)
         .font(prominentPlay ? .title2 : .title3)
       }
