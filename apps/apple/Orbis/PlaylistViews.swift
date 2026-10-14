@@ -107,6 +107,7 @@ struct PlaylistsDestination: View {
   private func playlistGrid(_ items: [Playlist]) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
+        MacPageTitle.slot("Playlists")
         Text("Your sets, sorted for the moment.")
           .font(.orbis.detail)
           .foregroundStyle(.secondary)

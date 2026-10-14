@@ -232,7 +232,7 @@ struct SidebarShell: View {
     private var selection: Binding<Selection?> {
       Binding(
         get: {
-          if model.destination == .library, let id = model.selectedPlaylistId {
+          if model.destination == .playlists, let id = model.openedPlaylistId {
             return .playlist(id)
           }
           return .destination(model.destination)
@@ -241,13 +241,13 @@ struct SidebarShell: View {
           guard let selected else { return }
           switch selected {
           case .destination(let destination):
+            // Choosing Search again asks for its field, as a second tap on the tab does.
+            if destination == .search { model.searchFocusRequests += 1 }
+            // Playlists in the sidebar is the grid of folders, not the last one opened.
+            if destination == .playlists { model.closePlaylist() }
             model.destination = destination
-            if destination == .library {
-              Task { await model.selectPlaylist(nil) }
-            }
           case .playlist(let id):
-            model.destination = .library
-            Task { await model.selectPlaylist(id) }
+            model.showPlaylist(id)
           }
         }
       )
@@ -333,7 +333,6 @@ struct SidebarShell: View {
             .accessibilityIdentifier("sidebar-\(destination.rawValue.lowercased())")
           }
           Section("Playlists") {
-            playlistRow(nil, name: "Everything", count: model.totalCount)
             ForEach(model.playlistItems) { playlist in
               playlistRow(playlist.id, name: playlist.name, count: playlist.setCount)
             }
@@ -387,30 +386,26 @@ struct SidebarShell: View {
     .accessibilityIdentifier("playlists-error")
   }
 
-  /// A playlist in the sidebar. Everything is the whole library, so it carries no colour, and
-  /// choosing a playlist is the same as asking for the Library filtered by it.
-  private func playlistRow(_ id: String?, name: String, count: Int) -> some View {
-    Button {
-      Task {
-        model.destination = .library
-        await model.selectPlaylist(id)
-      }
+  /// A playlist in the sidebar opens its own page, with Play and Shuffle, the same page a
+  /// folder on the Playlists tab opens.
+  private func playlistRow(_ id: String, name: String, count: Int) -> some View {
+    let isOpen = model.destination == .playlists && model.openedPlaylistId == id
+    return Button {
+      model.showPlaylist(id)
     } label: {
       PlaylistRow(
         name,
         count: count,
-        category: id == nil ? nil : SetPresentation.category(for: name),
-        isSelected: model.selectedPlaylistId == id
+        category: SetPresentation.category(for: name),
+        isSelected: isOpen
       )
       .frame(maxWidth: .infinity, alignment: .leading)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityAddTraits(model.selectedPlaylistId == id ? [.isSelected] : [])
-    .listRowBackground(
-      model.selectedPlaylistId == id ? Color.accentColor.opacity(0.18) : Color.clear
-    )
-    .accessibilityIdentifier(id == nil ? "playlist-all" : "playlist-\(name)")
+    .accessibilityAddTraits(isOpen ? [.isSelected] : [])
+    .listRowBackground(isOpen ? Color.accentColor.opacity(0.18) : Color.clear)
+    .accessibilityIdentifier("playlist-\(name)")
   }
 }
 
@@ -472,7 +467,7 @@ struct DestinationView: View {
               NoResultsState(recoverLabel: "Clear filters", recover: { model.clearLibraryFilters() })
                 .accessibilityIdentifier("library-no-matches")
             ),
-        hero: nil,
+        hero: MacPageTitle.slot("Library"),
         rails: (model.availableTags.isEmpty && model.activeCreator == nil) || librarySearchIsActive
           ? nil : tagTiles,
         footer: librarySearchIsActive ? "\(libraryMatchCount) sets" : libraryFooter,
@@ -573,10 +568,13 @@ struct DestinationView: View {
   private var home: some View {
     let rails = HomeRails(model: model)
     return ScrollView {
-      rails
-        .padding(.horizontal)
-        .padding(.top, 8)
-        .padding(.bottom, 32)
+      VStack(alignment: .leading, spacing: 20) {
+        MacPageTitle.slot("Home")
+        rails
+      }
+      .padding(.horizontal)
+      .padding(.top, 8)
+      .padding(.bottom, 32)
     }
     .background {
       ArtworkGlow(url: rails.lead.flatMap(SetPresentation.pageArtwork), reach: 0.75)
@@ -754,9 +752,7 @@ struct HomeRails: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 36) {
-      #if os(iOS)
-        ClipboardBanner(model: model)
-      #endif
+      ClipboardBanner(model: model)
       if let lead {
         HomeHero(model: model, set: lead, isResume: !continueSets.isEmpty)
       }
@@ -866,9 +862,7 @@ struct HomeRails: View {
       ) {
         ForEach(model.playlistItems) { playlist in
           Button {
-            model.destination = .playlists
-            model.openPlaylist(playlist.id)
-            Task { await model.loadPlaylistMembers(playlist.id) }
+            model.showPlaylist(playlist.id)
           } label: {
             PlaylistSleeve(
               name: playlist.name,
@@ -980,61 +974,52 @@ private struct HomeHero: View {
   }
 }
 
-#if os(iOS)
-  /// A link on the clipboard, offered for filing in one tap. The clipboard is only asked whether
-  /// it holds something shaped like a web address, which needs no permission; the system Paste
-  /// button reads it, so filing never raises the paste prompt either.
-  private struct ClipboardBanner: View {
-    @Bindable var model: AppModel
-    @Environment(\.scenePhase) private var scenePhase
-    @State private var offeredChange: Int?
+/// A link on the clipboard, offered for filing in one tap. The clipboard is only asked whether
+/// it holds something shaped like a web address, which needs no permission; the system Paste
+/// button reads it, so filing never raises the paste prompt either.
+private struct ClipboardBanner: View {
+  @Bindable var model: AppModel
+  @Environment(\.scenePhase) private var scenePhase
+  @State private var offeredChange: Int?
 
-    var body: some View {
-      Group {
-        if offeredChange != nil {
-          HStack(spacing: 12) {
-            Image(systemName: "doc.on.clipboard")
-              .font(.title3)
-              .foregroundStyle(Color.orbis.tint)
-              .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-              Text("A link is on your clipboard")
-                .font(.subheadline.weight(.semibold))
-              Text("File it to your library")
-                .font(.footnote)
-                .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
-            PasteButton(payloadType: String.self) { pasted in
-              guard let text = pasted.first else { return }
-              offeredChange = nil
-              Task { await model.pasteAndFile(text) }
-            }
-            .labelStyle(.titleOnly)
-            .buttonBorderShape(.capsule)
-            .tint(Color.orbis.tint)
-            .accessibilityIdentifier("home-paste-and-file")
+  var body: some View {
+    Group {
+      if offeredChange != nil {
+        HStack(spacing: 12) {
+          Image(systemName: "doc.on.clipboard")
+            .font(.title3)
+            .foregroundStyle(Color.orbis.tint)
+            .accessibilityHidden(true)
+          VStack(alignment: .leading, spacing: 1) {
+            Text("A link is on your clipboard")
+              .font(.subheadline.weight(.semibold))
+            Text("File it to your library")
+              .font(.footnote)
+              .foregroundStyle(.secondary)
           }
-          .padding(.horizontal, 14)
-          .padding(.vertical, 12)
-          .background(Color.orbis.paperRaised, in: .rect(cornerRadius: Radius.field))
+          Spacer(minLength: 0)
+          PasteButton(payloadType: String.self) { pasted in
+            guard let text = pasted.first else { return }
+            offeredChange = nil
+            Task { await model.pasteAndFile(text) }
+          }
+          .labelStyle(.titleOnly)
+          .buttonBorderShape(.capsule)
+          .tint(Color.orbis.tint)
+          .accessibilityIdentifier("home-paste-and-file")
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color.orbis.paperRaised, in: .rect(cornerRadius: Radius.field))
       }
-      .task(id: scenePhase) { await look() }
     }
-
-    private func look() async {
-      let board = UIPasteboard.general
-      guard board.hasURLs || board.hasStrings else {
-        offeredChange = nil
-        return
-      }
-      let patterns = try? await board.detectedPatterns(for: [\.probableWebURL])
-      offeredChange =
-        board.hasURLs || patterns?.contains(\.probableWebURL) == true ? board.changeCount : nil
-    }
+    .task(id: scenePhase) { await look() }
   }
-#endif
+
+  private func look() async {
+    offeredChange = await ClipboardLink.offerableChange()
+  }
+}
 
 struct SearchDestination: View {
   @Bindable var model: AppModel
@@ -1094,7 +1079,12 @@ struct SearchDestination: View {
           text: $model.searchQuery, placement: .toolbar,
           prompt: "Search Sets and Playlists"
         )
+        .searchFocused($isFieldFocused)
         .macSearchToolbarBackground(isSearching: !model.searchQuery.isEmpty)
+        // Choosing Search in the sidebar puts the cursor in its field, so typing starts the
+        // search; choosing it again while it is open asks for the field the same way.
+        .onAppear { isFieldFocused = true }
+        .onChange(of: model.searchFocusRequests) { isFieldFocused = true }
     #else
       searchBody
         .sidebarPageTitle("Search")
@@ -1208,9 +1198,7 @@ struct SearchDestination: View {
           Text("Playlists").font(.headline)
           ForEach(playlists) { playlist in
             Button {
-              model.destination = .playlists
-              model.openPlaylist(playlist.id)
-              Task { await model.loadPlaylistMembers(playlist.id) }
+              model.showPlaylist(playlist.id)
             } label: {
               PlaylistRow(playlist.name, count: playlist.setCount)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -1261,6 +1249,7 @@ private struct SearchStart: View {
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 28) {
+        MacPageTitle.slot("Search")
         ListingLabel(prompt)
         if !model.availableTags.isEmpty {
           section("Tags") {
@@ -1460,6 +1449,32 @@ private struct TracklistMatches: View {
         Divider()
       }
     }
+  }
+}
+
+/// The page's name over its content on a Mac, where the sidebar shell leaves the window toolbar
+/// untitled and keeps it for actions. An iPhone or iPad names the page in its navigation bar.
+struct MacPageTitle: View {
+  let title: String
+
+  init(_ title: String) {
+    self.title = title
+  }
+
+  /// The title for a page slot such as a list's hero: present on a Mac, absent elsewhere.
+  static func slot(_ title: String) -> AnyView? {
+    #if os(macOS)
+      AnyView(MacPageTitle(title))
+    #else
+      nil
+    #endif
+  }
+
+  var body: some View {
+    Text(title)
+      .font(.orbis.largeTitle)
+      .accessibilityAddTraits(.isHeader)
+      .frame(maxWidth: .infinity, alignment: .leading)
   }
 }
 

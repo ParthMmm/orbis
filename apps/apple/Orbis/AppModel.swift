@@ -1103,6 +1103,13 @@ final class AppModel {
     openedPlaylistId = id
   }
 
+  /// Goes to a Playlist's own page from anywhere: Home's folders, the sidebar, or Search.
+  func showPlaylist(_ id: String) {
+    destination = .playlists
+    openPlaylist(id)
+    Task { [weak self] in await self?.loadPlaylistMembers(id) }
+  }
+
   func closePlaylist() {
     playlistFailure = nil
     openedPlaylistId = nil
