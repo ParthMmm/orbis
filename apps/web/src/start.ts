@@ -27,6 +27,7 @@ const securityHeaders = createMiddleware().server(({ next }) => {
         "frame-ancestors 'none'",
       ].join("; "),
       "Referrer-Policy": "no-referrer",
+      "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
       "X-Content-Type-Options": "nosniff",
     })
   );

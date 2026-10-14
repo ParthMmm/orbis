@@ -26,7 +26,7 @@ The operator authorized the deployment on 2026-09-11, with the shared host runni
 | Image | `ghcr.io/imputnet/cobalt:11@sha256:df14a3b3fe4390d4e1c2d4761ed58981d34aa5fc82d0df2091bab890e7dfaa8b` |
 | Image index digest observed at pull time | `sha256:63186dd68afd57ce3bb1f62cc4c139f5fa95b9c3e87a3cf5c6e4c7a570523f62` |
 | Reported version | 11.7.1, upstream commit `a636575b09de1fc55d9b8cd98cac88f5f2f16b42` |
-| Port binding | `100.77.187.21:9000`, the Tailscale address only, confirmed with `ss -ltnp` |
+| Port binding | `100.100.100.100:9000`, the Tailscale address only, confirmed with `ss -ltnp` |
 | Filesystem and init | Read-only root filesystem, `init` enabled, `unless-stopped` restart policy |
 | Advertised services | `["soundcloud", "youtube"]`, exact match to the required scope |
 | Configured duration limit | 21600 seconds |
@@ -41,7 +41,7 @@ All six checks passed on the final run.
 | Check | Result | Observed |
 | --- | --- | --- |
 | Reachability | Passed | `GET /` returned the instance document |
-| Reported API URL | Passed | `http://100.77.187.21:9000` |
+| Reported API URL | Passed | `http://100.100.100.100:9000` |
 | Service scope | Passed | `["soundcloud", "youtube"]` |
 | Missing API key rejected | Passed | HTTP 400, `error.api.auth.key.missing` |
 | Invalid API key rejected | Passed | HTTP 400, `error.api.auth.key.not_found` |

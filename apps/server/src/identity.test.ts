@@ -369,7 +369,7 @@ test("an existing trust database drops Invites and keeps the passcode across res
     const set = await request(first, {
       headers: host,
       method: "PUT",
-      payload: { passcode: "orbit" },
+      payload: { passcode: "orbit-rings" },
       url: "/admin/passcode",
     });
     expect(set.statusCode).toBe(200);
@@ -383,7 +383,7 @@ test("an existing trust database drops Invites and keeps the passcode across res
       method: "GET",
       url: "/admin/passcode",
     });
-    expect(read.json()).toEqual({ passcode: "orbit" });
+    expect(read.json()).toEqual({ passcode: "orbit-rings" });
     const upgraded = new Database(databasePath, { readonly: true });
     try {
       expect(

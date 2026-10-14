@@ -177,7 +177,9 @@ export const ytDlpMetadata = (
   const slots = Semaphore.makeUnsafe(Math.max(1, options.maxConcurrent ?? 2));
   const read = Effect.fn("YtDlpMetadata.read")(function* read(url: string) {
     // `--` ends option parsing so a URL can never be read as a flag. No shell is involved.
+    // `--ignore-config` keeps a config file on the host from adding flags such as `--exec`.
     const args = [
+      "--ignore-config",
       "--dump-single-json",
       "--skip-download",
       "--no-playlist",

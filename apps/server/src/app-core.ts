@@ -64,6 +64,7 @@ import {
   revokeKey,
   setPasscode,
 } from "./admin.js";
+import { makeAttemptLimiter } from "./attempt-limiter.js";
 import { Audio } from "./audio-service.js";
 import type { AudioFile } from "./audio-service.js";
 import { insertBatches } from "./db/batches.js";
@@ -203,19 +204,36 @@ const meBody = (person: PersonRecord) => ({
 });
 
 const PRESENCE_WINDOW_MS = 30_000;
-/** Failed key attempts one client may make in a minute before it gets 429. */
-const FAILED_KEY_LIMIT = 20;
 const tooManyAttempts = () =>
   Response.json({ message: "Too many invalid keys." }, { status: 429 });
 /**
- * Routes a new device calls before it has a key (ADR 0020), mapped to the
- * status of a failed guess. They run whatever the Authorization header says,
- * so a key cannot skip the failed-key limit.
+ * Routes a new device calls before it has a key (ADR 0020). They run whatever
+ * the Authorization header says, so a key cannot skip the failed-key limit.
  */
-const OPEN_ROUTES: ReadonlyMap<string, number> = new Map([
-  ["/sign-in/code", 404],
-  ["/sign-in/join", 403],
+const OPEN_ROUTES: ReadonlySet<string> = new Set([
+  "/sign-in/code",
+  "/sign-in/join",
 ]);
+/**
+ * The router also matches a path with repeated or trailing slashes, other
+ * casing, or percent-encoding, so the open-route lookup sees the same
+ * spelling the router does. Otherwise a guess on `/sign-in/code/` would run
+ * without being counted.
+ */
+const isOpenRoute = (url: string): boolean => {
+  const raw = new URL(url).pathname;
+  let decoded: string;
+  try {
+    decoded = decodeURIComponent(raw);
+  } catch {
+    decoded = raw;
+  }
+  const pathname = decoded
+    .toLowerCase()
+    .replaceAll(/\/+/gu, "/")
+    .replace(/(?<=.)\/$/u, "");
+  return OPEN_ROUTES.has(pathname);
+};
 const invalidSignInCode = () =>
   new LibraryError({
     message: "That code is not valid. Get a new one.",
@@ -301,23 +319,7 @@ export const createPortableApp = (options: {
   configureLogging(options.logging);
   const { trustPath } = options;
   const { streamSecret } = options;
-  const failedKeys = new Map<string, { count: number; until: number }>();
-  /** Counts one failed attempt for a client; true once the client is over the limit. */
-  const recordFailedKey = (client: string): boolean => {
-    const previous = failedKeys.get(client);
-    const count =
-      previous && previous.until > Date.now() ? previous.count + 1 : 1;
-    failedKeys.set(client, { count, until: Date.now() + 60_000 });
-    return count > FAILED_KEY_LIMIT;
-  };
-  const overFailedKeyLimit = (client: string): boolean => {
-    const previous = failedKeys.get(client);
-    return (
-      previous !== undefined &&
-      previous.until > Date.now() &&
-      previous.count > FAILED_KEY_LIMIT
-    );
-  };
+  const attempts = makeAttemptLimiter();
   const signInCodeNow = options.signInCodeNow ?? Date.now;
   const { database } = options;
   const libraryOptions = {
@@ -1961,26 +1963,19 @@ export const createPortableApp = (options: {
     }
   );
   /**
-   * A wrong code or passcode counts toward the failed-key limit. A client over
-   * the limit is refused before any lookup, so it cannot spend a code.
+   * A sign-in attempt counts toward the failed-key limit before it runs. A
+   * client over the limit is refused before any lookup, so it cannot spend a
+   * code.
    */
-  const openRoute = async (
-    request: Request,
-    client: string,
-    failedStatus: number
-  ): Promise<Response> => {
-    if (overFailedKeyLimit(client)) {
-      return tooManyAttempts();
+  const openRoute = (request: Request, client: string): Promise<Response> => {
+    if (attempts.signInAttempt(client)) {
+      return Promise.resolve(tooManyAttempts());
     }
     // SAFETY: the sign-in handlers read no caller-bound service.
-    const response = await app.handler(
+    return app.handler(
       request,
       Context.empty() as Context.Context<Library | Queue | SetCaller>
     );
-    if (response.status === failedStatus && recordFailedKey(client)) {
-      return tooManyAttempts();
-    }
-    return response;
   };
   const initialize = () =>
     // SAFETY: The health route reads no caller-bound service.
@@ -2015,9 +2010,8 @@ export const createPortableApp = (options: {
       };
       const host = request.headers.get("host") ?? new URL(request.url).host;
       const authorization = request.headers.get("authorization");
-      const failedStatus = OPEN_ROUTES.get(new URL(request.url).pathname);
-      if (request.method === "POST" && failedStatus !== undefined) {
-        return openRoute(request, clientAddress, failedStatus);
+      if (request.method === "POST" && isOpenRoute(request.url)) {
+        return openRoute(request, clientAddress);
       }
       const registry = readTrustRegistry(trustPath);
       const streamDecision = grantAccess(
@@ -2045,7 +2039,7 @@ export const createPortableApp = (options: {
         authorization !== null &&
         decision.kind === "rejected" &&
         decision.statusCode === 401 &&
-        recordFailedKey(clientAddress)
+        attempts.badKey(clientAddress)
       ) {
         return withOrigin(tooManyAttempts());
       }
