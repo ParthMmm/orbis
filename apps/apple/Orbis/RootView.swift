@@ -856,10 +856,9 @@ struct HomeRails: View {
   private var playlistGrid: some View {
     VStack(alignment: .leading, spacing: 14) {
       SectionHeading("Playlists", subtitle: "Your sets, sorted for the moment.")
-      LazyVGrid(
-        columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
-        spacing: 18
-      ) {
+      // Two folders across a phone, as on the Playlists page; a Mac or iPad window fits more
+      // rather than stretching two.
+      LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 14)], spacing: 18) {
         ForEach(model.playlistItems) { playlist in
           Button {
             model.showPlaylist(playlist.id)
@@ -906,6 +905,8 @@ private struct HomeHero: View {
   /// The Set was left part-way, so the button resumes and says how long is left.
   let isResume: Bool
 
+  private static let maxArtworkWidth: CGFloat = 560
+
   private var isCurrent: Bool { model.audioPlayer.currentSetId == set.id }
   private var isPlaying: Bool { isCurrent && model.audioPlayer.state == .playing }
   private var canPlay: Bool { self.set.downloadState == "ready" }
@@ -926,6 +927,9 @@ private struct HomeHero: View {
           progress: SetPresentation.progress(of: set)
         )
         .shadow(color: .black.opacity(0.45), radius: 28, y: 16)
+        // The artwork spans a phone's width; in a Mac or iPad window it stops at a cover's
+        // size rather than filling the page.
+        .frame(maxWidth: Self.maxArtworkWidth)
       }
       .buttonStyle(.orbisPressable)
       .accessibilityLabel("Open \(set.title)")
