@@ -64,7 +64,9 @@ if (onlyTest) {
 } else if (macos || unitOnly) {
   only.push("-only-testing:OrbisTests");
 } else if (journeysOnly) {
-  only.push(tvos ? "-only-testing:OrbisTVUITests" : "-only-testing:OrbisUITests");
+  only.push(
+    tvos ? "-only-testing:OrbisTVUITests" : "-only-testing:OrbisUITests"
+  );
 }
 
 const run = (command, options) => {

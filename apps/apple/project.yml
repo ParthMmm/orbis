@@ -82,9 +82,7 @@ targets:
         # API tvOS lacks (filing, sharing, the slider transport, swipe actions), so they are
         # left out of the tvOS build here rather than wrapped in the files themselves.
         "EXCLUDED_SOURCE_FILE_NAMES[sdk=appletv*]": >-
-          AddToPlaylistSheet.swift FilingSheet.swift LibraryView.swift NowPlayingScreen.swift
-          PeopleDestination.swift PlaylistViews.swift QueueScreen.swift RootView.swift
-          SetDetailScreen.swift SetManagementSection.swift SettingsView.swift Transport.swift
+          AddToPlaylistSheet.swift FilingSheet.swift LibraryView.swift NowPlayingScreen.swift PeopleDestination.swift PlaylistViews.swift QueueScreen.swift RootView.swift SetDetailScreen.swift SetManagementSection.swift SettingsView.swift Transport.swift
   OrbisShare:
     type: app-extension
     supportedDestinations: [iOS, macOS]
