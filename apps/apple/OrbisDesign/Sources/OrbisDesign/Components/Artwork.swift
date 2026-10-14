@@ -24,6 +24,8 @@ public struct Artwork: View {
     case rail
     /// A card in a horizontal rail on Home: 168 points wide.
     case card
+    /// A card read from across a room, on a television: 400 points wide.
+    case tile
     /// Across the top of a page: as wide as it is offered.
     case header
 
@@ -31,7 +33,7 @@ public struct Artwork: View {
       switch self {
       case .row: Radius.artwork
       case .lead, .rail, .card: Radius.button
-      case .header: Radius.cover
+      case .tile, .header: Radius.cover
       }
     }
 
@@ -41,6 +43,7 @@ public struct Artwork: View {
       case .lead: 120
       case .rail: 150
       case .card: 168
+      case .tile: 400
       case .header: nil
       }
     }

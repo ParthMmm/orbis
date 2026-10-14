@@ -251,6 +251,13 @@ enum SetPresentation {
     return hours > 0 ? "\(hours)h \(minutes)m" : "\(minutes)m"
   }
 
+  /// A position said aloud: "1 hour, 5 minutes, 25 seconds", for a screen reader that would
+  /// otherwise read the digits of a timestamp.
+  static func spoken(_ seconds: TimeInterval) -> String {
+    Duration.seconds(max(Int(seconds), 0))
+      .formatted(.units(allowed: [.hours, .minutes, .seconds], width: .wide))
+  }
+
   /// A seek position said the way a player says it: m:ss, or h:mm:ss past the hour.
   /// Truncates rather than rounds, so the thumb never claims a second it has not reached.
   static func timestamp(_ seconds: TimeInterval) -> String {

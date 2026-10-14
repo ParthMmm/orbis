@@ -50,7 +50,9 @@ public struct TagPill: View {
       }
       .labelStyle(.titleAndIcon)
     }
-    .toggleStyle(.button)
+    #if !os(tvOS)
+      .toggleStyle(.button)
+    #endif
     .buttonStyle(.bordered)
     .buttonBorderShape(.capsule)
     .tint(isOn ? category.dot : nil)

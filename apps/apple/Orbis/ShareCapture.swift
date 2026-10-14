@@ -77,7 +77,7 @@ enum ShareCapture {
   }
 
   static func preserveOnClipboard(_ text: String) {
-    #if canImport(UIKit)
+    #if canImport(UIKit) && !os(tvOS)
       UIPasteboard.general.string = text
     #elseif canImport(AppKit)
       NSPasteboard.general.clearContents()

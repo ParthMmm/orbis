@@ -66,20 +66,24 @@ public struct PasteHero: View {
   private func pasteButton(_ paste: @escaping (String) -> Void) -> some View {
     // `PasteButton` draws its own title and takes no label, which is the price of the system
     // asking the person for permission instead of the app reading the pasteboard behind their back.
-    PasteButton(payloadType: String.self) { pasted in
-      guard let text = pasted.first else { return }
-      paste(text)
-    }
-    .labelStyle(.titleAndIcon)
-    .controlSize(.extraLarge)
-    .buttonBorderShape(.capsule)
-    .buttonStyle(.bordered)
-    // The system draws this button in the accent colour. Orbis gives tint to the one action a
-    // screen is for, which in this hero is the button that files what was typed, so the paste
-    // shortcut is drawn in the muted ink instead.
-    .tint(Color.orbis.muted)
-    .frame(maxWidth: .infinity)
-    .accessibilityIdentifier("paste-and-file")
+    #if os(tvOS)
+      EmptyView()
+    #else
+      PasteButton(payloadType: String.self) { pasted in
+        guard let text = pasted.first else { return }
+        paste(text)
+      }
+      .labelStyle(.titleAndIcon)
+      .controlSize(.extraLarge)
+      .buttonBorderShape(.capsule)
+      .buttonStyle(.bordered)
+      // The system draws this button in the accent colour. Orbis gives tint to the one action a
+      // screen is for, which in this hero is the button that files what was typed, so the paste
+      // shortcut is drawn in the muted ink instead.
+      .tint(Color.orbis.muted)
+      .frame(maxWidth: .infinity)
+      .accessibilityIdentifier("paste-and-file")
+    #endif
   }
 }
 

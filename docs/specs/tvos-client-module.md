@@ -3,6 +3,7 @@
 - **ADR:** [`../adr/0012-tvos-client.md`](../adr/0012-tvos-client.md)
 - **Research:** [`../research/2026-09-26-tvos.md`](../research/2026-09-26-tvos.md)
 - **Related:** [`carplay-audio-module.md`](carplay-audio-module.md)
+- **Status:** ship order 0 and 1 are implemented under `apps/apple/Orbis/TV`; 2 (Top Shelf) and 3 (pairing) are open.
 
 ## Problem Statement
 
@@ -47,9 +48,9 @@ Add a native tvOS destination to the existing `Orbis` target. Reuse `AppModel` a
 
 ### Connection and storage
 
-- Address in defaults and API key in the Keychain, as `ClientSettings` does today
+- Sign-in as ADR 0020: join with a username and the Group Passcode, or type a Sign-in Code from another device; the device token lives in the Keychain, as `ClientSettings` does today. The TV reuses `SignInView`.
 - Artwork cache in the caches directory only
-- Audio streams from `sets/{id}/audio` with the Bearer key, as `AudioPlayer` does today
+- Audio streams from `sets/{id}/audio` with the Bearer token, as `AudioPlayer` does today
 
 ### Testing seams
 

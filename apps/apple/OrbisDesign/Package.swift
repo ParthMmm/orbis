@@ -3,7 +3,7 @@ import PackageDescription
 
 let package = Package(
   name: "OrbisDesign",
-  platforms: [.iOS("26.1"), .macOS(.v26)],
+  platforms: [.iOS("26.1"), .macOS(.v26), .tvOS("26.1")],
   products: [
     .library(name: "OrbisDesign", targets: ["OrbisDesign"])
   ],

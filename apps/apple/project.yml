@@ -11,6 +11,7 @@ options:
   deploymentTarget:
     iOS: "26.1"
     macOS: "26.0"
+    tvOS: "26.1"
 packages:
   OrbisDesign:
     path: OrbisDesign
@@ -39,13 +40,14 @@ settings:
 targets:
   Orbis:
     type: application
-    supportedDestinations: [iOS, macOS]
+    supportedDestinations: [iOS, macOS, tvOS]
     sources:
       - Orbis
     dependencies:
       - package: OrbisDesign
       - target: OrbisShare
         embed: true
+        destinationFilters: [iOS, macOS]
     entitlements:
       path: Orbis/Orbis.entitlements
       # Declared here, not only in the file: xcodegen writes the file from these properties on
@@ -63,6 +65,7 @@ targets:
         # and rejects the CarPlay entitlement, and iOS rejects app-sandbox. The file above signs
         # iOS; this one signs macOS.
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Orbis/Orbis-macOS.entitlements
+        "CODE_SIGN_ENTITLEMENTS[sdk=appletv*]": Orbis/Orbis-tvOS.entitlements
         # orbis.icon, the Icon Composer document. This replaces the AppIcon image set.
         ASSETCATALOG_COMPILER_APPICON_NAME: orbis
         # The system tint (tab selection, links, toggles) comes from the catalog, so it carries the
@@ -75,6 +78,11 @@ targets:
         # UILaunchScreen names the color the splash is drawn on. Everything flat stays here.
         INFOPLIST_FILE: Orbis/Info.plist
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO
+        # The TV builds its own screens under Orbis/TV, and these phone and Mac screens carry
+        # API tvOS lacks (filing, sharing, the slider transport, swipe actions), so they are
+        # left out of the tvOS build here rather than wrapped in the files themselves.
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=appletv*]": >-
+          AddToPlaylistSheet.swift FilingSheet.swift LibraryView.swift NowPlayingScreen.swift PeopleDestination.swift PlaylistViews.swift QueueScreen.swift RootView.swift SetDetailScreen.swift SetManagementSection.swift SettingsView.swift Transport.swift
   OrbisShare:
     type: app-extension
     supportedDestinations: [iOS, macOS]
@@ -108,7 +116,7 @@ targets:
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
   OrbisTests:
     type: bundle.unit-test
-    supportedDestinations: [iOS, macOS]
+    supportedDestinations: [iOS, macOS, tvOS]
     sources:
       - OrbisTests
     dependencies:
@@ -122,6 +130,7 @@ targets:
         # under Contents/MacOS, so the SDK condition supplies the right one.
         TEST_HOST[sdk=macosx*]: "$(BUILT_PRODUCTS_DIR)/Orbis.app/Contents/MacOS/Orbis"
         BUNDLE_LOADER[sdk=macosx*]: "$(TEST_HOST)"
+        "EXCLUDED_SOURCE_FILE_NAMES[sdk=appletv*]": AddToPlaylistTests.swift ClipboardLinkTests.swift
   OrbisUITests:
     type: bundle.ui-testing
     # iOS only. The macOS UI test runner is killed before bootstrap on the host that runs
@@ -135,6 +144,19 @@ targets:
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.uitests
+  OrbisTVUITests:
+    type: bundle.ui-testing
+    supportedDestinations: [tvOS]
+    sources:
+      - OrbisTVUITests
+      - path: OrbisUITests
+        includes:
+          - LaneService.swift
+    dependencies:
+      - target: Orbis
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.tvuitests
 schemes:
   Orbis:
     build:
@@ -157,6 +179,27 @@ schemes:
         ORBIS_TEST_SETTINGS: memory
         # Substituted at generation time, so the lane's temporary service is what the
         # journey tests type into the connection screen.
+        ORBIS_UI_TEST_ADDRESS: ${ORBIS_UI_TEST_ADDRESS}
+        ORBIS_UI_TEST_SEED_ADDRESS: ${ORBIS_UI_TEST_SEED_ADDRESS}
+        ORBIS_UI_TEST_SETTINGS_TOKEN: ${ORBIS_UI_TEST_SETTINGS_TOKEN}
+        ORBIS_UI_TEST_TOKEN: ${ORBIS_UI_TEST_TOKEN}
+  # The Apple TV lane: the same app and unit tests on the tvOS destination, with the TV journey
+  # in place of the iOS ones.
+  OrbisTV:
+    build:
+      targets:
+        Orbis: all
+        OrbisTests: [test]
+        OrbisTVUITests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - OrbisTests
+        - OrbisTVUITests
+      environmentVariables:
+        ORBIS_TEST_SETTINGS: memory
         ORBIS_UI_TEST_ADDRESS: ${ORBIS_UI_TEST_ADDRESS}
         ORBIS_UI_TEST_SEED_ADDRESS: ${ORBIS_UI_TEST_SEED_ADDRESS}
         ORBIS_UI_TEST_SETTINGS_TOKEN: ${ORBIS_UI_TEST_SETTINGS_TOKEN}

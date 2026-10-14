@@ -71,7 +71,7 @@ Build shared contracts before running a focused lane from the repository root:
 | Cloudflare Group and audio node | `bun run --filter @orbis/api test` | Workerd journeys write `.cache/api-group`, `.cache/audio-node`, `.cache/api-grants`, and `.cache/api-recovery`; requires ffmpeg and ffprobe |
 | Group data transfer | `bun run --filter @orbis/api test:transfer` | See [data transfer](data-transfer.md) for restore and comparison artifacts |
 | Web client | `bun run --filter @orbis/web test` | Production browser journeys and artifacts listed in [web verification](../apps/web/README.md#verify-the-migration); install Chromium with `bun x playwright install chromium` |
-| Apple client | `bun run native:lanes --journeys` | Simulator journeys; see [native clients](#native-clients) for outputs and required tools |
+| Apple client | `bun run native:lanes --journeys` | Simulator journeys; see [native clients](#native-clients) for outputs and required tools. Add `--tvos` for the Apple TV journey |
 
 These local checks use disposable storage. Record production acceptance separately on the issue.
 
@@ -83,14 +83,18 @@ Record the commit, exact command, target platform and simulator ID, result, and 
 
 ## Native clients
 
-`apps/apple/Orbis` builds one SwiftUI app for iOS and macOS from an xcodegen specification. The generated project and derived data are not tracked. Native lanes require macOS, Xcode, xcodegen, and an available simulator. Use the configured device host when working from Linux.
+`apps/apple/Orbis` builds one SwiftUI app for iOS, macOS, and tvOS from an xcodegen specification. The generated project and derived data are not tracked. Native lanes require macOS, Xcode, xcodegen, and an available simulator. Use the configured device host when working from Linux.
 
 ```sh
-bun run native:lanes          # unit tests and native journeys against a temporary service
-bun run native:lanes --unit   # unit tests only
+bun run native:lanes                     # unit tests and native journeys against a temporary service
+bun run native:lanes --unit              # unit tests only
+bun run native:lanes --tvos --journeys   # the Apple TV journey on the Apple TV simulator
+bun run native:lanes --tvos --unit       # unit tests on the Apple TV simulator
 ```
 
 A lane starts a temporary Orbis service with its own database and trust store, pairs a device, generates the project with that address and token, runs the tests, and exports the screenshots the journeys attached. Open the generated `apps/apple/Orbis.xcodeproj` in Xcode. Build output and `result.xcresult` live under `apps/apple/DerivedData`.
+
+The `Orbis` scheme is iOS and macOS; the `OrbisTV` scheme builds the same app for tvOS with `OrbisTests` and the `OrbisTVUITests` journey, which drives the TV with the Siri Remote. The TV's screens live under `apps/apple/Orbis/TV`, and the phone and Mac screens the TV replaces are listed in `project.yml` under `EXCLUDED_SOURCE_FILE_NAMES[sdk=appletv*]`. A `--tvos` lane seeds silent audio and terminates the app when it ends, so a playback check never sounds in the room; playback is proven by the screen's own state.
 
 Full and unit lanes run `bun run native:format` first. Journeys-only and `--only` runs leave that check to unit lanes and CI. The style command checks Swift sources with the Xcode toolchain's swift-format against `apps/apple/.swift-format`. swift-format ships with Xcode, so the native style gate needs no install. The check writes nothing; to fix drift, run `xcrun swift-format format --in-place` on the changed files.
 

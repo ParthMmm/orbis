@@ -4,8 +4,14 @@ import SwiftUI
 ///
 /// Headings are SF Pro at bold weights, at the sizes Apple Music uses for its own.
 public enum OrbisFont {
-  /// Screen title on iPhone ("Library").
-  public static let largeTitle = Font.largeTitle.bold()
+  /// Screen title on iPhone ("Library"). tvOS has no large title style and resolves
+  /// `.largeTitle` to the 57 pt class, under a section heading's `.title2`, so the TV takes
+  /// `.title` (76 pt) to keep a page's title the largest text on it.
+  #if os(tvOS)
+    public static let largeTitle = Font.title.bold()
+  #else
+    public static let largeTitle = Font.largeTitle.bold()
+  #endif
   /// A Set's title on its own page and on Now Playing.
   public static let title = Font.title2.bold()
   /// The paste hero headline. Title on Mac, title2 on iPhone — pick with `hero(compact:)`.
