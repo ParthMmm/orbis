@@ -136,11 +136,13 @@ const finishTracklist = (
         yield* tx.delete(setCues).where(eq(setCues.setId, claim.id));
         if (result.state === "ready") {
           for (let at = 0; at < result.cues.length; at += CUES_PER_INSERT) {
-            yield* tx.insert(setCues).values(
-              result.cues
-                .slice(at, at + CUES_PER_INSERT)
-                .map((cue) => ({ ...cue, setId: claim.id }))
-            );
+            yield* tx
+              .insert(setCues)
+              .values(
+                result.cues
+                  .slice(at, at + CUES_PER_INSERT)
+                  .map((cue) => ({ ...cue, setId: claim.id }))
+              );
           }
         }
         return true;
