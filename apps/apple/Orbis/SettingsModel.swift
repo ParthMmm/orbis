@@ -146,8 +146,38 @@ struct SignInCodeView: View {
       Text("Works once, until \(SetPresentation.date(from: code.expiresAt), style: .time).")
         .font(.orbis.detail)
         .foregroundStyle(OrbisColor.muted)
+      #if !os(tvOS)
+        CopyButton(title: "Copy Code", text: code.code, identifier: "\(identifier)-copy")
+          .buttonStyle(.bordered)
+          .buttonBorderShape(.capsule)
+          .controlSize(.small)
+          .padding(.top, 6)
+      #endif
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, 8)
+  }
+}
+
+/// Puts `text` on the clipboard and says so for a moment, without showing what it copied.
+struct CopyButton: View {
+  let title: String
+  let text: String
+  let identifier: String
+  @State private var copied = false
+
+  var body: some View {
+    Button(copied ? "Copied" : title, systemImage: copied ? "checkmark" : "doc.on.doc") {
+      copyToPasteboard(text)
+      copied = true
+    }
+    .contentTransition(.symbolEffect(.replace))
+    .sensoryFeedback(.success, trigger: copied) { _, now in now }
+    .task(id: copied) {
+      guard copied else { return }
+      try? await Task.sleep(for: .seconds(2))
+      copied = false
+    }
+    .accessibilityIdentifier(identifier)
   }
 }
