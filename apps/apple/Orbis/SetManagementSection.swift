@@ -67,11 +67,7 @@ struct SetManagementSection: View {
       }
     case .inline:
       actions
-        .labelStyle(.iconOnly)
-        .font(.title3.weight(.semibold))
-        .frame(width: 44, height: 44)
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
+        .buttonStyle(.plain)
     }
   }
 
@@ -101,7 +97,16 @@ struct SetManagementSection: View {
       }
       .accessibilityIdentifier("detail-remove")
     } label: {
-      Label("More", systemImage: "ellipsis")
+      if style == .inline {
+        // Glass drawn on the label, not by a glass button style, which pads the circle past 44.
+        Label("More", systemImage: "ellipsis")
+          .labelStyle(.iconOnly)
+          .font(.title3.weight(.semibold))
+          .frame(width: 44, height: 44)
+          .glassEffect(.regular.interactive(), in: .circle)
+      } else {
+        Label("More", systemImage: "ellipsis")
+      }
     }
     .accessibilityIdentifier("detail-actions")
   }
