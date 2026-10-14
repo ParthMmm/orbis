@@ -50,12 +50,13 @@ struct SetList: View {
   /// by day would scatter one day across the list.
   var groupsByDay = true
   /// What the page takes its light from: a Set's artwork, blurred behind the top of the list,
-  /// or plain paper.
+  /// plain paper, or nothing, when the list is one column of a page that draws the light itself.
   var backdrop: Backdrop = .paper
 
   enum Backdrop {
     case paper
     case artwork(URL?)
+    case none
   }
 
   @Environment(\.openURL) private var openURL
@@ -84,6 +85,7 @@ struct SetList: View {
       switch backdrop {
       case .paper: Color.orbis.paper.ignoresSafeArea()
       case .artwork(let url): ArtworkGlow(url: url, reach: 0.55)
+      case .none: Color.clear
       }
     }
   }

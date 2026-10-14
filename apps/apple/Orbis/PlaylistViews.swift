@@ -107,6 +107,7 @@ struct PlaylistsDestination: View {
   private func playlistGrid(_ items: [Playlist]) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
+        MacPageTitle.slot("Playlists")
         Text("Your sets, sorted for the moment.")
           .font(.orbis.detail)
           .foregroundStyle(.secondary)
@@ -359,49 +360,57 @@ struct PlaylistDetailView: View {
   private func hero(_ sets: [SavedSet]) -> some View {
     let seconds = sets.compactMap(\.durationSeconds).reduce(0, +)
     let count = sets.count == 1 ? "1 set" : "\(sets.count) sets"
-    return VStack(spacing: 14) {
+    // On a Mac the fan sits beside the name and the buttons, as Home's hero does.
+    return HeroLayout.stack(spacing: 14) {
       SleeveFan(
         seed: playlist.name,
         artwork: sets.prefix(3).map { SetPresentation.row($0).artwork },
         category: SetPresentation.category(for: playlist.name),
-        width: 200
+        width: HeroLayout.isBeside ? 220 : 200
       )
-      .frame(height: 150)
-      VStack(spacing: 5) {
-        Eyebrow("Playlist")
-        Text(playlist.name)
-          .font(.orbis.title)
-          .multilineTextAlignment(.center)
-          .accessibilityAddTraits(.isHeader)
-        Text(seconds > 0 ? "\(count) · \(SetPresentation.length(seconds))" : count)
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
-      }
-      HStack(spacing: 10) {
-        Button {
-          play(shuffled: false)
-        } label: {
-          Label("Play", systemImage: "play.fill")
-            .font(.headline)
-            .padding(.horizontal, 10)
+      .frame(height: HeroLayout.isBeside ? 170 : 150)
+      VStack(alignment: HeroLayout.alignment, spacing: 14) {
+        VStack(alignment: HeroLayout.alignment, spacing: 5) {
+          Eyebrow("Playlist")
+          Text(playlist.name)
+            .font(HeroLayout.isBeside ? Font.orbis.largeTitle : Font.orbis.title)
+            .multilineTextAlignment(HeroLayout.textAlignment)
+            .accessibilityAddTraits(.isHeader)
+          Text(seconds > 0 ? "\(count) · \(SetPresentation.length(seconds))" : count)
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
         }
-        .buttonStyle(.glassProminent)
-        .tint(Color.orbis.tint)
-        .accessibilityIdentifier("playlist-play")
-        Button {
-          play(shuffled: true)
-        } label: {
-          Label("Shuffle", systemImage: "shuffle")
-            .font(.headline)
-            .padding(.horizontal, 6)
-        }
-        .buttonStyle(.glass)
-        .accessibilityIdentifier("playlist-shuffle")
+        playButtons
       }
-      .controlSize(.large)
+      .frame(maxWidth: HeroLayout.isBeside ? CGFloat.infinity : nil, alignment: .leading)
     }
-    .frame(maxWidth: .infinity)
+    .frame(maxWidth: .infinity, alignment: HeroLayout.frameAlignment)
     .padding(.vertical, 8)
+  }
+
+  private var playButtons: some View {
+    HStack(spacing: 10) {
+      Button {
+        play(shuffled: false)
+      } label: {
+        Label("Play", systemImage: "play.fill")
+          .font(.headline)
+          .padding(.horizontal, 10)
+      }
+      .buttonStyle(.glassProminent)
+      .tint(Color.orbis.tint)
+      .accessibilityIdentifier("playlist-play")
+      Button {
+        play(shuffled: true)
+      } label: {
+        Label("Shuffle", systemImage: "shuffle")
+          .font(.headline)
+          .padding(.horizontal, 6)
+      }
+      .buttonStyle(.glass)
+      .accessibilityIdentifier("playlist-shuffle")
+    }
+    .controlSize(.large)
   }
 
   private func memberList(_ sets: [SavedSet]) -> some View {

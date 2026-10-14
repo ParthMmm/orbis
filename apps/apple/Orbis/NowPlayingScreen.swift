@@ -55,12 +55,34 @@ struct NowPlayingScreen: View {
     }
   }
 
-  private func content(_ set: SavedSet) -> some View {
+  /// On a Mac the window is wide enough for the Tracklist to sit beside the player for the whole
+  /// Set, where a phone swaps it in for the artwork.
+  @ViewBuilder private func content(_ set: SavedSet) -> some View {
+    let cues = model.tracklists[set.id]?.cues.filter { $0.startSeconds != nil } ?? []
+    #if os(macOS)
+      HStack(alignment: .top, spacing: 56) {
+        playerColumn(set, cues: cues, showsTracklistInPlace: false)
+          .frame(maxWidth: 560)
+        if !cues.isEmpty {
+          LyricsTracklist(model: model, set: set, cues: cues)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 36)
+        }
+      }
+      .padding(.horizontal, 32)
+      .padding(.top, 24)
+    #else
+      playerColumn(set, cues: cues, showsTracklistInPlace: showsTracklist)
+    #endif
+  }
+
+  private func playerColumn(
+    _ set: SavedSet, cues: [Cue], showsTracklistInPlace: Bool
+  ) -> some View {
     let player = model.audioPlayer
     let isPlaying = player.state == .playing || player.state == .loading
-    let cues = model.tracklists[set.id]?.cues.filter { $0.startSeconds != nil } ?? []
     return VStack(spacing: 0) {
-      if showsTracklist, !cues.isEmpty {
+      if showsTracklistInPlace, !cues.isEmpty {
         Button {
           showsTracklist = false
         } label: {
@@ -107,18 +129,20 @@ struct NowPlayingScreen: View {
         cueStarts: player.cueStarts
       )
       .padding(.top, 20)
-      if !showsTracklist {
+      if !showsTracklistInPlace {
         NextCueBar(player: player) { showsTracklist = true }
           .padding(.top, 16)
       }
       Spacer(minLength: 20)
       HStack {
-        Button("Tracklist", systemImage: showsTracklist ? "quote.bubble.fill" : "quote.bubble") {
-          showsTracklist.toggle()
-        }
-        .disabled(cues.isEmpty)
-        .accessibilityIdentifier("now-playing-tracklist")
-        Spacer()
+        #if os(iOS)
+          Button("Tracklist", systemImage: showsTracklist ? "quote.bubble.fill" : "quote.bubble") {
+            showsTracklist.toggle()
+          }
+          .disabled(cues.isEmpty)
+          .accessibilityIdentifier("now-playing-tracklist")
+          Spacer()
+        #endif
         AirPlayButton()
         Spacer()
         Button("Up Next", systemImage: "list.bullet") { isShowingQueue = true }
