@@ -87,12 +87,14 @@ final class AudioPlayer {
     // is released through stop(), which every play() enters through first. What
     // remains is global, and only this player's own registrations are taken back.
     let center = MPRemoteCommandCenter.shared()
-    for target in commandTargets {
-      center.playCommand.removeTarget(target)
-      center.pauseCommand.removeTarget(target)
+    let commands = [
+      center.playCommand, center.pauseCommand, center.skipBackwardCommand,
+      center.skipForwardCommand,
+    ]
+    for command in commands {
+      for target in commandTargets { command.removeTarget(target) }
+      command.isEnabled = false
     }
-    center.playCommand.isEnabled = false
-    center.pauseCommand.isEnabled = false
     let notifications = NotificationCenter.default
     for observer in observers {
       notifications.removeObserver(observer)
@@ -552,7 +554,36 @@ final class AudioPlayer {
       return .success
     }
     center.pauseCommand.isEnabled = true
-    commandTargets = [play, pause]
+    // The same skips as the transport beside Play, so the Lock Screen and the car offer them too.
+    // The interval is set before the target, because the system reads it when the target arrives.
+    center.skipBackwardCommand.preferredIntervals = [Self.skipBack as NSNumber]
+    let back = center.skipBackwardCommand.addTarget { [weak self] event in
+      self?.skip(by: -Self.interval(of: event, default: Self.skipBack))
+      return .success
+    }
+    center.skipBackwardCommand.isEnabled = true
+    center.skipForwardCommand.preferredIntervals = [Self.skipAhead as NSNumber]
+    let ahead = center.skipForwardCommand.addTarget { [weak self] event in
+      self?.skip(by: Self.interval(of: event, default: Self.skipAhead))
+      return .success
+    }
+    center.skipForwardCommand.isEnabled = true
+    commandTargets = [play, pause, back, ahead]
+  }
+
+  static let skipBack: TimeInterval = 15
+  static let skipAhead: TimeInterval = 30
+
+  /// Moves the playhead by a number of seconds, back when negative.
+  func skip(by seconds: TimeInterval) {
+    seek(to: elapsed + seconds)
+  }
+
+  /// Siri can ask for a skip of its own length, so the event's interval wins over the button's.
+  private static func interval(of event: MPRemoteCommandEvent, default fallback: TimeInterval)
+    -> TimeInterval
+  {
+    (event as? MPSkipIntervalCommandEvent)?.interval ?? fallback
   }
 
   private func observeInterruptions() {

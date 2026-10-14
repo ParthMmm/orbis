@@ -93,7 +93,7 @@ struct Transport: View {
 
   private var backButton: some View {
     Button("Back 15 seconds", systemImage: "gobackward.15") {
-      player.seek(to: player.elapsed - 15)
+      player.skip(by: -AudioPlayer.skipBack)
     }
     .disabled(!isCurrent)
     .accessibilityIdentifier("\(identifierPrefix)-back")
@@ -101,7 +101,7 @@ struct Transport: View {
 
   private var forwardButton: some View {
     Button("Forward 30 seconds", systemImage: "goforward.30") {
-      player.seek(to: player.elapsed + 30)
+      player.skip(by: AudioPlayer.skipAhead)
     }
     .disabled(!isCurrent)
     .accessibilityIdentifier("\(identifierPrefix)-forward")
