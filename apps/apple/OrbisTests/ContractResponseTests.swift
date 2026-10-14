@@ -14,6 +14,7 @@ final class ContractResponseTests: XCTestCase {
     let playlists: PlaylistsResponse
     let queue: QueueResponse
     let savedSet: SavedSet
+    let socialFilters: SocialFilters
     let tags: Tags
   }
 
@@ -31,5 +32,6 @@ final class ContractResponseTests: XCTestCase {
     XCTAssertEqual(samples.me.id, "host")
     XCTAssertTrue(samples.me.autoDownload)
     XCTAssertTrue(samples.me.host)
+    XCTAssertTrue(samples.socialFilters.see)
   }
 }

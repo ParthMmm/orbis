@@ -162,6 +162,26 @@ struct GroupPerson: Decodable, Equatable, Identifiable, Sendable {
   let username: String
 }
 
+/// A Person the caller could see, with the caller's See and Appear for them (ADR 0009).
+struct PersonFilters: Decodable, Equatable, Identifiable, Sendable {
+  let id: String
+  let username: String
+  var see: Bool
+  var appear: Bool
+}
+
+/// The caller's See and Appear for one Person.
+struct SocialFilters: Decodable, Equatable, Sendable {
+  let see: Bool
+  let appear: Bool
+}
+
+/// A change to the caller's filters for one Person. Absent fields are left as they are.
+struct SocialFiltersUpdate: Encodable {
+  var see: Bool?
+  var appear: Bool?
+}
+
 /// A one-time code another device types to sign in as the same Person (ADR 0020).
 struct SignInCode: Decodable, Equatable, Sendable {
   let code: String
@@ -197,6 +217,10 @@ private struct GroupPasscode: Codable {
 
 private struct GroupPeople: Decodable {
   let people: [GroupPerson]
+}
+
+private struct PeopleFiltersResponse: Decodable {
+  let people: [PersonFilters]
 }
 
 /// Talks to the Orbis service. Every request carries the device token, and the same
@@ -236,6 +260,20 @@ struct OrbisClient: Sendable {
     let body = try Self.encoder.encode(update)
     let response = try await send(path: "me", method: "PATCH", body: body)
     return try Self.decode(Me.self, from: response)
+  }
+
+  // MARK: - Social (ADR 0009)
+
+  /// The People with Social on whom the caller could see, with the caller's See and Appear.
+  func socialFilters() async throws -> [PersonFilters] {
+    let response = try await send(path: "people/filters", method: "GET", body: nil)
+    return try Self.decode(PeopleFiltersResponse.self, from: response).people
+  }
+
+  func setFilters(for personId: String, _ update: SocialFiltersUpdate) async throws -> SocialFilters {
+    let body = try Self.encoder.encode(update)
+    let response = try await send(path: "people/\(personId)/filters", method: "PUT", body: body)
+    return try Self.decode(SocialFilters.self, from: response)
   }
 
   // MARK: - Signing in (ADR 0020)
