@@ -13,7 +13,7 @@ A private library for long music: DJ sets and mixes from YouTube and SoundCloud.
 <p align="center">
   <img src="docs/images/home.jpg" alt="Orbis Home on iPhone: the Set in progress shown large with its artwork, a Resume button with the time left, tag chips, and a Continue listening rail" width="280">
   &nbsp;
-  <img src="docs/images/set.jpg" alt="A Set page on iPhone: artwork, title, artist, listen count, Resume and Play Next buttons, and the start of the tracklist" width="280">
+  <img src="docs/images/set.jpg" alt="A Set page on iPhone: artwork glowing behind the header, title, artist, a Resume button with the time left, Play Next, and the start of the tracklist" width="280">
 </p>
 
 Orbis is a personal project for a private Group of listeners. The API and library data live on Cloudflare; an audio node on Vanta retains and serves the audio. The source is public to read and to fork. It is not open source; see [License](#license).

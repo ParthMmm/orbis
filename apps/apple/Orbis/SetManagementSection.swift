@@ -9,7 +9,7 @@ struct SetManagementSection: View {
   @Binding var isRenaming: Bool
   var style: Style = .page
 
-  /// `.page` shows the Tags and puts the source and the menu in the toolbar; `.inline` is the
+  /// `.page` shows the Tags and puts the menu in the toolbar; `.inline` is the
   /// menu alone, as one button, for Now Playing.
   enum Style {
     case page
@@ -57,13 +57,7 @@ struct SetManagementSection: View {
         editTags: { isEditingTags = true }
       )
       .toolbar {
-        ToolbarItemGroup(placement: .primaryAction) {
-          Button("Open in \(set.source.label)", systemImage: SetPresentation.sourceSymbol(set.source)) {
-            open()
-          }
-          .accessibilityIdentifier("detail-open")
-          actions
-        }
+        ToolbarItem(placement: .primaryAction) { actions }
       }
     case .inline:
       actions
@@ -85,6 +79,7 @@ struct SetManagementSection: View {
       Button("Open in \(set.source.label)", systemImage: SetPresentation.sourceSymbol(set.source)) {
         open()
       }
+      .accessibilityIdentifier("detail-open")
       if let link = SetPresentation.sourceURL(set) {
         ShareLink(item: link, subject: Text(set.title)) {
           Label("Share", systemImage: "square.and.arrow.up")
