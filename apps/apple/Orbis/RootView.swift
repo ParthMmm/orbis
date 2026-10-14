@@ -939,7 +939,8 @@ private struct HomeHero: View {
   }
 
   var body: some View {
-    HeroLayout.stack(spacing: 16) {
+    let layout = HeroLayout.stack(spacing: 16)
+    layout {
       Button {
         model.openSet(set.id)
       } label: {

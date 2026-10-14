@@ -361,7 +361,8 @@ struct PlaylistDetailView: View {
     let seconds = sets.compactMap(\.durationSeconds).reduce(0, +)
     let count = sets.count == 1 ? "1 set" : "\(sets.count) sets"
     // On a Mac the fan sits beside the name and the buttons, as Home's hero does.
-    return HeroLayout.stack(spacing: 14) {
+    let layout = HeroLayout.stack(spacing: 14)
+    return layout {
       SleeveFan(
         seed: playlist.name,
         artwork: sets.prefix(3).map { SetPresentation.row($0).artwork },
