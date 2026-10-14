@@ -11,16 +11,28 @@ import MediaPlayer
 ///
 /// Everything here stays on the main actor: playback control is not CPU-bound, and
 /// AVPlayer does its own threading. Observers that the system can call from any thread
-/// capture plain values first and hop back here before touching state. The audio session
-/// is the one exception, and it runs off the main actor: see `sessionWork`.
+/// hop back here and read the player's current values before touching state. The audio
+/// session and the artwork decode are the exceptions, and run off the main actor: see
+/// `sessionWork` and `artwork(from:)`.
 @MainActor
 @Observable
 final class AudioPlayer {
+  /// Where playback stands, and what the person last asked for. One value holds both, so a
+  /// press and a late callback can never disagree about whether sound is wanted: `.loading`
+  /// and `.playing` mean the person asked to hear the Set, `.paused` means they asked for
+  /// quiet, and `.interrupted` means the system took the sound away while they wanted it.
+  /// Sound starts only through `startPlayback()`, and only while the state still asks for it
+  /// once the audio session is up.
   enum PlaybackState: Equatable {
     case idle
+    /// Sound is wanted and has not started: the session is coming up or the stream is filling.
     case loading
     case playing
     case paused
+    /// A call, an alarm, or another app took the session while the Set was wanted. It plays
+    /// again when the interruption ends and the system says it may; a Set the person paused
+    /// first stays `.paused` instead, so the end of a call never starts it.
+    case interrupted
     case failed(String)
   }
 
@@ -46,7 +58,7 @@ final class AudioPlayer {
   private(set) var elapsed: TimeInterval = 0
   private(set) var duration: TimeInterval?
 
-  private var player: AVPlayer?
+  private(set) var player: AVPlayer?
   private var timeObserver: Any?
   private var statusObservation: NSKeyValueObservation?
   private var rateObservation: NSKeyValueObservation?
@@ -69,16 +81,36 @@ final class AudioPlayer {
   /// to the audio server and takes long enough to freeze a screen that waits for it, so it
   /// happens off the main actor. Each step waits for the one before it, because a stop that
   /// deactivates must never land after the play that follows it.
-  private var sessionWork: Task<Void, Never>?
+  private(set) var sessionWork: Task<Void, Never>?
+
+  /// How the audio session comes up and goes away. The system's in the app; a test passes its own
+  /// to hold activation open and press buttons while it is pending.
+  struct Session: Sendable {
+    var start: @Sendable () async -> Bool
+    var end: @Sendable () async -> Void
+
+    static let system = Session(
+      start: { await AudioPlayer.startSession() },
+      end: { await AudioPlayer.endSession() }
+    )
+  }
+
+  private let session: Session
 
   /// The registrations this player made outside itself, held nonisolated so `deinit`, which
   /// cannot hop actors, takes back exactly its own handlers instead of clearing the shared
   /// command center. Ignored by observation: nothing reads them.
+  ///
+  /// `nonisolated(unsafe)` is sound only while this holds: every read and write outside
+  /// `deinit` happens on the main actor (in `init`, `setupCommands`, `stop`, and the observe
+  /// methods), and `deinit` runs when no other reference is left, so it has the arrays to
+  /// itself. A write from anywhere else would be a data race the compiler no longer checks.
   @ObservationIgnored nonisolated(unsafe) private var commandTargets: [Any] = []
   @ObservationIgnored nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
   private var isObservingInterruptions = false
 
-  init() {
+  init(session: Session = .system) {
+    self.session = session
     setupCommands()
   }
 
@@ -160,11 +192,12 @@ final class AudioPlayer {
   /// The image the provider offered, as the system wants it: a handler that returns the same
   /// image at any size, since the provider gives one size and the system scales it.
   ///
-  /// Nonisolated, and it has to be. The system calls the handler on its own Now Playing queue
-  /// whenever it wants the image at a new size, so a handler built on the main actor traps the
-  /// moment it is asked. Nothing in here touches the main actor: the image is already decoded
-  /// and the handler only hands back what it captured.
-  nonisolated static func artwork(from data: Data) -> MPMediaItemArtwork? {
+  /// `@concurrent`, so the decode and crop run off the main actor rather than on the thread
+  /// that draws the screen. Nonisolated for a second reason too: the system calls the handler
+  /// on its own Now Playing queue whenever it wants the image at a new size, so a handler built
+  /// on the main actor traps the moment it is asked. Nothing in here touches the main actor:
+  /// the image is already decoded and the handler only hands back what it captured.
+  @concurrent nonisolated static func artwork(from data: Data) async -> sending MPMediaItemArtwork? {
     #if os(macOS)
       guard let source = NSImage(data: data),
         let cg = source.cgImage(forProposedRect: nil, context: nil, hints: nil)
@@ -174,7 +207,10 @@ final class AudioPlayer {
         cgImage: cropped, size: NSSize(width: cropped.width, height: cropped.height))
     #else
       guard let source = UIImage(data: data), let cg = source.cgImage else { return nil }
-      let image = UIImage(cgImage: widescreen(cg))
+      // Decoded here rather than on first draw, so the pixels are ready before the system asks
+      // and the uncropped original is not kept alive behind the crop.
+      let cropped = UIImage(cgImage: widescreen(cg))
+      let image = cropped.preparingForDisplay() ?? cropped
     #endif
     return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
   }
@@ -193,11 +229,12 @@ final class AudioPlayer {
 
   /// Brings the audio session up for playback and answers whether it came up.
   ///
-  /// Nonisolated, so none of it runs on the main actor: activation is a slow call that the
-  /// system warns will freeze a screen that makes it. From iOS 27 the framework offers a
-  /// handler and never blocks at all; before that the blocking call is the only one there
-  /// is, and running it here keeps it off the main thread just the same.
-  private nonisolated static func startSession() async -> Bool {
+  /// `@concurrent`, so none of it runs on the main actor whatever the caller's isolation:
+  /// activation is a slow call that the system warns will freeze a screen that makes it. From
+  /// iOS 27 the framework offers a handler and never blocks at all; before that the blocking
+  /// call is the only one there is, and running it here keeps it off the main thread just the
+  /// same.
+  @concurrent fileprivate nonisolated static func startSession() async -> Bool {
     #if os(macOS)
       return true
     #else
@@ -226,7 +263,7 @@ final class AudioPlayer {
   /// Lets the audio session go, off the main actor for the same reason, and tells whoever this
   /// playback interrupted that it may resume. Waits for the answer, so the next activation
   /// queued behind it cannot be undone by this deactivation landing late.
-  private nonisolated static func endSession() async {
+  @concurrent fileprivate nonisolated static func endSession() async {
     #if !os(macOS)
       let session = AVAudioSession.sharedInstance()
       if #available(iOS 27.0, tvOS 27.0, *) {
@@ -262,29 +299,31 @@ final class AudioPlayer {
     self.player = player
     playbackGeneration += 1
     let generation = playbackGeneration
-    // KVO can call back on any thread, so each handler captures plain values and
-    // hops here before touching state. The generation check drops a callback that a
-    // stopped or replaced player queued before this one took over.
-    statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
-      let status = item.status
-      let seconds = item.duration.seconds
+    // KVO can call back on any thread, so each handler only hops here. Each hop is its own
+    // task, and two of them can land in either order, so the hop reads the player's current
+    // values rather than the ones that fired it: a late hop then repeats the latest state
+    // instead of undoing it. The generation check drops a callback that a stopped or replaced
+    // player queued before this one took over.
+    statusObservation = item.observe(\.status, options: [.new]) { [weak self] _, _ in
       Task { @MainActor in
-        guard let self, self.playbackGeneration == generation else { return }
-        self.itemStatusChanged(status: status, durationSeconds: seconds)
+        guard let self, self.playbackGeneration == generation,
+          let item = self.player?.currentItem
+        else { return }
+        self.itemStatusChanged(status: item.status, durationSeconds: item.duration.seconds)
       }
     }
-    rateObservation = player.observe(\.rate, options: [.new]) { [weak self] player, _ in
-      let rate = player.rate
+    rateObservation = player.observe(\.rate, options: [.new]) { [weak self] _, _ in
       Task { @MainActor in
-        guard let self, self.playbackGeneration == generation else { return }
-        self.rateChanged(rate: rate)
+        guard let self, self.playbackGeneration == generation, let player = self.player
+        else { return }
+        self.rateChanged(rate: player.rate)
       }
     }
-    stallObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
-      let status = player.timeControlStatus
+    stallObservation = player.observe(\.timeControlStatus, options: [.new]) { [weak self] _, _ in
       Task { @MainActor in
-        guard let self, self.playbackGeneration == generation else { return }
-        self.stallChanged(status: status)
+        guard let self, self.playbackGeneration == generation, let player = self.player
+        else { return }
+        self.stallChanged(status: player.timeControlStatus)
       }
     }
     timeObserver = player.addPeriodicTimeObserver(
@@ -307,20 +346,53 @@ final class AudioPlayer {
     observeCompletion(of: item, generation: generation)
     observeInterruptions()
     // The screen already reads as loading, so the sound can wait for the session rather than
-    // the screen waiting for both. A generation that has moved on drops what comes back.
+    // the screen waiting for both.
+    startPlayback()
+    fetchArtwork(for: set, generation: generation)
+  }
+
+  /// Starts the sound once the audio session is up. Every start goes through here (the first
+  /// play, a resume, the lock screen's Play, the end of an interruption), so none plays without
+  /// an active session. It queues behind the session work already in flight and asks for the
+  /// session again each time: asking costs little when the session is up, and is what brings it
+  /// back after a failure or an interruption took it down.
+  ///
+  /// What the person asks for while it waits wins. A pause in the meantime leaves the state at
+  /// `.paused`, and the player stays quiet when the session answers. A generation that has
+  /// moved on drops what comes back.
+  ///
+  /// Only the latest start acts. One queued behind it answers for the newer press, so an earlier
+  /// start that fails cannot mark the Set failed under it, and one that succeeds does not play
+  /// ahead of it.
+  private func startPlayback() {
+    let generation = playbackGeneration
+    latestStart += 1
+    let start = latestStart
     let previous = sessionWork
+    let startSession = session.start
     sessionWork = Task { [weak self] in
       await previous?.value
-      let started = await Self.startSession()
-      guard let self, self.playbackGeneration == generation else { return }
+      let started = await startSession()
+      guard let self, self.playbackGeneration == generation, self.latestStart == start,
+        self.wantsSound
+      else { return }
       guard started else {
-        state = .failed("Audio could not start on this device.")
+        self.player?.pause()
+        self.state = .failed("Audio could not start on this device.")
+        self.publishNowPlaying(isPlaying: false)
         return
       }
       self.player?.play()
-      publishNowPlaying(isPlaying: true)
-      fetchArtwork(for: set, generation: generation)
+      self.publishNowPlaying(isPlaying: true)
     }
+  }
+
+  /// Which `startPlayback()` call is the newest; an older one that finishes first does nothing.
+  @ObservationIgnored private var latestStart = 0
+
+  /// True while the person has asked to hear the Set, whether or not the sound has started.
+  private var wantsSound: Bool {
+    state == .loading || state == .playing
   }
 
   /// The largest image the provider offered, fetched off the play path. A stale fetch, one that
@@ -332,31 +404,53 @@ final class AudioPlayer {
     }
     artworkFetch = Task { [weak self] in
       guard let (data, _) = try? await URLSession.shared.data(from: url) else { return }
-      let artwork = Self.artwork(from: data)
-      await MainActor.run {
-        guard let self, self.playbackGeneration == generation, let artwork else { return }
-        self.currentArtwork = artwork
-        self.publishNowPlaying(isPlaying: self.state == .playing)
-      }
+      let artwork = await Self.artwork(from: data)
+      guard let self, self.playbackGeneration == generation, let artwork else { return }
+      self.currentArtwork = artwork
+      self.publishNowPlaying(isPlaying: self.state == .playing)
     }
   }
 
+  /// Quiets the Set and records that the person asked for quiet, so a session start still in
+  /// flight does not play it when it lands.
   func pause() {
     player?.pause()
-    publishNowPlaying(isPlaying: false)
-    if case .playing = state {
+    if wantsSound || state == .interrupted {
       state = .paused
+    }
+    publishNowPlaying(isPlaying: false)
+  }
+
+  /// Plays the Set in the player again. Waits for the audio session like any start, so a resume
+  /// before the session is up, or after a failure or interruption took it down, still has one.
+  /// An item that failed to load has nothing to resume; the caller starts the Set again.
+  func resume() {
+    guard let item = player?.currentItem, item.status != .failed else { return }
+    switch state {
+    case .paused, .interrupted, .failed:
+      // Now Playing turns to playing when the sound does, in `startPlayback()`.
+      state = .loading
+      startPlayback()
+    case .idle, .loading, .playing:
+      return
     }
   }
 
-  func resume() {
-    player?.play()
-    publishNowPlaying(isPlaying: true)
+  /// What a single play/pause control does: pauses while sound is wanted, including while it
+  /// is still loading, and resumes otherwise.
+  func togglePlayPause() {
+    if wantsSound {
+      pause()
+    } else {
+      resume()
+    }
   }
 
   func seek(to seconds: TimeInterval) {
     guard let duration, duration.isFinite else {
-      guard player != nil, state == .loading else { return }
+      guard player != nil, wantsSound || state == .paused || state == .interrupted else {
+        return
+      }
       let target = max(seconds, 0)
       pendingSeek = target
       elapsed = target
@@ -418,9 +512,10 @@ final class AudioPlayer {
     state = .idle
     MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
     let previous = sessionWork
+    let endSession = session.end
     sessionWork = Task {
       await previous?.value
-      await Self.endSession()
+      await endSession()
     }
   }
 
@@ -429,7 +524,7 @@ final class AudioPlayer {
     case .readyToPlay:
       duration = durationSeconds.isFinite ? durationSeconds : nil
       applyPendingSeek()
-      publishNowPlaying(isPlaying: true)
+      publishNowPlaying(isPlaying: wantsSound)
     case .failed:
       state = .failed("This audio would not play.")
       publishNowPlaying(isPlaying: false)
@@ -544,8 +639,7 @@ final class AudioPlayer {
   private func setupCommands() {
     let center = MPRemoteCommandCenter.shared()
     let play = center.playCommand.addTarget { [weak self] _ in
-      self?.player?.play()
-      self?.publishNowPlaying(isPlaying: true)
+      self?.resume()
       return .success
     }
     center.playCommand.isEnabled = true
@@ -556,11 +650,7 @@ final class AudioPlayer {
     center.pauseCommand.isEnabled = true
     let toggle = center.togglePlayPauseCommand.addTarget { [weak self] _ in
       guard let self else { return .noSuchContent }
-      if self.state == .playing {
-        self.pause()
-      } else {
-        self.resume()
-      }
+      self.togglePlayPause()
       return .success
     }
     center.togglePlayPauseCommand.isEnabled = true
@@ -601,8 +691,9 @@ final class AudioPlayer {
     isObservingInterruptions = true
     #if !os(macOS)
       let center = NotificationCenter.default
-      // The observer block is nonisolated and Notification is not Sendable, so each
-      // block extracts plain values first and only those cross into the hop below.
+      // Registered on the main queue, so each block already runs on the main actor and
+      // assumes it, like the completion observer, rather than queueing a task that could land
+      // after a later press. Notification is not Sendable, so plain values are read first.
       observers.append(
         center.addObserver(
           forName: AVAudioSession.interruptionNotification,
@@ -620,7 +711,7 @@ final class AudioPlayer {
             return AVAudioSession.InterruptionOptions(rawValue: rawOptions)
               .contains(.shouldResume)
           }()
-          Task { @MainActor in
+          MainActor.assumeIsolated {
             self?.applyInterruption(type: type, shouldResume: shouldResume)
           }
         }
@@ -635,11 +726,9 @@ final class AudioPlayer {
             let raw = info[AVAudioSessionRouteChangeReasonKey] as? UInt,
             let reason = AVAudioSession.RouteChangeReason(rawValue: raw)
           else { return }
-          let deviceLost = reason == .oldDeviceUnavailable
-          Task { @MainActor in
-            if deviceLost {
-              self?.pause()
-            }
+          guard reason == .oldDeviceUnavailable else { return }
+          MainActor.assumeIsolated {
+            self?.pause()
           }
         }
       )
@@ -652,11 +741,19 @@ final class AudioPlayer {
     ) {
       switch type {
       case .began:
-        pause()
+        // Only a Set the person wanted is marked interrupted; a paused one stays paused.
+        guard wantsSound else { return }
+        player?.pause()
+        state = .interrupted
+        publishNowPlaying(isPlaying: false)
       case .ended:
+        guard state == .interrupted else { return }
+        // The interruption took the session down; `resume()` brings it back before playing.
+        // Without the system's leave to resume, the Set waits for the person's Play.
         if shouldResume {
-          player?.play()
-          publishNowPlaying(isPlaying: true)
+          resume()
+        } else {
+          state = .paused
         }
       @unknown default:
         break
