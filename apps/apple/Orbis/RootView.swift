@@ -1050,14 +1050,22 @@ struct SearchDestination: View {
   var body: some View {
     searchPage
       // On the screen, not the results: the results view is not there until a search has run.
-      .onSubmit(of: .search) { Task { await model.runSearch() } }
-      .onChange(of: model.searchQuery) { _, query in
-        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-          model.clearSearch()
-        }
+      .onSubmit(of: .search) {
+        remember(model.searchQuery)
+        Task { await model.runSearch() }
       }
-      .onChange(of: model.searchResultsFor) { _, query in
-        if let query { remember(query) }
+      // Searches as the query is typed, once typing pauses for 300 ms. A new keystroke cancels
+      // the wait, so only the query the person stopped on is sent.
+      .task(id: model.searchQuery) {
+        let query = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else {
+          model.clearSearch()
+          return
+        }
+        try? await Task.sleep(for: .milliseconds(300))
+        // A submit or a tapped suggestion may already have run this query.
+        guard !Task.isCancelled, query != model.searchResultsFor else { return }
+        await model.runSearch()
       }
       .task { await model.loadTracklistsForSearch() }
   }
@@ -1067,11 +1075,14 @@ struct SearchDestination: View {
   }
 
   private func remember(_ query: String) {
+    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty else { return }
     let kept = recentQueries.filter { $0.caseInsensitiveCompare(query) != .orderedSame }
     recentSearches = ([query] + kept).prefix(Self.recentLimit).joined(separator: "\n")
   }
 
   private func search(for query: String) {
+    remember(query)
     model.searchQuery = query
     Task { await model.runSearch() }
   }
