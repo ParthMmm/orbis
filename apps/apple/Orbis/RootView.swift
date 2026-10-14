@@ -583,6 +583,13 @@ struct DestinationView: View {
     }
     .scrollEdgeEffectStyle(.soft, for: .top)
     .scrollEdgeEffectStyle(.soft, for: .bottom)
+    .overlay {
+      // Before the first Set, Home has no rails to show; it says so and offers the first filing.
+      if case .loaded(let sets) = model.library, sets.isEmpty {
+        EmptyLibraryState(recover: { openFilingSheet() })
+          .accessibilityIdentifier("home-empty")
+      }
+    }
     .sidebarPageTitle("Home")
     .largeTitleOnIOS()
     .toolbar {
@@ -773,6 +780,9 @@ struct HomeRails: View {
         playlistGrid
       }
     }
+    // Full width even with nothing in it. A new Person's Home is empty, and an empty column
+    // narrowed the page to its padding, which drew the glow as a strip down the middle.
+    .frame(maxWidth: .infinity, alignment: .leading)
   }
 
   /// The Set Home leads with: the one most recently left part-way, or else the newest filed.
