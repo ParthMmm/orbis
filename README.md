@@ -11,7 +11,9 @@
 A private library for long music: DJ sets and mixes from YouTube and SoundCloud. Paste a link, file it with a title and tags, download the audio to a server you own, and play it from a native iPhone, iPad, or Mac app.
 
 <p align="center">
-  <img src="docs/images/library.png" alt="The Orbis library on iPhone: a paste field above a list of filed sets" width="320">
+  <img src="docs/images/home.jpg" alt="Orbis Home on iPhone: the Set in progress shown large with its artwork, a Resume button with the time left, tag chips, and a Continue listening rail" width="280">
+  &nbsp;
+  <img src="docs/images/set.jpg" alt="A Set page on iPhone: artwork, title, artist, listen count, Resume and Play Next buttons, and the start of the tracklist" width="280">
 </p>
 
 Orbis is a personal project for a private Group of listeners. The API and library data live on Cloudflare; an audio node on Vanta retains and serves the audio. The source is public to read and to fork. It is not open source; see [License](#license).
@@ -39,7 +41,7 @@ Saving a link creates a Person's Library Entry. Auto Download starts a Download 
 | [`apps/server`](apps/server) | Shared Effect HTTP handlers, disposable SQLite test adapter, and production audio node |
 | [`apps/api`](apps/api) | Cloudflare API Worker and SQLite Group Durable Object |
 | [`apps/web`](apps/web) | TanStack Start web client and Alchemy deployment for web and API |
-| [`apps/apple/Orbis`](apps/apple/Orbis) | One SwiftUI app for iOS and macOS, with Now Playing, CarPlay, and a share extension. The Xcode project is generated with xcodegen |
+| [`apps/apple/Orbis`](apps/apple/Orbis) | One SwiftUI app for iOS and macOS, with Home, Library, Playlists, People, and Search tabs, Now Playing, CarPlay, and a share extension. The Xcode project is generated with xcodegen |
 | [`apps/apple/OrbisDesign`](apps/apple/OrbisDesign) | Swift package with the design tokens, styles, and components |
 | [`apps/raycast`](apps/raycast) | Raycast commands: Save Current Tab and Save Clipboard |
 | [`packages/contracts`](packages/contracts) | Typed HTTP contract, derived client, and audio-node protocol |
@@ -58,7 +60,7 @@ Saving a link creates a Person's Library Entry. Auto Download starts a Download 
 
 Implementation status and remaining production checks live in [GitHub Issues](https://github.com/ParthMmm/orbis/issues).
 
-Signing, notarization, and App Store release are not set up. The native app is built and run from Xcode.
+iPhone, iPad, and Mac builds go to the Group through TestFlight. There is no public App Store release.
 
 ## Run it
 
