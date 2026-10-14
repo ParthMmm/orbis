@@ -273,8 +273,10 @@
 
     var body: some View {
       VStack(alignment: .leading, spacing: 4) {
+        // tvOS has no large title style: `.largeTitle` resolves no larger than `.title`, so the
+        // step is title (76 pt) over title2 (57 pt).
         Text(cue.title)
-          .font(isCurrent ? .largeTitle.weight(.heavy) : .title.weight(.heavy))
+          .font(isCurrent ? .title.weight(.heavy) : .title2.weight(.heavy))
         Text(
           isCurrent
             ? "\(cue.artist) · playing"
