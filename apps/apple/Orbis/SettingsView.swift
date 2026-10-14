@@ -266,7 +266,9 @@ private struct HostSections: View {
       // The passcode itself never shows: the Host chose it, and a screen anyone can glance at is
       // no place for the one thing that opens the Group.
       if let passcode = settings.passcode {
-        CopyButton(title: "Copy Group Passcode", text: passcode, identifier: "settings-passcode-copy")
+        CopyButton(
+          title: "Copy Group Passcode", text: passcode, identifier: "settings-passcode-copy",
+          row: "Group Passcode")
         NavigationLink("Change Group Passcode") { PasscodeEditor(settings: settings) }
           .accessibilityIdentifier("settings-passcode-row")
       }
