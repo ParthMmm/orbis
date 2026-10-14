@@ -752,25 +752,22 @@ struct DestinationView: View {
 struct HomeRails: View {
   @Bindable var model: AppModel
 
-  /// How far into the collection the recently-filed rail reaches. A rail shows what is new,
-  /// not the whole library.
-  private static let recentLimit = 8
   /// The page's own padding, matched so a rail's first card lines up with the list under it.
   private static let edgeInset: CGFloat = 16
 
   var body: some View {
     VStack(alignment: .leading, spacing: 36) {
       ClipboardBanner(model: model)
-      if let lead {
-        HomeHero(model: model, set: lead, isResume: !continueSets.isEmpty)
+      if let lead = home.lead {
+        HomeHero(model: model, set: lead, isResume: home.isResume)
       }
       if !model.availableTags.isEmpty {
         tagRow
       }
-      if continueSets.count > 1 {
+      if !home.continueRail.isEmpty {
         rail("Continue listening", subtitle: "Pick up where you left off.") { continueCards }
       }
-      if !recentSets.isEmpty {
+      if !home.recentlyFiled.isEmpty {
         rail("Recently filed", subtitle: "The newest links in your library.") { recentCards }
       }
       if !model.playlistItems.isEmpty {
@@ -783,21 +780,17 @@ struct HomeRails: View {
   }
 
   /// The Set Home leads with: the one most recently left part-way, or else the newest filed.
-  var lead: SavedSet? {
-    continueSets.first ?? recentSets.first
-  }
+  var lead: SavedSet? { home.lead }
 
   private var librarySets: [SavedSet] {
     if case .loaded(let sets) = model.library { sets } else { [] }
   }
 
-  private var continueSets: [SavedSet] {
-    SetPresentation.continueListening(librarySets)
-  }
-
-  private var recentSets: [SavedSet] {
-    guard case .loaded(let sets) = model.visibleSets else { return [] }
-    return Array(sets.prefix(Self.recentLimit))
+  private var home: HomeSelection {
+    guard case .loaded(let visible) = model.visibleSets else {
+      return HomeSelection(library: librarySets, visible: [])
+    }
+    return HomeSelection(library: librarySets, visible: visible)
   }
 
   private func card(_ set: SavedSet, detail: String?) -> SetCard {
@@ -813,7 +806,7 @@ struct HomeRails: View {
   }
 
   private var continueCards: some View {
-    ForEach(continueSets.dropFirst()) { set in
+    ForEach(home.continueRail) { set in
       Button {
         model.openSet(set.id)
       } label: {
@@ -825,7 +818,7 @@ struct HomeRails: View {
   }
 
   private var recentCards: some View {
-    ForEach(recentSets) { set in
+    ForEach(home.recentlyFiled) { set in
       Button {
         model.openSet(set.id)
       } label: {
