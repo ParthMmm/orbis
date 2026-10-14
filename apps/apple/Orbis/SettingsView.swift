@@ -275,12 +275,10 @@ private struct HostSections: View {
       FailureRows(
         failure: settings.hostFailure, context: "managing the Group", identifier: "settings-host-error")
     } footer: {
-      Text(
-        settings.passcode == nil
-          ? "Joining is closed. Turn on Allow Joining and choose a Group Passcode so a friend can join."
-          : "Friends choose I'm New and type the Group Passcode. Changing it does not sign anyone out."
-      )
-      .accessibilityIdentifier("settings-passcode-state")
+      if settings.passcode == nil {
+        Text("Joining is closed. Turn on Allow Joining and choose a Group Passcode so a friend can join.")
+          .accessibilityIdentifier("settings-passcode-state")
+      }
     }
 
     Section("People") {
