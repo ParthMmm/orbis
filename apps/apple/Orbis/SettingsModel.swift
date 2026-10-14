@@ -9,13 +9,13 @@ final class SettingsModel {
   var me: Loadable<Me> = .idle
   /// The Group Passcode, nil while joining is closed. Host only.
   var passcode: String?
-  /// What the username and passcode fields hold, kept here so a pushed Person page coming back
-  /// does not reset them.
+  /// What the username field holds, kept here so a pushed Person page coming back does not reset
+  /// it.
   var username = ""
-  var passcodeDraft = ""
   var people: Loadable<[GroupPerson]> = .idle
   var code: SignInCode?
   var accountFailure: OrbisFailure?
+  var groupFailure: OrbisFailure?
   var downloadsFailure: OrbisFailure?
   var codeFailure: OrbisFailure?
   var hostFailure: OrbisFailure?
@@ -50,9 +50,9 @@ final class SettingsModel {
     me = .idle
     passcode = nil
     username = ""
-    passcodeDraft = ""
     people = .idle
     accountFailure = nil
+    groupFailure = nil
     downloadsFailure = nil
     codeFailure = nil
     hostFailure = nil
@@ -61,7 +61,6 @@ final class SettingsModel {
   func loadPasscode() async {
     if let current = await settingsRequest(app, { self.hostFailure = $0 }, { try await $0.passcode() }) {
       passcode = current
-      passcodeDraft = current ?? ""
     }
   }
 
@@ -93,7 +92,6 @@ final class SettingsModel {
     defer { isSaving = false }
     if let stored = await settingsRequest(app, { self.hostFailure = $0 }, { try await $0.setPasscode(next) }) {
       passcode = stored
-      passcodeDraft = stored ?? ""
     }
   }
 }
@@ -139,17 +137,75 @@ struct SignInCodeView: View {
 
   var body: some View {
     VStack(spacing: 6) {
-      Text(code.formatted)
-        .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
+      HStack(spacing: 12) {
+        Text(code.formatted)
+          .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
+          #if !os(tvOS)
+            .textSelection(.enabled)
+          #endif
+          .accessibilityIdentifier(identifier)
         #if !os(tvOS)
-          .textSelection(.enabled)
+          CopyButton(title: "Copy Code", text: code.code, identifier: "\(identifier)-copy")
+            .font(.title3)
         #endif
-        .accessibilityIdentifier(identifier)
+      }
       Text("Works once, until \(SetPresentation.date(from: code.expiresAt), style: .time).")
         .font(.orbis.detail)
         .foregroundStyle(OrbisColor.muted)
     }
     .frame(maxWidth: .infinity)
     .padding(.vertical, 8)
+  }
+}
+
+/// A copy symbol that puts `text` on the clipboard and turns into a checkmark for a moment. The
+/// title is what VoiceOver reads; the text itself never shows. With a `row` name, the whole row
+/// is the button, so tapping the name copies too.
+struct CopyButton: View {
+  let title: String
+  let text: String
+  let identifier: String
+  var row: String?
+  @State private var copied = false
+
+  var body: some View {
+    Button {
+      copyToPasteboard(text)
+      copied = true
+    } label: {
+      if let row {
+        LabeledContent {
+          symbol
+        } label: {
+          Text(row).foregroundStyle(Color.primary)
+        }
+      } else {
+        // The symbol alone is smaller than a finger, so its tap area is the 44-point minimum.
+        symbol
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(.rect)
+      }
+    }
+    .buttonStyle(.borderless)
+    .accessibilityLabel(copied ? "Copied" : title)
+    .sensoryFeedback(.success, trigger: copied) { _, now in now }
+    .task(id: copied) {
+      guard copied else { return }
+      try? await Task.sleep(for: .seconds(2))
+      copied = false
+    }
+    .accessibilityIdentifier(identifier)
+  }
+
+  /// Sized by the copy symbol, the wider of the two, so the checkmark does not move what sits
+  /// beside it.
+  private var symbol: some View {
+    Image(systemName: "doc.on.doc")
+      .hidden()
+      .overlay {
+        Image(systemName: copied ? "checkmark" : "doc.on.doc")
+          .foregroundStyle(Color.orbis.tint)
+          .contentTransition(.symbolEffect(.replace))
+      }
   }
 }
