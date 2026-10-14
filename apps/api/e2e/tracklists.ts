@@ -9,16 +9,16 @@ import { Miniflare } from "miniflare";
 // Versos answers a Tracklist request in seconds, long after the Group has answered the retry
 // that started it. A run that only lives as long as that request never stores its Cues.
 const READY_AFTER_MS = 3000;
-const CUES = [
-  {
-    appleMusicId: null,
-    artist: "Artist",
-    artworkUrl: null,
-    position: 0,
-    startSeconds: 0,
-    title: "Opening track",
-  },
-];
+// The Group's SQLite binds at most 100 values in one statement. A real Set returned 43 Cues,
+// 301 values in a single insert.
+const CUES = Array.from({ length: 43 }, (_, position) => ({
+  appleMusicId: null,
+  artist: "Artist",
+  artworkUrl: null,
+  position,
+  startSeconds: position * 120,
+  title: `Track ${position + 1}`,
+}));
 
 const artifact = path.resolve(
   import.meta.dir,

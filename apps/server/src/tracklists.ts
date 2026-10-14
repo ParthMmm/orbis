@@ -15,6 +15,8 @@ import { Versos } from "./versos.js";
 
 const POLL_DELAYS_MS = [250, 500, 1000, 2000, 4000, 4000, 4000, 4000];
 const RUN_LEASE_MS = 5 * 60_000;
+// A Durable Object's SQLite binds at most 100 values in one statement, and a Cue row binds 7.
+const CUES_PER_INSERT = 14;
 
 interface TracklistClaim {
   readonly description: string | null;
@@ -132,10 +134,14 @@ const finishTracklist = (
           return false;
         }
         yield* tx.delete(setCues).where(eq(setCues.setId, claim.id));
-        if (result.state === "ready" && result.cues.length > 0) {
-          yield* tx
-            .insert(setCues)
-            .values(result.cues.map((cue) => ({ ...cue, setId: claim.id })));
+        if (result.state === "ready") {
+          for (let at = 0; at < result.cues.length; at += CUES_PER_INSERT) {
+            yield* tx.insert(setCues).values(
+              result.cues
+                .slice(at, at + CUES_PER_INSERT)
+                .map((cue) => ({ ...cue, setId: claim.id }))
+            );
+          }
         }
         return true;
       })
