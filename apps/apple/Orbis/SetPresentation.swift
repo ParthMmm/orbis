@@ -220,6 +220,18 @@ enum SetPresentation {
     )
   }
 
+  /// "2026", for the line under a Set page's creator.
+  @MainActor
+  static func year(_ timestamp: String) -> String {
+    date(from: timestamp).formatted(.dateTime.year().locale(Locale(identifier: "en_GB")))
+  }
+
+  /// How far through the Set playback stopped, from 0 to 1, or nothing when the length is unknown.
+  static func progress(_ set: SavedSet) -> Double? {
+    guard let duration = set.durationSeconds, duration > 0 else { return nil }
+    return min(max(Double(set.playbackPositionSeconds) / Double(duration), 0), 1)
+  }
+
   /// When the Set was saved and, when the provider named it, when it was released.
   @MainActor
   static func datesLine(_ set: SavedSet) -> String {

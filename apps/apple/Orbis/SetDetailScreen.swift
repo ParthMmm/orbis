@@ -23,7 +23,8 @@ struct SetDetailScreen: View {
           failedToName: set.metadataState == "failed",
           dates: SetDetail.Dates(
             imported: SetPresentation.plainDate(set.createdAt),
-            released: set.releasedAt.map(SetPresentation.plainDate)
+            released: set.releasedAt.map(SetPresentation.plainDate),
+            releaseYear: set.releasedAt.map(SetPresentation.year)
           ),
           statistics: SetDetail.Statistics(
             listenCount: set.listenCount,
@@ -40,7 +41,6 @@ struct SetDetailScreen: View {
         }
         .scrollEdgeEffectStyle(.soft, for: .top)
         .scrollEdgeEffectStyle(.soft, for: .bottom)
-        .navigationTitle(set.title)
         .toolbarTitleDisplayMode(.inline)
         .accessibilityIdentifier("set-detail")
         .task(id: setId) {
@@ -83,10 +83,6 @@ struct SetDetailScreen: View {
             showsControls: false,
             cueStarts: model.tracklists[set.id]?.cues.compactMap(\.startSeconds) ?? []
           )
-        } else if let left = SetPresentation.timeLeft(set) {
-          Text(left)
-            .font(.orbis.detail)
-            .foregroundStyle(.secondary)
         }
         if let notice = model.queueNotice {
           Text(notice)
@@ -113,6 +109,9 @@ struct SetDetailScreen: View {
     let player = model.audioPlayer
     let isPlaying = isCurrent && (player.state == .playing || player.state == .loading)
     let resumes = !isCurrent && set.playbackPositionSeconds > 0
+    let word = isPlaying ? "Pause" : resumes ? "Resume" : "Play"
+    let left = resumes ? SetPresentation.timeLeft(set) : nil
+    let progress = resumes ? SetPresentation.progress(set) : nil
     return Button {
       if !isCurrent {
         Task { await model.playSet(set.id) }
@@ -122,16 +121,35 @@ struct SetDetailScreen: View {
         player.resume()
       }
     } label: {
-      Label(
-        isPlaying ? "Pause" : resumes ? "Resume" : "Play",
-        systemImage: isPlaying ? "pause.fill" : "play.fill"
-      )
-      .orbisSymbolReplace()
+      // The time left rides in the button it describes; it gives way first when space is short.
+      ViewThatFits(in: .horizontal) {
+        playLabel(word, isPlaying: isPlaying, left: left)
+        playLabel(word, isPlaying: isPlaying, left: nil)
+      }
       .albumButton()
+      .overlay(alignment: .bottom) {
+        if let progress { ResumeProgress(fraction: progress) }
+      }
     }
     .buttonStyle(.plain)
+    .accessibilityLabel(word)
+    .accessibilityValue(left ?? "")
     .sensoryFeedback(.impact(weight: .medium), trigger: isPlaying)
     .accessibilityIdentifier("detail-play-toggle")
+  }
+
+  private func playLabel(_ word: String, isPlaying: Bool, left: String?) -> some View {
+    HStack(spacing: 8) {
+      Label(word, systemImage: isPlaying ? "pause.fill" : "play.fill")
+        .orbisSymbolReplace()
+      if let left {
+        Text(left)
+          .font(.footnote.weight(.medium))
+          .foregroundStyle(Color.orbis.tint.opacity(0.7))
+      }
+    }
+    .lineLimit(1)
+    .fixedSize()
   }
 
   /// Where a Set goes when it is not the one being started now. Both actions are offered only for
@@ -159,6 +177,27 @@ struct SetDetailScreen: View {
   }
 }
 
+/// How far a paused Set got, drawn as a hairline along the foot of its Resume button.
+private struct ResumeProgress: View {
+  let fraction: Double
+
+  var body: some View {
+    Capsule()
+      .fill(Color.orbis.tint.opacity(0.18))
+      .overlay(alignment: .leading) {
+        GeometryReader { proxy in
+          Capsule()
+            .fill(Color.orbis.tint)
+            .frame(width: max(proxy.size.width * fraction, 3))
+        }
+      }
+      .frame(height: 3)
+      .padding(.horizontal, 18)
+      .padding(.bottom, 7)
+      .accessibilityHidden(true)
+  }
+}
+
 extension View {
   /// The grey button an album page lays two of side by side, its words in the tint.
   fileprivate func albumButton() -> some View {
@@ -183,7 +222,7 @@ private struct TracklistSection: View {
       if let cues = tracklist?.cues, !cues.isEmpty {
         let selectedPosition =
           model.audioPlayer.currentSetId == set.id
-          ? model.audioPlayer.currentCue?.position : nil
+          ? model.audioPlayer.currentCue?.position : resumeCue(in: cues)
         VStack(alignment: .leading, spacing: 0) {
           Divider()
           ForEach(cues) { cue in
@@ -212,6 +251,13 @@ private struct TracklistSection: View {
     }
   }
 
+  /// The cue a paused Set will resume inside, so the page shows where the person stopped.
+  private func resumeCue(in cues: [Cue]) -> Int? {
+    let position = TimeInterval(set.playbackPositionSeconds)
+    guard position > 0 else { return nil }
+    return cues.last { ($0.startSeconds ?? .infinity) <= position }?.position
+  }
+
   @ViewBuilder
   private func cueRow(_ cue: Cue, selected: Bool) -> some View {
     if let start = cue.startSeconds {
@@ -232,11 +278,14 @@ private struct TracklistSection: View {
     }
   }
 
+  /// The start time follows the artist, where it reads as a place in the mix; a trailing column
+  /// would read as the track's length.
   private func cueContent(_ cue: Cue, start: TimeInterval?, selected: Bool) -> some View {
-    HStack(spacing: 14) {
+    let isCurrent = model.audioPlayer.currentSetId == set.id
+    return HStack(spacing: 14) {
       Group {
         if selected {
-          EqualizerBars(isPlaying: model.audioPlayer.state == .playing)
+          EqualizerBars(isPlaying: isCurrent && model.audioPlayer.state == .playing)
             .frame(height: 14)
         } else {
           Text(cue.position + 1, format: .number)
@@ -249,16 +298,13 @@ private struct TracklistSection: View {
       VStack(alignment: .leading, spacing: 1) {
         Text(cue.title)
           .font(.body.weight(selected ? .semibold : .regular))
-        Text(cue.artist)
+        Text([cue.artist, start.map(SetPresentation.timestamp)].compactMap { $0 }.joined(separator: " · "))
           .font(.footnote)
+          .monospacedDigit()
           .foregroundStyle(.secondary)
       }
       .lineLimit(1)
       Spacer(minLength: 0)
-      Text(start.map(SetPresentation.timestamp) ?? "")
-        .font(.subheadline)
-        .monospacedDigit()
-        .foregroundStyle(.secondary)
     }
     .frame(minHeight: 54)
     .contentShape(.rect)

@@ -23,10 +23,13 @@ public struct SetDetail: View {
   public struct Dates: Equatable, Sendable {
     public let imported: String
     public let released: String?
+    /// The release year alone, for the line under the creator. The full date sits in the footer.
+    public let releaseYear: String?
 
-    public init(imported: String, released: String? = nil) {
+    public init(imported: String, released: String? = nil, releaseYear: String? = nil) {
       self.imported = imported
       self.released = released
+      self.releaseYear = releaseYear
     }
   }
 
@@ -100,26 +103,40 @@ public struct SetDetail: View {
     "\(title), \(source)"
   }
 
-  public static func factsLine(dates: Dates?, statistics: Statistics?) -> String? {
-    var parts: [String] = []
-    if let released = dates?.released { parts.append("Released \(released)") }
-    if let imported = dates?.imported { parts.append("Added \(imported)") }
+  /// The line under the creator: the source, the length, and the release year.
+  public static func eyebrow(source: String, length: String?, dates: Dates?) -> String {
+    [source, length, dates?.releaseYear].compactMap { $0 }.joined(separator: " · ").uppercased()
+  }
+
+  /// The facts under the tracklist, one subject per line, so no line breaks inside a phrase.
+  public static func footerLines(dates: Dates?, statistics: Statistics?) -> [String] {
+    var lines: [String] = []
+    var when: [String] = []
+    if let released = dates?.released { when.append("Released \(released)") }
+    if let imported = dates?.imported { when.append("Added \(imported)") }
+    if !when.isEmpty { lines.append(when.joined(separator: " · ")) }
     if let statistics, !statistics.isEmpty {
       let count = statistics.listenCount
-      parts.append(count == 1 ? "1 listen" : "\(count) listens")
+      var heard = [count == 1 ? "1 listen" : "\(count) listens"]
       switch statistics.finishCount {
       case 0: break
-      case 1: parts.append("finished once")
-      case let n: parts.append("finished \(n) times")
+      case 1: heard.append("finished once")
+      case let n: heard.append("finished \(n) times")
       }
+      lines.append(heard.joined(separator: " · "))
     }
-    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    return lines
   }
 
   /// The line under the artwork: the source, then whatever the caller composed.
   public static func stampLine(source: String, subtitle: String?) -> String {
     [source, subtitle].compactMap { $0 }.joined(separator: " · ")
   }
+
+  @State private var titleBottom = CGFloat.infinity
+  @State private var showsBarTitle = false
+  @State private var topInset: CGFloat = 0
+  private static let content = "set-detail-content"
 
   public var body: some View {
     ScrollView {
@@ -133,13 +150,48 @@ public struct SetDetail: View {
           transport
           management
           tracklist
+          footer
         }
         .padding(.horizontal)
         .padding(.top, 18)
         .padding(.bottom, 32)
       }
+      .coordinateSpace(.named(Self.content))
+      // The glow belongs to the header, so it scrolls away with it rather than staying behind the
+      // tracklist. One screen tall, and raised under the bar, where the content does not reach.
+      .background(alignment: .top) {
+        ArtworkGlow(url: artwork, reach: 0.6)
+          .containerRelativeFrame(.vertical) { length, _ in length + topInset }
+          .offset(y: -topInset)
+      }
     }
+    .onScrollGeometryChange(for: CGFloat.self) {
+      $0.contentInsets.top
+    } action: { _, inset in
+      topInset = inset
+    }
+    // The bar names the Set only once the large title has scrolled under it, as an album does.
+    .onScrollGeometryChange(for: Bool.self) { geometry in
+      geometry.contentOffset.y + geometry.contentInsets.top > titleBottom
+    } action: { _, scrolledPast in
+      showsBarTitle = scrolledPast
+    }
+    .navigationTitle(showsBarTitle ? title : "")
     .background(Color.orbis.paper)
+  }
+
+  @ViewBuilder private var footer: some View {
+    let lines = Self.footerLines(dates: dates, statistics: statistics)
+    if !lines.isEmpty {
+      VStack(alignment: .leading, spacing: 2) {
+        ForEach(lines, id: \.self) { Text($0) }
+      }
+      .font(.orbis.detail)
+      .foregroundStyle(.secondary)
+      .frame(maxWidth: .infinity, alignment: .leading)
+      .accessibilityElement(children: .combine)
+      .accessibilityIdentifier("detail-facts")
+    }
   }
 
   private var header: some View {
@@ -150,6 +202,11 @@ public struct SetDetail: View {
         .accessibilityLabel(Self.headerLabel(title: title, source: source))
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("detail-title")
+        .onGeometryChange(for: CGFloat.self) {
+          $0.frame(in: .named(Self.content)).maxY
+        } action: {
+          titleBottom = $0
+        }
       if let creator, !creator.isEmpty {
         let name = Text(creator)
           .font(.title3)
@@ -164,17 +221,10 @@ public struct SetDetail: View {
           name
         }
       }
-      Text([source, length].compactMap { $0 }.joined(separator: " · ").uppercased())
+      Text(Self.eyebrow(source: source, length: length, dates: dates))
         .font(.caption.weight(.semibold))
         .foregroundStyle(.secondary)
         .padding(.top, 4)
-      if let facts = Self.factsLine(dates: dates, statistics: statistics) {
-        Text(facts)
-          .font(.orbis.detail)
-          .foregroundStyle(.secondary)
-          .multilineTextAlignment(.center)
-          .accessibilityIdentifier("detail-facts")
-      }
       if failedToName {
         HStack(spacing: 6) {
           Text("Orbis could not name this set.")
@@ -249,7 +299,7 @@ private struct SetDetailSample: View {
       source: "YouTube",
       creator: "CHRIS STASSY",
       length: "2h 33m",
-      dates: .init(imported: "11 Sep 2026", released: "22 Aug 2026"),
+      dates: .init(imported: "11 Sep 2026", released: "22 Aug 2026", releaseYear: "2026"),
       statistics: .init(listenCount: 3, finishCount: 1, lastHeard: "Thu 11 Sep"),
       management: {
         SetManagement(tags: ["techno", "festival", "hardgroove"], editTags: {})

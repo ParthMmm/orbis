@@ -78,10 +78,11 @@ final class SetPageUITests: LibraryJourney {
       title.waitForExistence(timeout: 30),
       "pressing a row must open the Set's page\n\(app.debugDescription)"
     )
-    XCTAssertTrue(app.buttons["detail-open"].exists, "the page must offer the source")
     capture("10-set-page")
 
     app.buttons["detail-actions"].tap()
+    XCTAssertTrue(
+      app.buttons["detail-open"].waitForExistence(timeout: 5), "the menu must offer the source")
     app.buttons["detail-rename-action"].tap()
     let field = app.textFields["rename-title"]
     XCTAssertTrue(
