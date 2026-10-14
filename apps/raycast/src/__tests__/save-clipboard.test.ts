@@ -109,7 +109,8 @@ test("Save Clipboard tells the user to pair again after an auth failure", async 
   await saveClipboard();
 
   expect(finalToast()).toMatchObject({
-    message: "Orbis rejected the device token. Redeem a new Sign-in Code.",
+    message:
+      "Orbis rejected the device token. Run Sign In to Orbis with a Sign-in Code.",
     style: "failure",
   });
 });

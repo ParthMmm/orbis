@@ -13,7 +13,7 @@ export interface Tab {
 }
 
 export interface RaycastPreferences {
-  readonly deviceToken: string;
+  readonly deviceToken?: string;
   readonly serviceUrl: string;
 }
 
@@ -24,6 +24,8 @@ export interface RaycastState {
   getTabsError: Error | null;
   preferences: RaycastPreferences;
   snapshots: ToastSnapshot[];
+  /** Raycast's LocalStorage for this extension. */
+  storage: Map<string, string>;
   tabs: Tab[];
 }
 
@@ -36,6 +38,7 @@ export const raycast: RaycastState = {
     serviceUrl: "https://orbis.test",
   },
   snapshots: [],
+  storage: new Map(),
   tabs: [],
 };
 
@@ -115,6 +118,13 @@ export const installRaycastApi = () => {
     Clipboard: {
       readText: () => Promise.resolve(raycast.clipboard),
     },
+    LocalStorage: {
+      getItem: (key: string) => Promise.resolve(raycast.storage.get(key)),
+      setItem: (key: string, value: string) => {
+        raycast.storage.set(key, value);
+        return Promise.resolve();
+      },
+    },
     Toast: {
       Style: { Animated: "animated", Failure: "failure", Success: "success" },
     },
@@ -132,6 +142,7 @@ export const resetRaycast = () => {
     serviceUrl: "https://orbis.test",
   };
   raycast.snapshots.length = 0;
+  raycast.storage.clear();
   raycast.tabs = [];
 };
 

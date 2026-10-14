@@ -21,10 +21,17 @@
     "effect": "4.0.0-rc.117"
   },
   "devDependencies": {
-    "@types/bun": "^1.3.0"
+    "@types/bun": "^1.3.0",
+    "@types/react": "19.0.10"
   },
   "icon": "extension-icon.png",
   "commands": [
+    {
+      "name": "sign-in",
+      "title": "Sign In",
+      "description": "Sign Raycast in to Orbis with a Sign-in Code.",
+      "mode": "view"
+    },
     {
       "name": "save-current-tab",
       "title": "Save Current Tab",
@@ -51,9 +58,9 @@
     {
       "name": "deviceToken",
       "title": "Device Token",
-      "description": "The key Orbis returned once when you redeemed a Sign-in Code for Raycast.",
+      "description": "Leave empty and run Sign In. Only setups from before Sign In need a pasted key.",
       "type": "password",
-      "required": true,
+      "required": false,
       "placeholder": "Paste the device token"
     }
   ],

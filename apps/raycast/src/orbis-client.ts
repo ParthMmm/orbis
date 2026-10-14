@@ -3,7 +3,12 @@ import {
   UnsupportedSourceUrlError,
 } from "@orbis/contracts";
 import { OrbisApi } from "@orbis/contracts/http-api";
-import { getPreferenceValues, showToast, Toast } from "@raycast/api";
+import {
+  getPreferenceValues,
+  LocalStorage,
+  showToast,
+  Toast,
+} from "@raycast/api";
 import { Effect, Option, Schema } from "effect";
 import {
   FetchHttpClient,
@@ -16,13 +21,13 @@ import { HttpApiClient } from "effect/unstable/httpapi";
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface Preferences {
-  readonly deviceToken: string;
+  readonly deviceToken?: string;
   readonly serviceUrl: string;
 }
 
 export const SUPPORTED_LINK_HINT = "Use a YouTube or SoundCloud link.";
 
-export const SAVE_TIMEOUT_MS = 5000;
+export const REQUEST_TIMEOUT_MS = 5000;
 
 export type SaveResult =
   | { readonly kind: "saved" }
@@ -71,18 +76,62 @@ const decodeErrorBody = Schema.decodeUnknownOption(
 const baseUrl = (serviceUrl: string): string =>
   serviceUrl.trim().replace(/\/+$/u, "");
 
+/** Where Sign In keeps the key it redeemed. Raycast encrypts this storage. */
+const DEVICE_TOKEN_KEY = "deviceToken";
+
+export const SIGN_IN_HINT = "Run Sign In to Orbis with a Sign-in Code.";
+
 /**
- * Sends one Source Link to Orbis with the paired device token. The title is left out so the
- * server takes it from the source metadata. `url` must already be canonical.
+ * The key from Sign In, or else the Device Token preference, so a setup from before Sign
+ * In keeps working. Null when neither is set.
  */
-export const saveSourceUrl = async (
-  url: string,
-  options: {
-    readonly fetch?: FetchLike;
-    readonly preferences?: Preferences;
-    readonly timeoutMs?: number;
-  } = {}
-): Promise<SaveResult> => {
+const readDeviceToken = async (
+  preferences: Preferences
+): Promise<string | null> =>
+  (await LocalStorage.getItem<string>(DEVICE_TOKEN_KEY)) ??
+  (preferences.deviceToken?.trim() || null);
+
+const makeClient = (service: string, token: string | null) =>
+  HttpApiClient.make(OrbisApi, {
+    baseUrl: service,
+    transformClient:
+      token === null
+        ? (client) => client
+        : HttpClient.mapRequest(
+            HttpClientRequest.setHeader("authorization", `Bearer ${token}`)
+          ),
+  });
+
+type OrbisClient = Effect.Success<ReturnType<typeof makeClient>>;
+
+interface CallOptions {
+  readonly fetch?: FetchLike;
+  readonly preferences?: Preferences;
+  readonly timeoutMs?: number;
+}
+
+/**
+ * How one request ended: a decoded success, an HTTP status the client could not turn into
+ * a success, or no usable answer at all.
+ */
+type Reply<A> =
+  | { readonly kind: "ok"; readonly value: A }
+  | {
+      readonly kind: "answered";
+      readonly message: string | undefined;
+      readonly status: number;
+    }
+  | { readonly kind: "failed"; readonly message: string };
+
+/**
+ * Makes one typed request to the configured service, with the key when one is given. It
+ * refuses a service URL that is not HTTPS before anything is sent.
+ */
+const callOrbis = async <A, E>(
+  token: string | null,
+  run: (client: OrbisClient) => Effect.Effect<A, E>,
+  options: CallOptions
+): Promise<Reply<A>> => {
   const preferences = options.preferences ?? getPreferenceValues<Preferences>();
   const send: FetchLike = options.fetch ?? fetch;
   const service = baseUrl(preferences.serviceUrl);
@@ -109,30 +158,16 @@ export const saveSourceUrl = async (
     { preconnect: fetch.preconnect }
   );
   try {
-    await Effect.runPromise(
-      Effect.gen(function* save() {
-        const client = yield* HttpApiClient.make(OrbisApi, {
-          baseUrl: service,
-          transformClient: HttpClient.mapRequest(
-            HttpClientRequest.setHeader(
-              "authorization",
-              `Bearer ${preferences.deviceToken}`
-            )
-          ),
-        });
-        return yield* client.sets.save({ payload: { tags: [], url } });
-      }).pipe(
-        Effect.timeout(`${options.timeoutMs ?? SAVE_TIMEOUT_MS} millis`),
+    const value = await Effect.runPromise(
+      makeClient(service, token).pipe(
+        Effect.flatMap(run),
+        Effect.timeout(`${options.timeoutMs ?? REQUEST_TIMEOUT_MS} millis`),
         Effect.provide(FetchHttpClient.layer),
         Effect.provideService(FetchHttpClient.Fetch, fetchWithStatus)
       )
     );
-    return { kind: "saved" };
+    return { kind: "ok", value };
   } catch (error) {
-    // A 201 means the Set is saved, even when this build cannot decode a newer response.
-    if (status === 201) {
-      return { kind: "saved" };
-    }
     if (
       timedOut ||
       (error instanceof Error &&
@@ -146,30 +181,103 @@ export const saveSourceUrl = async (
     if (status === undefined) {
       return { kind: "failed", message: `Couldn't reach Orbis at ${service}.` };
     }
-    if (status === 409) {
-      return { kind: "duplicate" };
-    }
-    if (status === 401 || status === 403) {
-      return {
-        kind: "failed",
-        message: "Orbis rejected the device token. Redeem a new Sign-in Code.",
-      };
-    }
     return {
-      kind: "failed",
-      message: Option.match(
-        error instanceof Error ? Option.none() : decodeErrorBody(error),
-        {
-          onNone: () => `Orbis returned HTTP ${status}.`,
-          onSome: (body) => body.message,
-        }
-      ),
+      kind: "answered",
+      message: Option.getOrUndefined(
+        error instanceof Error ? Option.none() : decodeErrorBody(error)
+      )?.message,
+      status,
     };
   }
 };
 
+/**
+ * Sends one Source Link to Orbis with this device's key. The title is left out so the
+ * server takes it from the source metadata. `url` must already be canonical.
+ */
+export const saveSourceUrl = async (
+  url: string,
+  options: CallOptions = {}
+): Promise<SaveResult> => {
+  const preferences = options.preferences ?? getPreferenceValues<Preferences>();
+  const token = await readDeviceToken(preferences);
+  if (token === null) {
+    return { kind: "failed", message: SIGN_IN_HINT };
+  }
+  const reply = await callOrbis(
+    token,
+    (client) => client.sets.save({ payload: { tags: [], url } }),
+    { ...options, preferences }
+  );
+  if (reply.kind === "ok") {
+    return { kind: "saved" };
+  }
+  if (reply.kind === "failed") {
+    return reply;
+  }
+  // A 201 means the Set is saved, even when this build cannot decode a newer response.
+  if (reply.status === 201) {
+    return { kind: "saved" };
+  }
+  if (reply.status === 409) {
+    return { kind: "duplicate" };
+  }
+  if (reply.status === 401 || reply.status === 403) {
+    return {
+      kind: "failed",
+      message: `Orbis rejected the device token. ${SIGN_IN_HINT}`,
+    };
+  }
+  return {
+    kind: "failed",
+    message: reply.message ?? `Orbis returned HTTP ${reply.status}.`,
+  };
+};
+
+export type SignInResult =
+  | { readonly kind: "signedIn"; readonly username: string }
+  | { readonly kind: "failed"; readonly message: string };
+
+/**
+ * Redeems a Sign-in Code for a key labeled "Raycast" and keeps the key for later saves.
+ * The server normalizes the code's case and separators. Nothing is stored unless the
+ * response decodes, so a failed sign-in leaves the previous key in place.
+ */
+export const signIn = async (
+  code: string,
+  options: CallOptions = {}
+): Promise<SignInResult> => {
+  const presented = code.trim();
+  if (!presented) {
+    return {
+      kind: "failed",
+      message: "Type the Sign-in Code from Orbis Settings.",
+    };
+  }
+  const reply = await callOrbis(
+    null,
+    (client) =>
+      client.signIn.redeem({ payload: { code: presented, label: "Raycast" } }),
+    options
+  );
+  if (reply.kind === "failed") {
+    return reply;
+  }
+  if (reply.kind === "answered") {
+    return {
+      kind: "failed",
+      message: reply.message ?? `Orbis returned HTTP ${reply.status}.`,
+    };
+  }
+  await LocalStorage.setItem(DEVICE_TOKEN_KEY, reply.value.key);
+  return { kind: "signedIn", username: reply.value.person.username };
+};
+
+export const startToast = (title: string): Promise<Toast> =>
+  showToast({ style: Toast.Style.Animated, title });
+
 export const startProgressToast = (): Promise<Toast> =>
-  showToast({ style: Toast.Style.Animated, title: "Saving set…" });
+  startToast("Saving set…");
 
 /**
  * Finishes a capture command on the toast it already showed: a distinct rejection before
