@@ -33,9 +33,9 @@ enum GeneratedColor {
   )
   static let tint = DynamicColor(
     light: P3(0.5299, 0.1458, 0.8801),
-    dark: P3(0.6308, 0.4070, 0.9958),
+    dark: P3(0.6030, 0.3212, 0.9664),
     increasedContrastLight: P3(0.4314, 0.0118, 0.7415),
-    increasedContrastDark: P3(0.7515, 0.6393, 0.9918)
+    increasedContrastDark: P3(0.7604, 0.6361, 0.9855)
   )
   static let categoryPinkText = DynamicColor(
     light: P3(0.6364, 0.0673, 0.2087),
