@@ -85,10 +85,7 @@ struct SettingsView: View {
           .accessibilityIdentifier("settings-version")
       }
     }
-    .formStyle(.grouped)
-    .font(.orbis.body)
-    .scrollContentBackground(.hidden)
-    .background { TintGlow() }
+    .settingsPage()
     .navigationDestination(isPresented: $isEditingPasscode) { PasscodeEditor(settings: settings) }
     .confirmationDialog(
       "Sign out of Orbis?", isPresented: $isConfirmingSignOut, titleVisibility: .visible
@@ -219,10 +216,7 @@ private struct NameEditor: View {
         Text("People in your Group see this name.")
       }
     }
-    .formStyle(.grouped)
-    .font(.orbis.body)
-    .scrollContentBackground(.hidden)
-    .background { TintGlow() }
+    .settingsPage()
     .navigationTitle("Name")
     .toolbar {
       ToolbarItem(placement: .confirmationAction) {
@@ -349,10 +343,7 @@ private struct PasscodeEditor: View {
         Text("Use at least 8 characters. Orbis does not show it after you save, so tell it to friends yourself.")
       }
     }
-    .formStyle(.grouped)
-    .font(.orbis.body)
-    .scrollContentBackground(.hidden)
-    .background { TintGlow() }
+    .settingsPage()
     .navigationTitle("Group Passcode")
     .toolbar {
       ToolbarItem(placement: .confirmationAction) {
@@ -412,8 +403,7 @@ private struct PersonView: View {
         Text("They leave the Group and are signed out on every device.")
       }
     }
-    .formStyle(.grouped)
-    .font(.orbis.body)
+    .settingsPage()
     .navigationTitle(person.username)
     .confirmationDialog(
       "Remove \(person.username)?", isPresented: $isConfirmingRemoval, titleVisibility: .visible
@@ -436,5 +426,16 @@ private struct PersonView: View {
     else { return }
     removed()
     dismiss()
+  }
+}
+
+extension View {
+  /// Every Settings page draws the same way: a grouped form over the tint glow, so the glass bar
+  /// above it has colour to bend on every pushed page too.
+  fileprivate func settingsPage() -> some View {
+    formStyle(.grouped)
+      .font(.orbis.body)
+      .scrollContentBackground(.hidden)
+      .background { TintGlow() }
   }
 }

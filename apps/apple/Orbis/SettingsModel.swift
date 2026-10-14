@@ -180,7 +180,10 @@ struct CopyButton: View {
           Text(row).foregroundStyle(Color.primary)
         }
       } else {
+        // The symbol alone is smaller than a finger, so its tap area is the 44-point minimum.
         symbol
+          .frame(minWidth: 44, minHeight: 44)
+          .contentShape(.rect)
       }
     }
     .buttonStyle(.borderless)
