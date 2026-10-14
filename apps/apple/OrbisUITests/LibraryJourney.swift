@@ -36,25 +36,22 @@ class LibraryJourney: XCTestCase {
 
   /// Search is a tab on a compact width class and a sidebar item on a regular one, so the
   /// journey proves the platform's navigation rather than assuming one shape.
-  /// Returns the point the field sits at on iPhone, so a later query can focus it again once
-  /// the button it replaced is gone.
+  /// Returns nil on iPhone, where the field stays at the top and can be found again by type.
   @discardableResult
   func openSearch(in app: XCUIApplication) -> XCUICoordinate? {
     let tab = app.tabBars.buttons["Search"]
     if tab.waitForExistence(timeout: 8) {
-      // On iPhone the search tab morphs into the field in the same spot. The first tap
-      // selects it; the second, on the same point, focuses the field and raises the keyboard.
-      // XCUITest cannot address the field once the morph settles, so the spot is remembered.
-      // The point is taken from the frame now, because the button is gone after the first tap
-      // and a coordinate made from it would resolve against nothing.
-      let frame = tab.frame
-      let spot = app.coordinate(withNormalizedOffset: .zero)
-        .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
-      spot.tap()
-      sleep(2)
-      spot.tap()
-      sleep(1)
-      return spot
+      // The field sits at the top of Search, as in Apple Music. The first tap opens Search and
+      // the second, on Search again, focuses the field.
+      tab.tap()
+      XCTAssertTrue(
+        app.searchFields.firstMatch.waitForExistence(timeout: 15),
+        "Search must show its field at the top\n\(app.debugDescription)")
+      tab.tap()
+      XCTAssertTrue(
+        app.keyboards.firstMatch.waitForExistence(timeout: 15),
+        "a second tap on Search must focus the field\n\(app.debugDescription)")
+      return nil
     }
     let sidebarSearch = app.buttons["sidebar-search"]
     XCTAssertTrue(

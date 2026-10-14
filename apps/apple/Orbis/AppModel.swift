@@ -172,6 +172,9 @@ final class AppModel {
   private static let downloadWatchLimit = 600
 
   var destination: Destination = .home
+  /// Counts taps on the Search tab while Search is already open. Each one focuses the field, the
+  /// way a second tap on Search does in Apple Music.
+  var searchFocusRequests = 0
 
   /// Where this model keeps the key. Held per model, so a test hands a model a store of its
   /// own instead of writing the device's real one.

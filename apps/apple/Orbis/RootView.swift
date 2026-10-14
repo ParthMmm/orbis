@@ -151,13 +151,23 @@ struct RootView: View {
   /// list scrolls.
   struct CompactShell: View {
     @Bindable var model: AppModel
+
+    /// A tap on the Search tab while Search is open asks for the field, rather than doing nothing.
+    private var tabSelection: Binding<Destination> {
+      Binding(
+        get: { model.destination },
+        set: { next in
+          if next == .search, model.destination == .search { model.searchFocusRequests += 1 }
+          model.destination = next
+        })
+    }
     /// Now Playing is a sheet over the whole shell, so it opens the same from any tab.
     @State private var isNowPlayingShown = false
     /// Now Playing grows out of the mini player's artwork and shrinks back into it.
     @Namespace private var nowPlaying
 
     var body: some View {
-      TabView(selection: $model.destination) {
+      TabView(selection: tabSelection) {
         ForEach([Destination.home, .library, .playlists, .people]) { destination in
           Tab(destination.rawValue, systemImage: destination.symbol, value: destination) {
             NavigationStack {
@@ -1080,8 +1090,14 @@ struct SearchDestination: View {
     #else
       searchBody
         .sidebarPageTitle("Search")
-        .searchable(text: $model.searchQuery, prompt: "Title, tag, or source link")
+        // At the top and always shown, the way Apple Music shows it, rather than folded into
+        // the tab bar where it reads as a tab and not a field.
+        .searchable(
+          text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always),
+          prompt: "Title, tag, or source link"
+        )
         .searchFocused($isFieldFocused)
+        .onChange(of: model.searchFocusRequests) { isFieldFocused = true }
     #endif
   }
 
