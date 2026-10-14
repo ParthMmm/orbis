@@ -128,7 +128,7 @@ export class Versos extends Context.Service<Versos, VersosService>()(
     return Layer.unwrap(
       Effect.gen(function* readVersosConfig() {
         const url = yield* Config.option(Config.URL("VERSOS_URL"));
-        const key = yield* Config.option(Config.Redacted("VERSOS_ORBIS_KEY"));
+        const key = yield* Config.option(Config.Redacted("VERSOS_API_KEY"));
         return Option.isSome(url) && Option.isSome(key)
           ? Versos.layer({ key: key.value, url: url.value.toString() })
           : Versos.unconfigured();

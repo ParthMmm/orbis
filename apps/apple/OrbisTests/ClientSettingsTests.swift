@@ -8,72 +8,39 @@ import XCTest
 /// a store of its own.
 @MainActor
 final class ClientSettingsTests: XCTestCase {
-  /// A live store reachable only by this test: its own defaults suite, its own keychain
-  /// namespace, and the development file switched off. The values are synthetic; nothing here
-  /// names a real service or a real token.
+  /// A live store reachable only by this test: its own keychain namespace and the development
+  /// file switched off. The values are synthetic; nothing here names a real token.
   private func isolatedLiveSettings() -> (settings: LiveClientSettings, cleanup: () -> Void) {
-    let suite = "app.orbis.tests.\(UUID().uuidString)"
-    let service = "app.orbis.tests.\(UUID().uuidString)"
-    let defaults = UserDefaults(suiteName: suite)!
-    let keychain = KeychainStore(service: service, account: "device-token")
-    let settings = LiveClientSettings(
-      defaults: defaults,
-      keychain: keychain,
-      developmentConfiguration: { nil }
-    )
-    return (
-      settings,
-      {
-        keychain.delete()
-        defaults.removePersistentDomain(forName: suite)
-      }
-    )
+    let keychain = KeychainStore(
+      service: "app.orbis.tests.\(UUID().uuidString)", account: "device-token")
+    return (LiveClientSettings(keychain: keychain, developmentToken: { nil }), { keychain.delete() })
   }
 
-  /// Forgetting and pairing again through a model must move only the store that model was
-  /// given. A store the model never saw is the proof that nothing global was touched.
-  func testForgettingAndConnectingChangeOnlyTheInjectedStore() async {
+  /// Signing in and out through a model must move only the store that model was given. A store
+  /// the model never saw is the proof that nothing global was touched.
+  func testSigningInAndOutChangeOnlyTheInjectedStore() async {
     let sentinel = MemoryClientSettings()
-    sentinel.serviceAddress = "https://sentinel.example"
     XCTAssertTrue(sentinel.store(deviceToken: "synthetic-sentinel-token"))
 
     let settings = MemoryClientSettings()
-    settings.serviceAddress = "https://stale.example"
-    XCTAssertTrue(settings.store(deviceToken: "synthetic-stale-token"))
-
     let model = AppModel(
-      client: OrbisClient(
-        address: URL(string: "https://vanta.example.ts.net")!,
-        token: "synthetic-token",
-        session: StubProtocol.session { request in
-          switch request.url?.path() {
-          case "/health": (200, #"{"status":"ok"}"#)
-          case "/sets": (200, #"{"sets":[]}"#)
-          case "/playlists": (200, #"{"playlists":[]}"#)
-          default: (500, "{}")
-          }
-        }
-      ),
-      settings: settings
-    )
+      settings: settings,
+      session: StubProtocol.session { request in
+        request.url?.path().hasSuffix("/sign-in/code") == true
+          ? (200, #"{"key":"synthetic-fresh-token","person":{"id":"p1","username":"ada"}}"#)
+          : (500, "{}")
+      })
 
-    model.connectionAddress = "https://vanta.example.ts.net"
-    model.connectionToken = "synthetic-fresh-token"
-    await model.connect()
+    await model.signIn(.code("ABCD-EFGH"))
 
-    XCTAssertNil(model.connectionFailure)
-    XCTAssertEqual(settings.serviceAddress, "https://vanta.example.ts.net")
+    XCTAssertNil(model.signInFailure)
     XCTAssertEqual(settings.deviceToken, "synthetic-fresh-token")
     XCTAssertEqual(
-      sentinel.serviceAddress, "https://sentinel.example",
-      "an independent store must stay untouched")
-    XCTAssertEqual(sentinel.deviceToken, "synthetic-sentinel-token")
+      sentinel.deviceToken, "synthetic-sentinel-token", "an independent store must stay untouched")
 
-    model.forget()
+    model.signOut()
 
-    XCTAssertNil(settings.serviceAddress, "forgetting must clear the store the model was given")
-    XCTAssertNil(settings.deviceToken)
-    XCTAssertEqual(sentinel.serviceAddress, "https://sentinel.example")
+    XCTAssertNil(settings.deviceToken, "signing out must clear the store the model was given")
     XCTAssertEqual(sentinel.deviceToken, "synthetic-sentinel-token")
   }
 
@@ -117,17 +84,15 @@ final class ClientSettingsTests: XCTestCase {
 
   /// The real store is exercised the way a device uses it: write, replace, clear. Only the
   /// namespace this test created is ever touched.
-  func testALiveStoreRoundTripsThroughIsolatedDefaultsAndKeychain() {
+  func testALiveStoreRoundTripsThroughAnIsolatedKeychain() {
     let (settings, cleanup) = isolatedLiveSettings()
     defer { cleanup() }
 
-    XCTAssertFalse(settings.isConfigured)
+    XCTAssertNil(settings.configuredClient(address: OrbisService.address))
 
-    settings.serviceAddress = "https://isolated.example"
     XCTAssertTrue(settings.store(deviceToken: "synthetic-first-token"))
-    XCTAssertEqual(settings.serviceAddress, "https://isolated.example")
     XCTAssertEqual(settings.deviceToken, "synthetic-first-token")
-    XCTAssertTrue(settings.isConfigured)
+    XCTAssertNotNil(settings.configuredClient(address: OrbisService.address))
 
     XCTAssertTrue(settings.store(deviceToken: "synthetic-second-token"))
     XCTAssertEqual(
@@ -136,9 +101,7 @@ final class ClientSettingsTests: XCTestCase {
 
     XCTAssertTrue(settings.store(deviceToken: nil))
     XCTAssertNil(settings.deviceToken)
-    settings.serviceAddress = nil
-    XCTAssertNil(settings.serviceAddress)
-    XCTAssertFalse(settings.isConfigured)
+    XCTAssertNil(settings.configuredClient(address: OrbisService.address))
   }
 
   func testClearingOneIsolatedNamespaceLeavesAnotherAlone() {
@@ -149,59 +112,52 @@ final class ClientSettingsTests: XCTestCase {
       cleanSecond()
     }
 
-    first.serviceAddress = "https://first.example"
     XCTAssertTrue(first.store(deviceToken: "synthetic-first-token"))
-    second.serviceAddress = "https://second.example"
     XCTAssertTrue(second.store(deviceToken: "synthetic-second-token"))
 
-    first.serviceAddress = nil
     XCTAssertTrue(first.store(deviceToken: nil))
 
-    XCTAssertNil(first.serviceAddress)
     XCTAssertNil(first.deviceToken)
-    XCTAssertEqual(second.serviceAddress, "https://second.example")
     XCTAssertEqual(second.deviceToken, "synthetic-second-token")
   }
 
-  /// The address rules are the same ones the client enforces: TLS or loopback, a real host,
-  /// and both halves of the pairing present.
-  func testConfiguredClientKeepsAddressValidation() {
+  /// A client needs a key, and talks to the address it was given.
+  func testConfiguredClientNeedsAToken() {
     let settings = MemoryClientSettings()
-    XCTAssertNil(settings.configuredClient(), "an empty store must not configure a client")
+    let address = URL(string: "https://vanta.example.ts.net/api")!
+    XCTAssertNil(settings.configuredClient(address: address), "an empty store is signed out")
 
-    settings.serviceAddress = "https://vanta.example.ts.net"
-    XCTAssertNil(
-      settings.configuredClient(), "an address without a token must not configure a client")
+    XCTAssertTrue(settings.store(deviceToken: ""))
+    XCTAssertNil(settings.configuredClient(address: address), "an empty token is signed out")
 
     XCTAssertTrue(settings.store(deviceToken: "synthetic-token"))
-    XCTAssertNotNil(settings.configuredClient())
+    XCTAssertEqual(settings.configuredClient(address: address)?.address, address)
+  }
 
-    settings.serviceAddress = "http://vanta.example.ts.net"
-    XCTAssertNil(settings.configuredClient(), "the token rides only over TLS or loopback")
-
-    settings.serviceAddress = "not a url"
-    XCTAssertNil(settings.configuredClient(), "an address that is not a URL is refused")
-
-    settings.serviceAddress = "https://vanta.example.ts.net"
-    XCTAssertTrue(settings.store(deviceToken: ""))
-    XCTAssertNil(settings.configuredClient(), "an empty token must not configure a client")
+  /// A Debug journey points the app at its lane's service. The token rides on every request, so
+  /// an address that is neither TLS nor loopback is ignored.
+  func testTheServiceAddressArgumentAcceptsOnlyTLSOrLoopback() {
+    for accepted in ["http://127.0.0.1:4310", "https://lane.example/api"] {
+      XCTAssertEqual(
+        OrbisService.address(for: ["-orbisServiceAddress", accepted]).absoluteString, accepted)
+    }
+    let refused = "http://lane.example"
+    XCTAssertNotEqual(
+      OrbisService.address(for: ["-orbisServiceAddress", refused]).absoluteString, refused)
   }
 
   /// The reset launch argument is exercised against a supplied store, so the proof does not
   /// need an app started against a real pairing.
   func testTheResetLaunchArgumentClearsOnlyTheInjectedStore() {
     let settings = MemoryClientSettings()
-    settings.serviceAddress = "https://stale.example"
     XCTAssertTrue(settings.store(deviceToken: "synthetic-stale-token"))
 
     AppModel.resetSettings(ifRequestedBy: [], in: settings)
     XCTAssertEqual(
       settings.deviceToken, "synthetic-stale-token",
       "without the reset argument the store must be left alone")
-    XCTAssertEqual(settings.serviceAddress, "https://stale.example")
 
     AppModel.resetSettings(ifRequestedBy: ["-orbisResetSettings"], in: settings)
-    XCTAssertNil(settings.serviceAddress)
     XCTAssertNil(settings.deviceToken)
   }
 

@@ -4,45 +4,79 @@ import XCTest
 @testable import Orbis
 
 final class OrbisClientTests: XCTestCase {
-  func testAddressRequiresASchemeAndHost() throws {
-    let url = try OrbisClient.address(from: "  https://vanta.example.ts.net  ")
-    XCTAssertEqual(url.absoluteString, "https://vanta.example.ts.net")
-
-    for input in ["", "vanta.example.ts.net", "not a url"] {
-      XCTAssertThrowsError(try OrbisClient.address(from: input), input) { error in
-        XCTAssertEqual(error as? OrbisError, .badAddress)
-      }
-    }
-  }
-
-  /// The Funnel address carries `/api`. Every request keeps that segment, with or without a
+  /// The service address carries `/api`. Every request keeps that segment, with or without a
   /// trailing slash, and an address without a path still resolves as before.
   func testRequestsKeepTheAddressPath() async throws {
     for (address, expected) in [
-      ("https://vanta.example.ts.net:10000/api", "https://vanta.example.ts.net:10000/api/health"),
-      ("https://vanta.example.ts.net:10000/api/", "https://vanta.example.ts.net:10000/api/health"),
-      ("https://vanta.example.ts.net", "https://vanta.example.ts.net/health"),
+      ("https://orbis.example/api", "https://orbis.example/api/sets"),
+      ("https://orbis.example/api/", "https://orbis.example/api/sets"),
+      ("https://orbis.example", "https://orbis.example/sets"),
     ] {
       let client = OrbisClient(
-        address: try OrbisClient.address(from: address),
+        address: URL(string: address)!,
         token: "token",
-        session: StubProtocol.session(status: 200, body: #"{"status":"ok"}"#))
-      _ = try await client.health()
+        session: StubProtocol.session(status: 200, body: #"{"sets":[]}"#))
+      _ = try await client.library()
       XCTAssertEqual(StubProtocol.lastRequest?.url?.absoluteString, expected)
     }
   }
 
   /// The bearer token rides on every request, so an address carries it only over TLS. The
   /// loopback exception is the temporary lane service, which the server itself trusts.
-  func testAnAddressCarriesTheTokenOnlyOverTLSOrLoopback() throws {
+  func testAnAddressCarriesTheTokenOnlyOverTLSOrLoopback() {
     for input in ["https://vanta.example.ts.net", "http://127.0.0.1:4310", "http://localhost:4310"] {
-      XCTAssertNoThrow(try OrbisClient.address(from: input), input)
+      XCTAssertTrue(OrbisClient.accepts(URL(string: input)!), input)
     }
     for input in ["http://vanta.example.ts.net", "ftp://vanta.example.ts.net"] {
-      XCTAssertThrowsError(try OrbisClient.address(from: input), input) { error in
-        XCTAssertEqual(error as? OrbisError, .badAddress)
-      }
+      XCTAssertFalse(OrbisClient.accepts(URL(string: input)!), input)
     }
+  }
+
+  /// Join and redeem are the only requests without a key, and the Host's passcode is closed by
+  /// sending null, not by leaving the field out. Each failure here is one the service reads as
+  /// a bad request or an unauthenticated caller.
+  func testSignInAndSettingsRequestsMatchTheContract() async throws {
+    let address = URL(string: "https://orbis.example/api")!
+    let signedIn = #"{"key":"synthetic-key","person":{"id":"p1","username":"ada"}}"#
+    let signedOut = OrbisClient(
+      address: address, token: "", session: StubProtocol.session(status: 201, body: signedIn))
+
+    let joined = try await signedOut.join(username: "ada", passcode: "sesame", label: "Orbis on Mac")
+    XCTAssertEqual(joined, "synthetic-key")
+    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/api/sign-in/join")
+    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
+    XCTAssertNil(
+      StubProtocol.lastRequest?.value(forHTTPHeaderField: "Authorization"),
+      "a signed-out device sends no key")
+    XCTAssertEqual(
+      try json(StubProtocol.lastBody),
+      ["label": "Orbis on Mac", "passcode": "sesame", "username": "ada"])
+
+    _ = try await signedOut.redeem(code: "ABCDEFGH", label: "Orbis on Mac")
+    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/api/sign-in/code")
+    XCTAssertEqual(try json(StubProtocol.lastBody), ["code": "ABCDEFGH", "label": "Orbis on Mac"])
+
+    let host = OrbisClient(
+      address: address, token: "token",
+      session: StubProtocol.session(status: 200, body: #"{"passcode":null}"#))
+    let closed = try await host.setPasscode(nil)
+    XCTAssertNil(closed)
+    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PUT")
+    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/api/admin/passcode")
+    XCTAssertEqual(try json(StubProtocol.lastBody), ["passcode": NSNull()])
+
+    let me = #"{"autoDownload":true,"host":false,"id":"p1","social":true,"username":"ada"}"#
+    let person = OrbisClient(
+      address: address, token: "token", session: StubProtocol.session(status: 200, body: me))
+    let updated = try await person.updateMe(MeUpdate(social: true))
+    XCTAssertTrue(updated.social)
+    XCTAssertEqual(
+      try json(StubProtocol.lastBody), ["social": true], "an unchanged setting is left out")
+  }
+
+  private func json(_ data: Data?) throws -> NSDictionary {
+    let object = try JSONSerialization.jsonObject(with: XCTUnwrap(data))
+    return try XCTUnwrap(object as? NSDictionary)
   }
 
   /// The bare tailnet name answers with Caddy's page, which is the trap this whole thread is
@@ -70,7 +104,7 @@ final class OrbisClientTests: XCTestCase {
           status: status, body: "<!doctype html><html lang=\"en\"><head>")
       )
       do {
-        _ = try await client.health()
+        _ = try await client.library()
         XCTFail("expected a web page to be refused at status \(status)")
       } catch let error as OrbisError {
         XCTAssertEqual(error, .notOrbis)
@@ -82,8 +116,9 @@ final class OrbisClientTests: XCTestCase {
 
   func testFailuresMapToActionableCases() async {
     let cases: [(Int, String, OrbisError)] = [
-      (401, #"{"message":"nope"}"#, .notPaired),
-      (403, #"{"message":"nope"}"#, .refused),
+      (401, #"{"message":"nope"}"#, .notSignedIn),
+      (403, #"{"message":"nope"}"#, .server(status: 403, message: "nope")),
+      (403, "{}", .server(status: 403, message: "")),
       (409, #"{"message":"This set is already in your library."}"#, .duplicate),
       (500, #"{"message":"Broken."}"#, .server(status: 500, message: "Broken.")),
       (200, "not json", .malformed),
@@ -95,7 +130,7 @@ final class OrbisClientTests: XCTestCase {
         session: StubProtocol.session(status: status, body: body)
       )
       do {
-        _ = try await client.health()
+        _ = try await client.library()
         XCTFail("expected \(expected) for status \(status)")
       } catch let error as OrbisError {
         XCTAssertEqual(error, expected)
@@ -174,7 +209,7 @@ final class OrbisClientTests: XCTestCase {
       session: StubProtocol.session(failure: URLError(.cancelled))
     )
     do {
-      _ = try await client.health()
+      _ = try await client.library()
       XCTFail("expected a cancellation")
     } catch let error as OrbisError {
       XCTAssertEqual(error, .cancelled)

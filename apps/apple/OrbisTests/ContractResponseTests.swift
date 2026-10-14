@@ -8,9 +8,8 @@ final class ContractResponseTests: XCTestCase {
     struct Tags: Decodable { let tags: [String] }
 
     let audioState: AudioState
-    let health: HealthResponse
     let library: LibraryResponse
-    let me: PersonPreferences
+    let me: Me
     let playlist: Playlist
     let playlists: PlaylistsResponse
     let queue: QueueResponse
@@ -29,8 +28,8 @@ final class ContractResponseTests: XCTestCase {
     XCTAssertEqual(samples.audioState.state, "none")
     XCTAssertEqual(samples.queue.queue.entries.count, 0)
     XCTAssertEqual(samples.tags.tags, samples.savedSet.tags)
-    XCTAssertEqual(samples.health.status, "ok")
     XCTAssertEqual(samples.me.id, "host")
     XCTAssertTrue(samples.me.autoDownload)
+    XCTAssertTrue(samples.me.host)
   }
 }

@@ -5,7 +5,7 @@ import path from "node:path";
 
 import { createApp } from "./app.js";
 import { startFixtureServer } from "./fixture-server.js";
-import { hashToken } from "./identity.js";
+import { storedKey } from "./test-app.js";
 
 test("the disposable HTTP fixture requires its key and accepts one exact Origin", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-fixture-http-"));
@@ -14,15 +14,13 @@ test("the disposable HTTP fixture requires its key and accepts one exact Origin"
     path.join(directory, "devices.json"),
     JSON.stringify({
       keys: [
-        {
-          addedAt: new Date().toISOString(),
-          id: "fixture-admin",
-          label: "Disposable HTTP fixture",
-          lastUsedAt: null,
-          personId: "host",
-          scope: "admin",
-          tokenHash: hashToken(token),
-        },
+        storedKey(
+          "fixture-admin",
+          "host",
+          token,
+          "daily",
+          "Disposable HTTP fixture"
+        ),
       ],
       people: [{ id: "host", removed: false, username: "host" }],
       version: 2,

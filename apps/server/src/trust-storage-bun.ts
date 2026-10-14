@@ -27,7 +27,7 @@ const withDatabase = <T>(target: string, action: (db: Database) => T): T => {
 };
 
 const writeStore = (db: Database, store: TrustStore): void => {
-  db.run("DELETE FROM invites");
+  db.run("DELETE FROM sign_in_codes");
   db.run("DELETE FROM api_keys");
   db.run("DELETE FROM people");
   const person = db.query(
@@ -57,18 +57,59 @@ const writeStore = (db: Database, store: TrustStore): void => {
       record.lastUsedAt
     );
   }
-  const invite = db.query(
-    "INSERT INTO invites (digest, person_id, expires_at, used) VALUES (?, ?, ?, ?)"
+  const code = db.query(
+    "INSERT INTO sign_in_codes (code, person_id, expires_at) VALUES (?, ?, ?)"
   );
-  for (const record of store.invites ?? []) {
-    invite.run(
-      record.codeHash,
-      record.personId,
-      record.expiresAt,
-      Number(record.used)
-    );
+  for (const record of store.signInCodes ?? []) {
+    code.run(record.code, record.personId, record.expiresAt);
+  }
+  db.query(
+    "INSERT OR REPLACE INTO group_settings (id, passcode) VALUES (1, ?)"
+  ).run(store.passcode ?? null);
+};
+
+const GROUP_SETTINGS = `CREATE TABLE IF NOT EXISTS group_settings (
+  id INTEGER PRIMARY KEY NOT NULL CHECK (id = 1), passcode TEXT
+)`;
+const SIGN_IN_CODES = `CREATE TABLE IF NOT EXISTS sign_in_codes (
+  code TEXT PRIMARY KEY NOT NULL, person_id TEXT NOT NULL REFERENCES people(id),
+  expires_at TEXT NOT NULL
+)`;
+
+const hasTable = (db: Database, name: string) =>
+  db
+    .query("SELECT name FROM sqlite_master WHERE type = 'table' AND name = ?")
+    .get(name) !== null;
+
+const upgradeTrustTables = (db: Database): void => {
+  const definition = db
+    .query<{ sql: string }, []>(
+      "SELECT sql FROM sqlite_master WHERE name = 'api_keys'"
+    )
+    .get();
+  if (definition && !definition.sql.includes("'node'")) {
+    db.transaction(() => {
+      db.run(`CREATE TABLE api_keys_node_scope (
+        id TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
+        scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin', 'node')),
+        person_id TEXT NOT NULL REFERENCES people(id), added_at TEXT NOT NULL, last_used_at TEXT
+      )`);
+      db.run("INSERT INTO api_keys_node_scope SELECT * FROM api_keys");
+      db.run("DROP TABLE api_keys");
+      db.run("ALTER TABLE api_keys_node_scope RENAME TO api_keys");
+    }).immediate();
+  }
+  if (!hasTable(db, "sign_in_codes")) {
+    db.transaction(() => {
+      db.run("DROP TABLE IF EXISTS invites");
+      db.run("UPDATE api_keys SET scope = 'daily' WHERE scope = 'admin'");
+      db.run(GROUP_SETTINGS);
+      db.run(SIGN_IN_CODES);
+    }).immediate();
   }
 };
+
+const initialized = new Set<string>();
 
 export const initializeTrustDatabase = (input: {
   readonly target: string;
@@ -79,32 +120,16 @@ export const initializeTrustDatabase = (input: {
   const legacyPath =
     input.legacyPath ??
     path.join(path.dirname(databasePath(input.target)), "devices.json");
+  const file = databasePath(input.target);
+  if (initialized.has(file)) {
+    return;
+  }
   withDatabase(input.target, (db) => {
-    const initialized =
-      db
-        .query(
-          "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'trust_migrations'"
-        )
-        .get() &&
-      db.query("SELECT id FROM trust_migrations WHERE id = 1").get();
-    if (initialized) {
-      const definition = db
-        .query<{ sql: string }, []>(
-          "SELECT sql FROM sqlite_master WHERE name = 'api_keys'"
-        )
-        .get();
-      if (definition && !definition.sql.includes("'node'")) {
-        db.transaction(() => {
-          db.run(`CREATE TABLE api_keys_node_scope (
-            id TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL UNIQUE, label TEXT NOT NULL,
-            scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin', 'node')),
-            person_id TEXT NOT NULL REFERENCES people(id), added_at TEXT NOT NULL, last_used_at TEXT
-          )`);
-          db.run("INSERT INTO api_keys_node_scope SELECT * FROM api_keys");
-          db.run("DROP TABLE api_keys");
-          db.run("ALTER TABLE api_keys_node_scope RENAME TO api_keys");
-        }).immediate();
-      }
+    if (
+      hasTable(db, "trust_migrations") &&
+      db.query("SELECT id FROM trust_migrations WHERE id = 1").get()
+    ) {
+      upgradeTrustTables(db);
       return;
     }
     db.run(`CREATE TABLE IF NOT EXISTS people (
@@ -117,10 +142,8 @@ export const initializeTrustDatabase = (input: {
       scope TEXT NOT NULL CHECK (scope IN ('daily', 'admin', 'node')), person_id TEXT NOT NULL REFERENCES people(id),
       added_at TEXT NOT NULL, last_used_at TEXT
     )`);
-    db.run(`CREATE TABLE IF NOT EXISTS invites (
-      digest TEXT PRIMARY KEY NOT NULL, person_id TEXT NOT NULL REFERENCES people(id),
-      expires_at TEXT NOT NULL, used INTEGER NOT NULL
-    )`);
+    db.run(GROUP_SETTINGS);
+    db.run(SIGN_IN_CODES);
     db.run(
       "CREATE TABLE IF NOT EXISTS trust_migrations (id INTEGER PRIMARY KEY CHECK (id = 1))"
     );
@@ -135,6 +158,7 @@ export const initializeTrustDatabase = (input: {
       db.run("INSERT INTO trust_migrations (id) VALUES (1)");
     }).immediate();
   });
+  initialized.add(file);
   if (existsSync(legacyPath) && !existsSync(`${legacyPath}.migrated`)) {
     try {
       renameSync(legacyPath, `${legacyPath}.migrated`);
@@ -181,16 +205,23 @@ const readStore = (db: Database, decode: typeof decodeTrust): TrustStore => {
       "SELECT id, digest AS tokenHash, label, scope, person_id AS personId, added_at AS addedAt, last_used_at AS lastUsedAt FROM api_keys ORDER BY rowid"
     )
     .all();
-  const invites = db
-    .query<
-      { codeHash: string; personId: string; expiresAt: string; used: number },
-      []
-    >(
-      "SELECT digest AS codeHash, person_id AS personId, expires_at AS expiresAt, used FROM invites ORDER BY rowid"
+  const settings = db
+    .query<{ passcode: string | null }, []>(
+      "SELECT passcode FROM group_settings WHERE id = 1"
     )
-    .all()
-    .map((record) => ({ ...record, used: Boolean(record.used) }));
-  return decode({ invites, keys, people, version: 2 });
+    .get();
+  const signInCodes = db
+    .query(
+      "SELECT code, person_id AS personId, expires_at AS expiresAt FROM sign_in_codes ORDER BY rowid"
+    )
+    .all();
+  return decode({
+    keys,
+    passcode: settings?.passcode ?? null,
+    people,
+    signInCodes,
+    version: 2,
+  });
 };
 
 export const readTrustDatabase = (

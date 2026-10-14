@@ -42,6 +42,7 @@
   },
   "me": {
     "autoDownload": true,
+    "host": true,
     "id": "host",
     "social": false,
     "username": "host"

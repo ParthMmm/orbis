@@ -1,5 +1,7 @@
 # Sign in by Invite and Device Link, and keep one API key per device
 
+Superseded by ADR 0020 on 2026-10-10. ADR 0020 removed Invites and Device Links.
+
 A Person's data already follows them across devices: every request acts as a Person (ADR 0008), so each of their devices reads and changes the same Library, Playlists, Listening Queue, and Playback Positions. What does not scale is getting a key onto each device. The Host mints a key, copies it, and sends it, once per device, and the Apple TV has no good way to paste one. Orbis gains two ways for a device to obtain its own key. The credential stays the same: one labeled, revocable API key per device.
 
 An **Invite** signs in a Person's first device. The Host creates one from the admin page for a new or an existing Person and sends the link through a channel they already trust, as ADR 0008 does for keys. The link is `https://orbis.p11a.xyz/claim#<code>`. The code sits in the fragment, so neither Cloudflare nor any log sees it; the web client reads it and sends it to the API. The API stores only the code's `sha256`, accepts it once, and lets it expire after 24 hours. A valid claim mints a daily key for that Person, labeled with the browser the friend names, and returns it once; the web client stores it as it stores a pasted key today. An Invite for an existing Person is how a friend who lost every device gets back in, with their Library intact. Invites live in the trust store with the keys, so a restart does not cancel them.

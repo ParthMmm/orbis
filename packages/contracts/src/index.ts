@@ -57,3 +57,9 @@ export {
   UnsupportedSourceUrlError,
   youTubeVideoId,
 } from "./source-url.js";
+export {
+  formatSignInCode,
+  normalizeSignInCode,
+  SIGN_IN_CODE_ALPHABET,
+  SIGN_IN_CODE_LENGTH,
+} from "./sign-in-code.js";

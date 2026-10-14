@@ -1,6 +1,8 @@
+import { SignInCodeSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
-const RecoveredKey = Schema.Struct({ id: Schema.String, token: Schema.String });
+export const DEFAULT_API_URL = "https://orbis.p11a.xyz/api";
+
 const recoveryUrl = (base: string): URL => {
   const url = new URL(`${base.replace(/\/$/u, "")}/recovery`);
   if (
@@ -17,49 +19,26 @@ const recoveryUrl = (base: string): URL => {
   }
   return url;
 };
-const accessToken = async (url: URL): Promise<string> => {
-  const provided = process.env.ORBIS_ACCESS_TOKEN?.trim();
-  if (provided) {
-    return provided;
-  }
-  const proc = Bun.spawn(
-    ["cloudflared", "access", "token", `--app=${url.toString()}`],
-    { stderr: "ignore", stdout: "pipe" }
-  );
-  const [text, exitCode] = await Promise.all([
-    new Response(proc.stdout).text(),
-    proc.exited,
-  ]);
-  if (exitCode !== 0 || !text.trim()) {
-    throw new Error(
-      `Sign in first with: cloudflared access login ${url.toString()}`
-    );
-  }
-  return text.trim();
-};
-export const recoverRemoteAdmin = async (input: {
+
+/** Asks the Group for a Host Sign-in Code with Vanta's node key (ADR 0020). */
+export const recoverHost = async (input: {
   readonly url: string;
-  readonly label: string;
+  readonly nodeKey: string;
 }) => {
-  const url = recoveryUrl(input.url);
-  const token = await accessToken(url);
-  const response = await fetch(url, {
-    body: JSON.stringify({ label: input.label }),
-    headers: {
-      "Cf-Access-Jwt-Assertion": token,
-      "cf-access-token": token,
-      "content-type": "application/json",
-    },
+  const response = await fetch(recoveryUrl(input.url), {
+    headers: { authorization: `Bearer ${input.nodeKey}` },
     method: "POST",
     redirect: "error",
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
     throw new Error(
-      `Recovery failed (${response.status}). Sign in through Cloudflare Access and try again.`
+      `Recovery failed (${response.status}). Check ORBIS_NODE_KEY and the API URL.`
     );
   }
-  const key = Schema.decodeUnknownSync(RecoveredKey)(await response.json());
-  console.log(`Recovered Host admin key ${key.id}.`);
-  console.log(`Key token, shown once: ${key.token}`);
+  const issued = Schema.decodeUnknownSync(SignInCodeSchema)(
+    await response.json()
+  );
+  console.log(`Sign-in Code for the Host: ${issued.code}`);
+  console.log(`Expires at ${issued.expiresAt}.`);
 };

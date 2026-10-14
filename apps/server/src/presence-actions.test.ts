@@ -393,7 +393,6 @@ test("explicit actions own live Presence through play, pause, resume, stale devi
       sessionId: "phone-s1",
       setId: "s1",
     };
-    expect(await server.actStatus("admin", play1)).toBe(403);
     expect(await server.actStatus("host-node", play1)).toBe(403);
     expect(
       await server.actStatus("a-phone", { ...play1, sessionId: undefined })

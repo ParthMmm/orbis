@@ -10,12 +10,10 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as AppRouteImport } from './routes/_app'
-import { Route as ClaimRouteImport } from './routes/claim'
 import { Route as SignInRouteImport } from './routes/sign-in'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
 import { Route as AppAdminRouteImport } from './routes/_app/admin'
 import { Route as AppDevicesRouteImport } from './routes/_app/devices'
-import { Route as AppLinkRouteImport } from './routes/_app/link'
 import { Route as AppQueueRouteImport } from './routes/_app/queue'
 import { Route as AppPeopleIndexRouteImport } from './routes/_app/people/index'
 import { Route as AppPeopleIdRouteImport } from './routes/_app/people/$id'
@@ -25,11 +23,6 @@ import { Route as AppSetsIdRouteImport } from './routes/_app/sets/$id'
 
 const AppRoute = AppRouteImport.update({
   id: '/_app',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ClaimRoute = ClaimRouteImport.update({
-  id: '/claim',
-  path: '/claim',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SignInRoute = SignInRouteImport.update({
@@ -50,11 +43,6 @@ const AppAdminRoute = AppAdminRouteImport.update({
 const AppDevicesRoute = AppDevicesRouteImport.update({
   id: '/devices',
   path: '/devices',
-  getParentRoute: () => AppRoute,
-} as any)
-const AppLinkRoute = AppLinkRouteImport.update({
-  id: '/link',
-  path: '/link',
   getParentRoute: () => AppRoute,
 } as any)
 const AppQueueRoute = AppQueueRouteImport.update({
@@ -90,11 +78,9 @@ const AppSetsIdRoute = AppSetsIdRouteImport.update({
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
-  '/claim': typeof ClaimRoute
   '/sign-in': typeof SignInRoute
   '/admin': typeof AppAdminRoute
   '/devices': typeof AppDevicesRoute
-  '/link': typeof AppLinkRoute
   '/queue': typeof AppQueueRoute
   '/people/$id': typeof AppPeopleIdRoute
   '/playlists/$id': typeof AppPlaylistsIdRoute
@@ -103,11 +89,9 @@ export interface FileRoutesByFullPath {
   '/playlists/': typeof AppPlaylistsIndexRoute
 }
 export interface FileRoutesByTo {
-  '/claim': typeof ClaimRoute
   '/sign-in': typeof SignInRoute
   '/admin': typeof AppAdminRoute
   '/devices': typeof AppDevicesRoute
-  '/link': typeof AppLinkRoute
   '/queue': typeof AppQueueRoute
   '/': typeof AppIndexRoute
   '/people/$id': typeof AppPeopleIdRoute
@@ -119,11 +103,9 @@ export interface FileRoutesByTo {
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
-  '/claim': typeof ClaimRoute
   '/sign-in': typeof SignInRoute
   '/_app/admin': typeof AppAdminRoute
   '/_app/devices': typeof AppDevicesRoute
-  '/_app/link': typeof AppLinkRoute
   '/_app/queue': typeof AppQueueRoute
   '/_app/': typeof AppIndexRoute
   '/_app/people/$id': typeof AppPeopleIdRoute
@@ -136,11 +118,9 @@ export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
     | '/'
-    | '/claim'
     | '/sign-in'
     | '/admin'
     | '/devices'
-    | '/link'
     | '/queue'
     | '/people/$id'
     | '/playlists/$id'
@@ -149,11 +129,9 @@ export interface FileRouteTypes {
     | '/playlists/'
   fileRoutesByTo: FileRoutesByTo
   to:
-    | '/claim'
     | '/sign-in'
     | '/admin'
     | '/devices'
-    | '/link'
     | '/queue'
     | '/'
     | '/people/$id'
@@ -164,11 +142,9 @@ export interface FileRouteTypes {
   id:
     | '__root__'
     | '/_app'
-    | '/claim'
     | '/sign-in'
     | '/_app/admin'
     | '/_app/devices'
-    | '/_app/link'
     | '/_app/queue'
     | '/_app/'
     | '/_app/people/$id'
@@ -180,7 +156,6 @@ export interface FileRouteTypes {
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
-  ClaimRoute: typeof ClaimRoute
   SignInRoute: typeof SignInRoute
 }
 
@@ -191,13 +166,6 @@ declare module '@tanstack/react-router' {
       path: ''
       fullPath: '/'
       preLoaderRoute: typeof AppRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/claim': {
-      id: '/claim'
-      path: '/claim'
-      fullPath: '/claim'
-      preLoaderRoute: typeof ClaimRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/sign-in': {
@@ -226,13 +194,6 @@ declare module '@tanstack/react-router' {
       path: '/devices'
       fullPath: '/devices'
       preLoaderRoute: typeof AppDevicesRouteImport
-      parentRoute: typeof AppRoute
-    }
-    '/_app/link': {
-      id: '/_app/link'
-      path: '/link'
-      fullPath: '/link'
-      preLoaderRoute: typeof AppLinkRouteImport
       parentRoute: typeof AppRoute
     }
     '/_app/queue': {
@@ -283,7 +244,6 @@ declare module '@tanstack/react-router' {
 interface AppRouteChildren {
   AppAdminRoute: typeof AppAdminRoute
   AppDevicesRoute: typeof AppDevicesRoute
-  AppLinkRoute: typeof AppLinkRoute
   AppQueueRoute: typeof AppQueueRoute
   AppIndexRoute: typeof AppIndexRoute
   AppPeopleIdRoute: typeof AppPeopleIdRoute
@@ -296,7 +256,6 @@ interface AppRouteChildren {
 const AppRouteChildren: AppRouteChildren = {
   AppAdminRoute: AppAdminRoute,
   AppDevicesRoute: AppDevicesRoute,
-  AppLinkRoute: AppLinkRoute,
   AppQueueRoute: AppQueueRoute,
   AppIndexRoute: AppIndexRoute,
   AppPeopleIdRoute: AppPeopleIdRoute,
@@ -310,7 +269,6 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
-  ClaimRoute: ClaimRoute,
   SignInRoute: SignInRoute,
 }
 export const routeTree = rootRouteImport

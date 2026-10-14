@@ -18,6 +18,27 @@ import {
 import { Library } from "../../server/src/library.js";
 import { MetadataError } from "../../server/src/metadata-error.js";
 
+/** The node-key check `/node` and `/recovery` share: the key's id, or a refusal. */
+export const nodeKeyId = (
+  request: Request,
+  trustPath: string
+): string | Response => {
+  const decision = decideNodeAccess({
+    authorization: request.headers.get("authorization"),
+    hasOrigin: request.headers.has("origin"),
+    host: new URL(request.url).host,
+    mode: "device",
+    store: readTrustRegistry(trustPath).store,
+  });
+  if (decision.kind === "rejected") {
+    return Response.json(
+      { message: decision.message },
+      { status: decision.statusCode }
+    );
+  }
+  return decision.keyId ?? new Response("Node key required", { status: 403 });
+};
+
 const AttachmentSchema = Schema.Struct({
   active: Schema.NullOr(
     Schema.Struct({ requestId: Schema.String, setId: Schema.String })
@@ -114,21 +135,9 @@ export class GroupAudioNode {
   }
 
   accept(request: Request): Response {
-    const decision = decideNodeAccess({
-      authorization: request.headers.get("authorization"),
-      hasOrigin: request.headers.has("origin"),
-      host: new URL(request.url).host,
-      mode: "device",
-      store: readTrustRegistry(this.trustPath).store,
-    });
-    if (decision.kind === "rejected") {
-      return Response.json(
-        { message: decision.message },
-        { status: decision.statusCode }
-      );
-    }
-    if (!decision.keyId) {
-      return new Response("Node key required", { status: 403 });
+    const keyId = nodeKeyId(request, this.trustPath);
+    if (keyId instanceof Response) {
+      return keyId;
     }
     if (request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
       return new Response("WebSocket required", { status: 426 });
@@ -142,7 +151,7 @@ export class GroupAudioNode {
     server.serializeAttachment({
       active: null,
       detailRequests: [],
-      keyId: decision.keyId,
+      keyId,
       progress: null,
       ready: false,
     } satisfies Attachment);

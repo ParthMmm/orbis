@@ -11,16 +11,31 @@ import path from "node:path";
 import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
 
-const token = "orbis-disposable-test-key";
-const fixtureKey = {
+/** A key record as the trust store keeps it, for seeding a test's trust file. */
+export const storedKey = (
+  id: string,
+  personId: string,
+  token: string,
+  scope: "daily" | "admin" | "node",
+  label = id
+) => ({
   addedAt: "2026-01-01T00:00:00.000Z",
-  id: "fixture-admin",
-  label: "Test fixture",
+  id,
+  label,
   lastUsedAt: null,
-  personId: "host",
-  scope: "admin",
+  personId,
+  scope,
   tokenHash: hashToken(token),
-};
+});
+
+const token = "orbis-disposable-test-key";
+const fixtureKey = storedKey(
+  "fixture-admin",
+  "host",
+  token,
+  "daily",
+  "Test fixture"
+);
 
 export const createTestApp = (
   options: Parameters<typeof createApp>[0] = {}

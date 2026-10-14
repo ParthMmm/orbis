@@ -50,38 +50,38 @@ struct Transport: View {
         cueStarts: cueStarts
       )
       if showsControls {
-      HStack {
-        if showsCueSkips {
-          backButton
-          Spacer()
-          Button("Previous track", systemImage: "backward.fill") { player.skipToPreviousCue() }
-            .font(.system(size: 30))
-            .disabled(!isCurrent || !player.canSkipCues)
-            .accessibilityIdentifier("\(identifierPrefix)-previous-cue")
-          Spacer()
-          playButton
-          Spacer()
-          Button("Next track", systemImage: "forward.fill") { player.skipToNextCue() }
-            .font(.system(size: 30))
-            .disabled(!isCurrent || player.nextCue == nil)
-            .accessibilityIdentifier("\(identifierPrefix)-next-cue")
-          Spacer()
-          forwardButton
-        } else {
-          slot(leading)
-          Spacer()
-          backButton
-          Spacer()
-          playButton
-          Spacer()
-          forwardButton
-          Spacer()
-          slot(trailing)
+        HStack {
+          if showsCueSkips {
+            backButton
+            Spacer()
+            Button("Previous track", systemImage: "backward.fill") { player.skipToPreviousCue() }
+              .font(.system(size: 30))
+              .disabled(!isCurrent || !player.canSkipCues)
+              .accessibilityIdentifier("\(identifierPrefix)-previous-cue")
+            Spacer()
+            playButton
+            Spacer()
+            Button("Next track", systemImage: "forward.fill") { player.skipToNextCue() }
+              .font(.system(size: 30))
+              .disabled(!isCurrent || player.nextCue == nil)
+              .accessibilityIdentifier("\(identifierPrefix)-next-cue")
+            Spacer()
+            forwardButton
+          } else {
+            slot(leading)
+            Spacer()
+            backButton
+            Spacer()
+            playButton
+            Spacer()
+            forwardButton
+            Spacer()
+            slot(trailing)
+          }
         }
-      }
-      .buttonStyle(.plain)
-      .labelStyle(.iconOnly)
-      .font(prominentPlay ? .title2 : .title3)
+        .buttonStyle(.plain)
+        .labelStyle(.iconOnly)
+        .font(prominentPlay ? .title2 : .title3)
       }
       if isCurrent, case .failed(let message) = player.state {
         Text(message)

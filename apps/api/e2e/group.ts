@@ -111,7 +111,6 @@ try {
   assert.equal(renamed.status, 200, await renamed.clone().text());
   const keyResponse = await call("/admin/people/host/keys", "POST", {
     label: "event reader",
-    scope: "daily",
   });
   assert.equal(keyResponse.status, 201, await keyResponse.clone().text());
   const eventKey = await keyResponse.json();
@@ -197,7 +196,7 @@ try {
           label: "Bun parity",
           lastUsedAt: null,
           personId: "host",
-          scope: "admin",
+          scope: "daily",
           tokenHash: hashToken(bunToken),
         },
       ],

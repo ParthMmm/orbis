@@ -9,6 +9,8 @@ import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
+import { signInWithKey } from "./helpers.mjs";
+
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-tracklist");
 const dataDirectory = await mkdtemp(
@@ -138,9 +140,7 @@ try {
   try {
     const context = await browser.newContext();
     const page = await context.newPage();
-    await page.goto(`${webUrl}/sign-in`);
-    await page.getByLabel("API key").fill(key);
-    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
+    await signInWithKey(page, webUrl, key);
     await page.getByRole("heading", { name: "Library" }).waitFor();
     await page.getByRole("link", { name: "Tracklist journey Set" }).click();
     await page.waitForURL(`${webUrl}/sets/${saved.id}`);

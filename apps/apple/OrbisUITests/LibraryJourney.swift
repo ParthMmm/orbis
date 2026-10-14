@@ -1,42 +1,13 @@
 import XCTest
 
-/// Drives the real first-launch path against a server the lane starts. The address and
-/// token come from the environment so the test types them exactly as a person would.
+/// Drives the Library against a server the lane starts. The address and token come from the
+/// environment, and each journey starts signed in.
 final class LibraryUITests: XCTestCase {
-  /// `paired` starts the app already paired, for a journey that is not about the connection
-  /// screen. Typing the address and token costs each journey several seconds.
-  /// `serviceAddress` stands in for the built-in service address, so a fresh install signs in to
-  /// the lane's service.
-  private func launch(
-    paired: Bool = false, filteringBy tag: String? = nil, serviceAddress: String? = nil
-  ) throws -> XCUIApplication {
-    let environment = ProcessInfo.processInfo.environment
-    guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
-      let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
-    else {
-      throw XCTSkip("the lane must supply ORBIS_UI_TEST_ADDRESS and ORBIS_UI_TEST_TOKEN")
-    }
-    let app = XCUIApplication()
-    app.launchArguments.append("-orbisResetSettings")
-    app.launchArguments.append(contentsOf: ["-orbisServiceAddress", serviceAddress ?? address])
-    if paired {
-      app.launchArguments.append(contentsOf: ["-orbisPairedWith", address, token])
-    }
-    if let tag {
-      app.launchArguments.append(contentsOf: ["-orbisStartTagFiltered", tag])
-    }
-    app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
-    app.launchEnvironment["ORBIS_UI_TEST_ADDRESS"] = address
-    app.launchEnvironment["ORBIS_UI_TEST_TOKEN"] = token
-    app.launch()
-    return app
-  }
-
-  private func capture(_ name: String) {
-    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
+  private func launch(filteringBy tag: String? = nil) throws -> XCUIApplication {
+    let service = try LaneService()
+    return launchOrbis(
+      address: service.address, token: service.token,
+      arguments: tag.map { ["-orbisStartTagFiltered", $0] } ?? [])
   }
 
   private func record(_ name: String, _ values: [String: Any]) throws {
@@ -179,21 +150,14 @@ final class LibraryUITests: XCTestCase {
       .matching(NSPredicate(format: "label BEGINSWITH %@", "Search your")).firstMatch
   }
 
-  func testConnectsBrowsesAndSearchesTheLibrary() throws {
+  func testBrowsesAndSearchesTheLibrary() throws {
     let app = try launch()
-
-    XCTAssertTrue(
-      app.secureTextFields["connection-token"].waitForExistence(timeout: 30),
-      "the sign-in screen must appear\n\(app.debugDescription)"
-    )
-    capture("01-connection")
-    connect(app)
     openLibrary(in: app)
 
     let row = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
     XCTAssertTrue(
-      row.waitForExistence(timeout: 60), "a saved Set must appear after connecting\n\(app.debugDescription)")
+      row.waitForExistence(timeout: 60), "a saved Set must appear\n\(app.debugDescription)")
     capture("02-library-loaded")
 
     let searchSpot = openSearch(in: app)
@@ -208,47 +172,11 @@ final class LibraryUITests: XCTestCase {
     capture("04-search-no-results")
   }
 
-  /// Signs the app in with a pasted key the way a person would, so a journey that begins after
-  /// connecting does not restate the sign-in screen's details. The address is the built-in one.
-  private func connect(_ app: XCUIApplication) {
-    let token = app.secureTextFields["connection-token"]
-    XCTAssertTrue(token.waitForExistence(timeout: 30), "the sign-in screen must appear\n\(app.debugDescription)")
-    token.tap()
-    token.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_TOKEN"] ?? "")
-
-    app.buttons["connection-test"].tap()
-
-    // The pairing is now stored, and iOS offers to save the typed token into Passwords for
-    // reuse. The token belongs to this app's keychain alone, so the offer is declined
-    // whenever the system rises it.
-    dismissCredentialOffer(in: app)
-  }
-
-  /// Declines the system's offer to save the typed token into Passwords. The offer is a sheet
-  /// from another process, so it is absent from the app's own tree and from `app.sheets`, and
-  /// it swallows every tap behind it — including taps a journey makes 3x down the screen.
-  /// It also rises late, which is why this waits rather than asking once.
-  private func dismissCredentialOffer(in app: XCUIApplication) {
-    let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-    let candidates = [
-      springboard.buttons["Not Now"].firstMatch,
-      app.buttons["Not Now"].firstMatch,
-    ]
-    let deadline = Date().addingTimeInterval(6)
-    while Date() < deadline {
-      for candidate in candidates where candidate.exists {
-        candidate.tap()
-        return
-      }
-      usleep(250_000)
-    }
-  }
-
   /// Filing is the one action the app takes on the library, and the design promises a naming
   /// step after it: "Title and tags come next." This proves that step arrives, and that it can
   /// be left without naming anything.
   func testFilingALinkOpensTheNamingStep() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     // Filing lives in a sheet behind the toolbar's +, so the Library stays the collection.
@@ -305,7 +233,7 @@ final class LibraryUITests: XCTestCase {
     // Its own Set, because removing the lane's seeded one would take it from other journeys.
     let seeded = try LaneService().saveSet(
       title: "Set to rename", url: "https://www.youtube.com/watch?v=renameme001")
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
@@ -399,7 +327,7 @@ final class LibraryUITests: XCTestCase {
       XCTFail("Download did not reach \(phase)")
       throw URLError(.timedOut)
     }
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
     XCTAssertTrue(row.waitForExistence(timeout: 30))
@@ -434,7 +362,7 @@ final class LibraryUITests: XCTestCase {
   func testPlaysASetWithRetainedAudio() throws {
     let seeded = try LaneService().saveReadySet(
       title: "Ready to play", url: "https://www.youtube.com/watch?v=readyaudio1")
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
@@ -458,7 +386,7 @@ final class LibraryUITests: XCTestCase {
     let seeded = try service.saveReadySet(
       title: "Tracklist journey", url: "https://www.youtube.com/watch?v=tracklist01")
     try service.seedTracklist(seeded.id)
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
     XCTAssertTrue(row.waitForExistence(timeout: 60))
@@ -524,7 +452,7 @@ final class LibraryUITests: XCTestCase {
     let service = try LaneService()
     let seeded = try service.saveReadySet(
       title: "Now Playing journey", url: "https://www.youtube.com/watch?v=nowplaying1")
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
     XCTAssertTrue(row.waitForExistence(timeout: 60))
@@ -609,7 +537,7 @@ final class LibraryUITests: XCTestCase {
     // An untagged Set, so the filter has something to hide.
     _ = try LaneService().saveSet(
       title: "Untagged set", url: "https://www.youtube.com/watch?v=untagged001")
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     let tile = app.buttons["tag-filter-techno"]
@@ -635,7 +563,7 @@ final class LibraryUITests: XCTestCase {
   }
 
   func testHomeTagOpensFilteredLibraryAfterOpeningASet() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     let night = app.descendants(matching: .any)
@@ -665,7 +593,7 @@ final class LibraryUITests: XCTestCase {
   /// A Set found by search is the reason to search, so the result has to open. The Library row
   /// in the same component opens the same page, on the same build, in the same pass.
   func testOpensASetFromASearchResult() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
 
     let spot = openSearch(in: app)
     submitSearch("night", in: app, spot: spot)
@@ -706,7 +634,7 @@ final class LibraryUITests: XCTestCase {
   /// to empty the field and return the screen to the state it shows before any query. It once
   /// left the query in the field and the result area on Loading, forever.
   func testClearsANoMatchSearch() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
 
     let spot = openSearch(in: app)
     submitSearch("zzzznothing", in: app, spot: spot)
@@ -738,7 +666,7 @@ final class LibraryUITests: XCTestCase {
   /// `docs/agents/ui-verification.md`; the model change it makes is `setTagFilter(nil)`, which
   /// `LibraryFilterTests.testShowsOnlySetsCarryingTheActiveTag` covers.
   func testAFilterThatAdmitsNothingIsNotAnEmptyLibrary() throws {
-    let app = try launch(paired: true, filteringBy: "hardgroove")
+    let app = try launch(filteringBy: "hardgroove")
     openLibrary(in: app)
 
     XCTAssertTrue(
@@ -754,27 +682,5 @@ final class LibraryUITests: XCTestCase {
       app.descendants(matching: .any)["tag-filter-techno"].exists,
       "the filter row must stay, so the filter is still visible where it was set")
     capture("15-library-no-matches")
-  }
-
-  func testUnreachableAddressNamesTheRecoveryAction() throws {
-    let app = try launch(serviceAddress: "http://127.0.0.1:1")
-
-    let token = app.secureTextFields["connection-token"]
-    XCTAssertTrue(token.waitForExistence(timeout: 30))
-    token.tap()
-    token.typeText("not-a-real-token")
-
-    app.buttons["connection-test"].tap()
-
-    let error = app.staticTexts.matching(
-      NSPredicate(format: "label CONTAINS %@", "Cannot reach your library")
-    ).firstMatch
-    XCTAssertTrue(
-      error.waitForExistence(timeout: 60), "an unreachable address must explain itself\n\(app.debugDescription)")
-    XCTAssertTrue(
-      app.buttons["copy-failure"].exists,
-      "a failure must offer its details to copy\n\(app.debugDescription)"
-    )
-    capture("05-connection-error")
   }
 }
