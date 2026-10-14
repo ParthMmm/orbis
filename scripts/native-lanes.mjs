@@ -8,9 +8,12 @@
 //   node scripts/native-lanes.mjs --journeys    # UI journeys on two simulator clones
 //   node scripts/native-lanes.mjs               # both
 //   node scripts/native-lanes.mjs --unit --macos # unit tests on the macOS host
+//   node scripts/native-lanes.mjs --tvos --journeys # the TV journey on the Apple TV simulator
 //
 // Options: --name <simulator name>  --udid <simulator UUID>  --out <screenshot directory>
 // --macos runs the unit tests on the macOS destination instead of the simulator.
+// --tvos runs the OrbisTV scheme on the Apple TV simulator (default name "Apple TV"), with
+// silent audio seeded so a playback check never sounds in the room.
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -42,7 +45,8 @@ const journeysOnly = process.argv.includes("--journeys");
 // runs them, which the simulator run cannot show. Journeys stay simulator-only: the UI test
 // bundle is iOS-only, so --macos always means the unit tests.
 const macos = process.argv.includes("--macos");
-const simulator = argument("name", "Orbis Lanes");
+const tvos = process.argv.includes("--tvos");
+const simulator = argument("name", tvos ? "Apple TV" : "Orbis Lanes");
 const simulatorUdid = argument("udid");
 const shots = path.resolve(
   argument("out", path.join(tmpdir(), "orbis-lane-shots"))
@@ -52,14 +56,16 @@ const only = [];
 // --only narrows a lane to one test, which is how a single journey is re-run after a failure
 // without running the remaining journeys.
 const onlyTest = argument("only");
-const parallelJourneys = journeysOnly && !macos && !unitOnly && !onlyTest;
+// The TV has one journey and one simulator, so it never clones.
+const parallelJourneys =
+  journeysOnly && !macos && !tvos && !unitOnly && !onlyTest;
 const workerCount = parallelJourneys ? 2 : 1;
 if (onlyTest) {
   only.push(`-only-testing:${onlyTest}`);
 } else if (macos || unitOnly) {
   only.push("-only-testing:OrbisTests");
 } else if (journeysOnly) {
-  only.push("-only-testing:OrbisUITests");
+  only.push(tvos ? "-only-testing:OrbisTVUITests" : "-only-testing:OrbisUITests");
 }
 
 const run = (command, options) => {
@@ -123,6 +129,15 @@ let server;
 let seedServer;
 
 const stop = () => {
+  if (tvos) {
+    // A failed TV run must not leave the Set playing on the simulator.
+    spawnSync("xcrun", [
+      "simctl",
+      "terminate",
+      simulatorUdid ?? simulator,
+      "app.orbis.client",
+    ]);
+  }
   if (server && server.exitCode === null) {
     server.kill("SIGTERM");
   }
@@ -212,7 +227,12 @@ try {
       [
         "scripts/seed-lane-audio.mjs",
         dataDirectory,
-        path.join(root, "scripts", "fixtures", "ready-set.m4a"),
+        path.join(
+          root,
+          "scripts",
+          "fixtures",
+          tvos ? "silent-set.m4a" : "ready-set.m4a"
+        ),
         String(seedPort),
       ],
       { cwd: root, stdio: ["ignore", "ignore", "inherit"] }
@@ -230,11 +250,11 @@ try {
       "-project",
       "Orbis.xcodeproj",
       "-scheme",
-      "Orbis",
+      tvos ? "OrbisTV" : "Orbis",
       "-destination",
       macos
         ? "platform=macOS"
-        : `platform=iOS Simulator,${simulatorUdid ? `id=${simulatorUdid}` : `name=${simulator}`}`,
+        : `platform=${tvos ? "tvOS" : "iOS"} Simulator,${simulatorUdid ? `id=${simulatorUdid}` : `name=${simulator}`}`,
       // Ad-hoc signing gives the simulator build the entitlement its keychain needs, while
       // leaving the committed project device-ready. The macOS host cannot ad-hoc sign that
       // entitlement, so the macOS run uses automatic signing with the local development
