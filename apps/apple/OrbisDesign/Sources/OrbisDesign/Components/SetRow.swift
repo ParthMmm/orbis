@@ -164,10 +164,17 @@ public struct SetRow: View {
           textControl
         }
       } else {
-        HStack(alignment: .top, spacing: 12) {
-          artworkControl(size: .row)
-          textControl
-        }
+        #if os(macOS)
+          HStack(alignment: .center, spacing: 16) {
+            artworkControl(size: .row)
+            control(select) { columns.contentShape(.rect) }
+          }
+        #else
+          HStack(alignment: .top, spacing: 12) {
+            artworkControl(size: .row)
+            textControl
+          }
+        #endif
       }
     }
     .padding(.vertical, 12)
@@ -248,6 +255,52 @@ public struct SetRow: View {
       }
     }
     .frame(maxWidth: .infinity, alignment: .leading)
+  }
+
+  /// A Mac window lays the row out as a table: the title and who made it, then the Tags, the
+  /// length and the kept-audio symbol in columns, so lengths line up down the list.
+  private var columns: some View {
+    HStack(alignment: .center, spacing: 16) {
+      VStack(alignment: .leading, spacing: 3) {
+        Text(title)
+          .font(.orbis.rowTitle)
+          .lineLimit(1)
+          .foregroundStyle(playback?.isCurrent == true ? Color.orbis.tint : Color.primary)
+        let line = [Self.dataLine(creator: creator, length: nil, state: state), dates ?? ""]
+          .filter { !$0.isEmpty }
+          .joined(separator: " · ")
+        if !line.isEmpty {
+          Text(line)
+            .font(.orbis.detail)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+        }
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      ChipFlow {
+        ForEach(tags) { tag in
+          TagWord(tag.name, category: tag.category, active: tag.name == activeTag)
+        }
+      }
+      .frame(width: 220, alignment: .leading)
+      Text(length ?? "")
+        .font(.orbis.detail)
+        .foregroundStyle(.secondary)
+        .monospacedDigit()
+        .frame(width: 90, alignment: .trailing)
+      Group {
+        if state?.kept == true {
+          Image(systemName: State.keptSymbol)
+            .accessibilityLabel(State.keptLabel)
+        } else if state?.download != nil {
+          Image(systemName: State.downloadSymbol)
+            .accessibilityHidden(true)
+        }
+      }
+      .font(.orbis.detail)
+      .foregroundStyle(.secondary)
+      .frame(width: 18)
+    }
   }
 
   private var accessibilityLabel: String {

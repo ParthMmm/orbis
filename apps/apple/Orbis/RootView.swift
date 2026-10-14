@@ -362,7 +362,8 @@ struct SidebarShell: View {
       NowPlayingScreen(model: model)
         .zoomsFromMiniPlayer(nowPlaying)
         #if os(macOS)
-          .frame(minWidth: 480, minHeight: 640)
+          // As large as the window allows: the player and its Tracklist sit side by side.
+          .frame(minWidth: 900, idealWidth: 1100, minHeight: 640, idealHeight: 760)
         #endif
     }
     #if os(macOS)
@@ -827,30 +828,39 @@ struct HomeRails: View {
     }
   }
 
-  /// Tags as a strip of glass chips under the lead Set, one tap from a filtered Library.
-  private var tagRow: some View {
-    ScrollView(.horizontal, showsIndicators: false) {
+  /// Tags as a strip of glass chips under the lead Set, one tap from a filtered Library. A Mac
+  /// window has the width to show them all, so they wrap there instead of scrolling.
+  @ViewBuilder private var tagRow: some View {
+    #if os(macOS)
       GlassEffectContainer(spacing: 8) {
-        HStack(spacing: 8) {
-          ForEach(model.availableTags, id: \.self) { tag in
-            Button {
-              model.setTagFilter(tag)
-              model.openedSets[.library] = nil
-              model.destination = .library
-            } label: {
-              GlassTagChip(
-                tag, count: model.tagCounts[tag] ?? 0,
-                category: SetPresentation.category(for: tag))
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("home-tag-\(tag)")
-          }
-        }
-        .padding(.horizontal, Self.edgeInset)
+        ChipFlow(spacing: 8) { tagChips }
       }
+    #else
+      ScrollView(.horizontal, showsIndicators: false) {
+        GlassEffectContainer(spacing: 8) {
+          HStack(spacing: 8) { tagChips }
+            .padding(.horizontal, Self.edgeInset)
+        }
+      }
+      .padding(.horizontal, -Self.edgeInset)
+      .scrollClipDisabled()
+    #endif
+  }
+
+  private var tagChips: some View {
+    ForEach(model.availableTags, id: \.self) { tag in
+      Button {
+        model.setTagFilter(tag)
+        model.openedSets[.library] = nil
+        model.destination = .library
+      } label: {
+        GlassTagChip(
+          tag, count: model.tagCounts[tag] ?? 0,
+          category: SetPresentation.category(for: tag))
+      }
+      .buttonStyle(.plain)
+      .accessibilityIdentifier("home-tag-\(tag)")
     }
-    .padding(.horizontal, -Self.edgeInset)
-    .scrollClipDisabled()
   }
 
   private var playlistGrid: some View {
@@ -905,7 +915,8 @@ private struct HomeHero: View {
   /// The Set was left part-way, so the button resumes and says how long is left.
   let isResume: Bool
 
-  private static let maxArtworkWidth: CGFloat = 560
+  /// The artwork spans a phone's width; beside the words on a Mac it is a cover's size.
+  private static let maxArtworkWidth: CGFloat = HeroLayout.isBeside ? 440 : 560
 
   private var isCurrent: Bool { model.audioPlayer.currentSetId == set.id }
   private var isPlaying: Bool { isCurrent && model.audioPlayer.state == .playing }
@@ -918,7 +929,7 @@ private struct HomeHero: View {
   }
 
   var body: some View {
-    VStack(spacing: 16) {
+    HeroLayout.stack(spacing: 16) {
       Button {
         model.openSet(set.id)
       } label: {
@@ -927,53 +938,57 @@ private struct HomeHero: View {
           progress: SetPresentation.progress(of: set)
         )
         .shadow(color: .black.opacity(0.45), radius: 28, y: 16)
-        // The artwork spans a phone's width; in a Mac or iPad window it stops at a cover's
-        // size rather than filling the page.
         .frame(maxWidth: Self.maxArtworkWidth)
       }
       .buttonStyle(.orbisPressable)
       .accessibilityLabel("Open \(set.title)")
       .accessibilityIdentifier("home-hero-\(set.id)")
-      VStack(spacing: 6) {
-        Eyebrow(isResume ? "Continue listening" : "Fresh in your library")
-        Text(set.title)
-          .font(.orbis.title)
-          .multilineTextAlignment(.center)
-          .lineLimit(3)
-        if let creator = set.creator, !creator.isEmpty {
-          Text(creator)
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
-        }
-      }
-      .frame(maxWidth: .infinity)
-      HStack(spacing: 10) {
-        if canPlay {
-          Button {
-            model.togglePlayback(set.id)
-          } label: {
-            Label(playLabel, systemImage: isPlaying ? "pause.fill" : "play.fill")
-              .font(.headline)
-              .monospacedDigit()
-              .orbisSymbolReplace()
-              .padding(.horizontal, 6)
+      VStack(alignment: HeroLayout.alignment, spacing: 16) {
+        VStack(alignment: HeroLayout.alignment, spacing: 6) {
+          Eyebrow(isResume ? "Continue listening" : "Fresh in your library")
+          Text(set.title)
+            .font(HeroLayout.isBeside ? Font.orbis.largeTitle : Font.orbis.title)
+            .multilineTextAlignment(HeroLayout.textAlignment)
+            .lineLimit(3)
+          if let creator = set.creator, !creator.isEmpty {
+            Text(creator)
+              .font(.subheadline)
+              .foregroundStyle(.secondary)
           }
-          .buttonStyle(.glassProminent)
-          .tint(Color.orbis.tint)
-          .controlSize(.large)
-          .sensoryFeedback(.impact(weight: .medium), trigger: isPlaying)
-          .accessibilityIdentifier("home-hero-play")
         }
-        Button {
-          model.openSet(set.id)
-        } label: {
-          Label(canPlay ? "Details" : "Open set", systemImage: canPlay ? "ellipsis" : "arrow.right")
-            .font(.headline)
-            .labelStyle(.titleAndIcon)
-        }
-        .buttonStyle(.glass)
-        .controlSize(.large)
+        .frame(maxWidth: .infinity, alignment: HeroLayout.frameAlignment)
+        actions
       }
+    }
+  }
+
+  private var actions: some View {
+    HStack(spacing: 10) {
+      if canPlay {
+        Button {
+          model.togglePlayback(set.id)
+        } label: {
+          Label(playLabel, systemImage: isPlaying ? "pause.fill" : "play.fill")
+            .font(.headline)
+            .monospacedDigit()
+            .orbisSymbolReplace()
+            .padding(.horizontal, 6)
+        }
+        .buttonStyle(.glassProminent)
+        .tint(Color.orbis.tint)
+        .controlSize(.large)
+        .sensoryFeedback(.impact(weight: .medium), trigger: isPlaying)
+        .accessibilityIdentifier("home-hero-play")
+      }
+      Button {
+        model.openSet(set.id)
+      } label: {
+        Label(canPlay ? "Details" : "Open set", systemImage: canPlay ? "ellipsis" : "arrow.right")
+          .font(.headline)
+          .labelStyle(.titleAndIcon)
+      }
+      .buttonStyle(.glass)
+      .controlSize(.large)
     }
   }
 }
@@ -1138,9 +1153,36 @@ struct SearchDestination: View {
     return false
   }
 
-  private var results: some View {
-    let top = topResult
+  /// On a Mac the tracks found inside Tracklists take a column of their own beside the Sets,
+  /// where a phone puts them under the Sets.
+  @ViewBuilder private var results: some View {
     let cues = model.cueMatches(for: model.searchResultsFor ?? "")
+    #if os(macOS)
+      HStack(alignment: .top, spacing: 0) {
+        resultList(cuesBelow: [], foundCues: !cues.isEmpty, backdrop: .none)
+        if !cues.isEmpty {
+          ScrollView {
+            TracklistMatches(model: model, matches: cues)
+              .padding()
+          }
+          .frame(width: 400)
+          .accessibilityIdentifier("search-cues-column")
+        }
+      }
+      .background { ArtworkGlow(url: topResult.flatMap(SetPresentation.pageArtwork), reach: 0.55) }
+    #else
+      resultList(
+        cuesBelow: cues, foundCues: !cues.isEmpty,
+        backdrop: .artwork(topResult.flatMap(SetPresentation.pageArtwork)))
+    #endif
+  }
+
+  /// `foundCues` keeps the heading and the top result up when the only matches are in a
+  /// Tracklist shown beside the list rather than in it.
+  private func resultList(
+    cuesBelow cues: [CueMatch], foundCues: Bool, backdrop: SetList.Backdrop
+  ) -> some View {
+    let top = topResult
     return SetList(
       state: remainingResults,
       heading: nil,
@@ -1155,7 +1197,7 @@ struct SearchDestination: View {
       // second one to reach.
       noMatches: nil,
       hero: nil,
-      aboveRows: top == nil && cues.isEmpty ? nil : AnyView(aboveResults(top)),
+      aboveRows: top == nil && !foundCues ? nil : AnyView(aboveResults(top)),
       belowRows: cues.isEmpty ? nil : AnyView(TracklistMatches(model: model, matches: cues)),
       footer: searchFooter,
       retry: { await model.runSearch() },
@@ -1165,7 +1207,7 @@ struct SearchDestination: View {
       currentSetId: model.audioPlayer.currentSetId,
       isPlaying: model.audioPlayer.state == .playing,
       togglePlayback: { set in model.togglePlayback(set.id) },
-      backdrop: .artwork(top.flatMap(SetPresentation.pageArtwork))
+      backdrop: backdrop
     )
   }
 
@@ -1180,6 +1222,7 @@ struct SearchDestination: View {
 
   private func aboveResults(_ top: SavedSet?) -> some View {
     VStack(alignment: .leading, spacing: 14) {
+      MacPageTitle.slot("Search")
       heading
         .font(.orbis.sectionTitle)
         .accessibilityAddTraits(.isHeader)
@@ -1454,6 +1497,26 @@ private struct TracklistMatches: View {
       }
     }
   }
+}
+
+/// A hero's artwork beside its words on a Mac, where the window is wide, and above them on a
+/// phone, the way the design draws each.
+enum HeroLayout {
+  #if os(macOS)
+    static let isBeside = true
+  #else
+    static let isBeside = false
+  #endif
+
+  static func stack(spacing: CGFloat) -> AnyLayout {
+    isBeside
+      ? AnyLayout(HStackLayout(alignment: .center, spacing: 36))
+      : AnyLayout(VStackLayout(spacing: spacing))
+  }
+
+  static var alignment: HorizontalAlignment { isBeside ? .leading : .center }
+  static var frameAlignment: Alignment { isBeside ? .leading : .center }
+  static var textAlignment: TextAlignment { isBeside ? .leading : .center }
 }
 
 /// The page's name over its content on a Mac, where the sidebar shell leaves the window toolbar
