@@ -2,6 +2,7 @@ import type { Cue, Tracklist } from "@orbis/contracts";
 import { and, asc, eq, inArray, isNull, lt, or, sql } from "drizzle-orm";
 import { Duration, Effect } from "effect";
 
+import { insertBatches } from "./db/batches.js";
 import {
   libraryEntries,
   playlistSets,
@@ -132,10 +133,11 @@ const finishTracklist = (
           return false;
         }
         yield* tx.delete(setCues).where(eq(setCues.setId, claim.id));
-        if (result.state === "ready" && result.cues.length > 0) {
-          yield* tx
-            .insert(setCues)
-            .values(result.cues.map((cue) => ({ ...cue, setId: claim.id })));
+        if (result.state === "ready") {
+          const rows = result.cues.map((cue) => ({ ...cue, setId: claim.id }));
+          for (const batch of insertBatches(setCues, rows)) {
+            yield* tx.insert(setCues).values(batch);
+          }
         }
         return true;
       })
@@ -174,6 +176,9 @@ export const runClaimedTracklist = Effect.fn("Tracklists.runClaimed")(
       if (requested._tag === "Failure") {
         if (requested.failure.reason === "not-configured") {
           yield* releaseClaim(claim, "pending");
+          yield* Effect.logWarning(
+            "set Tracklist skipped: Versos is not configured"
+          ).pipe(Effect.annotateLogs({ set: claim.id }));
           return "pending" as const;
         }
         yield* releaseClaim(claim, "failed");

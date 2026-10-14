@@ -30,7 +30,6 @@ final class ShareCaptureTests: XCTestCase {
 
   func testSaveReportsDuplicateWithoutTouchingClipboardPath() async {
     let settings = MemoryClientSettings()
-    settings.serviceAddress = "https://vanta.example.ts.net"
     XCTAssertTrue(settings.store(deviceToken: "synthetic-token"))
     let session = StubProtocol.session { request in
       XCTAssertEqual(request.httpMethod, "POST")
@@ -54,7 +53,6 @@ final class ShareCaptureTests: XCTestCase {
 
   func testSaveReportsUnreachable() async {
     let settings = MemoryClientSettings()
-    settings.serviceAddress = "https://vanta.example.ts.net"
     XCTAssertTrue(settings.store(deviceToken: "synthetic-token"))
     let session = StubProtocol.session(failure: URLError(.notConnectedToInternet))
     let client = OrbisClient(
@@ -77,7 +75,6 @@ final class ShareCaptureTests: XCTestCase {
 
   func testSaveSucceedsAndCanRequestDownload() async {
     let settings = MemoryClientSettings()
-    settings.serviceAddress = "https://vanta.example.ts.net"
     XCTAssertTrue(settings.store(deviceToken: "synthetic-token"))
     let session = StubProtocol.session { request in
       switch (request.httpMethod, request.url?.path()) {
@@ -123,20 +120,4 @@ final class ShareCaptureTests: XCTestCase {
     XCTAssertEqual(outcome, .notConfigured)
   }
 
-  func testMigrateAddressCopiesLegacyDefaults() {
-    let legacySuite = "app.orbis.tests.legacy.\(UUID().uuidString)"
-    let sharedSuite = "app.orbis.tests.shared.\(UUID().uuidString)"
-    let legacy = UserDefaults(suiteName: legacySuite)!
-    let shared = UserDefaults(suiteName: sharedSuite)!
-    defer {
-      legacy.removePersistentDomain(forName: legacySuite)
-      shared.removePersistentDomain(forName: sharedSuite)
-    }
-    legacy.set("https://vanta.example.ts.net:8444", forKey: LiveClientSettings.addressKey)
-    ClientSettings.migrateAddressIfNeeded(into: shared, legacy: legacy)
-    XCTAssertEqual(
-      shared.string(forKey: LiveClientSettings.addressKey),
-      "https://vanta.example.ts.net:8444"
-    )
-  }
 }

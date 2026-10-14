@@ -263,8 +263,8 @@ public struct LoadingState: View {
 #Preview("Unavailable, dark") {
   UnavailableState(
     failure: OrbisFailure(
-      title: "This device is not paired",
-      message: "Pair it on the host and enter the new token.",
+      title: "This device is not signed in",
+      message: "Sign out in Settings and sign in again.",
       symbol: "key.slash",
       isRetryable: false
     ),

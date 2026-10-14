@@ -1,30 +1,45 @@
-import { callOrbis } from "@/lib/orbis";
-import type { ApiFailure, ApiResult, Credentials } from "@/lib/orbis";
+import { callOrbis, problemFor } from "@/lib/orbis";
+import type { ApiResult, Credentials } from "@/lib/orbis";
 
-/**
- * The Host's admin key lives in this tab's `sessionStorage` only, so it is gone
- * when the tab closes (ADR 0008). It never goes to `localStorage`.
- */
-const ADMIN_KEY_STORAGE = "orbis.adminKey";
+/** Host-only calls (ADR 0020). They carry the Host's own signed-in key. */
 
-export const readAdminKey = (): string | null =>
-  sessionStorage.getItem(ADMIN_KEY_STORAGE);
-
-export const storeAdminKey = (key: string): void => {
-  sessionStorage.setItem(ADMIN_KEY_STORAGE, key);
+const unwrap = <A>(result: ApiResult<A>): A => {
+  if (!result.ok) {
+    throw new Error(problemFor(result));
+  }
+  return result.value;
 };
 
-export const forgetAdminKey = (): void => {
-  sessionStorage.removeItem(ADMIN_KEY_STORAGE);
+/** Everything the admin page shows. A failure surfaces as the route's problem. */
+export const loadAdmin = async (credentials: Credentials) => {
+  const [passcode, people, keys] = await Promise.all([
+    callOrbis(credentials, (client) => client.admin.passcode()),
+    callOrbis(credentials, (client) => client.admin.people()),
+    callOrbis(credentials, (client) => client.admin.keys()),
+  ]);
+  return {
+    keys: unwrap(keys).keys,
+    passcode: unwrap(passcode).passcode,
+    people: unwrap(people).people,
+  };
 };
 
-// Every call below carries the admin key, never the Person's daily key.
-export const listPeople = (credentials: Credentials) =>
-  callOrbis(credentials, (client) => client.admin.people());
+export type AdminData = Awaited<ReturnType<typeof loadAdmin>>;
+export type AdminPerson = AdminData["people"][number];
+export type AdminKey = AdminData["keys"][number];
 
-export const addPerson = (credentials: Credentials, username: string) =>
+/** `null` closes joining. */
+export const setPasscode = (
+  credentials: Credentials,
+  passcode: string | null
+) =>
   callOrbis(credentials, (client) =>
-    client.admin.addPerson({ payload: { username } })
+    client.admin.setPasscode({ payload: { passcode } })
+  );
+
+export const signInCodeFor = (credentials: Credentials, personId: string) =>
+  callOrbis(credentials, (client) =>
+    client.admin.signInCodeFor({ params: { id: personId } })
   );
 
 export const removePerson = (credentials: Credentials, id: string) =>
@@ -32,12 +47,8 @@ export const removePerson = (credentials: Credentials, id: string) =>
     client.admin.removePerson({ params: { id } })
   );
 
-export const listPersonKeys = (credentials: Credentials, id: string) =>
-  callOrbis(credentials, (client) =>
-    client.admin.personKeys({ params: { id } })
-  );
-
-export const mintKey = (
+/** A daily key for a client that cannot sign in by code, such as Raycast. */
+export const createKey = (
   credentials: Credentials,
   personId: string,
   label: string
@@ -50,17 +61,3 @@ export const revokeKey = (credentials: Credentials, id: string) =>
   callOrbis(credentials, (client) =>
     client.admin.revokeKey({ params: { id } })
   );
-
-type Success<R> = Awaited<R> extends ApiResult<infer A> ? A : never;
-export type AdminPerson = Success<
-  ReturnType<typeof listPeople>
->["people"][number];
-export type AdminKey = Success<
-  ReturnType<typeof listPersonKeys>
->["keys"][number];
-
-/** A missing, unknown, or daily key locks the page again. */
-export const locksAdmin = (failure: ApiFailure): boolean =>
-  failure === "rejected" || failure === "forbidden";
-
-export const ADMIN_KEY_REQUIRED = "An admin key is required.";

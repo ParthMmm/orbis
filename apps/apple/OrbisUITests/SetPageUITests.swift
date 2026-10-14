@@ -6,7 +6,7 @@ final class SetPageUITests: LibraryJourney {
   /// step after it: "Title and tags come next." This proves that step arrives, and that it can
   /// be left without naming anything.
   func testFilingALinkOpensTheNamingStep() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     // Filing lives in a sheet behind the toolbar's +, so the Library stays the collection.
@@ -63,7 +63,7 @@ final class SetPageUITests: LibraryJourney {
     // Its own Set, because removing the lane's seeded one would take it from other journeys.
     let seeded = try LaneService().saveSet(
       title: "Set to rename", url: "https://www.youtube.com/watch?v=renameme001")
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]

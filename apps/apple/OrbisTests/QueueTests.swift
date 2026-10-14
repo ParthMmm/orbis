@@ -229,12 +229,12 @@ final class QueueTests: XCTestCase {
     XCTAssertEqual(queue(model)?.entries.map(\.id), ["b"])
   }
 
-  func testForgettingTheDeviceClearsTheQueue() async {
+  func testSigningOutClearsTheQueue() async {
     let model = model { _ in (200, Self.queueBody(active: "a", entries: [Self.set(id: "a")])) }
     await model.loadQueue()
     XCTAssertEqual(queue(model)?.activeSetId, "a")
 
-    model.forget()
+    model.signOut()
 
     XCTAssertNil(queue(model))
     if case .idle = model.queue {

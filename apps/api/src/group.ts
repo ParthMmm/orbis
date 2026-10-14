@@ -14,7 +14,7 @@ import { transferRequest } from "./data-transfer.js";
 import { databaseLayer } from "./database.js";
 import type { Environment } from "./index.js";
 import { GroupAudioNode } from "./node.js";
-import { recoverAdmin } from "./recovery.js";
+import { recoverHost } from "./recovery.js";
 import { registerTrustStorage } from "./trust-storage.js";
 
 export class Group extends DurableObject<Environment> {
@@ -108,7 +108,7 @@ export class Group extends DurableObject<Environment> {
 
   override fetch(request: Request): Promise<Response> {
     if (new URL(request.url).pathname === "/recovery") {
-      return recoverAdmin(request, this.env, this.ctx.id.toString());
+      return Promise.resolve(recoverHost(request, this.ctx.id.toString()));
     }
     if (new URL(request.url).pathname === "/node") {
       return Promise.resolve(this.node.accept(request));

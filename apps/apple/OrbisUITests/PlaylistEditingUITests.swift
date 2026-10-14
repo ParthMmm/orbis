@@ -3,7 +3,7 @@ import XCTest
 /// Creating, reordering, and removing Playlist members.
 final class PlaylistEditingUITests: PlaylistJourney {
   func testCreatesAddsRemovesAndPreservesTheSet() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
 
     openPlaylists(in: app)
     let create = app.buttons["playlist-create"]
@@ -90,7 +90,7 @@ final class PlaylistEditingUITests: PlaylistJourney {
     let (first, second, third) = (sets[0], sets[1], sets[2])
     var steps: [[String: Any]] = []
 
-    let app = try launch(paired: true)
+    let app = try launch()
     openPlaylist(named: playlist.name, in: app)
     let rows = sets.map { app.descendants(matching: .any)["playlist-member-\($0.id)"] }
     for row in rows {

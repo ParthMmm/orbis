@@ -1,22 +1,15 @@
 import XCTest
 
-/// Signing in, browsing, and searching the Library.
+/// Browsing and searching the Library.
 final class SearchUITests: LibraryJourney {
-  func testConnectsBrowsesAndSearchesTheLibrary() throws {
+  func testBrowsesAndSearchesTheLibrary() throws {
     let app = try launch()
-
-    XCTAssertTrue(
-      app.secureTextFields["connection-token"].waitForExistence(timeout: 30),
-      "the sign-in screen must appear\n\(app.debugDescription)"
-    )
-    capture("01-connection")
-    connect(app)
     openLibrary(in: app)
 
     let row = app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
     XCTAssertTrue(
-      row.waitForExistence(timeout: 60), "a saved Set must appear after connecting\n\(app.debugDescription)")
+      row.waitForExistence(timeout: 60), "a saved Set must appear\n\(app.debugDescription)")
     capture("02-library-loaded")
 
     let searchSpot = openSearch(in: app)
@@ -34,7 +27,7 @@ final class SearchUITests: LibraryJourney {
   /// A Set found by search is the reason to search, so the result has to open. The Library row
   /// in the same component opens the same page, on the same build, in the same pass.
   func testOpensASetFromASearchResult() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
 
     let spot = openSearch(in: app)
     submitSearch("night", in: app, spot: spot)
@@ -75,7 +68,7 @@ final class SearchUITests: LibraryJourney {
   /// to empty the field and return the screen to the state it shows before any query. It once
   /// left the query in the field and the result area on Loading, forever.
   func testClearsANoMatchSearch() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
 
     let spot = openSearch(in: app)
     submitSearch("zzzznothing", in: app, spot: spot)

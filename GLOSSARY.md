@@ -79,16 +79,16 @@ Everyone the Host admits to one Orbis deployment. One Group per deployment.
 _Avoid_: Team, org, server
 
 **Host**:
-The Person who runs the deployment and can mint and revoke keys and remove People.
+The Person who runs the deployment. The Host sets the Group Passcode, shows a Sign-in Code for any Person, revokes keys, and removes People.
 _Avoid_: Admin
 
-**Invite**:
-A one-time link the Host sends that signs in a Person's first device, or a returning Person's new one, by minting that device's key.
-_Avoid_: Signup link, magic link
+**Group Passcode**:
+The shared word the Host tells friends so they can join the Group without the Host. Joining is closed while none is set.
+_Avoid_: Invite code, password
 
-**Device Link**:
-Signing in a new device by approving its short code on a device the Person already uses.
-_Avoid_: Pairing code, QR login
+**Sign-in Code**:
+A short, one-time code that a signed-in device, or the Host, shows so another device can sign in as the same Person.
+_Avoid_: Device Link, pairing code, Invite
 
 **Social**:
 A Person's switch, off by default. Off hides them from others and others from them.

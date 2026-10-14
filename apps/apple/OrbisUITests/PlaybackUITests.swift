@@ -33,7 +33,7 @@ final class PlaybackUITests: LibraryJourney {
       XCTFail("Download did not reach \(phase)")
       throw URLError(.timedOut)
     }
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
     XCTAssertTrue(row.waitForExistence(timeout: 30))
@@ -68,7 +68,7 @@ final class PlaybackUITests: LibraryJourney {
   func testPlaysASetWithRetainedAudio() throws {
     let seeded = try LaneService().saveReadySet(
       title: "Ready to play", url: "https://www.youtube.com/watch?v=readyaudio1")
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
@@ -92,7 +92,7 @@ final class PlaybackUITests: LibraryJourney {
     let seeded = try service.saveReadySet(
       title: "Tracklist journey", url: "https://www.youtube.com/watch?v=tracklist01")
     try service.seedTracklist(seeded.id)
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
     XCTAssertTrue(row.waitForExistence(timeout: 60))
@@ -158,7 +158,7 @@ final class PlaybackUITests: LibraryJourney {
     let service = try LaneService()
     let seeded = try service.saveReadySet(
       title: "Now Playing journey", url: "https://www.youtube.com/watch?v=nowplaying1")
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
     let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
     XCTAssertTrue(row.waitForExistence(timeout: 60))

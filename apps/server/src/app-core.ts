@@ -7,10 +7,9 @@ import {
   AdminKeyPayload,
   AdminPersonPayload,
   CollaborationPayload,
-  DeviceLinkCodePayload,
-  DeviceLinkPollPayload,
-  DeviceLinkStartPayload,
-  InviteClaimPayload,
+  GroupPasscodePayload,
+  JoinPayload,
+  RedeemSignInCodePayload,
   SaveSetPayload,
   OrbisApi,
   PlaylistMembersPayload,
@@ -53,15 +52,21 @@ import {
   addKey,
   addPerson,
   AdminError,
+  issueSignInCode,
+  joinGroup,
   listDevices,
   listKeys,
   listPeople,
+  readPasscode,
+  redeemSignInCode,
   removePerson,
   revokeDevice,
   revokeKey,
+  setPasscode,
 } from "./admin.js";
 import { Audio } from "./audio-service.js";
 import type { AudioFile } from "./audio-service.js";
+import { insertBatches } from "./db/batches.js";
 import {
   listens,
   playlistEditors,
@@ -70,17 +75,21 @@ import {
   sets as setRows,
 } from "./db/schema.js";
 import { Database } from "./db/service.js";
-import { DEVICE_LINK_TTL_MS, makeDeviceLinks } from "./device-link.js";
 import { LibraryError } from "./errors.js";
-import type { AccessDecision, AccessMode, TrustStore } from "./identity.js";
+import type {
+  AccessDecision,
+  AccessMode,
+  PersonRecord,
+  TrustStore,
+} from "./identity.js";
 import {
   decideAccess,
+  HOST_PERSON_ID,
   markKeyUsed,
   readTrustRegistry,
   updatePerson,
   updatePersonFilters,
 } from "./identity.js";
-import { consumeInvite, createInvite, INVITE_TTL_MS } from "./invite.js";
 import { Library } from "./library.js";
 import type { LoggingOptions } from "./logging.js";
 import {
@@ -91,6 +100,7 @@ import {
   makeRequestLogMiddleware,
   safeRequestPath,
   startRequestLog,
+  withWideEvent,
 } from "./logging.js";
 import type { MetadataError } from "./metadata-error.js";
 import { Metadata } from "./metadata.js";
@@ -155,7 +165,7 @@ const grantAccess = (
     (candidate) => candidate.id === personId && !candidate.removed
   );
   return person
-    ? { keyId: null, kind: "accepted", person, scope: "daily" }
+    ? { keyId: null, kind: "accepted", person }
     : { kind: "rejected", message: "Invalid stream grant.", statusCode: 401 };
 };
 
@@ -184,50 +194,33 @@ const forwardedResponse = (
 const ownDevices = (personId: string) => (viewerId: string) =>
   Effect.succeed(viewerId === personId);
 
+const meBody = (person: PersonRecord) => ({
+  autoDownload: person.autoDownload ?? true,
+  host: person.id === HOST_PERSON_ID,
+  id: person.id,
+  social: person.social ?? false,
+  username: person.username,
+});
+
 const PRESENCE_WINDOW_MS = 30_000;
 /** Failed key attempts one client may make in a minute before it gets 429. */
 const FAILED_KEY_LIMIT = 20;
 const tooManyAttempts = () =>
   Response.json({ message: "Too many invalid keys." }, { status: 429 });
 /**
- * Routes a new device calls before it has a key (ADR 0016). They pass the Origin
- * check like every route, and each start, unknown poll secret, or failed Invite
- * claim counts toward the failed-key limit.
+ * Routes a new device calls before it has a key (ADR 0020), mapped to the
+ * status of a failed guess. They run whatever the Authorization header says,
+ * so a key cannot skip the failed-key limit.
  */
-const OPEN_ROUTES: ReadonlySet<string> = new Set([
-  "/device-links",
-  "/device-links/poll",
+const OPEN_ROUTES: ReadonlyMap<string, number> = new Map([
+  ["/sign-in/code", 404],
+  ["/sign-in/join", 403],
 ]);
-/** Redeems a code whatever the Authorization header says, so a key cannot skip the limit. */
-const INVITE_CLAIM_ROUTE = "/invites/claim";
-const INVITE_FAILURES = {
-  expired: {
-    message: "This Invite has expired. Ask the Host for a new one.",
-    statusCode: 410,
-  },
-  missing: {
-    message: "This Invite link is not valid. Ask the Host for a new one.",
+const invalidSignInCode = () =>
+  new LibraryError({
+    message: "That code is not valid. Get a new one.",
     statusCode: 404,
-  },
-  used: {
-    message: "This Invite has already been used. Ask the Host for a new one.",
-    statusCode: 409,
-  },
-} as const;
-const LINK_FAILURES = {
-  approved: { message: "That code is already approved.", statusCode: 409 },
-  expired: {
-    message: "That code has expired. Start again on the new device.",
-    statusCode: 410,
-  },
-  missing: { message: "No device is waiting with that code.", statusCode: 404 },
-} as const;
-const linkFailure = (kind: keyof typeof LINK_FAILURES): LibraryError =>
-  new LibraryError(LINK_FAILURES[kind]);
-const linkBody = (label: string, expiresAt: number) => ({
-  expiresAt: new Date(expiresAt).toISOString(),
-  label,
-});
+  });
 const Tags = TagsPayload.fields.tags;
 const Filters = Schema.Struct({
   creatorId: Schema.optionalKey(Schema.String.check(Schema.isMaxLength(100))),
@@ -298,11 +291,8 @@ export const createPortableApp = (options: {
   /** How long after a Playback Position report a Person still counts as listening. */
   presenceWindowMs?: number;
   presence?: PresenceOptions & { journal?: Layer.Layer<PresenceJournal> };
-  /** How long a Device Link stays open. Tests shorten it to prove expiry. */
-  deviceLinkTtlMs?: number;
-  deviceLinkNow?: () => number;
-  /** How long an Invite stays claimable. Tests shorten it to prove expiry. */
-  inviteTtlMs?: number;
+  /** The clock Sign-in Codes expire by. Tests move it to prove expiry. */
+  signInCodeNow?: () => number;
   /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
   shortLinkFetch?: (url: string, signal: AbortSignal) => Promise<Response>;
   titleReviser?: Layer.Layer<TitleReviser>;
@@ -328,10 +318,7 @@ export const createPortableApp = (options: {
       previous.count > FAILED_KEY_LIMIT
     );
   };
-  const deviceLinks = makeDeviceLinks({
-    now: options.deviceLinkNow ?? Date.now,
-    ttlMs: options.deviceLinkTtlMs ?? DEVICE_LINK_TTL_MS,
-  });
+  const signInCodeNow = options.signInCodeNow ?? Date.now;
   const { database } = options;
   const libraryOptions = {
     people: () => readTrustRegistry(trustPath).store.people,
@@ -432,6 +419,7 @@ export const createPortableApp = (options: {
                 Effect.interruptible,
                 Effect.provideService(Database, db),
                 Effect.provideService(Versos, versos),
+                withWideEvent({ job: "tracklist", set: id }, options.logging),
                 Effect.ensuring(
                   Effect.sync(() => {
                     runningTracklists.delete(id);
@@ -491,6 +479,7 @@ export const createPortableApp = (options: {
                     )
                   ),
           }),
+          withWideEvent({ job: "set-details", set: set.id }, options.logging),
           Effect.forkIn(scope),
           Effect.asVoid
         )
@@ -1111,14 +1100,16 @@ export const createPortableApp = (options: {
                       yield* tx
                         .delete(playlistEditors)
                         .where(eq(playlistEditors.playlistId, params.id));
-                      if (input.editorIds.length > 0) {
-                        yield* tx.insert(playlistEditors).values(
-                          input.editorIds.map((editorId) => ({
-                            creatorId: caller.person.id,
-                            editorId,
-                            playlistId: params.id,
-                          }))
-                        );
+                      const rows = input.editorIds.map((editorId) => ({
+                        creatorId: caller.person.id,
+                        editorId,
+                        playlistId: params.id,
+                      }));
+                      for (const batch of insertBatches(
+                        playlistEditors,
+                        rows
+                      )) {
+                        yield* tx.insert(playlistEditors).values(batch);
                       }
                     })
                   );
@@ -1243,7 +1234,7 @@ export const createPortableApp = (options: {
                     params.id,
                     input.seconds
                   );
-                  if (caller.keyId !== null && caller.scope === "daily") {
+                  if (caller.keyId !== null) {
                     yield* presence.recordLegacyReport(
                       { keyId: caller.keyId, personId: caller.person.id },
                       params.id
@@ -1318,12 +1309,7 @@ export const createPortableApp = (options: {
           .handle("me", () =>
             Effect.gen(function* readMe() {
               const { person } = yield* SetCaller;
-              return {
-                autoDownload: person.autoDownload ?? true,
-                id: person.id,
-                social: person.social ?? false,
-                username: person.username,
-              };
+              return meBody(person);
             })
           )
           .handleRaw("updateMe", () =>
@@ -1338,12 +1324,7 @@ export const createPortableApp = (options: {
                   )
                 );
                 if (result.kind === "updated") {
-                  return HttpServerResponse.jsonUnsafe({
-                    autoDownload: result.person.autoDownload ?? true,
-                    id: result.person.id,
-                    social: result.person.social ?? false,
-                    username: result.person.username,
-                  });
+                  return HttpServerResponse.jsonUnsafe(meBody(result.person));
                 }
                 let statusCode = 500;
                 let message = "The trust store is unavailable.";
@@ -1503,15 +1484,11 @@ export const createPortableApp = (options: {
             )
           )
       );
-      const requireAdminScope = Effect.gen(function* verifyAdminScope() {
+      const requireHost = Effect.gen(function* verifyHost() {
         const caller = yield* SetCaller;
-        if (
-          caller.keyId === null ||
-          caller.scope !== "admin" ||
-          caller.person.id !== "host"
-        ) {
+        if (caller.keyId === null || caller.person.id !== HOST_PERSON_ID) {
           return yield* new LibraryError({
-            message: "An admin key is required.",
+            message: "Only the Host can do this.",
             statusCode: 403,
           });
         }
@@ -1535,16 +1512,23 @@ export const createPortableApp = (options: {
             }),
         });
       const adminCall = <A>(action: (storePath: string) => A) =>
-        Effect.andThen(requireAdminScope, trustCall(action));
-      // Devices act for the Person behind a daily key. The local listener has
-      // no key and an admin key is not a device, so both are refused.
+        Effect.andThen(requireHost, trustCall(action));
+      const issueCodeFor = (personId: string) =>
+        Effect.map(
+          trustCall((storePath) =>
+            issueSignInCode(storePath, personId, signInCodeNow())
+          ),
+          (issued) => HttpServerResponse.jsonUnsafe(issued, { status: 201 })
+        );
+      // Devices act for the Person behind a key. A stream grant has no key, so
+      // it is refused.
       const deviceCall = <A>(
         action: (storePath: string, personId: string, keyId: string) => A
       ) =>
         Effect.gen(function* authorizedDeviceAction() {
           const caller = yield* SetCaller;
           const { keyId } = caller;
-          if (keyId === null || caller.scope !== "daily") {
+          if (keyId === null) {
             return yield* new LibraryError({
               message: "Sign in with a device key.",
               statusCode: 403,
@@ -1582,6 +1566,14 @@ export const createPortableApp = (options: {
                 ).pipe(Effect.tap(() => clearRevokedPresence(params.id)))
               )
             )
+            .handleRaw("signInCode", () =>
+              withFailureResponse(
+                Effect.gen(function* issueOwnSignInCode() {
+                  const { person } = yield* SetCaller;
+                  return yield* issueCodeFor(person.id);
+                })
+              )
+            )
       );
       const adminGroup = HttpApiBuilder.group(OrbisApi, "admin", (handlers) =>
         handlers
@@ -1593,7 +1585,7 @@ export const createPortableApp = (options: {
           .handleRaw("addPerson", () =>
             withFailureResponse(
               Effect.gen(function* addAdminPerson() {
-                yield* requireAdminScope;
+                yield* requireHost;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(AdminPersonPayload);
                 const person = yield* adminCall((storePath) =>
@@ -1688,7 +1680,7 @@ export const createPortableApp = (options: {
           .handleRaw("addKey", ({ params }) =>
             withFailureResponse(
               Effect.gen(function* addAdminKey() {
-                yield* requireAdminScope;
+                yield* requireHost;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(AdminKeyPayload);
                 const key = yield* adminCall((storePath) =>
@@ -1705,56 +1697,54 @@ export const createPortableApp = (options: {
               )
             )
           )
-          .handleRaw("createInvite", ({ params }) =>
+          .handleRaw("signInCodeFor", ({ params }) =>
             withFailureResponse(
-              Effect.map(
-                adminCall((storePath) =>
-                  createInvite(storePath, params.id, {
-                    now: Date.now(),
-                    ttlMs: options.inviteTtlMs ?? INVITE_TTL_MS,
-                  })
-                ),
-                (invite) =>
-                  HttpServerResponse.jsonUnsafe(invite, { status: 201 })
-              )
+              Effect.andThen(requireHost, issueCodeFor(params.id))
+            )
+          )
+          .handleRaw("passcode", () =>
+            withFailureResponse(adminCall(readPasscode))
+          )
+          .handleRaw("setPasscode", () =>
+            withFailureResponse(
+              Effect.gen(function* updatePasscode() {
+                yield* requireHost;
+                const input =
+                  yield* HttpServerRequest.schemaBodyJson(GroupPasscodePayload);
+                return yield* adminCall((storePath) =>
+                  setPasscode(storePath, input.passcode)
+                );
+              })
             )
           )
       );
-      // An Invite mints only a daily key, for the Person it names (ADR 0016).
-      // The code is spent before the key exists, so it yields one key.
-      const inviteGroup = HttpApiBuilder.group(
-        OrbisApi,
-        "invites",
-        (handlers) =>
-          handlers.handleRaw("claim", () =>
+      const signInGroup = HttpApiBuilder.group(OrbisApi, "signIn", (handlers) =>
+        handlers
+          .handleRaw("redeem", () =>
             withFailureResponse(
-              Effect.gen(function* claimInvite() {
+              Effect.gen(function* redeemCode() {
+                const input = yield* HttpServerRequest.schemaBodyJson(
+                  RedeemSignInCodePayload
+                );
+                const signedIn = yield* trustCall((storePath) =>
+                  redeemSignInCode(storePath, input, signInCodeNow())
+                );
+                if (signedIn === null) {
+                  return yield* invalidSignInCode();
+                }
+                return HttpServerResponse.jsonUnsafe(signedIn);
+              })
+            )
+          )
+          .handleRaw("join", () =>
+            withFailureResponse(
+              Effect.gen(function* joinWithPasscode() {
                 const input =
-                  yield* HttpServerRequest.schemaBodyJson(InviteClaimPayload);
-                const label = input.label.trim();
-                if (label === "") {
-                  return yield* new LibraryError({
-                    message: "Name this device.",
-                    statusCode: 400,
-                  });
-                }
-                const claim = yield* trustCall((storePath) =>
-                  consumeInvite(storePath, input.code, Date.now())
+                  yield* HttpServerRequest.schemaBodyJson(JoinPayload);
+                const joined = yield* trustCall((storePath) =>
+                  joinGroup(storePath, input)
                 );
-                if (claim.kind !== "found") {
-                  return yield* new LibraryError(INVITE_FAILURES[claim.kind]);
-                }
-                const { personId } = claim;
-                const key = yield* trustCall((storePath) =>
-                  addKey(storePath, personId, { label, scope: "daily" })
-                );
-                const person = readTrustRegistry(trustPath).store.people.find(
-                  (candidate) => candidate.id === personId
-                );
-                return HttpServerResponse.jsonUnsafe({
-                  key: key.token,
-                  person: { id: personId, username: person?.username ?? "" },
-                });
+                return HttpServerResponse.jsonUnsafe(joined, { status: 201 });
               })
             )
           )
@@ -1835,7 +1825,7 @@ export const createPortableApp = (options: {
               Effect.gen(function* actOnPresence() {
                 const caller = yield* SetCaller;
                 const { keyId } = caller;
-                if (keyId === null || caller.scope !== "daily") {
+                if (keyId === null) {
                   return yield* new LibraryError({
                     message: "Sign in with a device key.",
                     statusCode: 403,
@@ -1870,127 +1860,6 @@ export const createPortableApp = (options: {
             )
           )
       );
-      // Device Links mint only daily keys, for the Person who approved (ADR 0016).
-      const mintLinkedKey = (personId: string, label: string) =>
-        Effect.tryPromise({
-          catch: (error) =>
-            new LibraryError({
-              message:
-                error instanceof AdminError
-                  ? "No device is waiting with that code."
-                  : "The trust store is unavailable.",
-              statusCode: error instanceof AdminError ? 404 : 500,
-            }),
-          try: () =>
-            retryTrustOperation(() => {
-              if (!trustPath) {
-                throw new Error("The trust store is unavailable.");
-              }
-              const key = addKey(trustPath, personId, {
-                label,
-                scope: "daily",
-              });
-              const person = readTrustRegistry(trustPath).store.people.find(
-                (candidate) => candidate.id === personId
-              );
-              return {
-                key: key.token,
-                person: { id: personId, username: person?.username ?? "" },
-                status: "approved" as const,
-              };
-            }),
-        });
-      const deviceLinkGroup = HttpApiBuilder.group(
-        OrbisApi,
-        "deviceLinks",
-        (handlers) =>
-          handlers
-            .handleRaw("start", () =>
-              withFailureResponse(
-                Effect.gen(function* startDeviceLink() {
-                  const input = yield* HttpServerRequest.schemaBodyJson(
-                    DeviceLinkStartPayload
-                  );
-                  const label = input.label.trim();
-                  if (label === "") {
-                    return yield* new LibraryError({
-                      message: "Name this device.",
-                      statusCode: 400,
-                    });
-                  }
-                  const started = deviceLinks.start(label);
-                  if (!started) {
-                    return yield* new LibraryError({
-                      message: "Too many devices are waiting. Try again soon.",
-                      statusCode: 503,
-                    });
-                  }
-                  return HttpServerResponse.jsonUnsafe(
-                    {
-                      expiresAt: new Date(started.expiresAt).toISOString(),
-                      pollSecret: started.pollSecret,
-                      userCode: started.userCode,
-                    },
-                    { status: 201 }
-                  );
-                })
-              )
-            )
-            .handleRaw("poll", () =>
-              withFailureResponse(
-                Effect.gen(function* pollDeviceLink() {
-                  const input = yield* HttpServerRequest.schemaBodyJson(
-                    DeviceLinkPollPayload
-                  );
-                  const result = deviceLinks.poll(input.pollSecret);
-                  if (result.kind === "missing") {
-                    return yield* linkFailure("missing");
-                  }
-                  if (result.kind !== "approved") {
-                    return HttpServerResponse.jsonUnsafe({
-                      status: result.kind,
-                    });
-                  }
-                  return HttpServerResponse.jsonUnsafe(
-                    yield* mintLinkedKey(result.personId, result.label)
-                  );
-                })
-              )
-            )
-            .handleRaw("lookup", () =>
-              withFailureResponse(
-                Effect.gen(function* lookupDeviceLink() {
-                  const input = yield* HttpServerRequest.schemaBodyJson(
-                    DeviceLinkCodePayload
-                  );
-                  const found = deviceLinks.lookup(input.userCode);
-                  if (found.kind !== "found") {
-                    return yield* linkFailure(found.kind);
-                  }
-                  return HttpServerResponse.jsonUnsafe(
-                    linkBody(found.label, found.expiresAt)
-                  );
-                })
-              )
-            )
-            .handleRaw("approve", () =>
-              withFailureResponse(
-                Effect.gen(function* approveDeviceLink() {
-                  const { person } = yield* SetCaller;
-                  const input = yield* HttpServerRequest.schemaBodyJson(
-                    DeviceLinkCodePayload
-                  );
-                  const found = deviceLinks.approve(input.userCode, person.id);
-                  if (found.kind !== "found") {
-                    return yield* linkFailure(found.kind);
-                  }
-                  return HttpServerResponse.jsonUnsafe(
-                    linkBody(found.label, found.expiresAt)
-                  );
-                })
-              )
-            )
-      );
       const systemGroup = HttpApiBuilder.group(OrbisApi, "system", (handlers) =>
         handlers.handle("health", () =>
           Effect.succeed({ status: "ok" as const })
@@ -2003,8 +1872,7 @@ export const createPortableApp = (options: {
           Layer.provide(queueGroup),
           Layer.provide(libraryGroup),
           Layer.provide(systemGroup),
-          Layer.provide(deviceLinkGroup),
-          Layer.provide(inviteGroup),
+          Layer.provide(signInGroup),
           Layer.provide(eventsGroup),
           Layer.provide(presenceGroup),
           Layer.provide(peopleGroup),
@@ -2093,35 +1961,23 @@ export const createPortableApp = (options: {
     }
   );
   /**
-   * A start always counts toward the failed-key limit, and so does a poll whose
-   * secret matches no link. A poll of a live link does not, so a device waiting for
-   * approval is never limited. A failed Invite claim counts too. A client over the
-   * limit is refused before any lookup, so it cannot spend an Invite.
+   * A wrong code or passcode counts toward the failed-key limit. A client over
+   * the limit is refused before any lookup, so it cannot spend a code.
    */
   const openRoute = async (
     request: Request,
-    mode: AccessMode,
     client: string,
-    pathname: string
+    failedStatus: number
   ): Promise<Response> => {
-    const limited = mode === "device";
-    if (limited && overFailedKeyLimit(client)) {
+    if (overFailedKeyLimit(client)) {
       return tooManyAttempts();
     }
-    if (limited && pathname === "/device-links" && recordFailedKey(client)) {
-      return tooManyAttempts();
-    }
-    // SAFETY: the open Device Link and Invite handlers read no caller-bound service.
+    // SAFETY: the sign-in handlers read no caller-bound service.
     const response = await app.handler(
       request,
       Context.empty() as Context.Context<Library | Queue | SetCaller>
     );
-    const failedGuess =
-      (pathname === "/device-links/poll" &&
-        (response.status === 404 || response.status === 400)) ||
-      (pathname === INVITE_CLAIM_ROUTE &&
-        [400, 404, 409, 410].includes(response.status));
-    if (limited && failedGuess && recordFailedKey(client)) {
+    if (response.status === failedStatus && recordFailedKey(client)) {
       return tooManyAttempts();
     }
     return response;
@@ -2159,15 +2015,9 @@ export const createPortableApp = (options: {
       };
       const host = request.headers.get("host") ?? new URL(request.url).host;
       const authorization = request.headers.get("authorization");
-      const { pathname } = new URL(request.url);
-      if (
-        request.method === "POST" &&
-        (pathname === INVITE_CLAIM_ROUTE ||
-          (authorization === null && OPEN_ROUTES.has(pathname)))
-      ) {
-        return openRoute(request, mode, clientAddress, pathname).then(
-          withOrigin
-        );
+      const failedStatus = OPEN_ROUTES.get(new URL(request.url).pathname);
+      if (request.method === "POST" && failedStatus !== undefined) {
+        return openRoute(request, clientAddress, failedStatus);
       }
       const registry = readTrustRegistry(trustPath);
       const streamDecision = grantAccess(

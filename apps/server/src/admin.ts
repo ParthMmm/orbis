@@ -1,8 +1,15 @@
-import { randomBytes } from "node:crypto";
+import { randomBytes, randomInt } from "node:crypto";
+
+import {
+  normalizeSignInCode,
+  SIGN_IN_CODE_ALPHABET,
+  SIGN_IN_CODE_LENGTH,
+} from "@orbis/contracts";
 
 import {
   hashToken,
   HOST_PERSON_ID,
+  matchesTokenHash,
   mutateTrustStore,
   readTrustStrict,
 } from "./identity.js";
@@ -51,7 +58,7 @@ export const listDevices = (
   currentKeyId: string
 ) =>
   listKeys(path, personId)
-    .filter((key) => key.scope === "daily")
+    .filter((key) => key.scope !== "node")
     .map(({ addedAt, id, label, lastUsedAt }) => ({
       addedAt,
       current: id === currentKeyId,
@@ -60,29 +67,61 @@ export const listDevices = (
       lastUsedAt,
     }));
 
-export const addPerson = (path: string, input: string) => {
+const validUsername = (input: string) => {
   const username = input.trim();
   if (!username || username.length > 40) {
     throw new AdminError(400, "Choose a username with 1 to 40 characters.");
   }
+  return username;
+};
+
+const validLabel = (input: string) => {
+  const label = input.trim();
+  if (!label || label.length > 100) {
+    throw new AdminError(400, "Choose a label with 1 to 100 characters.");
+  }
+  return label;
+};
+
+const newPerson = (store: TrustStore, username: string): PersonRecord => {
+  if (
+    store.people.some(
+      (person) =>
+        !person.removed &&
+        person.username.toLowerCase() === username.toLowerCase()
+    )
+  ) {
+    throw new AdminError(409, "That username is already in use.");
+  }
+  return {
+    id: Buffer.from(randomBytes(8)).toString("hex"),
+    removed: false,
+    username,
+  };
+};
+
+const newDailyKey = (personId: string, label: string) => {
+  const token = Buffer.from(randomBytes(32)).toString("base64url");
+  const record: KeyRecord = {
+    addedAt: new Date().toISOString(),
+    id: Buffer.from(randomBytes(6)).toString("hex"),
+    label,
+    lastUsedAt: null,
+    personId,
+    scope: "daily",
+    tokenHash: hashToken(token),
+  };
+  const { tokenHash: _hash, ...publicKey } = record;
+  return { created: { ...publicKey, token }, record };
+};
+
+export const addPerson = (path: string, input: string) => {
+  const username = validUsername(input);
   return mutateTrustStore(
     path,
     () => read(path),
     (store) => {
-      if (
-        store.people.some(
-          (person) =>
-            !person.removed &&
-            person.username.toLowerCase() === username.toLowerCase()
-        )
-      ) {
-        throw new AdminError(409, "That username is already in use.");
-      }
-      const person = {
-        id: Buffer.from(randomBytes(8)).toString("hex"),
-        removed: false,
-        username,
-      };
+      const person = newPerson(store, username);
       return {
         store: { ...store, people: [...store.people, person] },
         value: { id: person.id, username },
@@ -94,41 +133,152 @@ export const addPerson = (path: string, input: string) => {
 export const addKey = (
   path: string,
   personId: string,
-  input: { readonly label: string; readonly scope?: "daily" | "admin" }
+  input: { readonly label: string }
 ) => {
-  const label = input.label.trim();
-  if (!label || label.length > 100) {
-    throw new AdminError(400, "Choose a label with 1 to 100 characters.");
-  }
-  const scope = input.scope ?? "daily";
-  if (scope === "admin" && personId !== HOST_PERSON_ID) {
-    throw new AdminError(400, "Only Host can have an admin key.");
-  }
-  const token = Buffer.from(randomBytes(32)).toString("base64url");
+  const label = validLabel(input.label);
   return mutateTrustStore(
     path,
     () => read(path),
     (store) => {
       requirePerson(store, personId);
-      const key: KeyRecord = {
-        addedAt: new Date().toISOString(),
-        id: Buffer.from(randomBytes(6)).toString("hex"),
-        label,
-        lastUsedAt: null,
-        personId,
-        scope,
-        tokenHash: hashToken(token),
-      };
-      const { tokenHash: _hash, ...publicKey } = key;
+      const key = newDailyKey(personId, label);
       return {
-        store: { ...store, keys: [...store.keys, key] },
-        value: { ...publicKey, token },
+        store: { ...store, keys: [...store.keys, key.record] },
+        value: key.created,
       };
     }
   );
 };
 
-// With `ownerId`, only that Person's daily keys match, and every other key
+/**
+ * Joins the Group with the Group Passcode (ADR 0020). The passcode is checked
+ * before the username, so a wrong guess learns nothing about taken names.
+ */
+export const joinGroup = (
+  path: string,
+  input: {
+    readonly label: string;
+    readonly passcode: string;
+    readonly username: string;
+  }
+) =>
+  mutateTrustStore(
+    path,
+    () => read(path),
+    (store) => {
+      if (!store.passcode) {
+        throw new AdminError(403, "Joining is closed.");
+      }
+      if (!matchesTokenHash(hashToken(store.passcode), input.passcode.trim())) {
+        throw new AdminError(403, "That passcode is not right.");
+      }
+      const person = newPerson(store, validUsername(input.username));
+      const key = newDailyKey(person.id, validLabel(input.label));
+      return {
+        store: {
+          ...store,
+          keys: [...store.keys, key.record],
+          people: [...store.people, person],
+        },
+        value: {
+          key: key.created.token,
+          person: { id: person.id, username: person.username },
+        },
+      };
+    }
+  );
+
+const SIGN_IN_CODE_TTL_MS = 10 * 60 * 1000;
+
+const newSignInCode = () =>
+  Array.from(
+    { length: SIGN_IN_CODE_LENGTH },
+    () => SIGN_IN_CODE_ALPHABET[randomInt(SIGN_IN_CODE_ALPHABET.length)]
+  ).join("");
+
+const liveSignInCodes = (store: TrustStore, now: number) =>
+  (store.signInCodes ?? []).filter((code) => Date.parse(code.expiresAt) > now);
+
+/** Issues a Person's Sign-in Code (ADR 0020), replacing their earlier one. */
+export const issueSignInCode = (path: string, personId: string, now: number) =>
+  mutateTrustStore(
+    path,
+    () => read(path),
+    (store) => {
+      requirePerson(store, personId);
+      const others = liveSignInCodes(store, now).filter(
+        (code) => code.personId !== personId
+      );
+      let code = newSignInCode();
+      while (others.some((other) => other.code === code)) {
+        code = newSignInCode();
+      }
+      const issued = {
+        code,
+        expiresAt: new Date(now + SIGN_IN_CODE_TTL_MS).toISOString(),
+      };
+      return {
+        store: { ...store, signInCodes: [...others, { ...issued, personId }] },
+        value: issued,
+      };
+    }
+  );
+
+/**
+ * Spends a Sign-in Code and adds the new device's key in one mutation, so a
+ * code is never spent without a key. Null for an unknown or expired code, or
+ * one whose Person was removed.
+ */
+export const redeemSignInCode = (
+  path: string,
+  input: { readonly code: string; readonly label: string },
+  now: number
+) => {
+  const label = validLabel(input.label);
+  const presented = normalizeSignInCode(input.code);
+  return mutateTrustStore(
+    path,
+    () => read(path),
+    (store) => {
+      const live = liveSignInCodes(store, now);
+      const found = live.find((code) => code.code === presented);
+      const person = store.people.find(
+        (candidate) => candidate.id === found?.personId && !candidate.removed
+      );
+      const signInCodes = live.filter((code) => code !== found);
+      if (!person) {
+        const pruned = signInCodes.length !== (store.signInCodes ?? []).length;
+        return pruned
+          ? { store: { ...store, signInCodes }, value: null }
+          : { value: null };
+      }
+      const key = newDailyKey(person.id, label);
+      return {
+        store: { ...store, keys: [...store.keys, key.record], signInCodes },
+        value: {
+          key: key.created.token,
+          person: { id: person.id, username: person.username },
+        },
+      };
+    }
+  );
+};
+
+export const readPasscode = (path: string) => ({
+  passcode: read(path).passcode ?? null,
+});
+
+/** A blank or null passcode closes joining. */
+export const setPasscode = (path: string, input: string | null) => {
+  const passcode = input?.trim() || null;
+  return mutateTrustStore(
+    path,
+    () => read(path),
+    (store) => ({ store: { ...store, passcode }, value: { passcode } })
+  );
+};
+
+// With `ownerId`, only that Person's device keys match, and every other key
 // answers the same 404 as a missing one.
 export const revokeKey = (path: string, id: string, ownerId?: string) =>
   mutateTrustStore(
@@ -139,7 +289,7 @@ export const revokeKey = (path: string, id: string, ownerId?: string) =>
         (candidate) =>
           candidate.id === id &&
           (ownerId === undefined ||
-            (candidate.personId === ownerId && candidate.scope === "daily"))
+            (candidate.personId === ownerId && candidate.scope !== "node"))
       );
       if (!key) {
         throw new AdminError(404, "Key not found.");
@@ -180,12 +330,12 @@ export const removePerson = (path: string, id: string) => {
       return {
         store: {
           ...store,
-          ...(store.invites && {
-            invites: store.invites.filter((invite) => invite.personId !== id),
-          }),
           keys: store.keys.filter((key) => key.personId !== id),
           people: store.people.map((candidate) =>
             candidate.id === id ? { ...candidate, removed: true } : candidate
+          ),
+          signInCodes: (store.signInCodes ?? []).filter(
+            (code) => code.personId !== id
           ),
         },
         value: { id: person.id, username: person.username },

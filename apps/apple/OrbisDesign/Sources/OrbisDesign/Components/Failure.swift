@@ -68,7 +68,7 @@ nonisolated public struct FailureReport: Equatable, Sendable {
     return lines.joined(separator: "\n")
   }
 
-  static var appVersion: String {
+  public static var appVersion: String {
     let info = Bundle.main.infoDictionary
     let version = info?["CFBundleShortVersionString"] as? String ?? "unknown"
     let build = info?["CFBundleVersion"] as? String ?? "?"
@@ -151,8 +151,8 @@ func copyToPasteboard(_ text: String) {
 
 #Preview("Failure report, dark") {
   let failure = OrbisFailure(
-    title: "This device is not paired",
-    message: "This device is not paired with your library. Pair it on the host and enter the new token.",
+    title: "This device is not signed in",
+    message: "This device is not signed in to your library. Sign out in Settings and sign in again.",
     symbol: "key.slash",
     isRetryable: false
   )

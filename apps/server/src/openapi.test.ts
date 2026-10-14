@@ -20,6 +20,7 @@ const Samples = Schema.Struct({
   library: Schema.Struct({ sets: Schema.Array(SavedSetSchema) }),
   me: Schema.Struct({
     autoDownload: Schema.Boolean,
+    host: Schema.Boolean,
     id: Schema.String,
     social: Schema.Boolean,
     username: Schema.String,
@@ -197,6 +198,9 @@ const sampleFor = (operationId: string) => {
   if (operationId === "devices.revoke") {
     return device;
   }
+  if (operationId === "devices.signInCode") {
+    return { code: "ABCD2345", expiresAt: "2026-09-29T00:10:00.000Z" };
+  }
   if (operationId === "presence.act") {
     return {
       outcome: "accepted",
@@ -234,11 +238,10 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         if (!["get", "post", "put", "patch", "delete"].includes(method)) {
           continue;
         }
-        // The Swift client has no Device Link or Invite types until the Apple apps adopt them.
+        // The Swift fixture holds no sign-in or admin samples.
         if (
           operation.operationId.startsWith("admin.") ||
-          operation.operationId.startsWith("deviceLinks.") ||
-          operation.operationId.startsWith("invites.")
+          operation.operationId.startsWith("signIn.")
         ) {
           continue;
         }
@@ -273,7 +276,7 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         }
       }
     }
-    expect(checked).toBe(45);
+    expect(checked).toBe(46);
   } finally {
     await app.dispose();
   }

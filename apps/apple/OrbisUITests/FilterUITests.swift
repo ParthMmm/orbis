@@ -8,7 +8,7 @@ final class FilterUITests: LibraryJourney {
     // An untagged Set, so the filter has something to hide.
     _ = try LaneService().saveSet(
       title: "Untagged set", url: "https://www.youtube.com/watch?v=untagged001")
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     let tile = app.buttons["tag-filter-techno"]
@@ -34,7 +34,7 @@ final class FilterUITests: LibraryJourney {
   }
 
   func testHomeTagOpensFilteredLibraryAfterOpeningASet() throws {
-    let app = try launch(paired: true)
+    let app = try launch()
     openLibrary(in: app)
 
     let night = app.descendants(matching: .any)
@@ -72,7 +72,7 @@ final class FilterUITests: LibraryJourney {
   /// `docs/agents/ui-verification.md`; the model change it makes is `setTagFilter(nil)`, which
   /// `LibraryFilterTests.testShowsOnlySetsCarryingTheActiveTag` covers.
   func testAFilterThatAdmitsNothingIsNotAnEmptyLibrary() throws {
-    let app = try launch(paired: true, filteringBy: "hardgroove")
+    let app = try launch(filteringBy: "hardgroove")
     openLibrary(in: app)
 
     XCTAssertTrue(
@@ -88,27 +88,5 @@ final class FilterUITests: LibraryJourney {
       app.descendants(matching: .any)["tag-filter-techno"].exists,
       "the filter row must stay, so the filter is still visible where it was set")
     capture("15-library-no-matches")
-  }
-
-  func testUnreachableAddressNamesTheRecoveryAction() throws {
-    let app = try launch(serviceAddress: "http://127.0.0.1:1")
-
-    let token = app.secureTextFields["connection-token"]
-    XCTAssertTrue(token.waitForExistence(timeout: 30))
-    token.tap()
-    token.typeText("not-a-real-token")
-
-    app.buttons["connection-test"].tap()
-
-    let error = app.staticTexts.matching(
-      NSPredicate(format: "label CONTAINS %@", "Cannot reach your library")
-    ).firstMatch
-    XCTAssertTrue(
-      error.waitForExistence(timeout: 60), "an unreachable address must explain itself\n\(app.debugDescription)")
-    XCTAssertTrue(
-      app.buttons["copy-failure"].exists,
-      "a failure must offer its details to copy\n\(app.debugDescription)"
-    )
-    capture("05-connection-error")
   }
 }

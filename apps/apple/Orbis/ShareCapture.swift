@@ -12,7 +12,6 @@ import OrbisDesign
 enum ShareSaveOutcome: Equatable {
   case saved(title: String)
   case duplicate
-  case unsupported
   case unreachable(message: String)
   case notConfigured
   case failure(message: String)
@@ -21,6 +20,10 @@ enum ShareSaveOutcome: Equatable {
 /// Extracts, validates, and saves a Source Link the way the main app's paste path does.
 @MainActor
 enum ShareCapture {
+  /// The extension starts without the app's launch arguments, so a Debug lane's address never
+  /// reaches it: it always talks to the built-in service, or a Debug Mac's development one.
+  static var serviceAddress: URL { OrbisService.address(for: []) }
+
   /// The first supported YouTube or SoundCloud URL found in the attachment payloads.
   static func sourceLink(from payloads: [String]) -> URL? {
     for payload in payloads {
@@ -44,7 +47,7 @@ enum ShareCapture {
     settings: any ClientSettingsStore,
     client: OrbisClient? = nil
   ) async -> ShareSaveOutcome {
-    guard let client = client ?? settings.configuredClient() else {
+    guard let client = client ?? settings.configuredClient(address: serviceAddress) else {
       return .notConfigured
     }
     do {
@@ -63,8 +66,6 @@ enum ShareCapture {
       case .unreachable, .notOrbis:
         preserveOnClipboard(url.absoluteString)
         return .unreachable(message: error.message)
-      case .badAddress:
-        return .unsupported
       default:
         preserveOnClipboard(url.absoluteString)
         return .failure(message: error.message)

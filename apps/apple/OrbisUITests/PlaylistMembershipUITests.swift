@@ -11,7 +11,7 @@ final class PlaylistMembershipUITests: PlaylistJourney {
     let confusablePlaylist = try service.createPlaylist(named: "recent-\(playlist.name)")
     var steps: [[String: Any]] = []
 
-    let app = try launch(paired: true)
+    let app = try launch()
     selectTab("Library", in: app)
     let row = app.descendants(matching: .any)["set-row-\(set.id)"]
     XCTAssertTrue(
@@ -127,7 +127,7 @@ final class PlaylistMembershipUITests: PlaylistJourney {
       try service.deletePlaylist(playlist.id)
     }
 
-    let app = try launch(paired: true)
+    let app = try launch()
     openPlaylists(in: app)
     let empty = app.descendants(matching: .any)["playlists-empty"]
     XCTAssertTrue(empty.waitForExistence(timeout: 30), "the empty list must keep its identifier")

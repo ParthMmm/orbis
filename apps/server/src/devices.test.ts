@@ -9,20 +9,23 @@ import { Schema } from "effect";
 import { addKey, addPerson } from "./admin.js";
 import { createApp } from "./app.js";
 import { emptyTrustStore } from "./identity.js";
+import { storedKey } from "./test-app.js";
 import { request } from "./test-http.js";
 
 // Ways the Devices routes can fail, written before the routes:
 // 1. The list shows another Person's keys.
-// 2. The list shows an admin-scope key, including the Host's own.
+// 2. The list shows a node key, or hides a key stored as admin.
 // 3. The list shows a token hash.
 // 4. `current` marks the wrong key, or more than one key.
 // 5. A Person revokes another Person's key, or learns that the id exists (403).
-// 6. A Person revokes an admin key through this route.
+// 6. A Person revokes a node key through this route.
 // 7. A revoked key keeps working.
 // 8. Revoking the key making the request fails, or leaves it working.
-// 9. A request without a key, with a bad key, or on the local listener reaches
-//    the routes and acts as the Host.
-// 10. An admin-scope key uses the routes, so the admin key shows up as a device.
+// 9. A request without a key, with a bad key, with a node key, or on the
+//    local listener reaches the routes and acts as the Host.
+
+const ADMIN_TOKEN = "devices-legacy-admin";
+const NODE_TOKEN = "devices-node";
 
 const call = (
   app: ReturnType<typeof createApp>,
@@ -55,13 +58,20 @@ const setup = async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-devices-"));
   const databasePath = path.join(directory, "library.sqlite");
   const devicesPath = path.join(directory, "devices.json");
-  await writeFile(devicesPath, JSON.stringify(emptyTrustStore()));
+  const admin = storedKey(
+    "legacy-admin",
+    "host",
+    ADMIN_TOKEN,
+    "admin",
+    "Recovery"
+  );
+  const node = storedKey("vanta-node", "host", NODE_TOKEN, "node", "Vanta");
+  await writeFile(
+    devicesPath,
+    JSON.stringify({ ...emptyTrustStore(), keys: [admin, node] })
+  );
   const laptop = addKey(devicesPath, "host", { label: "Laptop" });
   const phone = addKey(devicesPath, "host", { label: "Phone" });
-  const admin = addKey(devicesPath, "host", {
-    label: "Recovery",
-    scope: "admin",
-  });
   const alice = addPerson(devicesPath, "alice");
   const aliceKey = addKey(devicesPath, alice.id, { label: "Alice phone" });
   const app = createApp({ databasePath, devicesPath });
@@ -74,21 +84,29 @@ const setup = async () => {
       await rm(directory, { force: true, recursive: true });
     },
     laptop,
+    node,
     phone,
   };
 };
 
-test("a Person lists only their own daily keys and sees which one is current", async () => {
-  const { admin, aliceKey, app, cleanup, laptop, phone } = await setup();
+test("a Person lists only their own device keys and sees which one is current", async () => {
+  const { admin, aliceKey, app, cleanup, laptop, node, phone } = await setup();
   try {
     const listed = await call(app, laptop.token, "GET", "/me/devices");
     expect(listed.statusCode).toBe(200);
     const raw = JSON.stringify(listed.json());
     const { devices } = decodeDevices(listed.json());
     expect(new Set(devices.map((device) => device.id))).toEqual(
-      new Set([laptop.id, phone.id])
+      new Set([admin.id, laptop.id, phone.id])
     );
-    expect(devices).toHaveLength(2);
+    expect(devices).toHaveLength(3);
+    expect(devices.find((device) => device.id === admin.id)).toEqual({
+      addedAt: admin.addedAt,
+      current: false,
+      id: admin.id,
+      label: "Recovery",
+      lastUsedAt: null,
+    });
     expect(devices.find((device) => device.id === laptop.id)).toEqual({
       addedAt: laptop.addedAt,
       current: true,
@@ -104,8 +122,15 @@ test("a Person lists only their own daily keys and sees which one is current", a
       lastUsedAt: null,
     });
     expect(raw).not.toContain("tokenHash");
-    expect(raw).not.toContain(admin.id);
+    expect(raw).not.toContain(node.id);
     expect(raw).not.toContain(aliceKey.id);
+
+    const adminView = await devicesOf(
+      call(app, ADMIN_TOKEN, "GET", "/me/devices")
+    );
+    expect(
+      adminView.filter((device) => device.current).map((device) => device.id)
+    ).toEqual([admin.id]);
 
     const phoneView = await devicesOf(
       call(app, phone.token, "GET", "/me/devices")
@@ -132,7 +157,7 @@ test("a Person lists only their own daily keys and sees which one is current", a
 });
 
 test("a Person revokes their other device and that key stops working", async () => {
-  const { app, cleanup, laptop, phone } = await setup();
+  const { admin, app, cleanup, laptop, phone } = await setup();
   try {
     const revoked = await call(
       app,
@@ -152,7 +177,7 @@ test("a Person revokes their other device and that key stops working", async () 
     const listed = await devicesOf(
       call(app, laptop.token, "GET", "/me/devices")
     );
-    expect(listed.map((device) => device.id)).toEqual([laptop.id]);
+    expect(listed.map((device) => device.id)).toEqual([admin.id, laptop.id]);
     const again = await call(
       app,
       laptop.token,
@@ -185,8 +210,8 @@ test("revoking the current device signs it out", async () => {
   }
 });
 
-test("a Person cannot revoke another Person's key or an admin key", async () => {
-  const { admin, aliceKey, app, cleanup, laptop } = await setup();
+test("a Person cannot revoke another Person's key or a node key", async () => {
+  const { aliceKey, app, cleanup, laptop, node } = await setup();
   try {
     const otherPerson = await call(
       app,
@@ -204,22 +229,20 @@ test("a Person cannot revoke another Person's key or an admin key", async () => 
     expect(otherPerson.json()).toEqual(missing.json());
     expect(await statusOf(call(app, aliceKey.token, "GET", "/me"))).toBe(200);
 
-    const adminKey = await call(
+    const nodeKey = await call(
       app,
       laptop.token,
       "DELETE",
-      `/me/devices/${admin.id}`
+      `/me/devices/${node.id}`
     );
-    expect(adminKey.statusCode).toBe(404);
-    expect(await statusOf(call(app, admin.token, "GET", "/admin/keys"))).toBe(
-      200
-    );
+    expect(nodeKey.statusCode).toBe(404);
+    expect(nodeKey.json()).toEqual(missing.json());
   } finally {
     await cleanup();
   }
 });
 
-test("the Devices routes need a daily key", async () => {
+test("the Devices routes need a Person's key", async () => {
   const { admin, app, cleanup, phone } = await setup();
   try {
     const statuses = await Promise.all([
@@ -227,8 +250,8 @@ test("the Devices routes need a daily key", async () => {
       call(app, null, "DELETE", `/me/devices/${phone.id}`),
       call(app, "not-a-key", "GET", "/me/devices"),
       call(app, "not-a-key", "DELETE", `/me/devices/${phone.id}`),
-      call(app, admin.token, "GET", "/me/devices"),
-      call(app, admin.token, "DELETE", `/me/devices/${phone.id}`),
+      call(app, NODE_TOKEN, "GET", "/me/devices"),
+      call(app, NODE_TOKEN, "DELETE", `/me/devices/${phone.id}`),
       request(app, { method: "GET", url: "/me/devices" }),
       request(app, { method: "DELETE", url: `/me/devices/${phone.id}` }),
     ]);
@@ -236,6 +259,14 @@ test("the Devices routes need a daily key", async () => {
       403, 403, 401, 401, 403, 403, 403, 403,
     ]);
     expect(await statusOf(call(app, phone.token, "GET", "/me"))).toBe(200);
+    const fromAdmin = await call(
+      app,
+      ADMIN_TOKEN,
+      "DELETE",
+      `/me/devices/${admin.id}`
+    );
+    expect(fromAdmin.statusCode).toBe(200);
+    expect(await statusOf(call(app, ADMIN_TOKEN, "GET", "/me"))).toBe(401);
   } finally {
     await cleanup();
   }

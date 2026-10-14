@@ -25,7 +25,7 @@ The script compares the Group's count and checksum for each table with the sourc
 
 ## Export and restore
 
-`GET /api/export` requires a node key and returns SQL. A daily or admin key cannot call either transfer route. A node key cannot call a client route.
+`GET /api/export` requires a node key and returns SQL. A Person's key cannot call either transfer route. A node key cannot call a client route.
 
 Set `ORBIS_NODE_KEY` to the Group's node key before you create a backup. The script sends it as a Bearer key to `/api/export`.
 

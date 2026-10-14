@@ -1,8 +1,9 @@
-// Sign in with a key against a real Orbis API: the built web client in `vite preview`
-// calls a throwaway server with its own data directory and one enrolled key.
+// Join with the Group Passcode and sign in with a code against a real Orbis API:
+// the built web client in `vite preview` calls a throwaway server whose Group
+// holds the Host with one daily key.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { createHash, randomBytes } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -10,44 +11,49 @@ import { setTimeout } from "node:timers/promises";
 
 import { chromium } from "playwright";
 
+import {
+  keyRecord,
+  signInWithKey,
+  storedKey,
+  submitForm,
+  textOf,
+  waitFor,
+} from "./helpers.mjs";
+
 const root = path.resolve(import.meta.dirname, "../../..");
 const artifacts = path.join(root, ".cache/web-sign-in");
 const devicePort = 4421;
 const webPort = 3321;
 const apiUrl = `http://127.0.0.1:${devicePort}`;
 const webUrl = `http://127.0.0.1:${webPort}`;
-const key = randomBytes(24).toString("base64url");
+const hostKey = randomBytes(24).toString("base64url");
+const passcode = "river stone";
 
-const waitFor = async (url) => {
-  for (let attempt = 0; attempt < 150; attempt += 1) {
-    try {
-      // eslint-disable-next-line no-await-in-loop
-      await fetch(url);
-      return;
-    } catch {
-      // Not listening yet.
-    }
-    // eslint-disable-next-line no-await-in-loop
-    await setTimeout(100);
-  }
-  throw new Error(`${url} did not start`);
+const openJoining = async () => {
+  const response = await fetch(`${apiUrl}/admin/passcode`, {
+    body: JSON.stringify({ passcode }),
+    headers: {
+      authorization: `Bearer ${hostKey}`,
+      "content-type": "application/json",
+    },
+    method: "PUT",
+  });
+  return response.status;
 };
+
+// A wrong guess from outside the browser, from the same address as the page.
+const guessCode = () =>
+  fetch(`${apiUrl}/sign-in/code`, {
+    body: JSON.stringify({ code: "ZZZZZZZZ", label: "Guessing" }),
+    headers: { "content-type": "application/json" },
+    method: "POST",
+  });
 
 const dataDirectory = await mkdtemp(path.join(tmpdir(), "orbis-sign-in-"));
 await writeFile(
   path.join(dataDirectory, "devices.json"),
   JSON.stringify({
-    keys: [
-      {
-        addedAt: new Date().toISOString(),
-        id: "journey-key",
-        label: "Sign-in journey",
-        lastUsedAt: null,
-        personId: "host",
-        scope: "daily",
-        tokenHash: createHash("sha256").update(key).digest("hex"),
-      },
-    ],
+    keys: [keyRecord("journey-key", "Sign-in journey", "host", hostKey)],
     people: [{ id: "host", removed: false, username: "host" }],
     version: 2,
   })
@@ -102,70 +108,105 @@ try {
         );
       });
     });
-    const storedKey = () =>
-      page.evaluate(() => localStorage.getItem("orbis.apiKey"));
-    const signIn = async (value) => {
-      await page.getByLabel("API key").fill(value);
-      await page.getByRole("button", { exact: true, name: "Sign in" }).click();
+    const shot = (name) =>
+      page.screenshot({ path: path.join(artifacts, `${name}.png`) });
+    const codeForm = page.getByRole("form", { name: "Sign in with a code" });
+    const joinForm = page.getByRole("form", { name: "Join Orbis" });
+    const join = (username, value) =>
+      submitForm(joinForm, "/sign-in/join", {
+        "Group Passcode": value,
+        Username: username,
+      });
+    const redeem = (code) =>
+      submitForm(codeForm, "/sign-in/code", { "Sign-in Code": code });
+    const expectRefusal = async (form, answer, status) => {
+      assert.equal(answer.status, status);
+      assert.notEqual(answer.body.message ?? "", "");
+      assert.equal(await textOf(form.getByRole("alert")), answer.body.message);
+      assert.equal(await storedKey(page), null);
     };
 
     await page.goto(webUrl);
     await page.getByRole("heading", { name: "Sign in to Orbis" }).waitFor();
     assert.equal(new URL(page.url()).pathname, "/sign-in");
-    await page.screenshot({ path: path.join(artifacts, "signed-out.png") });
-    step("a signed-out visit to / goes to the sign-in form");
+    await codeForm.getByLabel("Sign-in Code").waitFor();
+    await joinForm.getByLabel("Group Passcode").waitFor();
+    await shot("signed-out");
+    step("a signed-out visit to / shows a code form and a join form");
 
-    await page.getByRole("button", { exact: true, name: "Sign in" }).click();
-    await page.getByRole("alert").getByText("Paste the API key").waitFor();
-    step("an empty key asks for one");
+    const closed = await join("bob", "anything");
+    await expectRefusal(joinForm, closed, 403);
+    await shot("join-closed");
+    step("joining while the Host has no passcode shows the API's refusal", {
+      message: closed.body.message,
+    });
 
-    const keyRequest = page.waitForRequest(
-      (request) =>
-        new URL(request.url()).pathname === "/me" && request.method() === "GET"
-    );
-    await signIn("not-a-real-key");
-    const sentKeyRequest = await keyRequest;
-    const keyRequestHeaders = sentKeyRequest.headers();
-    assert.equal(keyRequestHeaders.traceparent, undefined);
-    assert.equal(keyRequestHeaders.tracestate, undefined);
-    await page
-      .getByRole("alert")
-      .getByText("That API key does not work.")
-      .waitFor();
-    assert.equal(await storedKey(), null);
-    await page.screenshot({ path: path.join(artifacts, "wrong-key.png") });
-    step("a wrong key is refused and not stored");
+    assert.equal(await openJoining(), 200);
+    const wrong = await join("bob", "wrong passcode");
+    await expectRefusal(joinForm, wrong, 403);
+    step("a wrong passcode shows the API's refusal and stores nothing", {
+      message: wrong.body.message,
+    });
 
-    await signIn(key);
+    const taken = await join("host", passcode);
+    await expectRefusal(joinForm, taken, 409);
+    step("a taken username shows the API's refusal", {
+      message: taken.body.message,
+    });
+
+    const joined = await join("bob", passcode);
+    assert.equal(joined.status, 201);
     await page.getByRole("heading", { name: "Library" }).waitFor();
-    assert.equal(await storedKey(), key);
-    await page.screenshot({ path: path.join(artifacts, "signed-in.png") });
-    await page.getByText("Signed in as host").waitFor();
-    assert.equal(new URL(page.url()).pathname, "/");
-    step(
-      "the enrolled key signs in as host, lands on the Library, and is stored"
-    );
-
+    await page.getByText("Signed in as bob").waitFor();
+    assert.equal(await storedKey(page), joined.body.key);
+    assert.match(joined.payload.label, /^Chrome on /u);
     await page.reload();
     await page.getByRole("heading", { name: "Library" }).waitFor();
-    step("a reload stays signed in");
+    await shot("joined");
+    step(
+      "the right passcode creates bob, stores the returned key, and survives a reload",
+      { label: joined.payload.label }
+    );
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("heading", { name: "Sign in to Orbis" }).waitFor();
+    assert.equal(await storedKey(page), null);
+    step("sign out clears the key");
+
+    let sentCode = false;
+    const watchCode = (request) => {
+      sentCode ||= new URL(request.url()).pathname === "/sign-in/code";
+    };
+    page.on("request", watchCode);
+    await codeForm.getByLabel("Sign-in Code").fill("abc");
+    await codeForm.getByRole("button").click();
+    await codeForm
+      .getByRole("alert")
+      .getByText("Enter the eight-character code")
+      .waitFor();
+    page.off("request", watchCode);
+    assert.equal(sentCode, false);
+    step("a code that is too short is refused without calling the API");
+
+    const unknown = await redeem("zzzz-zzzz");
+    assert.equal(unknown.payload.code, "ZZZZZZZZ");
+    await expectRefusal(codeForm, unknown, 404);
+    await shot("unknown-code");
+    step(
+      "an unknown code is sent without its dash, in capitals, and the API's refusal shows",
+      { message: unknown.body.message }
+    );
 
     await page.evaluate(() => localStorage.setItem("orbis.apiKey", "revoked"));
-    await page.reload();
+    await page.goto(webUrl);
     await page
       .getByRole("alert")
       .getByText("Your saved key no longer works.")
       .waitFor();
-    assert.equal(await storedKey(), null);
+    assert.equal(await storedKey(page), null);
     step("a saved key the API rejects is dropped with a notice");
 
-    await signIn(key);
-    await page.getByRole("button", { name: "Sign out" }).click();
-    await page.getByRole("heading", { name: "Sign in to Orbis" }).waitFor();
-    assert.equal(await storedKey(), null);
-    step("sign out clears the key");
-
-    await signIn(key);
+    await signInWithKey(page, webUrl, hostKey);
     await page.getByRole("heading", { name: "Library" }).waitFor();
     api.kill("SIGTERM");
     await setTimeout(500);
@@ -174,8 +215,8 @@ try {
       .getByRole("alert")
       .getByText("Orbis could not be reached.")
       .waitFor();
-    assert.equal(await storedKey(), key);
-    await page.screenshot({ path: path.join(artifacts, "unreachable.png") });
+    assert.equal(await storedKey(page), hostKey);
+    await shot("unreachable");
     step("an unreachable API keeps the key and says why");
 
     api = startApi();
@@ -183,6 +224,18 @@ try {
     await page.getByRole("button", { name: "Try again" }).click();
     await page.getByRole("heading", { name: "Library" }).waitFor();
     step("Try again signs back in once the API is back");
+
+    await page.getByRole("button", { name: "Sign out" }).click();
+    await page.getByRole("heading", { name: "Sign in to Orbis" }).waitFor();
+    for (let attempt = 0; attempt < 25; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      await guessCode();
+    }
+    const limited = await redeem("zzzzzzzz");
+    await expectRefusal(codeForm, limited, 429);
+    step("after many wrong guesses the API's rate-limit message shows", {
+      message: limited.body.message,
+    });
 
     assert.deepEqual(violations, []);
     step("no Content Security Policy violations");

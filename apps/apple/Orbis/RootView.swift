@@ -6,18 +6,26 @@ struct OrbisApp: App {
   @State private var model = OrbisSession.model
 
   var body: some Scene {
-    WindowGroup {
-      RootView(model: model)
-    }
     #if os(macOS)
+      WindowGroup {
+        RootView(model: model)
+      }
       .defaultSize(width: 1000, height: 700)
       .windowToolbarStyle(.unified)
+      Settings {
+        SettingsScreen(model: model)
+          .frame(width: 480, height: 620)
+      }
+    #else
+      WindowGroup {
+        RootView(model: model)
+      }
     #endif
   }
 }
 
 struct RootView: View {
-  let model: AppModel
+  @Bindable var model: AppModel
 
   /// How long the splash holds and how long it takes to leave.
   private let timing = SplashTiming()
@@ -31,8 +39,6 @@ struct RootView: View {
     /// The splash covers one launch and one load: a refresh, a Playlist, or a screen change is
     /// not an opening, so nothing puts it back.
     @State private var splash: SplashPhase = .up
-  #else
-    @State private var isConfirmingForget = false
   #endif
 
   var body: some View {
@@ -71,43 +77,15 @@ struct RootView: View {
     }
     #if os(iOS)
       .task { await uncoverWhenFirstLoadSettles() }
-    #else
-      .sheet(
-        isPresented: Binding(
-          get: { model.isConfigured && model.isEditingConnection },
-          set: { if !$0 { model.closeConnectionEditor() } }
-        )
-      ) {
-        NavigationStack {
-          ConnectionView(model: model, cancellable: true)
-          .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-              Button("Done") { model.closeConnectionEditor() }
-            }
-            ToolbarItem(placement: .primaryAction) {
-              Menu("More", systemImage: "ellipsis.circle") {
-                Button("Refresh") { Task { await model.loadLibrary() } }
-                Button("Forget this device", role: .destructive) {
-                  isConfirmingForget = true
-                }
-              }
-            }
-          }
-        }
-        .frame(minWidth: 440, minHeight: 360)
-        .confirmationDialog("Forget this device?", isPresented: $isConfirmingForget) {
-          Button("Forget", role: .destructive) { model.forget() }
-          Button("Keep it", role: .cancel) {}
-        } message: {
-          Text("The address and its token leave this device. Pair it again on the host to come back.")
-        }
+      .sheet(isPresented: $model.isShowingSettings) {
+        SettingsScreen(model: model) { model.isShowingSettings = false }
       }
     #endif
   }
 
   @ViewBuilder
   private var content: some View {
-    if showsLibrary {
+    if model.isConfigured {
       #if os(macOS)
         SidebarShell(model: model)
       #else
@@ -118,18 +96,8 @@ struct RootView: View {
         }
       #endif
     } else {
-      NavigationStack {
-        ConnectionView(model: model, cancellable: model.isConfigured)
-      }
+      SignInView(model: model)
     }
-  }
-
-  private var showsLibrary: Bool {
-    #if os(macOS)
-      model.isConfigured
-    #else
-      model.isConfigured && !model.isEditingConnection
-    #endif
   }
 
   #if os(iOS)
@@ -322,7 +290,7 @@ struct SidebarShell: View {
         .navigationSplitViewColumnWidth(min: 250, ideal: 290, max: 340)
         .navigationTitle("")
         .safeAreaBar(edge: .bottom) {
-          Button("Settings", systemImage: "gearshape") { model.editConnection() }
+          SettingsLink { Label("Settings", systemImage: "gearshape") }
             .buttonStyle(.plain)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
@@ -442,7 +410,6 @@ struct SidebarShell: View {
 struct DestinationView: View {
   @Bindable var model: AppModel
   let destination: Destination
-  @State private var isConfirmingForget = false
   /// The queue is read in a sheet, because it is a fact about playback rather than a place in the
   /// library.
   @State private var isShowingQueue = false
@@ -510,6 +477,7 @@ struct DestinationView: View {
         groupsByDay: model.librarySort == .newest,
         backdrop: .artwork(libraryLead.flatMap(SetPresentation.pageArtwork))
       )
+      .refreshable { await model.refreshLibraryQuietly() }
       .macPageSearch(text: $libraryQuery, prompt: "Find in Library")
       .macSearchToolbarBackground(isSearching: librarySearchIsActive)
       .sidebarPageTitle("Library")
@@ -542,16 +510,6 @@ struct DestinationView: View {
       }
       .navigationDestination(item: openedSet) { id in
         SetDetailScreen(model: model, setId: id)
-      }
-      .confirmationDialog(
-        "Forget this device?", isPresented: $isConfirmingForget, titleVisibility: .visible
-      ) {
-        Button("Forget", role: .destructive) { model.forget() }
-        Button("Keep it", role: .cancel) {}
-      } message: {
-        Text(
-          "The address and its token leave this device. Pair it again on the host to come back."
-        )
       }
     case .playlists:
       PlaylistsDestination(model: model)
@@ -627,7 +585,7 @@ struct DestinationView: View {
           .accessibilityIdentifier("home-file")
       }
       #if os(iOS)
-        settingsMenu
+        settingsButton
       #endif
     }
     .sheet(isPresented: $isFilingSheetShown) { filingSheet }
@@ -758,7 +716,7 @@ struct DestinationView: View {
         .accessibilityIdentifier("library-queue")
     }
     #if os(iOS)
-      settingsMenu
+      settingsButton
     #endif
   }
 
@@ -768,17 +726,10 @@ struct DestinationView: View {
   }
 
   @ToolbarContentBuilder
-  private var settingsMenu: some ToolbarContent {
+  private var settingsButton: some ToolbarContent {
     ToolbarItem {
-      Menu {
-        Button("Refresh") { Task { await model.loadLibrary() } }
-        Button("Connection settings") { model.editConnection() }
-          .accessibilityIdentifier("library-connection-settings")
-        Button("Forget this device", role: .destructive) { isConfirmingForget = true }
-      } label: {
-        Label("Library actions", systemImage: "gearshape")
-      }
-      .accessibilityIdentifier("library-actions")
+      Button("Settings", systemImage: "gearshape") { model.isShowingSettings = true }
+        .accessibilityIdentifier("settings-open")
     }
   }
 }

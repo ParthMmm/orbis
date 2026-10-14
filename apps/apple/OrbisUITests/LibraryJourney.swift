@@ -5,40 +5,11 @@ import XCTest
 /// area, because Xcode hands a whole class to one simulator, and one large class kept every
 /// other simulator idle.
 class LibraryJourney: XCTestCase {
-  /// `paired` starts the app already paired, for a journey that is not about the connection
-  /// screen. Typing the address and token costs each journey several seconds.
-  /// `serviceAddress` stands in for the built-in service address, so a fresh install signs in to
-  /// the lane's service.
-  func launch(
-    paired: Bool = false, filteringBy tag: String? = nil, serviceAddress: String? = nil
-  ) throws -> XCUIApplication {
-    let environment = ProcessInfo.processInfo.environment
-    guard let address = environment["ORBIS_UI_TEST_ADDRESS"], !address.isEmpty,
-      let token = environment["ORBIS_UI_TEST_TOKEN"], !token.isEmpty
-    else {
-      throw XCTSkip("the lane must supply ORBIS_UI_TEST_ADDRESS and ORBIS_UI_TEST_TOKEN")
-    }
-    let app = XCUIApplication()
-    app.launchArguments.append("-orbisResetSettings")
-    app.launchArguments.append(contentsOf: ["-orbisServiceAddress", serviceAddress ?? address])
-    if paired {
-      app.launchArguments.append(contentsOf: ["-orbisPairedWith", address, token])
-    }
-    if let tag {
-      app.launchArguments.append(contentsOf: ["-orbisStartTagFiltered", tag])
-    }
-    app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
-    app.launchEnvironment["ORBIS_UI_TEST_ADDRESS"] = address
-    app.launchEnvironment["ORBIS_UI_TEST_TOKEN"] = token
-    app.launch()
-    return app
-  }
-
-  func capture(_ name: String) {
-    let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
-    attachment.name = name
-    attachment.lifetime = .keepAlways
-    add(attachment)
+  func launch(filteringBy tag: String? = nil) throws -> XCUIApplication {
+    let service = try LaneService()
+    return launchOrbis(
+      address: service.address, token: service.token,
+      arguments: tag.map { ["-orbisStartTagFiltered", $0] } ?? [])
   }
 
   func record(_ name: String, _ values: [String: Any]) throws {
@@ -179,42 +150,6 @@ class LibraryJourney: XCTestCase {
   func untouchedSearch(in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)
       .matching(NSPredicate(format: "label BEGINSWITH %@", "Search your")).firstMatch
-  }
-
-  /// Signs the app in with a pasted key the way a person would, so a journey that begins after
-  /// connecting does not restate the sign-in screen's details. The address is the built-in one.
-  func connect(_ app: XCUIApplication) {
-    let token = app.secureTextFields["connection-token"]
-    XCTAssertTrue(token.waitForExistence(timeout: 30), "the sign-in screen must appear\n\(app.debugDescription)")
-    token.tap()
-    token.typeText(ProcessInfo.processInfo.environment["ORBIS_UI_TEST_TOKEN"] ?? "")
-
-    app.buttons["connection-test"].tap()
-
-    // The pairing is now stored, and iOS offers to save the typed token into Passwords for
-    // reuse. The token belongs to this app's keychain alone, so the offer is declined
-    // whenever the system rises it.
-    dismissCredentialOffer(in: app)
-  }
-
-  /// Declines the system's offer to save the typed token into Passwords. The offer is a sheet
-  /// from another process, so it is absent from the app's own tree and from `app.sheets`, and
-  /// it swallows every tap behind it — including taps a journey makes 3x down the screen.
-  /// It also rises late, which is why this waits rather than asking once.
-  func dismissCredentialOffer(in app: XCUIApplication) {
-    let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
-    let candidates = [
-      springboard.buttons["Not Now"].firstMatch,
-      app.buttons["Not Now"].firstMatch,
-    ]
-    let deadline = Date().addingTimeInterval(6)
-    while Date() < deadline {
-      for candidate in candidates where candidate.exists {
-        candidate.tap()
-        return
-      }
-      usleep(250_000)
-    }
   }
 
   /// A confirmation dialog is a sheet on a phone and an alert on a Mac, so a journey asks for

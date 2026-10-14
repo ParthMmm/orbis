@@ -28,7 +28,7 @@ export class Group extends ProductionGroup {
         "INSERT INTO people (id, username, removed, social, auto_download, filters) VALUES ('host', 'host', 0, 0, 1, '[]')"
       );
       this.ctx.storage.sql.exec(
-        "INSERT INTO api_keys (id, digest, label, scope, person_id, added_at, last_used_at) VALUES ('smoke-key', ?, 'smoke', 'admin', 'host', ?, NULL)",
+        "INSERT INTO api_keys (id, digest, label, scope, person_id, added_at, last_used_at) VALUES ('smoke-key', ?, 'smoke', 'daily', 'host', ?, NULL)",
         hashToken("smoke-token"),
         new Date().toISOString()
       );
