@@ -15,21 +15,21 @@ enum GeneratedColor {
   )
   static let field = DynamicColor(
     light: P3(1.0000, 1.0000, 1.0000),
-    dark: P3(0.0260, 0.0272, 0.0421),
+    dark: P3(0.0296, 0.0259, 0.0401),
     increasedContrastLight: P3(1.0000, 1.0000, 1.0000),
-    increasedContrastDark: P3(0.0115, 0.0122, 0.0213)
+    increasedContrastDark: P3(0.0136, 0.0114, 0.0200)
   )
   static let ink = DynamicColor(
-    light: P3(0.0902, 0.0994, 0.1546),
-    dark: P3(0.9190, 0.9244, 0.9723),
-    increasedContrastLight: P3(0.0902, 0.0994, 0.1546),
-    increasedContrastDark: P3(0.9190, 0.9244, 0.9723)
+    light: P3(0.1090, 0.0924, 0.1470),
+    dark: P3(0.9320, 0.9195, 0.9662),
+    increasedContrastLight: P3(0.1090, 0.0924, 0.1470),
+    increasedContrastDark: P3(0.9320, 0.9195, 0.9662)
   )
   static let muted = DynamicColor(
-    light: P3(0.3077, 0.3251, 0.4349),
-    dark: P3(0.7785, 0.7964, 0.9254),
-    increasedContrastLight: P3(0.2657, 0.2822, 0.3897),
-    increasedContrastDark: P3(0.8319, 0.8485, 0.9659)
+    light: P3(0.3437, 0.3116, 0.4200),
+    dark: P3(0.8299, 0.7945, 0.9213),
+    increasedContrastLight: P3(0.3008, 0.2691, 0.3751),
+    increasedContrastDark: P3(0.8671, 0.8352, 0.9503)
   )
   static let tint = DynamicColor(
     light: P3(0.5299, 0.1458, 0.8801),
@@ -62,10 +62,10 @@ enum GeneratedColor {
     increasedContrastDark: P3(0.5502, 0.9556, 0.5421)
   )
   static let categoryPurpleText = DynamicColor(
-    light: P3(0.5055, 0.1117, 0.7250),
-    dark: P3(0.8958, 0.7740, 1.0000),
-    increasedContrastLight: P3(0.4571, 0.0802, 0.6607),
-    increasedContrastDark: P3(0.9211, 0.8333, 0.9983)
+    light: P3(0.5583, 0.0417, 0.6320),
+    dark: P3(0.9319, 0.7627, 0.9600),
+    increasedContrastLight: P3(0.5126, 0.0230, 0.5813),
+    increasedContrastDark: P3(0.9484, 0.8250, 0.9686)
   )
   static let categoryTealText = DynamicColor(
     light: P3(0.0578, 0.3817, 0.4520),
