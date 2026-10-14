@@ -12,7 +12,7 @@ Orbis serves the Host and a few friends. The Host found Invites, Device Links, Q
 
 **One address.** The Apple apps call `https://orbis.p11a.xyz/api` and have no address field. Debug builds keep the launch argument that points a journey at its lane's service.
 
-The redeem and join routes accept requests without a key. They count toward the per-client limit on failed key attempts and answer 429 in the same way, which limits guessing a passcode or a code.
+The redeem and join routes accept requests without a key. They count toward the per-client limit on failed key attempts and answer 429 in the same way, which limits guessing a passcode or a code. An attempt is counted when it starts, an IPv6 client is counted by its /64 block, and one Group-wide limit of 100 failed sign-in attempts, which clears a minute after the last one, covers guesses spread over many addresses. A passcode needs at least eight characters, since it alone stands between the public API and open sign-up.
 
 Removed: Invites and the `invites` table, Device Links, the QR code, the `/claim` and `/link` web pages, Cloudflare Access recovery with its Worker settings, and the admin key held in `sessionStorage`. No client pastes a key any more, though Raycast and development builds still read one from their own settings.
 

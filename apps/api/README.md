@@ -4,7 +4,7 @@ The Worker at `https://orbis.p11a.xyz/api/*` forwards requests to one SQLite Dur
 
 `createPortableApp` composes the HTTP routes with an injected database, Audio service, audio response, audio release operation, and stream signing secret. The Bun `createApp` wrapper supplies the local implementations. The Group supplies its SQLite driver and trust adapter, persists Download requests without running a local worker, and redirects audio to the audio node. Its bundle excludes Bun, filesystem access, and local download backends.
 
-Presence, Queue signals, and the failed-key limit live in the Group's memory. Sign-in Codes live in the trust tables, so a restart or eviction keeps them. The limit uses `CF-Connecting-IP`. Events retain the 30-second heartbeat and end when the caller's key is revoked. Requests produce JSON logs.
+Presence, Queue signals, and the failed-key limit live in the Group's memory. Sign-in Codes live in the trust tables, so a restart or eviction keeps them. The limit uses `CF-Connecting-IP`, counts an IPv6 client by its /64 block, and adds one Group-wide ceiling on failed sign-in attempts. Events retain the 30-second heartbeat and end when the caller's key is revoked. Requests produce JSON logs.
 
 ## Worker configuration
 

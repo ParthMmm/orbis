@@ -268,9 +268,18 @@ export const readPasscode = (path: string) => ({
   passcode: read(path).passcode ?? null,
 });
 
+/** The passcode alone stands between the public API and open sign-up (ADR 0020). */
+export const PASSCODE_MIN_LENGTH = 8;
+
 /** A blank or null passcode closes joining. */
 export const setPasscode = (path: string, input: string | null) => {
   const passcode = input?.trim() || null;
+  if (passcode !== null && passcode.length < PASSCODE_MIN_LENGTH) {
+    throw new AdminError(
+      400,
+      `A passcode needs at least ${PASSCODE_MIN_LENGTH} characters.`
+    );
+  }
   return mutateTrustStore(
     path,
     () => read(path),

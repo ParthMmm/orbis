@@ -16,6 +16,10 @@
 // - A node key reaches the client routes.
 // - Guessing codes or passcodes is not limited, a key on the request skips
 //   the limit, or a client over the limit spends a real code.
+// - A different spelling of the route path, a burst of concurrent guesses,
+//   or a fresh IPv6 address for each guess skips the limit.
+// - Guesses spread over many addresses meet no limit at all.
+// - A passcode shorter than eight characters is accepted.
 import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -185,7 +189,7 @@ test("a friend joins with the Group Passcode and gets one daily key", async () =
       await statusOf(call(app, "GET", "/admin/people", { key: result.key }))
     ).toBe(403);
 
-    expect(await statusOf(setPasscode(app, "changed"))).toBe(200);
+    expect(await statusOf(setPasscode(app, "changed-now"))).toBe(200);
     expect(await statusOf(call(app, "GET", "/me", { key: result.key }))).toBe(
       200
     );
@@ -214,7 +218,9 @@ test("only the Host reads or sets the passcode, and it survives a restart", asyn
     expect(
       await bodyOf(call(first, "GET", "/admin/passcode", { key: HOST_LAPTOP }))
     ).toEqual({ passcode: null });
-    expect(await statusOf(setPasscode(first, "kept", HOST_LAPTOP))).toBe(200);
+    expect(await statusOf(setPasscode(first, "kept-safe", HOST_LAPTOP))).toBe(
+      200
+    );
   } finally {
     await first.dispose();
   }
@@ -222,19 +228,23 @@ test("only the Host reads or sets the passcode, and it survives a restart", asyn
   try {
     expect(
       await bodyOf(call(second, "GET", "/admin/passcode", { key: HOST_DAILY }))
-    ).toEqual({ passcode: "kept" });
+    ).toEqual({ passcode: "kept-safe" });
     expect(await bodyOf(setPasscode(second, "   "))).toEqual({
       passcode: null,
     });
     expect(
-      await statusOf(join(second, { passcode: "kept", username: "newcomer" }))
+      await statusOf(
+        join(second, { passcode: "kept-safe", username: "newcomer" })
+      )
     ).toBe(403);
-    expect(await statusOf(setPasscode(second, "kept"))).toBe(200);
+    expect(await statusOf(setPasscode(second, "kept-safe"))).toBe(200);
     expect(await bodyOf(setPasscode(second, null))).toEqual({
       passcode: null,
     });
     expect(
-      await bodyOf(join(second, { passcode: "kept", username: "newcomer" }))
+      await bodyOf(
+        join(second, { passcode: "kept-safe", username: "newcomer" })
+      )
     ).toEqual({ message: "Joining is closed." });
   } finally {
     await second.dispose();
@@ -409,7 +419,7 @@ test("wrong codes and passcodes count toward the failed-key limit", async () => 
   const { cleanup, open } = await setup();
   const app = open();
   try {
-    expect(await statusOf(setPasscode(app, "orbit"))).toBe(200);
+    expect(await statusOf(setPasscode(app, "orbit-rings"))).toBe(200);
     const issued = await issueOwn(app, FRIEND_DAILY);
     const guesses: number[] = [];
     for (let attempt = 0; attempt < 21; attempt += 1) {
@@ -435,7 +445,11 @@ test("wrong codes and passcodes count toward the failed-key limit", async () => 
     ).toBe(429);
     expect(
       await statusOf(
-        join(app, { passcode: "orbit", username: "blocked" }, "100.64.0.3")
+        join(
+          app,
+          { passcode: "orbit-rings", username: "blocked" },
+          "100.64.0.3"
+        )
       )
     ).toBe(429);
 
@@ -464,6 +478,140 @@ test("wrong codes and passcodes count toward the failed-key limit", async () => 
 
     expect(
       await statusOf(redeem(app, issued.code, { client: "100.64.0.6" }))
+    ).toBe(200);
+  } finally {
+    await app.dispose();
+    await cleanup();
+  }
+});
+
+test("a passcode needs eight characters, and a blank one still closes joining", async () => {
+  const { cleanup, open } = await setup();
+  const app = open();
+  try {
+    const short = await setPasscode(app, "orbit");
+    expect(short.statusCode).toBe(400);
+    expect(short.json()).toEqual({
+      message: "A passcode needs at least 8 characters.",
+    });
+    expect(await statusOf(setPasscode(app, "   seven  "))).toBe(400);
+    expect(await bodyOf(setPasscode(app, "orbit 42"))).toEqual({
+      passcode: "orbit 42",
+    });
+    expect(await bodyOf(setPasscode(app, "   "))).toEqual({ passcode: null });
+    expect(
+      await statusOf(join(app, { passcode: "orbit 42", username: "late" }))
+    ).toBe(403);
+  } finally {
+    await app.dispose();
+    await cleanup();
+  }
+});
+
+test("another spelling of the sign-in path still counts toward the limit", async () => {
+  const { cleanup, open } = await setup();
+  const app = open();
+  try {
+    const spellings = ["/sign-in/code/", "//sign-in//code", "/SIGN-IN/CODE"];
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 21; attempt += 1) {
+      // oxlint-disable-next-line no-await-in-loop
+      const response = await call(
+        app,
+        "POST",
+        spellings[attempt % spellings.length] ?? "/sign-in/code",
+        {
+          client: "100.64.0.7",
+          payload: { code: `GUESS${attempt}`, label: "New phone" },
+        }
+      );
+      statuses.push(response.statusCode);
+    }
+    expect(statuses.slice(0, 20)).not.toContain(429);
+    expect(statuses[20]).toBe(429);
+  } finally {
+    await app.dispose();
+    await cleanup();
+  }
+});
+
+test("a burst of concurrent guesses cannot slip under the limit", async () => {
+  const { cleanup, open } = await setup();
+  const app = open();
+  try {
+    expect(await statusOf(setPasscode(app, "orbit-rings"))).toBe(200);
+    const burst = await Promise.all(
+      Array.from({ length: 40 }, (_, attempt) =>
+        statusOf(
+          join(
+            app,
+            { passcode: `guess-${attempt}`, username: `burst${attempt}` },
+            "100.64.0.8"
+          )
+        )
+      )
+    );
+    expect(burst.filter((status) => status === 403)).toHaveLength(20);
+    expect(burst.filter((status) => status === 429)).toHaveLength(20);
+    expect(
+      await statusOf(
+        join(app, { passcode: "orbit-rings", username: "late" }, "100.64.0.8")
+      )
+    ).toBe(429);
+  } finally {
+    await app.dispose();
+    await cleanup();
+  }
+});
+
+test("IPv6 guesses share one count per /64 block", async () => {
+  const { cleanup, open } = await setup();
+  const app = open();
+  try {
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 21; attempt += 1) {
+      // oxlint-disable-next-line no-await-in-loop
+      const response = await redeem(app, `GUESS${attempt}`, {
+        client: `2001:db8:1:2::${(attempt + 1).toString(16)}`,
+      });
+      statuses.push(response.statusCode);
+    }
+    expect(statuses.slice(0, 20)).not.toContain(429);
+    expect(statuses[20]).toBe(429);
+    expect(
+      await statusOf(redeem(app, "GUESS", { client: "2001:db8:1:3::1" }))
+    ).toBe(404);
+  } finally {
+    await app.dispose();
+    await cleanup();
+  }
+});
+
+test("guesses spread over many addresses meet one limit for the whole Group", async () => {
+  const { cleanup, open } = await setup();
+  const app = open();
+  try {
+    expect(await statusOf(setPasscode(app, "orbit-rings"))).toBe(200);
+    const issued = await issueOwn(app, FRIEND_DAILY);
+    const statuses: number[] = [];
+    for (let attempt = 0; attempt < 101; attempt += 1) {
+      // oxlint-disable-next-line no-await-in-loop
+      const response = await redeem(app, `GUESS${attempt}`, {
+        client: `10.${Math.floor(attempt / 256)}.${attempt % 256}.1`,
+      });
+      statuses.push(response.statusCode);
+    }
+    expect(statuses.slice(0, 100)).not.toContain(429);
+    expect(statuses[100]).toBe(429);
+    // The Group-wide limit refuses a real code too, until the window passes.
+    expect(
+      await statusOf(redeem(app, issued.code, { client: "10.9.9.9" }))
+    ).toBe(429);
+    // A signed-in device is not locked out of its own routes.
+    expect(
+      await statusOf(
+        call(app, "GET", "/me", { client: "10.9.9.9", key: FRIEND_DAILY })
+      )
     ).toBe(200);
   } finally {
     await app.dispose();

@@ -884,15 +884,46 @@ export class Library extends Context.Service<
       const cancelDownload = Effect.fn("Library.cancelDownload")((id: string) =>
         execute(
           Effect.gen(function* cancelDownloadEffect() {
-            const [canceled] = yield* db
-              .update(sets)
-              .set({
-                downloadState: "none",
-                retainedAudioBytes: null,
-                retainedAudioFormat: null,
+            const canceled = yield* db.transaction((tx) =>
+              Effect.gen(function* cancel() {
+                // Any Person who sees a Set may ask for its Download (ADR 0010);
+                // only the one who asked, or the Host, may take it away from the
+                // others while it is still in flight. A finished one answers the
+                // 400 below.
+                const [job] = yield* tx
+                  .select({
+                    personId: downloadJobs.personId,
+                    state: sets.downloadState,
+                  })
+                  .from(downloadJobs)
+                  .innerJoin(sets, eq(sets.id, downloadJobs.setId))
+                  .where(eq(downloadJobs.setId, id));
+                if (
+                  job &&
+                  job.state !== "ready" &&
+                  job.personId !== personId &&
+                  personId !== "host"
+                ) {
+                  return yield* Effect.fail(
+                    new LibraryError({
+                      message:
+                        "Only the Person who asked for this Download, or the Host, can cancel it.",
+                      statusCode: 403,
+                    })
+                  );
+                }
+                const [row] = yield* tx
+                  .update(sets)
+                  .set({
+                    downloadState: "none",
+                    retainedAudioBytes: null,
+                    retainedAudioFormat: null,
+                  })
+                  .where(and(eq(sets.id, id), ne(sets.downloadState, "ready")))
+                  .returning();
+                return row ?? null;
               })
-              .where(and(eq(sets.id, id), ne(sets.downloadState, "ready")))
-              .returning();
+            );
             if (canceled) {
               return yield* hydrateSet(canceled);
             }

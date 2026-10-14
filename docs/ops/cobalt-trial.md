@@ -116,7 +116,7 @@ read -r -s -p 'Cobalt API key: ' COBALT_API_KEY
 printf '\n'
 export COBALT_API_KEY
 node scripts/smoke-cobalt.mjs \
-  --endpoint 'http://100.77.187.21:9000/' \
+  --endpoint 'http://100.100.100.100:9000/' \
   --api-key-env COBALT_API_KEY \
   --sample 'youtube|https://www.youtube.com/watch?v=<permitted-video-id>|<seconds>' \
   --sample 'soundcloud|https://soundcloud.com/<permitted-artist>/<permitted-track>|<seconds>' \

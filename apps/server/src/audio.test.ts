@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 
 import type { AudioOptions } from "./audio.js";
-import { createTestApp as createApp } from "./test-app.js";
+import { createTestApp as createApp, storedKey } from "./test-app.js";
 import { request } from "./test-http.js";
 
 const youTubeUrl = "https://www.youtube.com/watch?v=aqzKEbpKQAA";
@@ -544,5 +544,80 @@ test("audio for a set that never downloaded is a 404", async () => {
     expect(state.statusCode).toBe(404);
   } finally {
     await cleanup();
+  }
+});
+
+test("only the Person who asked for a Download, or the Host, can cancel it", async () => {
+  const root = await mkdtemp(path.join(tmpdir(), "orbis-audio-"));
+  await writeFile(
+    path.join(root, "devices.json"),
+    JSON.stringify({
+      keys: [
+        storedKey("ann-phone", "ann", "ann-key", "daily"),
+        storedKey("bob-phone", "bob", "bob-key", "daily"),
+      ],
+      people: ["host", "ann", "bob"].map((id) => ({
+        autoDownload: false,
+        id,
+        removed: false,
+        social: true,
+        username: id,
+      })),
+      version: 2,
+    })
+  );
+  // The worker stays off, so the Download sits in the queue for the whole test.
+  const app = createApp({
+    audio: {
+      audioDir: path.join(root, "audio"),
+      cobaltApiKey: "test-key",
+      cobaltUrl: "http://cobalt.test/",
+      startWorker: false,
+    },
+    databasePath: path.join(root, "library.sqlite"),
+  });
+  const shared = { tags: [], title: "Shared set", url: youTubeUrl };
+  const as = (key: string | undefined, method: string, url: string) =>
+    request(app, {
+      headers: key ? { authorization: `Bearer ${key}` } : {},
+      method,
+      payload: method === "POST" && url === "/sets" ? shared : undefined,
+      url,
+    });
+  try {
+    const saved = await as("ann-key", "POST", "/sets");
+    expect(saved.statusCode).toBe(201);
+    // SAFETY: the save route returns the stored set including its id.
+    const id = saved.json().id as string;
+    const bobSaved = await as("bob-key", "POST", "/sets");
+    expect(bobSaved.statusCode).toBe(201);
+    const asked = await as("ann-key", "POST", `/sets/${id}/audio/download`);
+    expect(asked.statusCode).toBe(202);
+
+    const other = await as("bob-key", "DELETE", `/sets/${id}/audio/download`);
+    expect(other.statusCode).toBe(403);
+    expect(other.json()).toEqual({
+      message:
+        "Only the Person who asked for this Download, or the Host, can cancel it.",
+    });
+    const still = await as("bob-key", "GET", `/sets/${id}/audio/state`);
+    expect(still.json().state).toBe("queued");
+
+    const own = await as("ann-key", "DELETE", `/sets/${id}/audio/download`);
+    expect(own.statusCode).toBe(200);
+    expect(own.json().downloadState).toBe("none");
+
+    const askedAgain = await as(
+      "bob-key",
+      "POST",
+      `/sets/${id}/audio/download`
+    );
+    expect(askedAgain.statusCode).toBe(202);
+    const host = await as(undefined, "DELETE", `/sets/${id}/audio/download`);
+    expect(host.statusCode).toBe(200);
+    expect(host.json().downloadState).toBe("none");
+  } finally {
+    await app.dispose();
+    await rm(root, { force: true, recursive: true });
   }
 });
