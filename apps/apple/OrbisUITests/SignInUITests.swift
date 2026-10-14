@@ -55,6 +55,11 @@ final class SignInUITests: XCTestCase {
     XCTAssertTrue(
       app.tabBars.buttons["Library"].waitForExistence(timeout: 30),
       "joining must land in the library\n\(app.debugDescription)")
+    // A new Person has no Sets, so Home is the first screen they see with nothing on it. It once
+    // showed only a strip of glow down the middle.
+    XCTAssertTrue(
+      app.descendants(matching: .any)["home-empty"].waitForExistence(timeout: 15),
+      "a new Person's Home must say the collection is empty\n\(app.debugDescription)")
     capture("03-joined")
     XCTAssertTrue(
       try host.people().contains { $0.username == username },
