@@ -1134,6 +1134,19 @@ final class AppModel {
     }
   }
 
+  /// A Playlist's members, in Playlist order, read without touching `playlistMembers`, so the car
+  /// can open a Playlist while the phone shows another.
+  func playlistSets(_ id: String) async -> Loadable<[SavedSet]> {
+    guard let client else { return .idle }
+    do {
+      return .loaded(try await client.library(playlistId: id))
+    } catch let error as OrbisError {
+      return .failed(error.failure(at: client.address))
+    } catch {
+      return .failed(OrbisError.unreachable.failure(at: client.address))
+    }
+  }
+
   private func playlistChange(_ work: (OrbisClient) async throws -> Void) async {
     guard let client else { return }
     isWorkingOnPlaylist = true
