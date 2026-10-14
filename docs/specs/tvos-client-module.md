@@ -16,7 +16,7 @@ Add a native tvOS destination to the existing `Orbis` target. Reuse `AppModel` a
 ## User Stories
 
 1. As a Person, I want Orbis on Apple TV, so playback in the room does not need AirPlay from a phone.
-2. As a Person, I want to connect the TV with the service address and my API key, so the TV is another client of my Library.
+2. As a Person, I want to sign the TV in with the Group Passcode or a Sign-in Code, so the TV is another client of my Library.
 3. As a Person, I want Home, Library, Playlists, and Search on the TV, matching phone and Mac.
 4. As a Person, I want to play a Set through the TV's audio output.
 5. As a Person, I want play, pause, and skip from the Siri Remote and system Now Playing.
@@ -25,7 +25,6 @@ Add a native tvOS destination to the existing `Orbis` target. Reuse `AppModel` a
 8. As a Person, I do not need filing, clipboard capture, or social switches on the TV in v1.
 9. As a Person with a large Library, I want Search and filters, so I do not scroll long focus lists.
 10. As a Person (later), I want Top Shelf to show recent Sets so I can resume from the home screen.
-11. As a Person (later), I want to pair with a short code or QR, so I do not type a key on the remote.
 
 ## Implementation Decisions
 
@@ -72,4 +71,3 @@ Add a native tvOS destination to the existing `Orbis` target. Reuse `AppModel` a
 0. Enable the tvOS destination; fix `#if os` gaps; connect, list the Library, play one Set
 1. Focus shell, Home rails, Playlists, Search, Now Playing, queue
 2. Top Shelf and deep links
-3. Short-code or QR pairing
