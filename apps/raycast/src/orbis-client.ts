@@ -110,10 +110,6 @@ interface CallOptions {
   readonly timeoutMs?: number;
 }
 
-/**
- * How one request ended: a decoded success, an HTTP status the client could not turn into
- * a success, or no usable answer at all.
- */
 type Reply<A> =
   | { readonly kind: "ok"; readonly value: A }
   | {
@@ -123,10 +119,6 @@ type Reply<A> =
     }
   | { readonly kind: "failed"; readonly message: string };
 
-/**
- * Makes one typed request to the configured service, with the key when one is given. It
- * refuses a service URL that is not HTTPS before anything is sent.
- */
 const callOrbis = async <A, E>(
   token: string | null,
   run: (client: OrbisClient) => Effect.Effect<A, E>,

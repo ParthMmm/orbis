@@ -24,7 +24,6 @@ export interface RaycastState {
   getTabsError: Error | null;
   preferences: RaycastPreferences;
   snapshots: ToastSnapshot[];
-  /** Raycast's LocalStorage for this extension. */
   storage: Map<string, string>;
   tabs: Tab[];
 }

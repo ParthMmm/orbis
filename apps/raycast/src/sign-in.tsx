@@ -7,10 +7,6 @@ interface SignInValues {
   readonly code: string;
 }
 
-/**
- * Takes a Sign-in Code that Orbis Settings shows on a device already signed in, and keeps
- * the key it returns, so the capture commands need no pasted token.
- */
 export default function SignIn() {
   const [isLoading, setIsLoading] = useState(false);
 
