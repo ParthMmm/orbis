@@ -1,16 +1,18 @@
 import XCTest
 
-/// Drives the Library against a server the lane starts. The address and token come from the
-/// environment, and each journey starts signed in.
-final class LibraryUITests: XCTestCase {
-  private func launch(filteringBy tag: String? = nil) throws -> XCUIApplication {
+/// What every Library journey shares: launching against the lane service, moving between
+/// tabs, searching, and capturing evidence. The journeys themselves live in small classes by
+/// area, because Xcode hands a whole class to one simulator, and one large class kept every
+/// other simulator idle.
+class LibraryJourney: XCTestCase {
+  func launch(filteringBy tag: String? = nil) throws -> XCUIApplication {
     let service = try LaneService()
     return launchOrbis(
       address: service.address, token: service.token,
       arguments: tag.map { ["-orbisStartTagFiltered", $0] } ?? [])
   }
 
-  private func record(_ name: String, _ values: [String: Any]) throws {
+  func record(_ name: String, _ values: [String: Any]) throws {
     let data = try JSONSerialization.data(
       withJSONObject: values, options: [.prettyPrinted, .sortedKeys])
     let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
@@ -25,7 +27,7 @@ final class LibraryUITests: XCTestCase {
   /// same element reports `hittable` in the accessibility tree and responds to a tap at the point
   /// its own frame names. The point is measured from the window rather than from the element's
   /// coordinate space, which is the difference that makes the tap land.
-  private func tapAtCentre(of element: XCUIElement, in app: XCUIApplication) {
+  func tapAtCentre(of element: XCUIElement, in app: XCUIApplication) {
     let frame = element.frame
     app.coordinate(withNormalizedOffset: .zero)
       .withOffset(CGVector(dx: frame.midX, dy: frame.midY))
@@ -37,7 +39,7 @@ final class LibraryUITests: XCTestCase {
   /// Returns the point the field sits at on iPhone, so a later query can focus it again once
   /// the button it replaced is gone.
   @discardableResult
-  private func openSearch(in app: XCUIApplication) -> XCUICoordinate? {
+  func openSearch(in app: XCUIApplication) -> XCUICoordinate? {
     let tab = app.tabBars.buttons["Search"]
     if tab.waitForExistence(timeout: 8) {
       // On iPhone the search tab morphs into the field in the same spot. The first tap
@@ -65,14 +67,14 @@ final class LibraryUITests: XCTestCase {
 
   /// Home is the first tab after pairing. The Library list, its filter, and File a set live on
   /// the Library tab, so a journey that wants them has to select it.
-  private func openLibrary(in app: XCUIApplication) {
+  func openLibrary(in app: XCUIApplication) {
     selectTab("Library", in: app, sidebarIdentifier: "sidebar-library")
   }
 
   /// Taps the tab's symbol, then waits until that tab's navigation bar is showing. The centre
   /// of the button's frame falls on the list under the floating bar, so the previous tab stays
   /// selected. `tap()` on the button itself reports a hit point of `{-1, -1}`.
-  private func selectTab(_ name: String, in app: XCUIApplication, sidebarIdentifier: String) {
+  func selectTab(_ name: String, in app: XCUIApplication, sidebarIdentifier: String) {
     let tab = app.tabBars.buttons[name]
     if tab.waitForExistence(timeout: 8) {
       let deadline = Date().addingTimeInterval(12)
@@ -100,10 +102,10 @@ final class LibraryUITests: XCTestCase {
   }
 
   /// The prompt the field shows while it is empty. XCUITest reports it as the field's value.
-  private static let searchPrompt = "Title, tag, or source link"
+  static let searchPrompt = "Title, tag, or source link"
 
   /// What the field holds, with the prompt an empty field shows treated as nothing.
-  private func searchText(in app: XCUIApplication) -> String {
+  func searchText(in app: XCUIApplication) -> String {
     let value = (app.searchFields.firstMatch.value as? String) ?? ""
     return value == Self.searchPrompt ? "" : value
   }
@@ -111,7 +113,7 @@ final class LibraryUITests: XCTestCase {
   /// Focuses the field. It replaces the tab button once the tab is selected, and XCUITest
   /// cannot address it after the morph settles, so the first focus uses the point the button
   /// occupied and a later one uses the bar's centre, where a query narrows the field to.
-  private func focusSearch(in app: XCUIApplication, spot: XCUICoordinate?) {
+  func focusSearch(in app: XCUIApplication, spot: XCUICoordinate?) {
     guard !app.keyboards.firstMatch.exists else { return }
     if let spot {
       let window = app.windows.firstMatch.frame
@@ -129,7 +131,7 @@ final class LibraryUITests: XCTestCase {
 
   /// Types a query and submits it. Whatever the field held is replaced, so one launch can
   /// search twice.
-  private func submitSearch(_ query: String, in app: XCUIApplication, spot: XCUICoordinate?) {
+  func submitSearch(_ query: String, in app: XCUIApplication, spot: XCUICoordinate?) {
     focusSearch(in: app, spot: spot)
     let existing = searchText(in: app)
     if !existing.isEmpty {
@@ -140,386 +142,20 @@ final class LibraryUITests: XCTestCase {
   }
 
   /// The state an unmatched search shows, matched by its words rather than its shape.
-  private func noResults(in app: XCUIApplication) -> XCUIElement {
+  func noResults(in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS %@", "No matching sets")).firstMatch
   }
 
-  private func untouchedSearch(in app: XCUIApplication) -> XCUIElement {
+  func untouchedSearch(in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)
       .matching(NSPredicate(format: "label BEGINSWITH %@", "Search your")).firstMatch
-  }
-
-  func testBrowsesAndSearchesTheLibrary() throws {
-    let app = try launch()
-    openLibrary(in: app)
-
-    let row = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
-    XCTAssertTrue(
-      row.waitForExistence(timeout: 60), "a saved Set must appear\n\(app.debugDescription)")
-    capture("02-library-loaded")
-
-    let searchSpot = openSearch(in: app)
-    submitSearch("night", in: app, spot: searchSpot)
-    XCTAssertTrue(row.waitForExistence(timeout: 30), "search must find the Set")
-    capture("03-search-results")
-
-    submitSearch("zzzznothing", in: app, spot: searchSpot)
-    XCTAssertTrue(
-      noResults(in: app).waitForExistence(timeout: 30),
-      "an unmatched search must say so\n\(app.debugDescription)")
-    capture("04-search-no-results")
-  }
-
-  /// Filing is the one action the app takes on the library, and the design promises a naming
-  /// step after it: "Title and tags come next." This proves that step arrives, and that it can
-  /// be left without naming anything.
-  func testFilingALinkOpensTheNamingStep() throws {
-    let app = try launch()
-    openLibrary(in: app)
-
-    // Filing lives in a sheet behind the toolbar's +, so the Library stays the collection.
-    let file = app.buttons["library-file"]
-    XCTAssertTrue(
-      file.waitForExistence(timeout: 60),
-      "the Library must offer File a set\n\(app.debugDescription)"
-    )
-    file.tap()
-    let link = app.textFields["Paste a link"]
-    XCTAssertTrue(
-      link.waitForExistence(timeout: 15),
-      "File a set must open with the paste field\n\(app.debugDescription)"
-    )
-    tapAtCentre(of: link, in: app)
-    link.typeText("https://youtu.be/tPEMP9oYxTo")
-    capture("07-link-pasted")
-
-    // Wait for the pasted link to enable filing, then wait for the naming controls.
-    // The Tag field's identifier keeps its lookup independent of the footer copy.
-    let fileIt = app.buttons["File it"]
-    let enabled = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "exists == true AND enabled == true"), object: fileIt)
-    XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 15), .completed, "a pasted link must enable File it")
-    fileIt.tap()
-
-    let title = app.textFields["reveal-title"]
-    XCTAssertTrue(
-      title.waitForExistence(timeout: 60),
-      "filing must open the step where the Set is named\n\(app.debugDescription)"
-    )
-    let dismiss = app.buttons["reveal-dismiss"]
-    XCTAssertTrue(app.buttons["reveal-done"].waitForExistence(timeout: 15), "the naming step must offer Done")
-    XCTAssertTrue(dismiss.waitForExistence(timeout: 15), "the naming step must offer Not Now")
-    XCTAssertTrue(
-      app.textFields["tag-field"].waitForExistence(timeout: 15),
-      "the naming step must offer Tags\n\(app.debugDescription)"
-    )
-    capture("08-naming-step")
-
-    dismiss.tap()
-
-    let confirmation = app.staticTexts["file-confirmation"]
-    XCTAssertTrue(
-      confirmation.waitForExistence(timeout: 30),
-      "leaving the naming step must say what was filed\n\(app.debugDescription)"
-    )
-    capture("09-filed")
-  }
-
-  /// The Set page is where a Set is corrected or thrown away, so the journey walks the two
-  /// actions that change the library, and the confirmation that guards the second one.
-  func testOpensASetRenamesItAndRemovesIt() throws {
-    // Its own Set, because removing the lane's seeded one would take it from other journeys.
-    let seeded = try LaneService().saveSet(
-      title: "Set to rename", url: "https://www.youtube.com/watch?v=renameme001")
-    let app = try launch()
-    openLibrary(in: app)
-
-    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
-    XCTAssertTrue(
-      row.waitForExistence(timeout: 60),
-      "a saved Set must appear after connecting\n\(app.debugDescription)"
-    )
-    tapAtCentre(of: row, in: app)
-
-    let title = app.staticTexts["detail-title"]
-    XCTAssertTrue(
-      title.waitForExistence(timeout: 30),
-      "pressing a row must open the Set's page\n\(app.debugDescription)"
-    )
-    XCTAssertTrue(app.buttons["detail-open"].exists, "the page must offer the source")
-    capture("10-set-page")
-
-    app.buttons["detail-actions"].tap()
-    app.buttons["detail-rename-action"].tap()
-    let field = app.textFields["rename-title"]
-    XCTAssertTrue(
-      field.waitForExistence(timeout: 15),
-      "renaming must offer a field\n\(app.debugDescription)"
-    )
-    field.tap()
-    field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 24))
-    field.typeText("Renamed by the journey")
-    app.buttons["rename-save"].tap()
-
-    XCTAssertTrue(
-      app.staticTexts["Renamed by the journey"].waitForExistence(timeout: 30),
-      "the page must show the name the service accepted\n\(app.debugDescription)"
-    )
-    capture("11-set-renamed")
-
-    app.buttons["detail-actions"].tap()
-    app.buttons["detail-remove"].tap()
-    XCTAssertTrue(
-      app.sheets.firstMatch.waitForExistence(timeout: 10),
-      "removing must ask first\n\(app.debugDescription)"
-    )
-    app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.92)).tap()
-    XCTAssertTrue(app.staticTexts["detail-title"].exists, "dismissing must keep the Set")
-
-    app.buttons["detail-actions"].tap()
-    app.buttons["detail-remove"].tap()
-    confirmationButton("Remove from library", in: app).tap()
-
-    // The page closes because the Set it was showing is gone, and the row goes with it.
-    XCTAssertFalse(
-      app.staticTexts["detail-title"].waitForExistence(timeout: 10),
-      "removing must close the page\n\(app.debugDescription)"
-    )
-    let gone = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS %@", "Renamed by the journey")).firstMatch
-    XCTAssertFalse(
-      gone.waitForExistence(timeout: 5),
-      "the removed Set must leave the library\n\(app.debugDescription)"
-    )
-    capture("12-set-removed")
-  }
-
-  func testCancelsAndRetriesADownload() throws {
-    let service = try LaneService()
-    let seeded = try service.saveSlowDownloadSet(
-      title: "Download twice", url: "https://www.youtube.com/watch?v=slowaudio01")
-    var observations: [LaneService.DownloadObservation] = []
-    defer {
-      let encoder = JSONEncoder()
-      encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
-      encoder.dateEncodingStrategy = .iso8601
-      do {
-        let data = try encoder.encode(observations)
-        let attachment = XCTAttachment(data: data, uniformTypeIdentifier: "public.json")
-        attachment.name = "download-cancel-retry"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-      } catch {
-        XCTFail("Could not record download states: \(error)")
-      }
-    }
-    func observe(_ phase: String, until matches: (LaneService.AudioState) -> Bool) throws {
-      let deadline = Date().addingTimeInterval(30)
-      repeat {
-        let state = try service.audioState(seeded.id)
-        observations.append(
-          .init(phase: phase, observedAt: Date(), setId: seeded.id, audio: state))
-        if matches(state) { return }
-        usleep(200_000)
-      } while Date() < deadline
-      XCTFail("Download did not reach \(phase)")
-      throw URLError(.timedOut)
-    }
-    let app = try launch()
-    openLibrary(in: app)
-    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
-    XCTAssertTrue(row.waitForExistence(timeout: 30))
-    tapAtCentre(of: row, in: app)
-    let download = app.descendants(matching: .any)["detail-download"].firstMatch
-    XCTAssertTrue(download.waitForExistence(timeout: 15))
-    try observe("initial") { $0.state == "none" }
-    tapAtCentre(of: download, in: app)
-    try observe("first-download") { $0.hasProgress }
-    let progress = app.descendants(matching: .any).matching(
-      NSPredicate(format: "label MATCHES %@", "Downloading [1-9][0-9]?%")
-    ).firstMatch
-    XCTAssertTrue(progress.waitForExistence(timeout: 15), "The page must show partial progress")
-    XCTAssertFalse(app.buttons["detail-play-toggle"].exists)
-    capture("download-first-progress")
-    app.buttons["detail-cancel-download"].tap()
-    try observe("canceled") { $0.state == "none" && $0.bytesReceived == 0 }
-    XCTAssertTrue(app.buttons["Download"].waitForExistence(timeout: 15))
-    capture("download-canceled")
-    tapAtCentre(of: download, in: app)
-    try observe("second-download") { $0.hasProgress }
-    XCTAssertTrue(progress.waitForExistence(timeout: 15), "The retry must show partial progress")
-    XCTAssertFalse(app.buttons["detail-play-toggle"].exists)
-    capture("download-retry-progress")
-    try service.finishSlowDownload(seeded.id)
-    try observe("ready") { $0.state == "ready" }
-    XCTAssertTrue(app.buttons["detail-play-toggle"].waitForExistence(timeout: 30))
-    XCTAssertFalse(app.buttons["detail-cancel-download"].exists)
-    capture("download-retry-ready")
-  }
-
-  func testPlaysASetWithRetainedAudio() throws {
-    let seeded = try LaneService().saveReadySet(
-      title: "Ready to play", url: "https://www.youtube.com/watch?v=readyaudio1")
-    let app = try launch()
-    openLibrary(in: app)
-
-    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
-    XCTAssertTrue(row.waitForExistence(timeout: 60))
-    tapAtCentre(of: row, in: app)
-
-    let play = app.buttons["detail-play-toggle"]
-    XCTAssertTrue(play.waitForExistence(timeout: 30))
-    XCTAssertFalse(app.buttons["Download"].exists)
-    play.tap()
-    let seek = app.sliders["detail-seek"]
-    let advanced = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value != %@", "0:00"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 6), .completed)
-    XCTAssertEqual(app.buttons["detail-play-toggle"].label, "Pause")
-    capture("16-ready-audio-playing")
-  }
-
-  func testPlaysAndSeeksFromTracklistCues() throws {
-    let service = try LaneService()
-    let seeded = try service.saveReadySet(
-      title: "Tracklist journey", url: "https://www.youtube.com/watch?v=tracklist01")
-    try service.seedTracklist(seeded.id)
-    let app = try launch()
-    openLibrary(in: app)
-    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
-    XCTAssertTrue(row.waitForExistence(timeout: 60))
-    tapAtCentre(of: row, in: app)
-
-    let tracklist = app.descendants(matching: .any)["tracklist"]
-    XCTAssertTrue(tracklist.waitForExistence(timeout: 30))
-    let first = app.buttons["cue-0"]
-    let second = app.buttons["cue-1"]
-    XCTAssertTrue(second.exists)
-    XCTAssertEqual(second.label, "Second Cue, Second Artist, starts at 0:12")
-    XCTAssertFalse(app.buttons["cue-2"].exists)
-    XCTAssertTrue(app.descendants(matching: .any)["cue-2"].exists)
-    for _ in 0..<3 {
-      if second.isHittable { break }
-      app.swipeUp()
-    }
-    XCTAssertTrue(second.isHittable)
-    capture("tracklist-before-play")
-
-    second.tap()
-    let seek = app.sliders["detail-seek"]
-    XCTAssertTrue(seek.waitForExistence(timeout: 15))
-    let startedAtCue = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value BEGINSWITH %@", "0:1"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [startedAtCue], timeout: 8), .completed)
-    XCTAssertTrue(second.isSelected)
-    capture("tracklist-second-cue-playing")
-
-    for _ in 0..<3 {
-      if seek.isHittable { break }
-      app.swipeDown()
-    }
-    XCTAssertTrue(seek.isHittable)
-    capture("tracklist-elapsed-after-cue")
-
-    let canSeek = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "enabled == true"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [canSeek], timeout: 8), .completed)
-    first.tap()
-    let returnedToFirst = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value BEGINSWITH %@", "0:0"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [returnedToFirst], timeout: 5), .completed)
-    XCTAssertTrue(first.isSelected)
-    capture("tracklist-first-cue-playing")
-
-    let pause = app.buttons["detail-play-toggle"]
-    pause.tap()
-    XCTAssertEqual(pause.label, "Play")
-
-    app.navigationBars.buttons.firstMatch.tap()
-    let openNowPlaying = app.buttons.matching(
-      NSPredicate(
-        format: "identifier == %@ AND label == %@", "mini-player", "Now playing, \(seeded.title)")
-    ).firstMatch
-    XCTAssertTrue(openNowPlaying.waitForExistence(timeout: 10))
-    openNowPlaying.tap()
-    XCTAssertEqual(app.staticTexts["now-playing-cue"].label, "First Cue · First Artist")
-    capture("tracklist-now-playing")
-  }
-
-  func testMiniPlayerNowPlayingAndStoredPosition() throws {
-    let service = try LaneService()
-    let seeded = try service.saveReadySet(
-      title: "Now Playing journey", url: "https://www.youtube.com/watch?v=nowplaying1")
-    let app = try launch()
-    openLibrary(in: app)
-    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
-    XCTAssertTrue(row.waitForExistence(timeout: 60))
-    tapAtCentre(of: row, in: app)
-
-    let play = app.buttons["detail-play-toggle"]
-    XCTAssertTrue(play.waitForExistence(timeout: 30))
-    play.tap()
-    XCTAssertFalse(app.buttons.matching(identifier: "mini-player").firstMatch.exists)
-    capture("17-playing-on-set-page")
-
-    app.navigationBars.buttons.firstMatch.tap()
-    let miniToggle = app.buttons.matching(
-      NSPredicate(format: "identifier == %@ AND label == %@", "mini-player", "Pause")
-    ).firstMatch
-    XCTAssertTrue(miniToggle.waitForExistence(timeout: 10))
-    XCTAssertEqual(miniToggle.label, "Pause")
-    capture("18-mini-player")
-
-    let openNowPlaying = app.buttons.matching(
-      NSPredicate(
-        format: "identifier == %@ AND label == %@", "mini-player", "Now playing, \(seeded.title)")
-    ).firstMatch
-    openNowPlaying.tap()
-    let title = app.staticTexts["now-playing-title"]
-    XCTAssertTrue(title.waitForExistence(timeout: 10))
-    XCTAssertEqual(title.label, seeded.title)
-    let seek = app.sliders["now-playing-seek"]
-    let advanced = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value != %@", "0:00"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 4), .completed)
-    sleep(2)
-    let beforePause = try service.set(id: seeded.id)?.playbackPositionSeconds ?? 0
-    let pause = app.buttons.matching(
-      NSPredicate(format: "identifier == %@ AND label == %@", "now-playing-play-toggle", "Pause")
-    ).firstMatch
-    pause.tap()
-    let resume = app.buttons.matching(
-      NSPredicate(format: "identifier == %@ AND label == %@", "now-playing-play-toggle", "Play")
-    ).firstMatch
-    XCTAssertTrue(resume.waitForExistence(timeout: 4))
-    capture("19-now-playing-paused")
-
-    let stored = try service.position(of: seeded.id, becomesAtLeast: beforePause + 1)
-    XCTAssertGreaterThan(stored, beforePause)
-    XCTAssertLessThan(stored, 30)
-    let storedTitle = try service.set(id: seeded.id)?.title
-    XCTAssertEqual(storedTitle, seeded.title)
-    try record(
-      "playback-position",
-      [
-        "setId": seeded.id,
-        "expected": [
-          "title": seeded.title, "minimumPositionSeconds": beforePause + 1,
-          "maximumPositionSeconds": 29,
-        ],
-        "stored": [
-          "title": storedTitle ?? "", "positionBeforePauseSeconds": beforePause,
-          "positionSeconds": stored,
-        ],
-      ])
   }
 
   /// A confirmation dialog is a sheet on a phone and an alert on a Mac, so a journey asks for
   /// both rather than assuming one shape. Each is waited for, because a dialog that is still
   /// rising has not been found yet.
-  private func confirmationButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
+  func confirmationButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
     let sheet = app.sheets.buttons[label]
     if sheet.waitForExistence(timeout: 5) {
       return sheet
@@ -529,158 +165,5 @@ final class LibraryUITests: XCTestCase {
       return alert
     }
     return app.buttons[label]
-  }
-
-  /// The tag tile is the only way to reach either state from the Library. A control that turns a filter off but never on looks alive while
-  /// leaving the Library unfilterable, so both directions are tapped.
-  func testFiltersTheLibraryByTag() throws {
-    // An untagged Set, so the filter has something to hide.
-    _ = try LaneService().saveSet(
-      title: "Untagged set", url: "https://www.youtube.com/watch?v=untagged001")
-    let app = try launch()
-    openLibrary(in: app)
-
-    let tile = app.buttons["tag-filter-techno"]
-    XCTAssertTrue(
-      tile.waitForExistence(timeout: 60),
-      "the tag filter must appear above the rows\n\(app.debugDescription)")
-    XCTAssertFalse(tile.isSelected, "the Library must open unfiltered\n\(app.debugDescription)")
-
-    tapAtCentre(of: tile, in: app)
-    let hidden = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS %@", "outside this filter")).firstMatch
-    XCTAssertTrue(
-      hidden.waitForExistence(timeout: 20),
-      "pressing the tile must turn the filter on\n\(app.debugDescription)")
-    XCTAssertTrue(tile.isSelected, "the active tile is selected\n\(app.debugDescription)")
-    capture("06-library-filtered")
-
-    tapAtCentre(of: tile, in: app)
-    XCTAssertTrue(
-      hidden.waitForNonExistence(timeout: 20),
-      "pressing the same tile must clear the filter\n\(app.debugDescription)")
-    XCTAssertFalse(tile.isSelected, "a cleared filter deselects its tile")
-  }
-
-  func testHomeTagOpensFilteredLibraryAfterOpeningASet() throws {
-    let app = try launch()
-    openLibrary(in: app)
-
-    let night = app.descendants(matching: .any)
-      .matching(
-        NSPredicate(
-          format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "set-row-", "Night session"
-        )
-      )
-      .firstMatch
-    XCTAssertTrue(night.waitForExistence(timeout: 30), "the seeded Set must appear in the Library")
-    tapAtCentre(of: night, in: app)
-    XCTAssertTrue(app.staticTexts["detail-title"].waitForExistence(timeout: 15))
-
-    selectTab("Home", in: app, sidebarIdentifier: "sidebar-home")
-    let tag = app.buttons["home-tag-techno"]
-    XCTAssertTrue(tag.waitForExistence(timeout: 15), "Home must show the seeded tag")
-    capture("home")
-    tapAtCentre(of: tag, in: app)
-
-    let filter = app.buttons["tag-filter-techno"]
-    XCTAssertTrue(filter.waitForExistence(timeout: 15), "the tag must open the Library list")
-    XCTAssertTrue(filter.isSelected, "the Library must filter by the tapped tag")
-    XCTAssertFalse(app.staticTexts["detail-title"].exists, "the opened Set must be closed")
-    capture("home-tag-filtered-library")
-  }
-
-  /// A Set found by search is the reason to search, so the result has to open. The Library row
-  /// in the same component opens the same page, on the same build, in the same pass.
-  func testOpensASetFromASearchResult() throws {
-    let app = try launch()
-
-    let spot = openSearch(in: app)
-    submitSearch("night", in: app, spot: spot)
-
-    let heading = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS %@", "Results for")).firstMatch
-    XCTAssertTrue(
-      heading.waitForExistence(timeout: 30),
-      "a submitted search must name the query it answers\n\(app.debugDescription)")
-
-    let result = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS %@", "Night session")).firstMatch
-    XCTAssertTrue(
-      result.waitForExistence(timeout: 30),
-      "search must list the Set it found\n\(app.debugDescription)")
-    tapAtCentre(of: result, in: app)
-
-    let title = app.staticTexts["detail-title"].firstMatch
-    XCTAssertTrue(
-      title.waitForExistence(timeout: 30),
-      "a search result must open the Set's page\n\(app.debugDescription)")
-    // The page names the Set twice: the header carries the title with its source, and the
-    // title stands alone under it. Either identifies the Set that was opened.
-    XCTAssertTrue(
-      title.label.contains("Night session"),
-      "the page must show the Set that was opened, not another one: \(title.label)")
-    capture("13-search-result-open")
-
-    // The results and the query are where the person left them, so returning is not a reset.
-    app.navigationBars.buttons.firstMatch.tap()
-    XCTAssertTrue(
-      heading.waitForExistence(timeout: 20),
-      "returning from the page must keep the results\n\(app.debugDescription)")
-    XCTAssertEqual(searchText(in: app), "night", "returning must keep the query")
-  }
-
-  /// Clearing a search that found nothing is the one way out of the no-match state, so it has
-  /// to empty the field and return the screen to the state it shows before any query. It once
-  /// left the query in the field and the result area on Loading, forever.
-  func testClearsANoMatchSearch() throws {
-    let app = try launch()
-
-    let spot = openSearch(in: app)
-    submitSearch("zzzznothing", in: app, spot: spot)
-    XCTAssertTrue(
-      noResults(in: app).waitForExistence(timeout: 30),
-      "an unmatched search must say so\n\(app.debugDescription)")
-
-    app.buttons["Clear search"].tap()
-
-    XCTAssertTrue(
-      untouchedSearch(in: app).waitForExistence(timeout: 20),
-      "clearing must return to the state before any query\n\(app.debugDescription)")
-    XCTAssertFalse(noResults(in: app).exists, "the no-match state goes with the query")
-    XCTAssertEqual(searchText(in: app), "", "clearing must empty the field")
-    XCTAssertFalse(
-      app.descendants(matching: .any).matching(identifier: "library-loading").firstMatch.exists,
-      "clearing must not leave a loading state behind")
-    capture("14-search-cleared")
-  }
-
-  /// A filter that hides every Set is not an empty collection. The screen once said "Start your
-  /// collection" about a collection that was not empty, with no filter row and no way out but a
-  /// relaunch.
-  ///
-  /// The recovery itself is not driven here. A tap into the content of this state does not reach
-  /// the app under XCUITest — the same tap, at the same point, on the same build, works when the
-  /// app is driven by hand — and neither the filter pill nor the state's own action accepts one.
-  /// The press that clears the filter is verified by hand and recorded in
-  /// `docs/agents/ui-verification.md`; the model change it makes is `setTagFilter(nil)`, which
-  /// `LibraryFilterTests.testShowsOnlySetsCarryingTheActiveTag` covers.
-  func testAFilterThatAdmitsNothingIsNotAnEmptyLibrary() throws {
-    let app = try launch(filteringBy: "hardgroove")
-    openLibrary(in: app)
-
-    XCTAssertTrue(
-      noResults(in: app).waitForExistence(timeout: 60),
-      "a filter that hides every Set must say so\n\(app.debugDescription)")
-    XCTAssertFalse(
-      app.staticTexts["Start your collection"].exists,
-      "an empty collection is a different state and must not wear that copy")
-    XCTAssertTrue(
-      app.buttons["Clear filters"].exists,
-      "the state must offer the way back\n\(app.debugDescription)")
-    XCTAssertTrue(
-      app.descendants(matching: .any)["tag-filter-techno"].exists,
-      "the filter row must stay, so the filter is still visible where it was set")
-    capture("15-library-no-matches")
   }
 }
