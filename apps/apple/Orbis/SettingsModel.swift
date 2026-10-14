@@ -9,10 +9,9 @@ final class SettingsModel {
   var me: Loadable<Me> = .idle
   /// The Group Passcode, nil while joining is closed. Host only.
   var passcode: String?
-  /// What the username and passcode fields hold, kept here so a pushed Person page coming back
-  /// does not reset them.
+  /// What the username field holds, kept here so a pushed Person page coming back does not reset
+  /// it.
   var username = ""
-  var passcodeDraft = ""
   var people: Loadable<[GroupPerson]> = .idle
   var code: SignInCode?
   var accountFailure: OrbisFailure?
@@ -51,7 +50,6 @@ final class SettingsModel {
     me = .idle
     passcode = nil
     username = ""
-    passcodeDraft = ""
     people = .idle
     accountFailure = nil
     groupFailure = nil
@@ -63,7 +61,6 @@ final class SettingsModel {
   func loadPasscode() async {
     if let current = await settingsRequest(app, { self.hostFailure = $0 }, { try await $0.passcode() }) {
       passcode = current
-      passcodeDraft = current ?? ""
     }
   }
 
@@ -95,7 +92,6 @@ final class SettingsModel {
     defer { isSaving = false }
     if let stored = await settingsRequest(app, { self.hostFailure = $0 }, { try await $0.setPasscode(next) }) {
       passcode = stored
-      passcodeDraft = stored ?? ""
     }
   }
 }

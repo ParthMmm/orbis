@@ -263,17 +263,11 @@ private struct HostSections: View {
       Toggle("Allow Joining", isOn: joining)
         .disabled(settings.isSaving)
         .accessibilityIdentifier("settings-joining")
-      if let passcode = settings.passcode {
-        NavigationLink {
-          PasscodeEditor(settings: settings)
-        } label: {
-          LabeledContent("Group Passcode", value: passcode)
-        }
-        .accessibilityIdentifier("settings-passcode-row")
-        ShareLink(item: invitation(passcode)) {
-          Label("Invite a Friend", systemImage: "square.and.arrow.up")
-        }
-        .accessibilityIdentifier("settings-invite")
+      // The passcode itself never shows: the Host chose it, and a screen anyone can glance at is
+      // no place for the one thing that opens the Group.
+      if settings.passcode != nil {
+        NavigationLink("Change Group Passcode") { PasscodeEditor(settings: settings) }
+          .accessibilityIdentifier("settings-passcode-row")
       }
       FailureRows(
         failure: settings.hostFailure, context: "managing the Group", identifier: "settings-host-error")
@@ -323,28 +317,35 @@ private struct HostSections: View {
         }
       })
   }
-
-  private func invitation(_ passcode: String) -> String {
-    "Join my Orbis Group: open Orbis, choose I'm New, and type the Group Passcode \(passcode)."
-  }
 }
 
-/// The page for setting the Group Passcode.
+/// The page for choosing a new Group Passcode. The fields stay hidden and start empty, and the
+/// passcode is typed twice, because a typo the Host cannot see would keep every friend out.
 private struct PasscodeEditor: View {
   @Bindable var settings: SettingsModel
+  @State private var next = ""
+  @State private var confirmation = ""
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
     Form {
       Section {
-        TextField("Group Passcode", text: $settings.passcodeDraft)
+        SecureField("New Passcode", text: $next)
+          .plainEntry()
+          .accessibilityIdentifier("settings-passcode")
+        SecureField("Confirm Passcode", text: $confirmation)
           .plainEntry()
           .onSubmit(save)
-          .accessibilityIdentifier("settings-passcode")
+          .accessibilityIdentifier("settings-passcode-confirm")
+        if mismatched {
+          Text("The passcodes do not match.")
+            .foregroundStyle(OrbisColor.destructive)
+            .accessibilityIdentifier("settings-passcode-mismatch")
+        }
         FailureRows(
           failure: settings.hostFailure, context: "managing the Group", identifier: "settings-host-error")
       } footer: {
-        Text("Use at least 8 characters. Friends type this to join.")
+        Text("Use at least 8 characters. Orbis does not show it after you save, so tell it to friends yourself.")
       }
     }
     .formStyle(.grouped)
@@ -355,26 +356,30 @@ private struct PasscodeEditor: View {
     .toolbar {
       ToolbarItem(placement: .confirmationAction) {
         Button("Save", action: save)
-          .disabled(trimmed.isEmpty || trimmed == settings.passcode || settings.isSaving)
+          .disabled(trimmed.isEmpty || trimmed != confirmation.trimmed || settings.isSaving)
           .accessibilityIdentifier("settings-passcode-save")
       }
     }
-    // Leaving without saving puts the stored passcode back.
-    .onDisappear { settings.passcodeDraft = settings.passcode ?? "" }
   }
 
-  private var trimmed: String {
-    settings.passcodeDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+  private var trimmed: String { next.trimmed }
+
+  private var mismatched: Bool {
+    !confirmation.isEmpty && trimmed != confirmation.trimmed
   }
 
   private func save() {
-    guard !trimmed.isEmpty, trimmed != settings.passcode else { return }
-    let next = trimmed
+    guard !trimmed.isEmpty, trimmed == confirmation.trimmed else { return }
+    let passcode = trimmed
     Task {
-      await settings.setPasscode(next)
-      if settings.passcode == next { dismiss() }
+      await settings.setPasscode(passcode)
+      if settings.passcode == passcode { dismiss() }
     }
   }
+}
+
+extension String {
+  fileprivate var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 
 /// One other Person, as the Host sees them: a Sign-in Code for a new device, and removal.

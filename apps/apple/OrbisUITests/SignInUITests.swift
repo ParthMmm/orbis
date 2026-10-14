@@ -187,15 +187,21 @@ final class SignInUITests: XCTestCase {
     let passcodeRow = app.buttons["settings-passcode-row"]
     reveal(passcodeRow, in: app)
     XCTAssertTrue(
-      waitUntil(timeout: 15) { passcodeRow.label.contains("lane-before") },
-      "the Host sees the current passcode\n\(app.debugDescription)")
+      passcodeRow.waitForExistence(timeout: 15), "an open Group offers a new passcode\n\(app.debugDescription)")
+    XCTAssertFalse(
+      app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'lane-before'")).firstMatch.exists,
+      "Settings never shows the passcode")
     capture("01-host-settings")
-    step("the Host's Settings shows the Group Passcode")
+    step("the Host's Settings offers a new Group Passcode without showing the current one")
 
     passcodeRow.tap()
-    let passcode = app.textFields["settings-passcode"]
-    XCTAssertTrue(passcode.waitForExistence(timeout: 10), "the passcode page offers a field")
-    replaceText(in: passcode, with: "lane-after", app: app)
+    let passcode = app.secureTextFields["settings-passcode"]
+    XCTAssertTrue(passcode.waitForExistence(timeout: 10), "the passcode page offers a hidden field")
+    passcode.tap()
+    passcode.typeText("lane-after")
+    let confirmation = app.secureTextFields["settings-passcode-confirm"]
+    confirmation.tap()
+    confirmation.typeText("lane-after")
     app.buttons["settings-passcode-save"].tap()
     XCTAssertTrue(
       try waitUntil(timeout: 15) { try host.passcode() == "lane-after" },
