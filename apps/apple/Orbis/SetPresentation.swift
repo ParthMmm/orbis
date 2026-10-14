@@ -16,6 +16,30 @@ struct SetRowModel {
   let progress: Double?
 }
 
+/// What Home shows: the Set it leads with and the Sets on its two rails. One definition for every
+/// surface that draws Home, the phone's page and the car's tab, so they cannot pick differently.
+struct HomeSelection: Equatable {
+  /// A rail shows what is new, not the whole library.
+  static let recentLimit = 8
+
+  /// Every Set left part-way, the most recently heard first. The first of them leads Home.
+  let continueListening: [SavedSet]
+  /// The newest Sets the Library's filter admits.
+  let recentlyFiled: [SavedSet]
+
+  init(library: [SavedSet], visible: [SavedSet]) {
+    continueListening = SetPresentation.continueListening(library)
+    recentlyFiled = Array(visible.prefix(Self.recentLimit))
+  }
+
+  /// The one most recently left part-way, or else the newest filed.
+  var lead: SavedSet? { continueListening.first ?? recentlyFiled.first }
+  /// Whether the lead is a Set to go back to rather than a new one.
+  var isResume: Bool { !continueListening.isEmpty }
+  /// The rail under the lead: the rest of what was left part-way.
+  var continueRail: [SavedSet] { Array(continueListening.dropFirst()) }
+}
+
 enum SetPresentation {
   /// The design package defaults its types to the main actor, so the mapper that builds them
   /// is main actor too.
