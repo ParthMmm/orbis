@@ -32,13 +32,13 @@ enum GeneratedColor {
     increasedContrastDark: P3(0.8319, 0.8485, 0.9659)
   )
   static let tint = DynamicColor(
-    light: P3(0.4514, 0.2958, 0.9097),
-    dark: P3(0.6319, 0.5621, 0.9986),
-    increasedContrastLight: P3(0.3667, 0.1787, 0.8021),
-    increasedContrastDark: P3(0.7324, 0.7032, 0.9605)
+    light: P3(0.5299, 0.1458, 0.8801),
+    dark: P3(0.7052, 0.4938, 0.9917),
+    increasedContrastLight: P3(0.4314, 0.0118, 0.7415),
+    increasedContrastDark: P3(0.7904, 0.6653, 0.9875)
   )
   static let categoryPinkText = DynamicColor(
-    light: P3(0.6377, 0.1159, 0.2238),
+    light: P3(0.6364, 0.0673, 0.2087),
     dark: P3(0.9994, 0.7634, 0.7694),
     increasedContrastLight: P3(0.5851, 0.0224, 0.1818),
     increasedContrastDark: P3(0.9994, 0.8268, 0.8296)
@@ -50,51 +50,51 @@ enum GeneratedColor {
     increasedContrastDark: P3(0.9877, 0.8602, 0.3052)
   )
   static let categoryCyanText = DynamicColor(
-    light: P3(0.1060, 0.3722, 0.5016),
+    light: P3(0.0693, 0.3734, 0.5124),
     dark: P3(0.5981, 0.8556, 1.0000),
     increasedContrastLight: P3(0.0116, 0.3302, 0.4631),
     increasedContrastDark: P3(0.7040, 0.8923, 0.9998)
   )
   static let categoryGreenText = DynamicColor(
-    light: P3(0.1347, 0.3994, 0.1411),
+    light: P3(0.0883, 0.4063, 0.1071),
     dark: P3(0.5068, 0.9105, 0.5001),
-    increasedContrastLight: P3(0.0924, 0.3576, 0.1037),
+    increasedContrastLight: P3(0.0590, 0.3616, 0.0813),
     increasedContrastDark: P3(0.5502, 0.9556, 0.5421)
   )
   static let categoryPurpleText = DynamicColor(
-    light: P3(0.4847, 0.2038, 0.6676),
+    light: P3(0.5055, 0.1117, 0.7250),
     dark: P3(0.8958, 0.7740, 1.0000),
-    increasedContrastLight: P3(0.4431, 0.1544, 0.6222),
+    increasedContrastLight: P3(0.4571, 0.0802, 0.6607),
     increasedContrastDark: P3(0.9211, 0.8333, 0.9983)
   )
   static let categoryTealText = DynamicColor(
-    light: P3(0.0791, 0.3806, 0.4486),
-    dark: P3(0.5157, 0.8730, 0.9666),
+    light: P3(0.0578, 0.3817, 0.4520),
+    dark: P3(0.4586, 0.8813, 0.9897),
     increasedContrastLight: P3(0.0393, 0.3390, 0.4031),
     increasedContrastDark: P3(0.5918, 0.9148, 1.0000)
   )
   static let categoryMintText = DynamicColor(
-    light: P3(0.1452, 0.3849, 0.3797),
-    dark: P3(0.5288, 0.8892, 0.8780),
-    increasedContrastLight: P3(0.1075, 0.3438, 0.3392),
-    increasedContrastDark: P3(0.5672, 0.9284, 0.9168)
+    light: P3(0.1010, 0.3900, 0.3850),
+    dark: P3(0.3822, 0.9142, 0.9028),
+    increasedContrastLight: P3(0.0728, 0.3473, 0.3428),
+    increasedContrastDark: P3(0.4255, 0.9538, 0.9418)
   )
   static let categoryBlueText = DynamicColor(
-    light: P3(0.0750, 0.3288, 0.7079),
+    light: P3(0.0443, 0.3247, 0.7235),
     dark: P3(0.7227, 0.8298, 0.9966),
     increasedContrastLight: P3(0.0045, 0.2826, 0.6592),
     increasedContrastDark: P3(0.7902, 0.8722, 0.9994)
   )
   static let categoryIndigoText = DynamicColor(
-    light: P3(0.2931, 0.2801, 0.7460),
+    light: P3(0.2821, 0.2093, 0.8520),
     dark: P3(0.7863, 0.8108, 1.0000),
-    increasedContrastLight: P3(0.2575, 0.2344, 0.6992),
+    increasedContrastLight: P3(0.2500, 0.1716, 0.7821),
     increasedContrastDark: P3(0.8402, 0.8595, 0.9981)
   )
   static let categoryBrownText = DynamicColor(
-    light: P3(0.4293, 0.3334, 0.1930),
-    dark: P3(0.9019, 0.8077, 0.6742),
-    increasedContrastLight: P3(0.3887, 0.2943, 0.1547),
-    increasedContrastDark: P3(0.9539, 0.8524, 0.7085)
+    light: P3(0.4507, 0.3245, 0.1287),
+    dark: P3(0.9332, 0.7991, 0.6077),
+    increasedContrastLight: P3(0.4056, 0.2870, 0.1004),
+    increasedContrastDark: P3(0.9805, 0.8451, 0.6522)
   )
 }
