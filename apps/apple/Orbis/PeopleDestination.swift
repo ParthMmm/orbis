@@ -57,16 +57,9 @@ struct PeopleDestination: View {
   private var page: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 32) {
-        Text(subtitle)
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
-          .accessibilityIdentifier("people-subtitle")
         if people.people.isEmpty {
           emptyCard
         } else {
-          if !people.listening.isEmpty {
-            listeningNow
-          }
           group
         }
         if let failure = people.failure {
@@ -89,89 +82,30 @@ struct PeopleDestination: View {
     .accessibilityIdentifier("people-list")
   }
 
-  private var subtitle: String {
-    if people.people.isEmpty { return "Social is on. You appear to People you allow." }
-    let count = people.listening.count
-    if count == 0 { return "Nobody is listening right now." }
-    return count == 1 ? "1 listening now" : "\(count) listening now"
-  }
-
-  // MARK: Listening now
-
-  private var listeningNow: some View {
-    VStack(alignment: .leading, spacing: 14) {
-      SectionHeading("Listening now")
-      ScrollView(.horizontal, showsIndicators: false) {
-        LazyHStack(alignment: .top, spacing: 14) {
-          ForEach(people.listening, id: \.personId) { presence in
-            ListeningCard(model: model, presence: presence) { openedPerson = presence.personId }
-              .accessibilityIdentifier("people-listening-\(presence.username)")
-          }
-        }
-        .padding(.horizontal, 16)
-        .scrollTargetLayout()
-      }
-      .padding(.horizontal, -16)
-      .scrollTargetBehavior(.viewAligned)
-      .scrollClipDisabled()
-    }
-  }
-
   // MARK: Your Group
 
+  /// One list of the Group. Whoever is listening comes first, with what they are playing and a
+  /// button to play it here; everyone else shows what they played last.
   private var group: some View {
-    VStack(alignment: .leading, spacing: 10) {
-      SectionHeading("Your Group", subtitle: "People with Social on. Only you choose who sees you.")
+    let ordered = people.people.sorted { first, second in
+      (people.presence(of: first.id) != nil) && (people.presence(of: second.id) == nil)
+    }
+    return VStack(alignment: .leading, spacing: 10) {
+      SectionHeading("Your Group", subtitle: "People who share with the Group.")
       VStack(spacing: 0) {
-        ForEach(people.people) { person in
-          Button {
-            openedPerson = person.id
-          } label: {
-            personRow(person)
-          }
-          .buttonStyle(.plain)
+        ForEach(ordered) { person in
+          PersonRow(
+            model: model, person: person, presence: people.presence(of: person.id),
+            lastListen: people.lastListens[person.id]
+          ) { openedPerson = person.id }
           .accessibilityIdentifier("person-\(person.username)")
-          if person.id != people.people.last?.id {
+          if person.id != ordered.last?.id {
             Divider().padding(.leading, 72)
           }
         }
       }
-      .background(Color.orbis.paperRaised, in: .rect(cornerRadius: 18))
+      .background(.background, in: .rect(cornerRadius: 18))
     }
-  }
-
-  private func personRow(_ person: PersonFilters) -> some View {
-    let presence = people.presence(of: person.id)
-    return HStack(spacing: 12) {
-      PersonAvatar(person.username, isListening: presence != nil)
-      VStack(alignment: .leading, spacing: 2) {
-        Text(person.username)
-          .font(.orbis.body.weight(.semibold))
-        Text(status(of: person, presence: presence))
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-      }
-      Spacer(minLength: 8)
-      if !person.see {
-        Text("See off")
-          .font(.footnote.weight(.semibold))
-          .foregroundStyle(.secondary)
-      }
-      Image(systemName: "chevron.forward")
-        .font(.footnote.weight(.semibold))
-        .foregroundStyle(.tertiary)
-    }
-    .padding(.horizontal, 16)
-    .frame(minHeight: 68)
-    .contentShape(.rect)
-    .accessibilityElement(children: .combine)
-  }
-
-  private func status(of person: PersonFilters, presence: Presence?) -> String {
-    if !person.see { return "Hidden from you" }
-    if let presence { return "Listening to \(presence.set.title)" }
-    return "Not listening right now"
   }
 
   private var emptyCard: some View {
@@ -182,10 +116,10 @@ struct PeopleDestination: View {
         .frame(width: 64, height: 64)
         .background(Color.orbis.tint.opacity(0.12), in: .circle)
         .accessibilityHidden(true)
-      Text("Nobody else has Social on yet")
+      Text("Nobody else is sharing yet")
         .font(.orbis.title)
         .multilineTextAlignment(.center)
-      Text("When someone in your Group turns Social on, they show up here with what they are playing.")
+      Text("When someone in your Group turns on Share with Group, they show up here with what they are playing.")
         .font(.orbis.body)
         .foregroundStyle(.secondary)
         .multilineTextAlignment(.center)
@@ -199,86 +133,82 @@ struct PeopleDestination: View {
   }
 }
 
-/// What a friend is playing now, as a card in the Listening now rail: the artwork with their
-/// name on it, the title, and a button that plays the same Set here.
-private struct ListeningCard: View {
+/// One Person in the Group list: their disc, and what they are playing now or played last. A
+/// Person listening now has a play button for the same Set.
+private struct PersonRow: View {
   @Bindable var model: AppModel
-  let presence: Presence
+  let person: PersonFilters
+  let presence: Presence?
+  let lastListen: Listen?
   let open: () -> Void
 
-  private var set: SavedSet { presence.set }
-  private var isCurrent: Bool { model.audioPlayer.currentSetId == set.id }
-  private var isPlaying: Bool { isCurrent && model.audioPlayer.state == .playing }
-
   var body: some View {
-    VStack(alignment: .leading, spacing: 10) {
+    HStack(spacing: 12) {
       Button(action: open) {
-        artwork
-      }
-      .buttonStyle(.orbisPressable)
-      .accessibilityLabel("Open \(presence.username)")
-      HStack(spacing: 10) {
-        Button(action: open) {
-          titles
-        }
-        .buttonStyle(.plain)
-        Spacer(minLength: 0)
-        if set.downloadState == "ready" {
-          Button {
-            model.togglePlayback(set.id)
-          } label: {
-            Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-              .font(.system(size: 14, weight: .bold))
-              .frame(width: 40, height: 40)
+        HStack(spacing: 12) {
+          PersonAvatar(person.username, isListening: presence != nil)
+          VStack(alignment: .leading, spacing: 2) {
+            Text(person.username)
+              .font(.orbis.body.weight(.semibold))
+            // The title gives way first, so "· 18h ago" always shows.
+            HStack(spacing: 4) {
+              Text(status)
+                .lineLimit(1)
+              if let when {
+                Text("· \(when)")
+                  .fixedSize()
+              }
+            }
+            .font(.subheadline)
+            .foregroundStyle(.secondary)
           }
-          .buttonStyle(.glassProminent)
-          .buttonBorderShape(.circle)
-          .tint(Color.orbis.tint)
-          .accessibilityLabel(isPlaying ? "Pause" : "Play \(set.title)")
+          Spacer(minLength: 8)
         }
+        .contentShape(.rect)
       }
-      .padding(.horizontal, 4)
-    }
-    .padding(10)
-    .frame(width: 280, alignment: .leading)
-    .glassEffect(.regular, in: .rect(cornerRadius: 22))
-    .accessibilityElement(children: .contain)
-    .accessibilityLabel("\(presence.username) is listening to \(set.title)")
-  }
-
-  private var artwork: some View {
-    Artwork(url: SetPresentation.pageArtwork(set), seed: set.title, size: .header)
-      .frame(width: 260)
-      .shadow(color: .black.opacity(0.25), radius: 12, y: 8)
-      .overlay(alignment: .topLeading) {
-        HStack(spacing: 6) {
-          PersonAvatar(presence.username, diameter: 20)
-          Text(presence.username)
-            .font(.footnote.weight(.semibold))
-        }
-        .foregroundStyle(.white)
-        .padding(.leading, 3)
-        .padding(.trailing, 10)
-        .padding(.vertical, 3)
-        .background(.black.opacity(0.55), in: .capsule)
-        .padding(10)
-      }
-  }
-
-  private var titles: some View {
-    VStack(alignment: .leading, spacing: 2) {
-      Text(set.title)
-        .font(.orbis.body.weight(.semibold))
-        .lineLimit(1)
-      if let creator = set.creator, !creator.isEmpty {
-        Text(creator)
-          .font(.subheadline)
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
+      .buttonStyle(.plain)
+      .accessibilityElement(children: .combine)
+      if let set = presence?.set, set.downloadState == "ready" {
+        playButton(set)
+      } else {
+        Image(systemName: "chevron.forward")
+          .font(.footnote.weight(.semibold))
+          .foregroundStyle(.tertiary)
+          .accessibilityHidden(true)
       }
     }
-    .frame(maxWidth: .infinity, alignment: .leading)
-    .contentShape(.rect)
+    .padding(.horizontal, 16)
+    .frame(minHeight: 68)
+  }
+
+  private var status: String {
+    if !person.see { return "Hidden from you" }
+    if let presence { return "Listening to \(presence.set.title)" }
+    if let lastListen { return "Played \(lastListen.set.title)" }
+    return "Nothing played yet"
+  }
+
+  /// How long ago the last Listen started, for a Person who can be seen and is not listening now.
+  private var when: String? {
+    guard person.see, presence == nil, let lastListen else { return nil }
+    return SetPresentation.date(from: lastListen.startedAt)
+      .formatted(.relative(presentation: .named, unitsStyle: .abbreviated))
+  }
+
+  private func playButton(_ set: SavedSet) -> some View {
+    let isPlaying = model.audioPlayer.currentSetId == set.id && model.audioPlayer.state == .playing
+    return Button {
+      model.togglePlayback(set.id)
+    } label: {
+      Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+        .font(.system(size: 13, weight: .bold))
+        .frame(width: 20, height: 20)
+        .contentTransition(.symbolEffect(.replace))
+    }
+    .buttonStyle(.glassProminent)
+    .buttonBorderShape(.circle)
+    .tint(Color.orbis.tint)
+    .accessibilityLabel(isPlaying ? "Pause" : "Play \(set.title)")
   }
 }
 
@@ -325,7 +255,7 @@ struct PersonScreen: View {
       } else {
         ContentUnavailableView(
           "Not in your People", systemImage: "person.crop.circle.badge.questionmark",
-          description: Text("They turned Social off, or left the Group."))
+          description: Text("They stopped sharing with the Group, or left it."))
       }
     }
     .refreshable { await friend?.load() }
@@ -409,19 +339,28 @@ struct PersonScreen: View {
     .glassEffect(.regular, in: .rect(cornerRadius: 24))
   }
 
+  /// Save while the Set is not in the signed-in Person's Library; once it is, a quiet note in
+  /// place of a button that could only look disabled.
+  @ViewBuilder
   private func saveButton(_ set: SavedSet) -> some View {
-    let saved = model.savedSet(set.id) != nil || friend?.savedIds.contains(set.id) == true
-    return Button {
-      Task { await friend?.save(set) }
-    } label: {
-      Label(saved ? "In Library" : "Save", systemImage: saved ? "checkmark" : "plus")
-        .font(.headline)
-        .frame(maxWidth: .infinity)
+    if model.savedSet(set.id) != nil || friend?.savedIds.contains(set.id) == true {
+      Label("In Library", systemImage: "checkmark")
+        .font(.subheadline.weight(.semibold))
+        .foregroundStyle(.secondary)
+        .padding(.horizontal, 12)
+        .accessibilityIdentifier("person-save-now")
+    } else {
+      Button {
+        Task { await friend?.save(set) }
+      } label: {
+        Label("Save", systemImage: "plus")
+          .font(.headline)
+          .frame(maxWidth: .infinity)
+      }
+      .buttonStyle(.glass)
+      .controlSize(.large)
+      .accessibilityIdentifier("person-save-now")
     }
-    .buttonStyle(.glass)
-    .controlSize(.large)
-    .disabled(saved)
-    .accessibilityIdentifier("person-save-now")
   }
 
   @ViewBuilder
@@ -434,9 +373,15 @@ struct PersonScreen: View {
         Task { await friend?.load() }
       }
     case .loaded(let content):
-      if !content.recent.isEmpty {
-        rail("Recently played", subtitle: "What \(person.username) listened to lately.") {
-          ForEach(content.recent, id: \.startedAt) { listen in
+      // Each Set shows once: the one playing now leaves Recently played, and Sets in Recently
+      // played leave the Library list.
+      let playingId = people.presence(of: personId)?.set.id
+      let recent = content.recent.filter { $0.set.id != playingId }
+      let shown = Set(recent.map(\.set.id)).union([playingId].compactMap { $0 })
+      let library = content.sets.filter { !shown.contains($0.id) }
+      if !recent.isEmpty {
+        rail("Recently played") {
+          ForEach(recent, id: \.startedAt) { listen in
             Button {
               play(listen.set)
             } label: {
@@ -452,7 +397,7 @@ struct PersonScreen: View {
       }
       if !content.playlists.isEmpty {
         VStack(alignment: .leading, spacing: 14) {
-          SectionHeading("Playlists", subtitle: "Open one to play its Sets.")
+          SectionHeading("Playlists")
           LazyVGrid(
             columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
             spacing: 18
@@ -471,12 +416,14 @@ struct PersonScreen: View {
           }
         }
       }
-      VStack(alignment: .leading, spacing: 10) {
-        SectionHeading("Library", subtitle: content.sets.isEmpty ? "Nothing saved yet." : nil)
-        LazyVStack(spacing: 0) {
-          ForEach(content.sets) { set in
-            FriendSetRow(model: model, set: set) { play(set) }
-              .contextMenu { setMenu(set) }
+      if content.sets.isEmpty || !library.isEmpty {
+        VStack(alignment: .leading, spacing: 10) {
+          SectionHeading("Library", subtitle: content.sets.isEmpty ? "Nothing saved yet." : nil)
+          LazyVStack(spacing: 0) {
+            ForEach(library) { set in
+              FriendSetRow(model: model, set: set) { play(set) }
+                .contextMenu { setMenu(set) }
+            }
           }
         }
       }
@@ -490,7 +437,7 @@ struct PersonScreen: View {
         Toggle(isOn: filter(person, \.see) { SocialFiltersUpdate(see: $0) }) {
           VStack(alignment: .leading, spacing: 2) {
             Text("See \(person.username)")
-            Text("Show them in your People").font(.footnote).foregroundStyle(.secondary)
+            Text("Their Sets, Playlists, and listening show here").font(.footnote).foregroundStyle(.secondary)
           }
         }
         .accessibilityIdentifier("people-see-\(person.username)")
@@ -498,8 +445,8 @@ struct PersonScreen: View {
         Divider()
         Toggle(isOn: filter(person, \.appear) { SocialFiltersUpdate(appear: $0) }) {
           VStack(alignment: .leading, spacing: 2) {
-            Text("Appear to \(person.username)")
-            Text("Let them see your Library and listening").font(.footnote).foregroundStyle(.secondary)
+            Text("Share with \(person.username)")
+            Text("They see your Sets, Playlists, and listening").font(.footnote).foregroundStyle(.secondary)
           }
         }
         .accessibilityIdentifier("people-appear-\(person.username)")
@@ -508,7 +455,7 @@ struct PersonScreen: View {
       .padding(.horizontal, 16)
       .background(Color.orbis.paperRaised, in: .rect(cornerRadius: 16))
       .disabled(people.isSaving)
-      Text("These work separately: you can see \(person.username) without appearing to them.")
+      Text("You can see \(person.username) without sharing with them.")
         .font(.footnote)
         .foregroundStyle(.secondary)
         .padding(.horizontal, 16)
@@ -540,10 +487,10 @@ struct PersonScreen: View {
   }
 
   private func rail<Cards: View>(
-    _ name: String, subtitle: String, @ViewBuilder cards: () -> Cards
+    _ name: String, @ViewBuilder cards: () -> Cards
   ) -> some View {
     VStack(alignment: .leading, spacing: 14) {
-      SectionHeading(name, subtitle: subtitle)
+      SectionHeading(name)
       ScrollView(.horizontal, showsIndicators: false) {
         LazyHStack(alignment: .top, spacing: 14) { cards() }
           .padding(.horizontal, 16)
@@ -638,6 +585,8 @@ final class PeopleModel {
   var people: [PersonFilters] = []
   /// What visible People are playing now, as the event stream last said.
   var listening: [Presence] = []
+  /// Each seen Person's newest Listen, for the row of someone not listening now.
+  var lastListens: [String: Listen] = [:]
   var failure: OrbisFailure?
   var isSaving = false
   private var loadedToken: String?
@@ -662,6 +611,7 @@ final class PeopleModel {
       loadedToken = app.client?.token
       me = .idle
       people = []
+      lastListens = [:]
       listening = []
       failure = nil
     }
@@ -728,6 +678,23 @@ final class PeopleModel {
       people = list
       let seen = Set(list.filter(\.see).map(\.id))
       listening = listening.filter { seen.contains($0.personId) }
+      await loadLastListens(for: seen)
+    }
+  }
+
+  /// One small request per seen Person, run together. A failure leaves that row on its fallback,
+  /// because a missing "played lately" line is not worth an error on the page.
+  private func loadLastListens(for ids: Set<String>) async {
+    guard let client = app.client else { return }
+    lastListens = await withTaskGroup(of: (String, Listen?).self) { group in
+      for id in ids {
+        group.addTask { (id, try? await client.friendListens(id).first) }
+      }
+      var newest: [String: Listen] = [:]
+      for await (id, listen) in group {
+        if let listen { newest[id] = listen }
+      }
+      return newest
     }
   }
 }
@@ -756,9 +723,19 @@ final class FriendModel {
 
   var counts: String? {
     guard case .loaded(let content) = state else { return nil }
-    let sets = content.sets.count == 1 ? "1 Set" : "\(content.sets.count) Sets"
-    let playlists = content.playlists.count == 1 ? "1 Playlist" : "\(content.playlists.count) Playlists"
-    return "\(sets) · \(playlists)"
+    // A zero says nothing a missing count does not, so only the counts that have something show.
+    var parts: [String] = []
+    switch content.sets.count {
+    case 0: break
+    case 1: parts.append("1 Set")
+    case let n: parts.append("\(n) Sets")
+    }
+    switch content.playlists.count {
+    case 0: break
+    case 1: parts.append("1 Playlist")
+    case let n: parts.append("\(n) Playlists")
+    }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
   }
 
   func load() async {
