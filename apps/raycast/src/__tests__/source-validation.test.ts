@@ -31,8 +31,6 @@ beforeEach(() => {
   mockFetch(() => httpStatus(201));
 });
 
-// The cases are the server's own, shared through @orbis/contracts, so a change to the
-// canonical rule that a command does not follow fails here.
 for (const testCase of ACCEPTED_SOURCE_URL_CASES) {
   test(`Save Clipboard submits the canonical link for ${testCase.input}`, async () => {
     raycast.clipboard = `saved from chat: ${testCase.input}`;

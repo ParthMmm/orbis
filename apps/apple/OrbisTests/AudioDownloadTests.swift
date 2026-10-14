@@ -4,13 +4,8 @@ import XCTest
 
 @testable import Orbis
 
-/// Audio downloads and streaming, end to end at the seams: the client speaks the four
-/// audio routes, the model carries download state into the library, and the player
-/// builds an authenticated asset and publishes Now Playing without ever playing
-/// network audio inside a test.
 @MainActor
 final class AudioDownloadTests: XCTestCase {
-  /// Pure string builders, callable from the stub responder's nonisolated closure.
   nonisolated private static func setJSON(id: String, state: String) -> String {
     """
     {"id":"\(id)","url":"https://www.youtube.com/watch?v=abcdefghijk",
@@ -145,9 +140,6 @@ final class AudioDownloadTests: XCTestCase {
   }
 
   func testPlayerBuildsFileURLFromSetID() {
-    // The player once loaded the service root, which answers 404, instead of the
-    // Set's file: this pins the exact URL play() hands the asset, with and
-    // without a trailing slash on the service address.
     for base in [
       "https://vanta.example.ts.net:8444", "https://vanta.example.ts.net:8444/",
     ] {
@@ -201,8 +193,6 @@ final class AudioDownloadTests: XCTestCase {
 
   func testRemoteCommandsRegisteredAndEnabled() {
     do {
-      // The player keeps its command targets alive; leaving the scope tears them
-      // down again so no test leaks a handler into the next one.
       let player = AudioPlayer()
       _ = player
       XCTAssertTrue(MPRemoteCommandCenter.shared().playCommand.isEnabled)
@@ -212,9 +202,6 @@ final class AudioDownloadTests: XCTestCase {
     XCTAssertFalse(MPRemoteCommandCenter.shared().pauseCommand.isEnabled)
   }
 
-  /// A download is watched by the model rather than by the page that asked for it, so a download
-  /// that the service finishes while the person is somewhere else still lands in the Library.
-  /// Nothing here polls the page: this is the watch doing the work on its own.
   func testADownloadThatFinishesElsewhereStillLandsInTheLibrary() async throws {
     let model = AppModel(
       client: OrbisClient(

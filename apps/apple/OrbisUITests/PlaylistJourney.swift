@@ -1,14 +1,11 @@
 import XCTest
 
-/// What every Playlist journey shares. The journeys live in two classes so two simulators can
-/// run them at once.
 class PlaylistJourney: XCTestCase {
   func launch() throws -> XCUIApplication {
     let service = try LaneService()
     return launchOrbis(address: service.address, token: service.token)
   }
 
-  /// Same symbol tap as `LibraryUITests.selectTab`.
   func selectTab(_ name: String, in app: XCUIApplication) {
     let tab = app.tabBars.buttons[name]
     XCTAssertTrue(tab.waitForExistence(timeout: 8), "\(name) must be a tab\n\(app.debugDescription)")
@@ -48,7 +45,6 @@ class PlaylistJourney: XCTestCase {
       .tap()
   }
 
-  /// A name no earlier journey or run has used, since every journey shares the lane's service.
   func unique(_ prefix: String) -> String {
     "\(prefix) \(UUID().uuidString.prefix(6))"
   }
@@ -58,7 +54,6 @@ class PlaylistJourney: XCTestCase {
     return "https://www.youtube.com/watch?v=" + String((0..<11).map { _ in letters.randomElement()! })
   }
 
-  /// Waits until the service stores the expected order, and returns what it last read.
   func storedOrder(
     of playlistId: String, in service: LaneService, becomes expected: [String]
   ) throws -> [String] {
@@ -72,8 +67,6 @@ class PlaylistJourney: XCTestCase {
     return stored
   }
 
-  /// The run's record: each step with the order it expected and the order the service stored.
-  /// It is written as JSON beside the screenshots, so a later run can be compared against it.
   func record(_ name: String, _ steps: [[String: Any]]) throws {
     let data = try JSONSerialization.data(
       withJSONObject: ["journey": name, "steps": steps], options: [.prettyPrinted, .sortedKeys])

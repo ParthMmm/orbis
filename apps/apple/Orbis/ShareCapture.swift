@@ -8,7 +8,6 @@ import OrbisDesign
   import AppKit
 #endif
 
-/// Outcomes of a share-extension save attempt. Tests assert these without hosting an extension.
 enum ShareSaveOutcome: Equatable {
   case saved(title: String)
   case duplicate
@@ -17,14 +16,10 @@ enum ShareSaveOutcome: Equatable {
   case failure(message: String)
 }
 
-/// Extracts, validates, and saves a Source Link the way the main app's paste path does.
 @MainActor
 enum ShareCapture {
-  /// The extension starts without the app's launch arguments, so a Debug lane's address never
-  /// reaches it: it always talks to the built-in service, or a Debug Mac's development one.
   static var serviceAddress: URL { OrbisService.address(for: []) }
 
-  /// The first supported YouTube or SoundCloud URL found in the attachment payloads.
   static func sourceLink(from payloads: [String]) -> URL? {
     for payload in payloads {
       if let url = LinkField.address(of: payload), SetSource.named(by: url) != nil {

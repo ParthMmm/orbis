@@ -56,7 +56,6 @@ const TrustFile = Schema.Struct({
 
 export type PersonRecord = typeof Person.Type;
 export type SignInCodeRecord = typeof SignInCode.Type;
-/** A stored `admin` key decodes as `daily`: one kind of Person key (ADR 0020). */
 export type KeyRecord = Omit<typeof Key.Type, "scope"> & {
   readonly scope: "daily" | "node";
 };
@@ -268,7 +267,6 @@ export const markKeyUsed = (
     if (error instanceof Error && isTrustBusy(error)) {
       throw error;
     }
-    // Usage time is advisory; authentication already checked the current store.
   }
 };
 

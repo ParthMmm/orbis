@@ -1,6 +1,3 @@
-// Join with the Group Passcode and sign in with a code against a real Orbis API:
-// the built web client in `vite preview` calls a throwaway server whose Group
-// holds the Host with one daily key.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -41,7 +38,6 @@ const openJoining = async () => {
   return response.status;
 };
 
-// A wrong guess from outside the browser, from the same address as the page.
 const guessCode = () =>
   fetch(`${apiUrl}/sign-in/code`, {
     body: JSON.stringify({ code: "ZZZZZZZZ", label: "Guessing" }),

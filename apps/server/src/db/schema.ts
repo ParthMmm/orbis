@@ -9,17 +9,13 @@ import {
 } from "drizzle-orm/sqlite-core";
 
 export const sets = sqliteTable("sets", {
-  // Null on a Set enriched before this column existed; a client falls back to artwork_url.
   artworkLargeUrl: text("artwork_large_url"),
   artworkUrl: text("artwork_url"),
   createdAt: text("created_at").notNull(),
   creator: text("creator"),
-  /** The provider's stable id for the creator; a name can change or collide, an id does not. */
   creatorId: text("creator_id"),
   creatorUrl: text("creator_url"),
-  /** The source's own description. Server-side only: it feeds grouping and tag suggestions. */
   description: text("description"),
-  /** Whether the background yt-dlp read has filled the source details. Server-side only. */
   detailsState: text("details_state", {
     enum: ["pending", "filled", "failed"],
   })
@@ -47,14 +43,11 @@ export const sets = sqliteTable("sets", {
   playbackPositionSeconds: integer("playback_position_seconds")
     .notNull()
     .default(0),
-  /** When the source published the Set. Filled by metadata enrichment when the provider names it. */
   releasedAt: text("released_at"),
   retainedAudioBytes: integer("retained_audio_bytes"),
   retainedAudioFormat: text("retained_audio_format"),
   source: text("source", { enum: ["youtube", "soundcloud"] }).notNull(),
-  /** JSON array of `{ startSeconds, title }`; a DJ set's chapters are often its tracklist. */
   sourceChapters: text("source_chapters"),
-  /** JSON array of the tags the source's own uploader chose. Not the person's Tags. */
   sourceTags: text("source_tags"),
   tags: text("tags").notNull(),
   title: text("title").notNull(),
@@ -195,7 +188,6 @@ export const queueEntries = sqliteTable(
       table.position
     ),
     index("queue_entries_by_set").on(table.setId),
-    // Each Person's Listening Queue has at most one active Set.
     uniqueIndex("queue_entries_active_unique")
       .on(table.personId)
       .where(sql`${table.isActive} = 1`),
@@ -237,7 +229,6 @@ export const listens = sqliteTable(
   ]
 );
 
-// `actionNumber` outlives result pruning so a pruned action can never reacquire ownership.
 export const presenceSessions = sqliteTable(
   "presence_sessions",
   {

@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// The vocabulary of a listing: the Library, the Queue, a Set's rows.
-///
-
 public struct ListingLabel: View {
   public let text: String
   public let tint: Color?
@@ -20,7 +17,6 @@ public struct ListingLabel: View {
   }
 }
 
-/// The heading a group of rows sits under, such as the day they were filed.
 public struct ListingHeader: View {
   public let text: String
 
@@ -75,9 +71,6 @@ public struct TagWord: View {
   }
 }
 
-/// One row of a Set's fields: a label, a value, and the way to change it. Parted from the
-/// next by a hairline. At the largest sizes the value moves under the label rather than being
-/// squeezed out.
 public struct ListingRow<Value: View>: View {
   public let label: String
   public var value: String?
@@ -153,8 +146,6 @@ public struct ListingRow<Value: View>: View {
     }
   }
 
-  /// `chevron.forward`, not `chevron.right`: the disclosure points the way the language reads,
-  /// and the system mirrors it in a right-to-left layout.
   @ViewBuilder private var disclosure: some View {
     if action != nil {
       Image(systemName: "chevron.forward")

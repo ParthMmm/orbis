@@ -1,16 +1,12 @@
 import OrbisDesign
 import SwiftUI
 
-/// What Settings shows and the requests that change it (ADR 0020).
 @MainActor
 @Observable
 final class SettingsModel {
   private let app: AppModel
   var me: Loadable<Me> = .idle
-  /// The Group Passcode, nil while joining is closed. Host only.
   var passcode: String?
-  /// What the username and passcode fields hold, kept here so a pushed Person page coming back
-  /// does not reset them.
   var username = ""
   var passcodeDraft = ""
   var people: Loadable<[GroupPerson]> = .idle
@@ -72,7 +68,6 @@ final class SettingsModel {
     if let list { people = .loaded(list) }
   }
 
-  /// Sends a change to `/me`; a failure is said in the section the change came from.
   func save(_ update: MeUpdate, failure: ReferenceWritableKeyPath<SettingsModel, OrbisFailure?>) async {
     guard !isSaving else { return }
     isSaving = true
@@ -98,8 +93,6 @@ final class SettingsModel {
   }
 }
 
-/// Runs one Settings request against the signed-in client. `report` hears nil as the request
-/// starts and the failure if it fails; a request the screen abandoned says nothing.
 @MainActor
 func settingsRequest<T>(
   _ model: AppModel, _ report: (OrbisFailure?) -> Void, _ work: (OrbisClient) async throws -> T
@@ -116,7 +109,6 @@ func settingsRequest<T>(
   }
 }
 
-/// A failure's sentence and the way to copy its details, as rows of the section that failed.
 struct FailureRows: View {
   let failure: OrbisFailure?
   let context: String
@@ -132,7 +124,6 @@ struct FailureRows: View {
   }
 }
 
-/// A Sign-in Code, large enough to read across a room, with when it stops working.
 struct SignInCodeView: View {
   let code: SignInCode
   let identifier: String

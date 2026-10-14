@@ -2,8 +2,6 @@ import XCTest
 
 @testable import Orbis
 
-/// Signing in stores the key the service hands back, and a sign-in that fails changes nothing
-/// and says why in the service's own words (ADR 0020).
 @MainActor
 final class SignInTests: XCTestCase {
   nonisolated private static let playlistsBody =
@@ -52,8 +50,6 @@ final class SignInTests: XCTestCase {
     XCTAssertFalse(model.isConfigured)
   }
 
-  /// A wrong passcode, a taken username, and an expired code are the service's to explain, and
-  /// it explains them in a sentence meant for the person.
   func testARefusalShowsTheServiceSentenceAndStaysSignedOut() async {
     let settings = MemoryClientSettings()
     let model = signedOutModel(settings: settings) { _ in
@@ -68,8 +64,6 @@ final class SignInTests: XCTestCase {
     XCTAssertNil(settings.deviceToken)
   }
 
-  /// A device that refuses to hold the key stays signed out and says so, rather than reading
-  /// as signed in until the next launch.
   func testARefusedSaveStaysSignedOutAndSaysSo() async {
     let settings = RefusingClientSettings()
     let model = signedOutModel(settings: settings) { _ in
@@ -89,8 +83,6 @@ final class SignInTests: XCTestCase {
       failure.message.contains("synthetic-new-key"), "the key must not reach user-facing text")
   }
 
-  /// A sidebar that could not be read must keep its reason and offer retry, because an empty
-  /// section reads as "no playlists".
   func testPlaylistsThatFailToLoadSaySoInsteadOfReadingAsEmpty() async {
     let model = AppModel(
       client: OrbisClient(
@@ -112,8 +104,6 @@ final class SignInTests: XCTestCase {
     XCTAssertEqual(playlists.map(\.name), ["Long drives"])
   }
 
-  /// A code is read aloud and typed on another device, so case, spaces, and the dash must not
-  /// matter, and it is shown in two halves.
   func testACodeIsTypedLooselyAndShownInHalves() {
     for typed in ["ABCD-EFGH", "abcd efgh", " abcdEFGH\n", "ab cd-ef gh", "abcd–efgh"] {
       XCTAssertEqual(SignInCode.normalized(typed), "ABCDEFGH", typed)
@@ -123,7 +113,6 @@ final class SignInTests: XCTestCase {
   }
 }
 
-/// A store that refuses every write, like a device whose keychain will not take the token.
 @MainActor
 final class RefusingClientSettings: ClientSettingsStore {
   private(set) var storeAttempts = 0

@@ -39,9 +39,6 @@ interface QueueRow {
 const activeIn = (rows: readonly QueueRow[]) =>
   rows.find((row) => row.isActive)?.setId ?? null;
 
-/**
- * Where a Set goes when it joins a queue behind the active entry.
- */
 const placedAfter = (
   ids: readonly string[],
   id: string,
@@ -53,9 +50,6 @@ const placedAfter = (
     : [...ids.slice(0, at + 1), id, ...ids.slice(at + 1)];
 };
 
-/**
- * Where a Set goes when it takes the active place from the Set playing now.
- */
 const placedBefore = (
   ids: readonly string[],
   id: string,
@@ -65,22 +59,12 @@ const placedBefore = (
   return at === -1 ? [...ids, id] : [...ids.slice(0, at), id, ...ids.slice(at)];
 };
 
-/**
- * One Person's Listening Queue, and the Listen it keeps open.
- *
- * An entry is a Set waiting to play, and the entry marked active is the Set playing now. The
- * queue is the whole of the playback state: which Set is playing, what follows it, and — because
- * the active entry is the Listen — whether a completion signal is the first one for this Listen.
- * Counting from a stored state rather than from reported events is what makes a retried signal
- * from the other device do nothing.
- */
 export class Queue extends Context.Service<
   Queue,
   {
     readonly changes: Stream.Stream<boolean>;
     readonly notify: () => Effect.Effect<void>;
     readonly read: () => Effect.Effect<ListeningQueue, LibraryError>;
-    /** Makes a Set the active one, which is what tapping a playable Set does. */
     readonly play: (id: string) => Effect.Effect<ListeningQueue, LibraryError>;
     readonly insert: (
       id: string,
@@ -90,7 +74,6 @@ export class Queue extends Context.Service<
       playlistId: string,
       creatorId?: string
     ) => Effect.Effect<ListeningQueue, LibraryError>;
-    /** Removes the finished Set, resets its position, and starts what followed it. */
     readonly complete: (
       id: string
     ) => Effect.Effect<ListeningQueue, LibraryError>;
@@ -127,9 +110,6 @@ export class Queue extends Context.Service<
         })
       );
 
-      // Every change states the whole queue. One person's queue is small, the write is one
-      // transaction, and positions stay consecutive instead of drifting into gaps that need
-      // renumbering later.
       const writeQueue = (ids: readonly string[], activeSetId: string | null) =>
         Effect.gen(function* replaceEntries() {
           const previous = yield* order();
@@ -157,8 +137,6 @@ export class Queue extends Context.Service<
           );
         });
 
-      // The one check that keeps an unplayable Set out of the queue. A Playlist is filtered
-      // instead, because a Playlist is not wrong to play just because one member has no audio.
       const playable = (id: string) =>
         Effect.gen(function* requirePlayable() {
           const [set] = yield* library.byIds([id]);
@@ -179,10 +157,6 @@ export class Queue extends Context.Service<
           const rows = yield* execute(order());
           const activeSetId = activeIn(rows);
           const ids = rows.map((row) => row.setId);
-          // A Set already in the queue takes the active place without moving: the queue behind it
-          // is the order the person made. A Set that is not in the queue takes the active place
-          // where the listening had reached, so nothing is dropped and the Set that was playing
-          // becomes what plays next.
           const next = ids.includes(id)
             ? ids
             : placedBefore(ids, id, activeSetId);
@@ -200,8 +174,6 @@ export class Queue extends Context.Service<
             yield* playable(id);
             const rows = yield* execute(order());
             const activeSetId = activeIn(rows);
-            // Moving the Set that is playing now would leave the open Listen beside a queue it no
-            // longer matches, so a queued action on the active Set changes nothing.
             if (activeSetId === id) {
               return yield* read().pipe(Effect.tap(notify));
             }
@@ -273,8 +245,6 @@ export class Queue extends Context.Service<
         Effect.gen(function* completeSet() {
           const rows = yield* execute(order());
           const at = rows.findIndex((row) => row.isActive && row.setId === id);
-          // A Set that is not the active one was already finished, or the person started
-          // something else while it played. Either way this signal adds nothing.
           if (at === -1) {
             return yield* read().pipe(Effect.tap(notify));
           }
@@ -288,8 +258,6 @@ export class Queue extends Context.Service<
             )
           );
           yield* stats.recordFinish(id);
-          // The Set that takes over was not being listened to until now, so it opens its own
-          // Listen. An empty queue opens nothing, and playback stops.
           if (nextActive !== null) {
             yield* stats.recordListen(nextActive);
           }

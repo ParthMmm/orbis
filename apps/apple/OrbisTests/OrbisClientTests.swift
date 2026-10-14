@@ -4,8 +4,6 @@ import XCTest
 @testable import Orbis
 
 final class OrbisClientTests: XCTestCase {
-  /// The service address carries `/api`. Every request keeps that segment, with or without a
-  /// trailing slash, and an address without a path still resolves as before.
   func testRequestsKeepTheAddressPath() async throws {
     for (address, expected) in [
       ("https://orbis.example/api", "https://orbis.example/api/sets"),
@@ -21,8 +19,6 @@ final class OrbisClientTests: XCTestCase {
     }
   }
 
-  /// The bearer token rides on every request, so an address carries it only over TLS. The
-  /// loopback exception is the temporary lane service, which the server itself trusts.
   func testAnAddressCarriesTheTokenOnlyOverTLSOrLoopback() {
     for input in ["https://vanta.example.ts.net", "http://127.0.0.1:4310", "http://localhost:4310"] {
       XCTAssertTrue(OrbisClient.accepts(URL(string: input)!), input)
@@ -32,9 +28,6 @@ final class OrbisClientTests: XCTestCase {
     }
   }
 
-  /// Join and redeem are the only requests without a key, and the Host's passcode is closed by
-  /// sending null, not by leaving the field out. Each failure here is one the service reads as
-  /// a bad request or an unauthenticated caller.
   func testSignInAndSettingsRequestsMatchTheContract() async throws {
     let address = URL(string: "https://orbis.example/api")!
     let signedIn = #"{"key":"synthetic-key","person":{"id":"p1","username":"ada"}}"#
@@ -79,10 +72,6 @@ final class OrbisClientTests: XCTestCase {
     return try XCTUnwrap(object as? NSDictionary)
   }
 
-  /// The bare tailnet name answers with Caddy's page, which is the trap this whole thread is
-  /// about. It must read as a web page, not as an unreadable answer or a refusal.
-  /// A source the app does not know must not make the library unreadable. One new word
-  /// from the service once failed every Set at once; it reads as its own name instead.
   func testASetFromANewerServiceWithAnUnknownSourceStillDecodes() async throws {
     let newer = Self.savedSet(title: "Night session", tags: []).replacingOccurrences(
       of: "\"source\":\"youtube\"", with: "\"source\":\"bandcamp\"")
@@ -141,8 +130,6 @@ final class OrbisClientTests: XCTestCase {
     }
   }
 
-  /// A service older than this field must not make the library unreadable, which is exactly
-  /// what happened when the field arrived.
   func testASetFromAnOlderServiceStillDecodes() async throws {
     let older = """
       {"id":"1","url":"https://www.youtube.com/watch?v=abcdefghijk",
@@ -223,9 +210,6 @@ final class OrbisClientTests: XCTestCase {
 /// server. Static rather than injected because `URLProtocol` is instantiated by the loading
 /// system, so tests run one at a time.
 final class StubProtocol: URLProtocol {
-  /// Guards the request observations. `startLoading` runs on the loading system's own thread
-  /// and the tests read from the main actor, so both sides take the lock rather than one of
-  /// them relying on when the other happens to run.
   private static let observationLock = NSLock()
   nonisolated(unsafe) private static var observedRequest: URLRequest?
   nonisolated(unsafe) private static var observedBody: Data?
@@ -240,8 +224,6 @@ final class StubProtocol: URLProtocol {
     set { observationLock.withLock { observedBody = newValue } }
   }
 
-  /// Records a request and its body together, so a test that waits for the request is never
-  /// woken between the two and reads a request whose body has not arrived yet.
   private static func observe(_ request: URLRequest) {
     let body = Self.readBody(request)
     observationLock.withLock {
@@ -254,16 +236,8 @@ final class StubProtocol: URLProtocol {
   nonisolated(unsafe) static var body = ""
   nonisolated(unsafe) static var failure: URLError?
 
-  /// Answers each request from its own path, so one model run can walk health, library, and
-  /// playlists in a single test. Sendable so it always runs on the loading system's thread;
-  /// a blocked responder here must never hold the main actor. Set only through
-  /// `session(responder:)`; the static shorthands clear it.
   nonisolated(unsafe) static var responder: (@Sendable (URLRequest) -> (Int, String))?
 
-  /// Seconds to hold a matching response back before delivering it. For tests that must
-  /// prove a newer request wins over an older one: the session drives its requests from one
-  /// queue, so holding a response by blocking `startLoading` would stall every other request
-  /// on the session instead of overlapping with one.
   nonisolated(unsafe) static var holdResponse: (@Sendable (URLRequest) -> TimeInterval)?
 
   static func session(status: Int, body: String) -> URLSession {
@@ -344,9 +318,6 @@ final class StubProtocol: URLProtocol {
 
   override func stopLoading() {}
 
-  /// The pieces of one held response, carried out of the session's queue so the delivery can
-  /// wait there without stalling any other request on the session. Every field is set once
-  /// here and never written again, so sending from any thread is safe.
   private final class HeldDelivery: @unchecked Sendable {
     private let sender: URLProtocol
     private let client: (any URLProtocolClient)?

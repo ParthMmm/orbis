@@ -352,9 +352,6 @@ test("fills the listing image and the page image from one payload", async () => 
     return [metadata.artworkUrl, metadata.artworkLargeUrl];
   };
 
-  // Each row offers one more image than the row above it. The listing image stays at the size a
-  // row draws, so it lands on `medium` as soon as there is one and never climbs higher; the page
-  // image takes the sharpest the video has.
   const ladder: [Thumbnails, string, string][] = [
     [
       {
@@ -499,7 +496,6 @@ test("reports each provider failure with its own reason", async () => {
   expect(unreachableSoundCloud.reason).toBe("provider-unavailable");
 });
 
-// The fill runs after the response, so wait for it rather than assume it is done.
 const waitFor = async <T extends object | null | undefined>(
   ready: () => boolean,
   read: () => T,

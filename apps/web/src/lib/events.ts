@@ -17,16 +17,11 @@ export type ChangeTopic = Extract<LiveEvent, { kind: "changed" }>["topic"];
 
 export interface LiveEventHandlers {
   readonly onChanged: (topic: ChangeTopic) => void;
-  /** Called once the stream is open, before its first event. */
   readonly onOpen: () => void;
   readonly onPresence: (presence: Presence) => void;
   readonly onQueue: (queue: ListeningQueue) => void;
 }
 
-/**
- * Reads `GET /events?changes=1` until the stream ends or `signal` aborts. It resolves when the
- * stream closes, so the caller decides whether to reconnect (ADR 0014).
- */
 export const readLiveEvents = (
   credentials: Credentials,
   handlers: LiveEventHandlers,

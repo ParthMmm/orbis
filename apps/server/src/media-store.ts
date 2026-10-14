@@ -24,8 +24,6 @@ export interface MediaFile {
   readonly bytes: number;
 }
 
-// Two gibibytes caps one stored download. Six hours at the richest source bitrate is an
-// order of magnitude smaller; anything past the cap is a stuck stream, not a set.
 const MAX_AUDIO_BYTES = 2 * 1024 * 1024 * 1024;
 
 const ProbeFormat = Schema.Struct({
@@ -266,7 +264,6 @@ export class MediaStore extends Context.Service<
             format,
           } satisfies StoredAudio;
         }
-        // The stored format follows the source codec; m4a is kept as delivered.
         if (/mp4|m4a/u.test(container)) {
           yield* Effect.promise(() => rename(tmpPath, fileFor(setId, "m4a")));
           return {

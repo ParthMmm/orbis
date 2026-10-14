@@ -1,18 +1,8 @@
 import SwiftUI
 
-/// A Set's artwork, as the provider supplies it: a 16:9 thumbnail.
-///
 /// The box is 16:9 and the image is cropped into it, because a provider's image does not always
 /// arrive as one. YouTube's `high` thumbnail is 480x360 with the picture letterboxed inside it,
 /// and an image left to size itself hands that 4:3 shape, bars and all, back to the box.
-///
-/// Rounded, with a hairline inner edge so dark artwork does not dissolve into a dark page. Until
-/// the image arrives, or when there is none, a tone stands in, chosen from the title so the same
-/// Set keeps the same tone.
-///
-/// A Set with a Playback Position that is not Finished carries a bar along the bottom edge,
-/// in the tint, the way a thumbnail shows how far a person got. Nothing else draws on the
-/// artwork, so the bar means one thing.
 public struct Artwork: View {
   /// The widths a listing draws artwork at. Height follows at 16:9.
   public enum Size: Sendable {
@@ -50,7 +40,6 @@ public struct Artwork: View {
   }
 
   public let url: URL?
-  /// What the placeholder tone is drawn from, usually the title.
   public let seed: String
   public let size: Size
   /// How far listening got, from 0 to 1. Nothing is drawn when it is absent, zero, or done.
@@ -69,8 +58,6 @@ public struct Artwork: View {
     self.cornerRadius = cornerRadius
   }
 
-  /// Whether a bar is worth drawing. A position that never started or already finished says
-  /// nothing a bar could add.
   public static func showsProgress(_ progress: Double?) -> Bool {
     guard let progress else { return false }
     return progress > 0 && progress < 1
@@ -87,13 +74,6 @@ public struct Artwork: View {
     .accessibilityHidden(true)
   }
 
-  /// The shape the artwork is drawn in: a 16:9 box that sizes itself and crops what it is given.
-  ///
-  /// The box owns the ratio, not the image, which is the whole of it. Held on the image instead,
-  /// a `fit` ratio hands the proposal to an image that answers with its own shape, and a
-  /// letterboxed thumbnail then sets the box to 4:3 and keeps its bars.
-  ///
-  /// Internal, so a test can put a letterboxed image in the real box and read the pixels back.
   static func box<Content: View>(
     size: Size, radius: CGFloat? = nil, @ViewBuilder content: () -> Content
   ) -> some View {
@@ -126,7 +106,6 @@ public struct Artwork: View {
   }
 
   private var placeholder: some View {
-    // The tone comes from the same hash Tags use, so it is stable across launches.
     let tone = OrbisColor.Category.forTag(seed).dot
     return LinearGradient(
       colors: [tone.opacity(0.55), tone.opacity(0.2)],
@@ -140,8 +119,6 @@ public struct Artwork: View {
   }
 }
 
-/// The bar along the bottom of artwork. A dark track under a tinted fill, so it reads on any
-/// image.
 private struct ProgressBar: View {
   let fraction: Double
 

@@ -1,14 +1,12 @@
 import { callOrbis } from "@/lib/orbis";
 import type { Credentials } from "@/lib/orbis";
 
-/** The Library filters, as the URL carries them. */
 export interface LibraryFilters {
   readonly q?: string;
   readonly source?: "youtube" | "soundcloud";
   readonly tag?: string;
 }
 
-/** The query `GET /sets` accepts. */
 interface SetsQuery {
   q?: string;
   source?: string;

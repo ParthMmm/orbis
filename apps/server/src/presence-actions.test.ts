@@ -279,8 +279,6 @@ const harness = (databasePath: string, transcript: Transcript) => {
         }
         return event;
       };
-      // A frame counts only if it arrived after the previous assertion returned, so a
-      // frame left over from an earlier step can never satisfy a later one.
       let lastReturn = Date.now();
       const frames: { at: number; consumed: boolean; entries: Entries }[] = [];
       const pump = (async () => {

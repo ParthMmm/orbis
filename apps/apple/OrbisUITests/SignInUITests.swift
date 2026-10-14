@@ -1,25 +1,17 @@
 import XCTest
 
-/// Signing in and Settings (ADR 0020), against the lane's service. The Group Passcode is one
-/// value for the whole service, so every journey that reads or changes it lives in this class,
-/// which runs its tests one after another on one simulator.
 final class SignInUITests: XCTestCase {
   private static let codePattern =
     "^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$"
 
   private var steps: [[String: Any]] = []
 
-  // MARK: - Journeys
-
-  /// A fresh install joins with the passcode the Host set, keeps its key across a relaunch,
-  /// shows a Sign-in Code for another device, has no Host sections, and signs out.
   func testANewPersonJoinsWithThePasscodeAndAddsADevice() throws {
     let host = try LaneService()
     let passcode = "lane-\(Self.suffix())"
     let username = "journey-\(Self.suffix())"
     try host.setPasscode(passcode)
 
-    // The key must reach the keychain, because the relaunch below reads it back.
     let app = launchOrbis(address: host.address, keychain: true)
 
     let new = app.buttons["signin-new"]
@@ -55,8 +47,6 @@ final class SignInUITests: XCTestCase {
     XCTAssertTrue(
       app.tabBars.buttons["Library"].waitForExistence(timeout: 30),
       "joining must land in the library\n\(app.debugDescription)")
-    // A new Person has no Sets, so Home is the first screen they see with nothing on it. It once
-    // showed only a strip of glow down the middle.
     XCTAssertTrue(
       app.descendants(matching: .any)["home-empty"].waitForExistence(timeout: 15),
       "a new Person's Home must say the collection is empty\n\(app.debugDescription)")
@@ -108,7 +98,6 @@ final class SignInUITests: XCTestCase {
     record("join")
   }
 
-  /// A fresh install types a code another device showed, loosely: lowercase, with a space.
   func testACodeFromAnotherDeviceSignsIn() throws {
     let friend = try friendService()
     let devicesBefore = Set(try friend.devices().map(\.id))
@@ -175,8 +164,6 @@ final class SignInUITests: XCTestCase {
     capture("unreachable-service")
   }
 
-  /// The Host's Settings shows the Group Passcode and People, changes and clears the passcode,
-  /// shows a Person's Sign-in Code, and removes a Person.
   func testTheHostManagesThePasscodeAndPeople() throws {
     let host = try LaneService()
     try host.setPasscode("lane-before")
@@ -241,9 +228,6 @@ final class SignInUITests: XCTestCase {
     record("host")
   }
 
-  /// A friend's Auto Download shows what the service stores, a change follows them across a
-  /// relaunch, and their Settings has no Host sections. The journey starts from whatever the
-  /// lane seeded and leaves it as it found it.
   func testAFriendsSettingsKeepAutoDownloadAndHaveNoHostSections() throws {
     let friend = try friendService()
     let stored = try friend.autoDownload()
@@ -281,8 +265,6 @@ final class SignInUITests: XCTestCase {
     record("auto-download-settings")
   }
 
-  // MARK: - Helpers
-
   private func friendService() throws -> LaneService {
     guard let token = ProcessInfo.processInfo.environment["ORBIS_UI_TEST_SETTINGS_TOKEN"],
       !token.isEmpty
@@ -296,8 +278,6 @@ final class SignInUITests: XCTestCase {
     gear.tap()
   }
 
-  /// Scrolls to the version at the foot of Settings, where the Host's sections would sit just
-  /// above, and checks they are not there.
   private func assertNoHostSections(_ app: XCUIApplication) {
     let version = app.staticTexts["settings-version"]
     reveal(version, in: app)
@@ -320,7 +300,6 @@ final class SignInUITests: XCTestCase {
     }
   }
 
-  /// Taps the confirming button of a dialog, which carries the same words as a row behind it.
   private func confirm(_ label: String, besides identifier: String, in app: XCUIApplication) {
     let button = app.buttons.matching(
       NSPredicate(format: "label == %@ AND identifier != %@", label, identifier)
@@ -329,8 +308,6 @@ final class SignInUITests: XCTestCase {
     button.tap()
   }
 
-  /// Deletes what a field holds and types `text`. More deletes than the field can hold, with the
-  /// cursor put at the end.
   private func replaceText(in field: XCUIElement, with text: String, app: XCUIApplication) {
     field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
     field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 40) + text)

@@ -10,10 +10,8 @@ import { request } from "./test-http.js";
 
 const youTubeUrl = "https://www.youtube.com/watch?v=aqzKEbpKQAA";
 
-// The identifying line is at the start; the generic cookie hint is the long tail.
 const longYtdlpStderr = `ERROR: [youtube] aqzKEbpKQAA: Sign in to confirm you're not a bot. ${"x".repeat(400)}`;
 
-// The worker runs on its own fiber, so the test polls for the job's event.
 const waitForJob = async (
   events: readonly WideEvent[],
   deadline: number
@@ -28,8 +26,6 @@ const waitForJob = async (
   return waitForJob(events, deadline);
 };
 
-// The failure from 2026-09-29: yt-dlp exits with an error and Cobalt's tunnel answers
-// 200 with no bytes. One event per download must name both causes.
 test("a failed download emits one event that names each backend's cause", async () => {
   const root = await mkdtemp(path.join(tmpdir(), "orbis-events-"));
   const events: WideEvent[] = [];
@@ -84,7 +80,6 @@ test("a failed download emits one event that names each backend's cause", async 
       source: "youtube",
     });
     const logs = JSON.stringify(job?.logs);
-    // The identifying line is at the start of stderr, beyond the logged tail.
     expect(logs).toContain("Sign in to confirm");
     expect(logs).toContain('"stderrHead"');
     expect(logs).toContain('"message":"cobalt tunnel opened"');

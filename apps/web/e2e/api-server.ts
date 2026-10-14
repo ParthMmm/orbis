@@ -1,6 +1,3 @@
-// A real Orbis API for the browser journeys: the server's own createApp and
-// listeners, with one change: Cobalt, the only third party a Download needs,
-// answers with the repository's audio fixture. Everything else is the real code.
 import path from "node:path";
 
 import { createApp } from "../../server/src/app.ts";

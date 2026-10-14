@@ -5,11 +5,7 @@ import Testing
 
 @testable import OrbisDesign
 
-/// The largest text sizes and a right-to-left layout are where a component that clips or refuses
-/// to wrap gives itself away. These render the real views at those settings and measure them,
-/// because a decision function can be right while the layout is still wrong.
 @Suite struct LayoutTests {
-  /// Every size the previews carry, at both widths they are drawn at, in each direction.
   private let sizes = AccessibilityPreview.textSizes
   private let widths = [AccessibilityPreview.macWidth, AccessibilityPreview.phoneWidth]
   private let directions: [LayoutDirection] = [.leftToRight, .rightToLeft]
@@ -86,9 +82,6 @@ import Testing
     }
   }
 
-  /// A Tag can be forty characters, the most the service keeps, which is wider than a phone at
-  /// the largest text sizes. A chip that wide has to wrap inside the width it was given; running
-  /// past the edge is the clipping this whole exercise is about.
   @Test func `a chip too wide for its row wraps inside it`() {
     let long = String(repeating: "hardgroove", count: 4)
     let oneRow = measured(
@@ -117,8 +110,6 @@ import Testing
     }
   }
 
-  /// The first chip of a flow draws at the far edge the direction reads from; in a right-to-left
-  /// layout that is the right one. A physical offset would hold it on the left in both.
   @Test func `the chip flow starts at the leading edge in either direction`() {
     let canvas = CGSize(width: 200, height: 40)
     let edges = [CGPoint(x: 6, y: 10), CGPoint(x: 194, y: 10)]
@@ -135,9 +126,6 @@ import Testing
     #expect(!isRed(rightToLeft[0]), "the chips did not stay on the leading side")
   }
 
-  /// A leading or trailing edge belongs to the system to flip, never to a number in the source,
-  /// which is the one way a row can mirror wrongly and still measure the same. This reads the
-  /// package's own sources, so a physical offset cannot come back unnoticed.
   @Test func `no component places anything with a physical offset`() {
     let physical = [".padding(.left", ".padding(.right", "offset(x:", "offset(CGSize(width:"]
     let sources = packageSources()
@@ -176,7 +164,6 @@ import Testing
     }
   }
 
-  /// Two chips whose colours tell which side of the flow each one landed on.
   private var mirroredChips: some View {
     ChipFlow {
       Color.red.frame(width: 40, height: 20)
@@ -188,7 +175,6 @@ import Testing
     PasteHero(link: .constant("https://youtu.be/tPEMP9oYxTo")) {}
   }
 
-  /// The real artwork box around the image a provider sends for a widescreen video at `high`.
   private func letterboxed(_ size: Artwork.Size) -> some View {
     Artwork.box(size: size) {
       Image(decorative: letterboxedThumbnail, scale: 1)
@@ -197,7 +183,6 @@ import Testing
     }
   }
 
-  /// A 16:9 picture inside a 4:3 canvas, with the black bars YouTube adds to fill it.
   private var letterboxedThumbnail: CGImage {
     let width = 480
     let height = 360
@@ -216,7 +201,6 @@ import Testing
     return context.makeImage()!
   }
 
-  /// The size a view takes when it is offered `width` and as much height as it needs.
   private func measured(
     _ view: some View, width: CGFloat, textSize: DynamicTypeSize,
     direction: LayoutDirection = .rightToLeft
@@ -237,7 +221,6 @@ import Testing
     sample.red < 24 && sample.green < 24 && sample.blue < 24
   }
 
-  /// The colour of one pixel of a rendered view, at one pixel per point.
   private func sample(
     _ view: some View, at point: CGPoint, in size: CGSize, direction: LayoutDirection
   ) -> (red: Int, green: Int, blue: Int) {
@@ -269,8 +252,6 @@ import Testing
     return sampled
   }
 
-  /// Each source file in the package, by name, so a test can read what the components do rather
-  /// than only what they measure.
   private func packageSources() -> [(String, String)] {
     let root =
       URL(fileURLWithPath: #filePath)

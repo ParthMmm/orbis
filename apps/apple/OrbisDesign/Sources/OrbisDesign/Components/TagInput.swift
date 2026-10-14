@@ -1,11 +1,5 @@
 import SwiftUI
 
-/// The Tags on a Set, typed or picked from the ones the library already holds.
-///
-/// The service is the authority on what a Tag is. It trims, lowercases, and deduplicates
-/// every list it is given, and refuses a list longer than twenty or a Tag longer than forty
-/// characters. The field applies those rules on the way in, so nothing typed here comes back
-/// refused, and the two rules live in one place instead of drifting apart.
 public struct TagInput: View {
   @Binding public var tags: [String]
   public let suggestions: [String]
@@ -25,7 +19,6 @@ public struct TagInput: View {
     self.category = category
   }
 
-  /// What the service keeps: twenty Tags, each forty characters.
   public static let serviceLimit = 20
   public static let serviceTagLength = 40
 
@@ -95,8 +88,6 @@ public struct TagInput: View {
               } label: {
                 Image(systemName: "xmark.circle.fill")
                   .font(.orbis.detail)
-                  // The glyph is about 13 pt square. 44 pt is the target the touch platforms need
-                  // and 20 pt the Mac one; the HStack keeps the chip centred in the taller target.
                   #if os(macOS)
                     .frame(minWidth: 20, minHeight: 20)
                   #else
@@ -142,8 +133,6 @@ public struct TagInput: View {
   }
 }
 
-/// Lays chips out in rows, wrapping when the width runs out. Rows are as tall as the tallest
-/// chip in them, so a removed Tag does not move the ones beside it.
 public struct ChipFlow: Layout {
   public var spacing: CGFloat = 6
   public var alignment: HorizontalAlignment = .leading
@@ -198,10 +187,6 @@ public struct ChipFlow: Layout {
     }
   }
 
-  /// What a chip takes: the width it asks for, unless the row cannot give it that much. A Tag can
-  /// be forty characters, which is wider than a phone at the largest text sizes, so a chip wider
-  /// than its row is offered the row's width instead and wraps inside the edge rather than running
-  /// past it. `minX` and `maxX` are the layout's own edges, so the system mirrors them.
   private func size(of subview: LayoutSubview, upTo width: CGFloat) -> CGSize {
     let wanted = subview.sizeThatFits(.unspecified)
     guard width.isFinite, wanted.width > width else { return wanted }

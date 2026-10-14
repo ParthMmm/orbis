@@ -1,6 +1,5 @@
 import { Context, Effect, Layer, PubSub, Stream } from "effect";
 
-/** Routes invalidations between request-scoped Queues belonging to the same Person. */
 export class QueueSignals extends Context.Service<
   QueueSignals,
   {

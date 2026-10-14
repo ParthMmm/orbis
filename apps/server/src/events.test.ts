@@ -13,7 +13,6 @@ import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
 import { createTestApp as createApp } from "./test-app.js";
 
-// Presence has its own test; these frames are about the Queue.
 const Event = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("queue"), queue: ListeningQueueSchema }),
   Schema.Struct({ kind: Schema.Literal("heartbeat") }),

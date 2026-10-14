@@ -18,7 +18,6 @@ import {
 import { Library } from "../../server/src/library.js";
 import { MetadataError } from "../../server/src/metadata-error.js";
 
-/** The node-key check `/node` and `/recovery` share: the key's id, or a refusal. */
 export const nodeKeyId = (
   request: Request,
   trustPath: string

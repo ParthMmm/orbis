@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// How the components assemble into the Library screen. Preview only; the app owns the real view.
-/// Glass comes from the system: the sidebar, toolbar and tab bar are Liquid Glass on their own.
 private struct LibraryPreview: View {
   @State private var techno = true
   @State private var house = false

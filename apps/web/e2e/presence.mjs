@@ -1,7 +1,3 @@
-// Explicit Presence and the change feed through the built web client against a
-// real Orbis API (e2e/api-server.ts). alice plays real fixture audio in one
-// browser while bob watches People in another; alice's second browser changes her
-// Library and the first shows it without a reload (ADR 0019, #212).
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -142,7 +138,6 @@ try {
   }, "alice's Download did not finish");
   step("alice and bob have Social on, and alice has a Set with kept audio");
 
-  // Chromium plays the fixture headless; autoplay needs no user gesture here.
   const browser = await chromium.launch({
     args: ["--autoplay-policy=no-user-gesture-required"],
     headless: true,
@@ -251,7 +246,6 @@ try {
       () => actions.some((action) => action.kind === "pause"),
       "pausing sent no Presence action"
     );
-    // A Position-inferred Presence would linger for 30 seconds; the pause clears it now.
     await aliceRow
       .getByText("Not listening right now")
       .waitFor({ timeout: 5000 });

@@ -1,25 +1,3 @@
-// Signing in (ADR 0020) through `createApp` over HTTP with a real database.
-//
-// Ways it could fail, each covered below:
-// - Joining works while no passcode is set, with a wrong passcode, or with a
-//   taken or badly sized username, or a refused join still creates a Person.
-// - A joined key is not daily, belongs to the wrong Person, or reaches the
-//   Host's routes.
-// - The passcode is not readable back, not trimmed, does not survive a
-//   restart, or a blank one leaves joining open.
-// - A Sign-in Code yields a key twice, after 10 minutes, or for a Person
-//   removed since it was issued.
-// - A Sign-in Code is lost when the Group restarts, or an earlier code for
-//   the same Person still works after a new one is issued.
-// - A blank device name spends the code without minting a key.
-// - A friend's key reaches /admin, or a second Host key does not.
-// - A node key reaches the client routes.
-// - Guessing codes or passcodes is not limited, a key on the request skips
-//   the limit, or a client over the limit spends a real code.
-// - A different spelling of the route path, a burst of concurrent guesses,
-//   or a fresh IPv6 address for each guess skips the limit.
-// - Guesses spread over many addresses meet no limit at all.
-// - A passcode shorter than eight characters is accepted.
 import { expect, test } from "bun:test";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -145,7 +123,6 @@ test("a friend joins with the Group Passcode and gets one daily key", async () =
     expect(
       await statusOf(join(app, { passcode: "orbit 41", username: "newcomer" }))
     ).toBe(403);
-    // The passcode is checked first, so a wrong one says nothing of the name.
     expect(
       await statusOf(join(app, { passcode: "nope", username: "friend" }))
     ).toBe(403);
@@ -439,7 +416,6 @@ test("wrong codes and passcodes count toward the failed-key limit", async () => 
       Array.from({ length: 20 }, (_, index) => (index % 2 === 0 ? 404 : 403))
     );
     expect(guesses[20]).toBe(429);
-    // Once over the limit, the client is refused before the code is spent.
     expect(
       await statusOf(redeem(app, issued.code, { client: "100.64.0.3" }))
     ).toBe(429);
@@ -453,7 +429,6 @@ test("wrong codes and passcodes count toward the failed-key limit", async () => 
       )
     ).toBe(429);
 
-    // A key on the request does not skip the limit.
     for (let attempt = 0; attempt < 21; attempt += 1) {
       // oxlint-disable-next-line no-await-in-loop
       await redeem(app, `KEYED${attempt}`, {
@@ -467,7 +442,6 @@ test("wrong codes and passcodes count toward the failed-key limit", async () => 
       )
     ).toBe(429);
 
-    // Bad keys and code guesses share one count per client.
     for (let attempt = 0; attempt < 20; attempt += 1) {
       // oxlint-disable-next-line no-await-in-loop
       await call(app, "GET", "/me", { client: "100.64.0.5", key: "bad" });
@@ -603,11 +577,9 @@ test("guesses spread over many addresses meet one limit for the whole Group", as
     }
     expect(statuses.slice(0, 100)).not.toContain(429);
     expect(statuses[100]).toBe(429);
-    // The Group-wide limit refuses a real code too, until the window passes.
     expect(
       await statusOf(redeem(app, issued.code, { client: "10.9.9.9" }))
     ).toBe(429);
-    // A signed-in device is not locked out of its own routes.
     expect(
       await statusOf(
         call(app, "GET", "/me", { client: "10.9.9.9", key: FRIEND_DAILY })

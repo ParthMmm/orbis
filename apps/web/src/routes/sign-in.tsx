@@ -35,10 +35,6 @@ const signInRoute = getRouteApi("/sign-in");
 const typedCode = (form: FormData) =>
   normalizeSignInCode(formField(form, "code"));
 
-/**
- * One way in: its fields, its own problem line, and one submit button. `check`
- * names what is missing before any call.
- */
 const SignInForm = ({
   call,
   check,

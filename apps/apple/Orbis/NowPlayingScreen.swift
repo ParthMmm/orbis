@@ -1,11 +1,6 @@
 import OrbisDesign
 import SwiftUI
 
-/// Now Playing, laid out the way Apple Music lays out its own: the artwork, the title with its
-/// menu, the seek bar and the transport, and a bottom row for the Tracklist, AirPlay and Up Next.
-/// The Tracklist takes the artwork's place the way lyrics do, so the mix can be read and stepped
-/// through without leaving the player. Always dark, on the artwork's colour. The screen follows
-/// the player, and closes when it empties.
 struct NowPlayingScreen: View {
   @Bindable var model: AppModel
   @Environment(\.dismiss) private var dismiss
@@ -55,8 +50,6 @@ struct NowPlayingScreen: View {
     }
   }
 
-  /// On a Mac the window is wide enough for the Tracklist to sit beside the player for the whole
-  /// Set, where a phone swaps it in for the artwork.
   @ViewBuilder private func content(_ set: SavedSet) -> some View {
     let cues = model.tracklists[set.id]?.cues.filter { $0.startSeconds != nil } ?? []
     #if os(macOS)
@@ -107,8 +100,6 @@ struct NowPlayingScreen: View {
         LyricsTracklist(model: model, set: set, cues: cues)
       } else {
         Spacer(minLength: 28)
-        // The artwork sits back while the Set is paused and steps forward when it plays, the way
-        // Apple Music's does: the state of the player, read from across the room.
         Artwork(url: SetPresentation.pageArtwork(set), seed: set.title, size: .header)
           .shadow(color: .black.opacity(0.45), radius: isPlaying ? 28 : 12, y: isPlaying ? 18 : 6)
           .scaleEffect(isPlaying ? 1 : 0.86)
@@ -162,9 +153,6 @@ struct NowPlayingScreen: View {
   }
 }
 
-/// The title block. The track playing inside the mix leads when the Tracklist knows it, with the
-/// Set's own name under it; without one the Set leads. Its own view because the Cue follows the
-/// clock, and the rest of Now Playing should not redraw twice a second with it.
 private struct TrackTitle: View {
   let player: AudioPlayer
   let set: SavedSet
@@ -198,7 +186,6 @@ private struct TrackTitle: View {
   }
 }
 
-/// The track the mix moves into next and how long until it does. Tapping it opens the Tracklist.
 private struct NextCueBar: View {
   let player: AudioPlayer
   let open: () -> Void
@@ -230,9 +217,6 @@ private struct NextCueBar: View {
   }
 }
 
-/// The Tracklist the way Apple Music shows lyrics: one large line per track, the playing one bright,
-/// the ones already heard dimmed, and the view scrolled to keep the playing one in sight. Tapping a
-/// line plays from it.
 private struct LyricsTracklist: View {
   @Bindable var model: AppModel
   let set: SavedSet

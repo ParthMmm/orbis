@@ -17,7 +17,6 @@ import {
 } from "effect/unstable/http";
 import { HttpApiClient } from "effect/unstable/httpapi";
 
-/** The part of fetch this client uses, so a test can stand in for it. */
 export type FetchLike = (input: string, init: RequestInit) => Promise<Response>;
 
 export interface Preferences {
@@ -34,10 +33,6 @@ export type SaveResult =
   | { readonly kind: "duplicate" }
   | { readonly kind: "failed"; readonly message: string };
 
-/**
- * The canonical Source Link for a value, or null when Orbis cannot accept it. The rule is
- * the server's own, shared through @orbis/contracts, so both sides agree on what is saved.
- */
 export const canonicalSourceUrl = (value: string): string | null => {
   try {
     return normalizeSourceUrl(value.trim()).url;
@@ -52,10 +47,6 @@ export const canonicalSourceUrl = (value: string): string | null => {
 const LINK_PATTERN = /https?:\/\/[^\s<>"'`]+/giu;
 const TRAILING_PUNCTUATION = /[.,;:!?)\]}'"]+$/u;
 
-/**
- * The first supported Source Link in a block of text, such as a clipboard holding a link
- * inside a sentence. Each candidate goes through the same canonical rule as the server.
- */
 export const extractSourceUrl = (text: string): string | null => {
   for (const [match] of text.matchAll(LINK_PATTERN)) {
     const canonical = canonicalSourceUrl(
@@ -68,7 +59,6 @@ export const extractSourceUrl = (text: string): string | null => {
   return null;
 };
 
-/** A declared error body, such as a 400 that names what the server refused. */
 const decodeErrorBody = Schema.decodeUnknownOption(
   Schema.Struct({ message: Schema.String })
 );
@@ -76,15 +66,10 @@ const decodeErrorBody = Schema.decodeUnknownOption(
 const baseUrl = (serviceUrl: string): string =>
   serviceUrl.trim().replace(/\/+$/u, "");
 
-/** Where Sign In keeps the key it redeemed. Raycast encrypts this storage. */
 const DEVICE_TOKEN_KEY = "deviceToken";
 
 export const SIGN_IN_HINT = "Run Sign In to Orbis with a Sign-in Code.";
 
-/**
- * The key from Sign In, or else the Device Token preference, so a setup from before Sign
- * In keeps working. Null when neither is set.
- */
 const readDeviceToken = async (
   preferences: Preferences
 ): Promise<string | null> =>
@@ -230,11 +215,6 @@ export type SignInResult =
   | { readonly kind: "signedIn"; readonly username: string }
   | { readonly kind: "failed"; readonly message: string };
 
-/**
- * Redeems a Sign-in Code for a key labeled "Raycast" and keeps the key for later saves.
- * The server normalizes the code's case and separators. Nothing is stored unless the
- * response decodes, so a failed sign-in leaves the previous key in place.
- */
 export const signIn = async (
   code: string,
   options: CallOptions = {}
@@ -271,11 +251,6 @@ export const startToast = (title: string): Promise<Toast> =>
 export const startProgressToast = (): Promise<Toast> =>
   startToast("Saving set…");
 
-/**
- * Finishes a capture command on the toast it already showed: a distinct rejection before
- * any request, or the outcome of the one save. The toast stays a single object so progress
- * turns into the result instead of being replaced.
- */
 export const finishSave = async (
   toast: Toast,
   candidate: string | null

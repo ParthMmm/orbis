@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// Where a Set lives. Neutral by design: the source is information, not a brand.
 public struct SourceStamp: View {
   public let source: String
 
@@ -34,7 +33,6 @@ public struct SourceStamp: View {
   AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { StampPair() }
 }
 
-/// Two stamps side by side, the arrangement the accessibility previews draw at each size.
 private struct StampPair: View {
   var body: some View {
     HStack {

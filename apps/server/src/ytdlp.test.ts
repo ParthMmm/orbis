@@ -18,7 +18,6 @@ const haveFfmpeg =
   Bun.which("ffmpeg") !== null && Bun.which("ffprobe") !== null;
 const testFfmpeg = haveFfmpeg ? test : test.skip;
 
-// The worker runs on its own fiber, so the tests poll for a terminal state.
 const waitForState = async (
   app: ReturnType<typeof createApp>,
   id: string,
@@ -198,7 +197,6 @@ test("cookies are tried only after the anonymous attempts fail", async () => {
   }
 });
 
-// Both backends fail, so the call order alone shows which one went first.
 const orderFor = async (url: string) => {
   const root = await mkdtemp(path.join(tmpdir(), "orbis-ytdlp-"));
   const calls: string[] = [];
@@ -242,7 +240,6 @@ const orderFor = async (url: string) => {
 };
 
 test("YouTube tries yt-dlp first and SoundCloud tries Cobalt first", async () => {
-  // The YouTube yt-dlp attempt retries with the alternate client before Cobalt.
   expect(await orderFor(youTubeUrl)).toEqual(["ytdlp", "ytdlp", "cobalt"]);
   expect(await orderFor(soundCloudUrl)).toEqual(["cobalt", "ytdlp"]);
 });

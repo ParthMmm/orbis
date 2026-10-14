@@ -1,10 +1,5 @@
 import XCTest
 
-/// The TV's journey: launch signed in, walk the tabs with the Siri Remote, open a Set, play it,
-/// read Now Playing, skip forward, and open Up Next. Every screen is captured.
-///
-/// Playback is proven by what the screen says, never by sound: the lane seeds silent audio, and
-/// the app is terminated when the test ends so nothing keeps playing.
 final class TVJourney: XCTestCase {
   private var app: XCUIApplication?
 
@@ -137,9 +132,6 @@ final class TVJourney: XCTestCase {
     sleep(1)
     capture("tv-settings")
 
-    // The silent Set is a minute long: resumed, it ends, the queue empties, and the Now Playing
-    // tab leaves the bar. The shell must land on Home with Home's own stack, so a tile there
-    // opens its page in view rather than in the Library's stack behind it.
     XCTAssertTrue(pressUntil(.left, limit: 6) { nowPlayingTab.hasFocus }, "The bar must reach Now Playing again")
     remote.press(.playPause)
     XCTAssertEqual(XCTWaiter.wait(for: [labelled(toggle, "Pause")], timeout: 10), .completed)

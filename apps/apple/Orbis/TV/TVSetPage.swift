@@ -2,11 +2,6 @@
   import OrbisDesign
   import SwiftUI
 
-  /// One Set's page on the TV: its artwork large on the left, its words and the few things a
-  /// person does to it on the right, and its Tracklist under both.
-  ///
-  /// The page reads the Set from the model on every pass rather than holding a copy, so a change
-  /// made on a phone shows up here on the next refresh and a removal closes the page.
   struct TVSetPage: View {
     @Bindable var model: AppModel
     let setId: String
@@ -110,8 +105,6 @@
       }
     }
 
-    /// Play and the queue actions, or the Download when the audio is not kept yet; the service
-    /// does the work, so the TV may ask.
     @ViewBuilder private func actions(_ set: SavedSet) -> some View {
       HStack(spacing: 20) {
         if set.downloadState == "ready" {
@@ -163,9 +156,6 @@
       .accessibilityIdentifier("detail-play-toggle")
     }
 
-    /// `DownloadCapsule` answers a tap, which no remote makes, so the TV draws its phase and words
-    /// itself: a button to start or retry, and while the service works a focusable progress label
-    /// beside Cancel.
     @ViewBuilder private func downloadButtons(_ set: SavedSet) -> some View {
       let phase = SetPresentation.downloadPhase(set.downloadState, live: model.audioStates[set.id])
       let label = DownloadCapsule.label(for: phase)
@@ -199,7 +189,6 @@
     }
   }
 
-  /// The Tracklist as focusable rows, the playing Cue marked with the bars.
   private struct TVTracklist: View {
     @Bindable var model: AppModel
     let set: SavedSet

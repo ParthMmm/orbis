@@ -8,13 +8,6 @@ import {
 } from "effect/unstable/http";
 import { HttpApiClient } from "effect/unstable/httpapi";
 
-/**
- * Why a call failed. `rejected` means the API knows no such key (401), and
- * `forbidden` means the key works but may not make this call (403), such as a
- * friend's key on an `/admin` route. `unreachable` means no response arrived at
- * all: the API is down, or Chrome's Local Network Access prompt was denied on a
- * tailnet device (see README, "Devices on the tailnet").
- */
 export type ApiFailure =
   | "rejected"
   | "forbidden"
@@ -28,9 +21,7 @@ export type ApiResult<A> =
   | {
       readonly ok: false;
       readonly failure: ApiFailure;
-      /** The response status, when a response arrived. */
       readonly status?: number | undefined;
-      /** The API's own explanation, when its error body carried one. */
       readonly message?: string | undefined;
     };
 
@@ -46,7 +37,6 @@ const failureFor = (status: number | undefined): ApiFailure =>
     ? "unreachable"
     : (FAILURE_BY_STATUS.get(status) ?? "failed");
 
-// A null key sends no Authorization header, for a device that has no key yet.
 const makeClient = (apiUrl: string, key: string | null) =>
   HttpApiClient.make(OrbisApi, {
     baseUrl: apiUrl,
@@ -58,7 +48,6 @@ const makeClient = (apiUrl: string, key: string | null) =>
   });
 type OrbisClient = Success<ReturnType<typeof makeClient>>;
 
-/** The API address and key every call from a signed-in page carries. */
 export interface Credentials {
   readonly apiUrl: string;
   readonly key: string;
@@ -123,17 +112,12 @@ const run = async <A, E>(
   }
 };
 
-/**
- * Runs one typed call with a Person's key. It resolves; a failure is a value. Feature
- * modules wrap it, for example `callOrbis(session, (api) => api.sets.list())`.
- */
 export const callOrbis = <A, E>(
   { apiUrl, key }: Credentials,
   operation: (client: OrbisClient) => EffectType<A, E>,
   signal?: AbortSignal
 ): Promise<ApiResult<A>> => run(apiUrl, key, operation, signal);
 
-/** Runs one typed call without a key, for a device that has none yet. */
 export const callOrbisWithoutKey = <A, E>(
   apiUrl: string,
   operation: (client: OrbisClient) => EffectType<A, E>
@@ -147,7 +131,6 @@ export type Person = Extract<
   { ok: true }
 >["value"];
 
-/** What the page says for each failure. */
 export const FAILURE_MESSAGES: Readonly<Record<ApiFailure, string>> = {
   conflict: "That change conflicts with what Orbis already has.",
   failed: "Orbis could not complete the request. Try again.",
@@ -160,13 +143,10 @@ export const FAILURE_MESSAGES: Readonly<Record<ApiFailure, string>> = {
     "Orbis could not be reached. If your browser asks to access devices on your local network, allow it and try again.",
 };
 
-// Statuses whose message explains what the Person typed. Other bodies, such as
-// a 500's, are not written for them.
 const EXPLAINED_STATUSES: ReadonlySet<number> = new Set([
   400, 403, 404, 409, 429,
 ]);
 
-/** The API's own words for a refusal, such as why a passcode was wrong. */
 export const problemFor = (
   result: Extract<ApiResult<unknown>, { ok: false }>
 ): string =>

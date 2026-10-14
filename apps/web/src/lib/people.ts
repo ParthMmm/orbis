@@ -1,17 +1,14 @@
 import { callOrbis } from "@/lib/orbis";
 import type { Credentials } from "@/lib/orbis";
 
-/** Turns the Person's Social switch on or off (ADR 0009). */
 export const setSocial = (credentials: Credentials, social: boolean) =>
   callOrbis(credentials, (client) =>
     client.people.updateMe({ payload: { social } })
   );
 
-/** The People the caller could see, with the caller's See and Appear for each. */
 export const listPeopleFilters = (credentials: Credentials) =>
   callOrbis(credentials, (client) => client.people.socialFilters());
 
-/** The People who pass the social gate now. */
 export const listVisiblePeople = (credentials: Credentials) =>
   callOrbis(credentials, (client) => client.people.list());
 

@@ -1,6 +1,5 @@
 import XCTest
 
-/// Browsing and searching the Library.
 final class SearchUITests: LibraryJourney {
   func testBrowsesAndSearchesTheLibrary() throws {
     let app = try launch()
@@ -24,8 +23,6 @@ final class SearchUITests: LibraryJourney {
     capture("04-search-no-results")
   }
 
-  /// A Set found by search is the reason to search, so the result has to open. The Library row
-  /// in the same component opens the same page, on the same build, in the same pass.
   func testOpensASetFromASearchResult() throws {
     let app = try launch()
 
@@ -49,14 +46,11 @@ final class SearchUITests: LibraryJourney {
     XCTAssertTrue(
       title.waitForExistence(timeout: 30),
       "a search result must open the Set's page\n\(app.debugDescription)")
-    // The page names the Set twice: the header carries the title with its source, and the
-    // title stands alone under it. Either identifies the Set that was opened.
     XCTAssertTrue(
       title.label.contains("Night session"),
       "the page must show the Set that was opened, not another one: \(title.label)")
     capture("13-search-result-open")
 
-    // The results and the query are where the person left them, so returning is not a reset.
     app.navigationBars.buttons.firstMatch.tap()
     XCTAssertTrue(
       heading.waitForExistence(timeout: 20),
@@ -64,9 +58,6 @@ final class SearchUITests: LibraryJourney {
     XCTAssertEqual(searchText(in: app), "night", "returning must keep the query")
   }
 
-  /// Clearing a search that found nothing is the one way out of the no-match state, so it has
-  /// to empty the field and return the screen to the state it shows before any query. It once
-  /// left the query in the field and the result area on Loading, forever.
   func testClearsANoMatchSearch() throws {
     let app = try launch()
 

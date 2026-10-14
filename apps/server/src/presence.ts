@@ -73,7 +73,6 @@ export interface PresenceOptions {
   readonly leaseMs?: number;
   readonly resultRetentionMs?: number;
   readonly legacyReportWindowMs?: number;
-  /** Wakes `expire` at the deadline. Bun defaults to a scoped timer. */
   readonly alarm?: {
     readonly set: (at: number) => void | Promise<void>;
     readonly cancel: () => void | Promise<void>;
@@ -264,7 +263,6 @@ const expiryCause = (
 };
 const liveKeys = (tx: DatabaseClient) =>
   tx.select({ id: apiKeys.id }).from(apiKeys);
-/** Presence rows whose key lost its api_keys row before this module could clear them. */
 const orphanSessions = (tx: DatabaseClient, personId?: string) =>
   tx
     .select({
@@ -329,7 +327,6 @@ const personOf = (tx: DatabaseClient, keyId: string) =>
     return (session ?? key ?? report)?.personId ?? null;
   });
 
-/** Every write to the four presence tables goes through here. */
 export class Presence extends Context.Service<
   Presence,
   {
@@ -341,7 +338,6 @@ export class Presence extends Context.Service<
       caller: PresenceCaller,
       setId: string
     ) => Effect.Effect<void, LibraryError>;
-    /** Runs inside the Queue's write transaction before its rows change. */
     readonly queueActivated: (
       tx: DatabaseClient,
       personId: string,
@@ -358,7 +354,6 @@ export class Presence extends Context.Service<
       now: number
     ) => Effect.Effect<string | null, LibraryError>;
     readonly schedule: () => Effect.Effect<void, LibraryError>;
-    /** Runs once the caller's transaction around `queueActivated` or `removePerson` commits. */
     readonly afterCommit: () => Effect.Effect<void>;
     readonly changes: Stream.Stream<null>;
   }
@@ -374,7 +369,6 @@ export class Presence extends Context.Service<
         const retentionMs = options.resultRetentionMs ?? RESULT_RETENTION_MS;
         const legacyWindowMs = options.legacyReportWindowMs ?? LEGACY_WINDOW_MS;
 
-        // Without `now` the rows are trusted because every transaction settles them first.
         const visible = (
           tx: DatabaseClient,
           personId: string,
@@ -527,9 +521,6 @@ export class Presence extends Context.Service<
             );
           });
         const { alarm } = options;
-        // The port is written only when the deadline moves, and never fails the commit
-        // that moved it: a failed write is retried by the next commit, and a missed wake
-        // is caught by the next action's settle.
         const setAlarm = (at: number | null) => {
           if (at === armedAt) {
             return Effect.void;

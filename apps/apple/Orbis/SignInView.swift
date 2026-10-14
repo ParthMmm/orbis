@@ -1,8 +1,6 @@
 import OrbisDesign
 import SwiftUI
 
-/// A signed-out device signs in one of two ways (ADR 0020): a new Person joins with the Group
-/// Passcode, and someone who already uses Orbis types a Sign-in Code from another device.
 struct SignInView: View {
   @Bindable var model: AppModel
   @State private var choice: Choice?
@@ -178,8 +176,6 @@ private struct SignInFailureSection: View {
 }
 
 extension View {
-  /// Usernames, passcodes, and codes are typed as they are: no capitals, corrections, or
-  /// suggestions added.
   func plainEntry() -> some View {
     self
       .autocorrectionDisabled()

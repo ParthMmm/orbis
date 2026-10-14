@@ -34,12 +34,6 @@ export const resolveVisiblePerson = (
   return target;
 };
 
-/**
- * The People the viewer would see if their own See filter allowed it, with the
- * viewer's See and Appear filters for each. Setting See off must not drop a Person
- * from this list, or the viewer could never turn it back on; everything else in
- * the gate still applies, so a Person who hid from the viewer stays hidden.
- */
 export const listFilterablePeople = (
   people: readonly PersonRecord[],
   viewerId: string
@@ -80,7 +74,6 @@ export const listFilterablePeople = (
 const notFound = () =>
   new LibraryError({ message: "Set not found.", statusCode: 404 });
 
-/** Resolves a Set through an owned reference or another visible Person's Library. */
 export const resolveVisibleSet = (input: {
   readonly id: string;
   readonly personId: string;

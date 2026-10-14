@@ -60,7 +60,6 @@ const duration = (seconds: number | null): string | null => {
   return hours > 0 ? `${hours}h ${minutes}m` : `${minutes}m`;
 };
 
-/** The line under a Set's title: creator, source, and length. */
 export const setDetails = (set: SavedSet): string =>
   [
     set.creator ?? "Unknown creator",
@@ -102,7 +101,6 @@ export const DownloadBadge = ({
   }
 };
 
-/** Tags as the Person types them: comma separated, trimmed, without repeats. */
 const parseTags = (text: string): string[] => [
   ...new Set(
     text

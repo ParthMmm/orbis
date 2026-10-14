@@ -15,10 +15,6 @@ export type FetchHandler = (
   init: RequestInit
 ) => Promise<Response> | Response;
 
-/**
- * Replaces the global fetch and records each request, so a test can assert both that no
- * request was sent and exactly what Orbis would have received.
- */
 export const mockFetch = (handler: FetchHandler) => {
   const implementation = (
     input: string,

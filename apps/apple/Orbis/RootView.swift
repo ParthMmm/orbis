@@ -2,14 +2,9 @@ import OrbisDesign
 import SwiftUI
 
 #if os(iOS)
-  /// iPhone. Library is a tab; Search takes the search role, so the system draws it as the
-  /// separate button beside the tab bar and opens the field in its place. Now playing rides the
-  /// tab bar as its bottom accessory, the way a music app carries it, and the bar recedes as the
-  /// list scrolls.
   struct CompactShell: View {
     @Bindable var model: AppModel
 
-    /// A tap on the Search tab while Search is open asks for the field, rather than doing nothing.
     private var tabSelection: Binding<Destination> {
       Binding(
         get: { model.destination },
@@ -18,15 +13,11 @@ import SwiftUI
           model.destination = next
         })
     }
-    /// Now Playing is a sheet over the whole shell, so it opens the same from any tab.
     @State private var isNowPlayingShown = false
-    /// Now Playing grows out of the mini player's artwork and shrinks back into it.
     @Namespace private var nowPlaying
 
     var body: some View {
       TabView(selection: tabSelection) {
-        // Search is a tab like the others, as in Apple Music. The search role would split it
-        // off into a circle that turns into a field, and the field belongs at the top of Search.
         ForEach([Destination.home, .library, .playlists, .people, .search]) { destination in
           Tab(destination.rawValue, systemImage: destination.symbol, value: destination) {
             NavigationStack {
@@ -50,9 +41,6 @@ import SwiftUI
 
 #endif
 
-/// iPad and macOS. The same destinations become sidebar items. A plain list with explicit
-/// selection buttons is used because SwiftUI's selection-based `List` initializers are
-/// unavailable on iOS.
 struct SidebarShell: View {
   @Bindable var model: AppModel
 
@@ -74,9 +62,7 @@ struct SidebarShell: View {
           guard let selected else { return }
           switch selected {
           case .destination(let destination):
-            // Choosing Search again asks for its field, as a second tap on the tab does.
             if destination == .search { model.searchFocusRequests += 1 }
-            // Playlists in the sidebar is the grid of folders, not the last one opened.
             if destination == .playlists { model.closePlaylist() }
             model.destination = destination
           case .playlist(let id):
@@ -146,7 +132,6 @@ struct SidebarShell: View {
               HStack(spacing: 8) {
                 Label(destination.rawValue, systemImage: destination.symbol)
                 Spacer(minLength: 0)
-                // The tint alone says nothing to a person who cannot see it, so the row is marked.
                 if model.destination == destination {
                   Image(systemName: "checkmark")
                     .font(.orbis.caption)
@@ -195,7 +180,6 @@ struct SidebarShell: View {
       NowPlayingScreen(model: model)
         .zoomsFromMiniPlayer(nowPlaying)
         #if os(macOS)
-          // As large as the window allows: the player and its Tracklist sit side by side.
           .frame(minWidth: 900, idealWidth: 1100, minHeight: 640, idealHeight: 760)
         #endif
     }
@@ -205,8 +189,6 @@ struct SidebarShell: View {
     #endif
   }
 
-  /// A playlist section that failed to load must say so, because an empty section reads
-  /// as "no playlists" and invites relaunching the app instead of trying again here.
   private func playlistsErrorRow(_ failure: OrbisFailure) -> some View {
     VStack(alignment: .leading, spacing: 4) {
       Text(failure.message)
@@ -220,8 +202,6 @@ struct SidebarShell: View {
     .accessibilityIdentifier("playlists-error")
   }
 
-  /// A playlist in the sidebar opens its own page, with Play and Shuffle, the same page a
-  /// folder on the Playlists tab opens.
   private func playlistRow(_ id: String, name: String, count: Int) -> some View {
     let isOpen = model.destination == .playlists && model.openedPlaylistId == id
     return Button {
@@ -246,15 +226,9 @@ struct SidebarShell: View {
 struct DestinationView: View {
   @Bindable var model: AppModel
   let destination: Destination
-  /// The queue is read in a sheet, because it is a fact about playback rather than a place in the
-  /// library.
   @State private var isShowingQueue = false
-  /// Replacing the queue is worth a question only while something is playing.
   @State private var isConfirmingPlaylist = false
-  /// The empty Library's action asks the paste field to take focus.
   @State private var focusLink = false
-  /// Filing happens in a sheet from the toolbar's +, and the naming step follows in the same
-  /// sheet, so the Library itself is the collection and nothing else.
   @State private var isFilingSheetShown = false
 
   @State private var libraryQuery = ""
@@ -288,8 +262,6 @@ struct DestinationView: View {
         failureContext: "loading the library",
         activeTag: model.activeTag,
         filters: nil,
-        // Only a filter can hide every Set. Without one, an empty list is an empty collection
-        // and keeps the empty collection's copy.
         noMatches: librarySearchIsActive
           ? AnyView(
             NoResultsState(recoverLabel: "Clear search", recover: { libraryQuery = "" })
@@ -317,9 +289,6 @@ struct DestinationView: View {
       .macPageSearch(text: $libraryQuery, prompt: "Find in Library")
       .macSearchToolbarBackground(isSearching: librarySearchIsActive)
       .sidebarPageTitle("Library")
-      // Pinned rather than left to the default, so the large title stays large whatever the
-      // tab's content state is; the Set page pins its inline counterpart the same way. A Mac
-      // has no large title to pin.
       .largeTitleOnIOS()
       .toolbar {
         ToolbarItem {
@@ -356,15 +325,12 @@ struct DestinationView: View {
       PeopleDestination(model: model)
     case .search:
       SearchDestination(model: model)
-        // The one open Set is shared with the Library, so a Set found here opens the same page.
         .navigationDestination(item: openedSet) { id in
           SetDetailScreen(model: model, setId: id)
         }
     }
   }
 
-  /// The large title already says Library, so the list carries no heading of its own; the
-  /// active filter is underlined in the ledger row instead.
   private var libraryHeading: Text? { nil }
 
   private var librarySets: Loadable<[SavedSet]> {
@@ -377,8 +343,6 @@ struct DestinationView: View {
     return .loaded(model.librarySort.ordered(loaded))
   }
 
-  /// The Set at the top of the Library as it is ordered and filtered now, which the page takes
-  /// its light from, so filtering by a Tag recolours the page.
   private var libraryLead: SavedSet? {
     guard case .loaded(let sets) = librarySets else { return nil }
     return sets.first
@@ -397,8 +361,6 @@ struct DestinationView: View {
     return sets.count
   }
 
-  /// Home: what is new and where to go, in rails, with a waiting link above them. The full
-  /// collection is the Library tab.
   private var home: some View {
     let rails = HomeRails(model: model)
     return ScrollView {
@@ -416,7 +378,6 @@ struct DestinationView: View {
     .scrollEdgeEffectStyle(.soft, for: .top)
     .scrollEdgeEffectStyle(.soft, for: .bottom)
     .overlay {
-      // Before the first Set, Home has no rails to show; it says so and offers the first filing.
       if case .loaded(let sets) = model.library, sets.isEmpty {
         EmptyLibraryState(recover: { openFilingSheet() })
           .accessibilityIdentifier("home-empty")
@@ -512,8 +473,6 @@ struct DestinationView: View {
     )
   }
 
-  /// The design's count says how much the filter is hiding, which is the number a person
-  /// wants when a list looks short.
   private var libraryFooter: String {
     let total = model.totalCount
     guard model.isFilteringLibrary else {
@@ -531,8 +490,6 @@ struct DestinationView: View {
 
   @ToolbarContentBuilder
   private var libraryToolbar: some ToolbarContent {
-    // Playing a Playlist is only offered while the Library is showing one: with Everything
-    // selected there is no Playlist to play.
     if model.selectedPlaylistId != nil {
       ToolbarItem {
         Button("Play playlist", systemImage: "play.circle") {
@@ -580,12 +537,9 @@ struct DestinationView: View {
   }
 }
 
-/// Home: the Set to go back to, then the rails a music app's home gives its sections. The page
-/// takes its light from the lead Set's artwork, so the glass on it has colour to bend.
 struct HomeRails: View {
   @Bindable var model: AppModel
 
-  /// The page's own padding, matched so a rail's first card lines up with the list under it.
   private static let edgeInset: CGFloat = 16
 
   var body: some View {
@@ -607,12 +561,9 @@ struct HomeRails: View {
         playlistGrid
       }
     }
-    // Full width even with nothing in it. A new Person's Home is empty, and an empty column
-    // narrowed the page to its padding, which drew the glow as a strip down the middle.
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  /// The Set Home leads with: the one most recently left part-way, or else the newest filed.
   var lead: SavedSet? { home.lead }
 
   private var librarySets: [SavedSet] {
@@ -664,8 +615,6 @@ struct HomeRails: View {
     }
   }
 
-  /// Tags as a strip of glass chips under the lead Set, one tap from a filtered Library. A Mac
-  /// window has the width to show them all, so they wrap there instead of scrolling.
   @ViewBuilder private var tagRow: some View {
     #if os(macOS)
       GlassEffectContainer(spacing: 8) {
@@ -702,8 +651,6 @@ struct HomeRails: View {
   private var playlistGrid: some View {
     VStack(alignment: .leading, spacing: 14) {
       SectionHeading("Playlists", subtitle: "Your sets, sorted for the moment.")
-      // Two folders across a phone, as on the Playlists page; a Mac or iPad window fits more
-      // rather than stretching two.
       LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 14)], spacing: 18) {
         ForEach(model.playlistItems) { playlist in
           Button {
@@ -734,8 +681,6 @@ struct HomeRails: View {
           .padding(.horizontal, Self.edgeInset)
           .scrollTargetLayout()
       }
-      // The rail escapes the page's padding and runs to the screen's edges, the way a music
-      // app's rows bleed; the inner padding keeps the first card on the page's own margin.
       .padding(.horizontal, -Self.edgeInset)
       .scrollTargetBehavior(.viewAligned)
       .scrollClipDisabled()
@@ -744,14 +689,11 @@ struct HomeRails: View {
   }
 }
 
-/// The Set Home leads with, large: its artwork, its name, and one button that plays it.
 private struct HomeHero: View {
   @Bindable var model: AppModel
   let set: SavedSet
-  /// The Set was left part-way, so the button resumes and says how long is left.
   let isResume: Bool
 
-  /// The artwork spans a phone's width; beside the words on a Mac it is a cover's size.
   private static let maxArtworkWidth: CGFloat = HeroLayout.isBeside ? 440 : 560
 
   private var isCurrent: Bool { model.audioPlayer.currentSetId == set.id }
@@ -830,9 +772,6 @@ private struct HomeHero: View {
   }
 }
 
-/// A link on the clipboard, offered for filing in one tap. The clipboard is only asked whether
-/// it holds something shaped like a web address, which needs no permission; the system Paste
-/// button reads it, so filing never raises the paste prompt either.
 private struct ClipboardBanner: View {
   @Bindable var model: AppModel
   @Environment(\.scenePhase) private var scenePhase
@@ -879,8 +818,6 @@ private struct ClipboardBanner: View {
 
 struct SearchDestination: View {
   @Bindable var model: AppModel
-  /// The last queries that found something, newest first, one per line. Kept on the device: they
-  /// are a convenience for this person here, not part of the library.
   @AppStorage("orbis.recentSearches") private var recentSearches = ""
   private static let recentLimit = 6
   /// The field is resigned before the query is cleared. SwiftUI does not push a programmatic
@@ -890,7 +827,6 @@ struct SearchDestination: View {
 
   var body: some View {
     searchPage
-      // On the screen, not the results: the results view is not there until a search has run.
       .onSubmit(of: .search) {
         remember(model.searchQuery)
         Task { await model.runSearch() }
@@ -925,15 +861,11 @@ struct SearchDestination: View {
         )
         .searchFocused($isFieldFocused)
         .macSearchToolbarBackground(isSearching: !model.searchQuery.isEmpty)
-        // Choosing Search in the sidebar puts the cursor in its field, so typing starts the
-        // search; choosing it again while it is open asks for the field the same way.
         .onAppear { isFieldFocused = true }
         .onChange(of: model.searchFocusRequests) { isFieldFocused = true }
     #else
       searchBody
         .sidebarPageTitle("Search")
-        // At the top and always shown, the way Apple Music shows it, rather than folded into
-        // the tab bar where it reads as a tab and not a field.
         .searchable(
           text: $model.searchQuery, placement: .navigationBarDrawer(displayMode: .always),
           prompt: "Title, tag, or source link"
@@ -946,8 +878,6 @@ struct SearchDestination: View {
   private var searchBody: some View {
     Group {
       if isUntouched {
-        // Nothing has been asked yet, so nothing has failed. One line says what the field
-        // searches; the field itself is the action.
         SearchStart(
           model: model, prompt: Self.prompt(total: model.totalCount), recent: recentQueries,
           search: search(for:), clearRecent: { recentSearches = "" }
@@ -960,26 +890,20 @@ struct SearchDestination: View {
     }
   }
 
-  /// Empties the field and the results, from the button. The field is resigned first: while it
-  /// holds focus it ignores the binding, so the order is what makes the query leave the screen.
   private func clear() {
     isFieldFocused = false
     model.clearSearch()
   }
 
-  /// "Search your 8 sets."
   static func prompt(total: Int) -> String {
     total == 1 ? "Search your 1 set." : "Search your \(total) sets."
   }
 
-  /// Nothing has been submitted yet. Typing alone changes nothing on screen; Return does.
   private var isUntouched: Bool {
     if case .idle = model.search { return true }
     return false
   }
 
-  /// On a Mac the tracks found inside Tracklists take a column of their own beside the Sets,
-  /// where a phone puts them under the Sets.
   @ViewBuilder private var results: some View {
     let cues = model.cueMatches(for: model.searchResultsFor ?? "")
     #if os(macOS)
@@ -1002,8 +926,6 @@ struct SearchDestination: View {
     #endif
   }
 
-  /// `foundCues` keeps the heading and the top result up when the only matches are in a
-  /// Tracklist shown beside the list rather than in it.
   private func resultList(
     cuesBelow cues: [CueMatch], foundCues: Bool, backdrop: SetList.Backdrop
   ) -> some View {
@@ -1018,8 +940,6 @@ struct SearchDestination: View {
       failureContext: "searching the library",
       activeTag: nil,
       filters: nil,
-      // A search that found nothing already shows the no-results state, so there is no
-      // second one to reach.
       noMatches: nil,
       hero: nil,
       aboveRows: top == nil && !foundCues ? nil : AnyView(aboveResults(top)),
@@ -1027,7 +947,6 @@ struct SearchDestination: View {
       footer: searchFooter,
       retry: { await model.runSearch() },
       listIdentifier: "search-list",
-      // A result is something to open, which is the whole reason to search.
       select: { set in model.openSet(set.id) },
       currentSetId: model.audioPlayer.currentSetId,
       isPlaying: model.audioPlayer.state == .playing,
@@ -1036,7 +955,6 @@ struct SearchDestination: View {
     )
   }
 
-  /// The best match leads, large, with its two quickest actions; the rest are rows under it.
   private var topResult: SavedSet? {
     if case .loaded(let sets) = model.search { sets.first } else { nil }
   }
@@ -1084,8 +1002,6 @@ struct SearchDestination: View {
     #endif
   }
 
-  /// The heading names the query the results answer, not whatever sits in the field: typing
-  /// a second query before submitting must not relabel the results still on screen.
   private var heading: Text {
     let query = model.searchResultsFor ?? ""
     return Text(query.isEmpty ? "Search" : "Results for \"\(query)\"")
@@ -1097,8 +1013,6 @@ struct SearchDestination: View {
   }
 }
 
-/// Search before anything is asked: the Tags and creators to browse by, and the last queries,
-/// each one tap from a result.
 private struct SearchStart: View {
   @Bindable var model: AppModel
   let prompt: String
@@ -1106,7 +1020,6 @@ private struct SearchStart: View {
   let search: (String) -> Void
   let clearRecent: () -> Void
 
-  /// One Set per creator, the newest, whose artwork stands for them.
   private var creators: [SavedSet] {
     guard case .loaded(let sets) = model.library else { return [] }
     var seen = Set<String>()
@@ -1207,7 +1120,6 @@ private struct SearchStart: View {
   }
 }
 
-/// The best match for a search, large, with Play and Play Next beside it.
 private struct TopResult: View {
   @Bindable var model: AppModel
   let set: SavedSet
@@ -1274,8 +1186,6 @@ private struct TopResult: View {
   }
 }
 
-/// Tracks inside the library's Tracklists that match the search. Tapping one plays its Set from
-/// where that track starts.
 private struct TracklistMatches: View {
   @Bindable var model: AppModel
   let matches: [CueMatch]

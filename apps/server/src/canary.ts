@@ -10,14 +10,6 @@ import { configureLogging, loggingLayer, withWideEvent } from "./logging.js";
 import { MediaStore } from "./media-store.js";
 import { Ytdlp } from "./ytdlp.js";
 
-/**
- * A nightly check that each download backend still fetches whole, readable audio,
- * through the worker's own code, before a user's download finds out it does not.
- * Run by orbis-canary.timer. It records one `download-canary` wide event, writes
- * `canary/last.json` and appends `canary/history.jsonl` under ORBIS_DATA_DIR, and
- * exits 1 when a check fails so the unit shows as failed.
- */
-
 interface Fixture {
   readonly durationSeconds: number;
   readonly name: string;
@@ -124,7 +116,6 @@ const options = {
 
 const program = Effect.gen(function* runCanary() {
   const downloads = yield* DownloadBackends;
-  // Each backend is checked on every fixture, not only where it comes first.
   const backends = downloads.forSource("youtube");
   const results = yield* Effect.forEach(
     FIXTURES.flatMap((fixture) =>

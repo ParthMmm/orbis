@@ -1,11 +1,6 @@
 import Accessibility
 import SwiftUI
 
-/// What the field is showing about the pasted Source Link.
-///
-/// One value drives every state, so the field cannot render a spinner over a failure or a
-/// stamp over a link that was refused. The service decides what a link is worth, so only
-/// `idle` and `checking` are reached without asking it.
 public enum LinkFieldState: Equatable, Sendable {
   case idle
   case checking
@@ -13,8 +8,6 @@ public enum LinkFieldState: Equatable, Sendable {
   case invalid(message: String)
   case duplicate(message: String)
 
-  /// The line under the field. Only the two refusals have words to show; the rest speak
-  /// through the field itself.
   public var message: String? {
     switch self {
     case .invalid(let message), .duplicate(let message): message
@@ -32,11 +25,6 @@ public enum LinkFieldState: Equatable, Sendable {
   }
 }
 
-/// The link field: paste a Source Link, file it, and read back what the service made of it.
-///
-/// Content layer, so the field sits on `field` and the button is the one tinted control.
-/// A refusal is told with a symbol and a sentence, never with color, because the palette
-/// gives red to removal and this is not a removal.
 public struct LinkField: View {
   @Binding public var link: String
   public let state: LinkFieldState
@@ -49,8 +37,6 @@ public struct LinkField: View {
   @Environment(\.dynamicTypeSize) private var typeSize
   @FocusState private var focused: Bool
 
-  /// The effects are played from a count that only ever rises, because a flag that fell back
-  /// to false would play the motion a second time as the field returned to idle.
   @State private var accepted = 0
   @State private var refused = 0
 
@@ -66,18 +52,13 @@ public struct LinkField: View {
     self.submit = submit
   }
 
-  /// A link can be filed once it is shaped like one. Whether Orbis supports it is the
-  /// service's judgement, and comes back as `.invalid`.
   public static func canSubmit(link: String, state: LinkFieldState) -> Bool {
     guard state != .checking else { return false }
     return address(of: link) != nil
   }
 
-  /// The symbol, the field, and the source the service named, without the button.
   private var field: some View {
     HStack {
-      // The symbol stays in place and the spinner sits over it, so the effect has one stable
-      // view to play on and does not start over when the field changes state.
       ZStack {
         Image(systemName: state.symbol)
           .foregroundStyle(.secondary)
@@ -110,14 +91,6 @@ public struct LinkField: View {
       .disabled(!Self.canSubmit(link: link, state: state))
   }
 
-  /// The address a piece of text names, when it names one.
-  ///
-  /// Filing a link and opening one need the same shape rule, and so does a page that decides
-  /// whether Open has anything to offer. It lives here once rather than three times, because a
-  /// text that reads as a link to one of them must read as a link to the others.
-  ///
-  /// Nonisolated, because the rule is a test on a string and callers that never touch the
-  /// screen, such as the presentation layer, must be able to ask it.
   public nonisolated static func address(of text: String) -> URL? {
     guard let url = URL(string: text.trimmingCharacters(in: .whitespacesAndNewlines)),
       let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
@@ -128,8 +101,6 @@ public struct LinkField: View {
 
   public var body: some View {
     VStack(alignment: .leading, spacing: 6) {
-      // At the largest text sizes the button cannot sit beside the field without squeezing the
-      // field to nothing, so it drops below and keeps the full width.
       if typeSize.isAccessibilitySize {
         VStack(alignment: .leading, spacing: 6) {
           field
@@ -209,7 +180,6 @@ private struct LinkFieldStates: View {
   AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { LinkFieldStates() }
 }
 
-/// The two outcomes, to press, so the filing motion can actually be seen.
 private struct FilingOutcomes: View {
   @State private var link = "https://youtu.be/tPEMP9oYxTo"
   @State private var state: LinkFieldState = .idle

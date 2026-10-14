@@ -4,7 +4,6 @@ import type { IssuedSignInCode } from "@/lib/sign-in";
 
 const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 
-/** A Sign-in Code, large enough to read from across a table. */
 export const SignInCode = ({
   issued,
   label,

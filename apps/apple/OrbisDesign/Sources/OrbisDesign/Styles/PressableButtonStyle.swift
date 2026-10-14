@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// A card or row that answers the finger: it settles in slightly and dims while pressed, so the
-/// press registers before the release opens anything. Reduce Motion keeps the dim, drops the scale.
 public struct PressableButtonStyle: ButtonStyle {
   public init() {}
 

@@ -5,7 +5,6 @@ import { MetadataError } from "./metadata-error.js";
 import { youTubeVideoId } from "./source-url.js";
 import type { SourceDetails, YtDlpMetadataService } from "./ytdlp-metadata.js";
 
-/** What only yt-dlp reports. Absent when yt-dlp is not configured or could not read the link. */
 export type SourceExtras = Pick<
   SourceDetails,
   "chapters" | "creatorId" | "creatorUrl" | "description" | "genre" | "tags"
@@ -30,7 +29,6 @@ export interface MetadataService {
   readonly enrich: (
     input: EnrichInput
   ) => Effect.Effect<EnrichedMetadata, MetadataError>;
-  /** The slow read a Set gets after it is saved: what only yt-dlp reports, plus any gaps. */
   readonly details: (
     input: EnrichInput
   ) => Effect.Effect<SourceDetails, MetadataError>;
@@ -38,7 +36,6 @@ export interface MetadataService {
 
 export interface MetadataOptions {
   readonly fetch?: RequestFetch;
-  /** Fills what the provider APIs leave out, and stands in for a YouTube API key that is not set. */
   readonly ytDlp?: YtDlpMetadataService | undefined;
   readonly youTubeApiKey?: string | undefined;
 }
@@ -180,7 +177,6 @@ const listingArtworkFrom = (thumbnails: YouTubeThumbnails): string | null =>
   thumbnails.default?.url ??
   null;
 
-/** The image a Set's own page draws: the sharpest the video has. */
 const pageArtworkFrom = (thumbnails: YouTubeThumbnails): string | null =>
   thumbnails.maxres?.url ??
   thumbnails.standard?.url ??
@@ -276,11 +272,6 @@ const enrichedFromDetails = (details: SourceDetails): EnrichedMetadata => ({
   title: details.title,
 });
 
-/**
- * yt-dlp is slow, so it is only the answer here when the provider API has none: a source with no
- * API configured, or one that failed. Otherwise the save returns on the provider alone and
- * `details` fills the rest afterwards.
- */
 const orYtDlp = (
   provider: Effect.Effect<EnrichedMetadata, MetadataError>,
   ytDlp: YtDlpMetadataService,
@@ -336,10 +327,6 @@ export class Metadata extends Context.Service<Metadata, MetadataService>()(
     });
   }
 
-  /**
-   * No provider is reachable. This is the default so that a save never waits on the network
-   * unless a caller asks for providers, which keeps tests offline by construction.
-   */
   static unconfigured(): Layer.Layer<Metadata> {
     return Layer.succeed(Metadata, noProviders);
   }

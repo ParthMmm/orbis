@@ -18,7 +18,6 @@ export type YtdlpRunner = (
 ) => Promise<YtdlpRunResult>;
 
 export interface YtdlpOptions {
-  // Absolute path to the yt-dlp binary. It is never looked up on PATH.
   readonly ytdlpBin?: string | undefined;
   readonly ytdlpCookies?: string | undefined;
   readonly ytdlpRun?: YtdlpRunner;
@@ -26,7 +25,6 @@ export interface YtdlpOptions {
 
 const YTDLP_TIMEOUT_MS = 10 * 60 * 1000;
 const PROGRESS_POLL_MS = 500;
-// Matches MAX_AUDIO_BYTES in media-store.ts so both backends share one size bound.
 const MAX_FILESIZE = "2G";
 
 const downloadFailed = (reason: string) =>
@@ -47,7 +45,6 @@ const spawnRunner: YtdlpRunner = async (argv, signal) => {
   return { code, stderr, stdout };
 };
 
-// Fixed argument list. The URL is data after `--`, so it can never read as a flag.
 export const ytdlpArgs = (
   bin: string,
   destination: string,
@@ -107,7 +104,6 @@ export class Ytdlp extends Context.Service<
             isConfigured: false,
           });
         }
-        // A broken extractor is identifiable from the version alone.
         yield* Effect.tryPromise(() =>
           run([bin, "--version"], new AbortController().signal)
         ).pipe(
@@ -187,7 +183,6 @@ export class Ytdlp extends Context.Service<
                 rm(`${destination}.ytdl`, { force: true }),
               ])
             );
-            // Cookies are a fallback for content that refuses anonymous access.
             const cookies = options.ytdlpCookies;
             // YouTube's default anonymous clients can be refused with a sign-in challenge
             // while the supported web_embedded client still serves the same audio, so one
@@ -200,7 +195,6 @@ export class Ytdlp extends Context.Service<
               ...(alternateClient ? [{ playerClient: alternateClient }] : []),
               ...(cookies && cookies.length > 0 ? [{ cookies }] : []),
             ];
-            // The plan always starts with the anonymous default attempt.
             const [primary = {}, ...fallbacks] = plan;
             const runAttempt = (step: DownloadAttempt) =>
               attempt(

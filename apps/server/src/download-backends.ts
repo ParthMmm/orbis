@@ -8,24 +8,15 @@ import { Ytdlp } from "./ytdlp.js";
 
 export type BackendName = "cobalt" | "ytdlp";
 
-// Each source goes first to the backend proven on it; the other is the safety net.
 export const backendOrder = (source: SavedSet["source"]) =>
   source === "youtube"
     ? (["ytdlp", "cobalt"] as const)
     : (["cobalt", "ytdlp"] as const);
 
-/**
- * The download backends behind one interface: which to try for a source, in order,
- * and a fetch of one Source Link into a partial file. The worker and the canary both
- * download through here, so a fix to a backend reaches both. Each fetch logs its
- * evidence, and building the layer warns when a source has no safety net.
- */
 export class DownloadBackends extends Context.Service<
   DownloadBackends,
   {
-    /** The configured backends for a source, in the order to try them. Empty when none is. */
     readonly forSource: (source: SavedSet["source"]) => readonly BackendName[];
-    /** Downloads `url` into `destination`. Fails when the backend delivers no audio. */
     readonly fetch: (
       backend: BackendName,
       url: string,
@@ -49,7 +40,6 @@ export class DownloadBackends extends Context.Service<
         name === "ytdlp" ? ytdlp.isConfigured : cobalt.isConfigured;
       const forSource = (source: SavedSet["source"]) =>
         backendOrder(source).filter(configured);
-      // A source with one backend has no safety net, so say so before a download fails.
       for (const source of ["youtube", "soundcloud"] as const) {
         const [only, second] = forSource(source);
         if (second === undefined) {

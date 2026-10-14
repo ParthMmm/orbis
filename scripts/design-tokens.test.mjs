@@ -43,8 +43,6 @@ test("an unknown token is refused rather than silently ignored", () => {
 });
 
 test("APCA reproduces the measurements the palette was chosen with", () => {
-  // The values the owner measured for the pre-increased-contrast palette, to Lc. They pin the
-  // formula: a change to the constants or the colour conversion shows up here.
   const published = [
     ["oklch(0.965 0.01 85)", "oklch(0.5 0.2 16)", 73],
     ["oklch(0.965 0.01 85)", "oklch(0.5 0.12 95)", 73],
@@ -67,7 +65,6 @@ test("every text token clears the body-text floor in every appearance", () => {
   const tokens = loadTokens();
   assert.doesNotThrow(() => assertContrast(tokens));
   const checks = contrastChecks(tokens);
-  // ink, muted, and one shade per category, against both surfaces, in four appearances.
   assert.equal(checks.length, 12 * 2 * 4);
   for (const check of checks) {
     assert.ok(
@@ -79,7 +76,6 @@ test("every text token clears the body-text floor in every appearance", () => {
 
 test("a text token that drops under Lc 75 fails the check", () => {
   const tokens = withTokens((copy) => {
-    // The dark pink shade as it was designed before Increase Contrast existed.
     copy.color.categoryText.pink.dark = "oklch(0.658 0.232 16)";
     return copy;
   });

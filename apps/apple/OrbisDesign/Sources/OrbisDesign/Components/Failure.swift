@@ -6,24 +6,11 @@ import SwiftUI
   import AppKit
 #endif
 
-/// A failure as a screen needs to show it: a heading that says what went wrong, the sentence
-/// underneath, and whether trying again could change the answer.
-///
-/// The heading and the retryability live with the failure rather than with the view, because a
-/// Try again button that cannot change the answer is its own kind of lie: a service older than
-/// the app is not a network problem, and telling a person it is sends them to check the wrong
-/// thing.
 nonisolated public struct OrbisFailure: Equatable, Sendable {
-  /// What went wrong, in a few words a person can act on.
   public let title: String
-  /// The sentence under the heading.
   public let message: String
-  /// The symbol that draws the failure. Named rather than typed, so a caller can supply one.
   public let symbol: String
-  /// Whether retrying could produce a different answer.
   public let isRetryable: Bool
-  /// Where the caller was looking when this happened, which is the first thing worth checking
-  /// and the first thing a person forgets to mention.
   public var address: String?
 
   public init(
@@ -37,16 +24,8 @@ nonisolated public struct OrbisFailure: Equatable, Sendable {
   }
 }
 
-/// Everything a failure needs to say to be worth pasting into a message.
-///
-/// A screenshot of a heading costs a round trip and still leaves out the address, the build, and
-/// the platform. This is the whole thing in one paste, because the person reading it is often not
-/// the person in front of the screen.
-///
-/// `nonisolated` because a failure is built where it happens, which is often not the main actor.
 nonisolated public struct FailureReport: Equatable, Sendable {
   public let failure: OrbisFailure
-  /// What the app was doing, in the words the screen would use.
   public let context: String
 
   public init(failure: OrbisFailure, context: String) {
@@ -88,10 +67,6 @@ nonisolated public struct FailureReport: Equatable, Sendable {
   }
 }
 
-/// Copies a failure's details.
-///
-/// Neutral rather than tinted, because it is never the action the screen is for, and it says so
-/// once it has copied rather than opening anything.
 public struct CopyFailureButton: View {
   public let report: FailureReport
   @State private var copied = false
@@ -108,8 +83,6 @@ public struct CopyFailureButton: View {
     .buttonStyle(.plain)
     .font(.orbis.caption)
     .foregroundStyle(Color.orbis.tint)
-    // A plain button is only as tappable as its text, which is a few characters wide. The
-    // padding and the row height give it an area a finger can actually find.
     .padding(.horizontal, 4)
     .contentShape(.rect)
     .orbisRowHeight()
@@ -119,7 +92,6 @@ public struct CopyFailureButton: View {
   }
 }
 
-/// The clipboard, whichever platform is holding it.
 @MainActor
 func copyToPasteboard(_ text: String) {
   #if canImport(UIKit) && !os(tvOS)
@@ -167,7 +139,6 @@ func copyToPasteboard(_ text: String) {
   .preferredColorScheme(.dark)
 }
 
-/// The failure words and the copy control at the sizes the matrix covers.
 private struct FailureSample: View {
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {

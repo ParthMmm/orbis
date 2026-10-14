@@ -1,10 +1,5 @@
 import SwiftUI
 
-/// What a screen says when it has nothing to show, and the one thing it offers to change that.
-///
-/// Every state names what happened and states its recovery in the button's own words, so a
-/// person reading only the button still knows what pressing it does. The wording lives here
-/// rather than in each screen, so two screens cannot drift into two names for the same state.
 private struct StateMessage: View {
   let title: String
   let message: String
@@ -23,8 +18,6 @@ private struct StateMessage: View {
         Button(recoveryLabel, action: recover)
           .buttonStyle(OrbisPrimaryButtonStyle())
       } else {
-        // Neutral, because the screen this state sits on already carries the one tinted
-        // action: the paste field above it.
         Button(recoveryLabel, action: recover)
           .buttonStyle(.bordered)
           .controlSize(.large)
@@ -35,8 +28,6 @@ private struct StateMessage: View {
   }
 }
 
-/// The Library before the first Set is filed. The recovery is the paste field the screen
-/// already shows, so the action asks that field to take focus rather than opening anything.
 public struct EmptyLibraryState: View {
   public static let title = "Start your collection"
   public static let message = "Paste a link to file your first set."
@@ -57,7 +48,6 @@ public struct EmptyLibraryState: View {
   }
 }
 
-/// The Playlists tab before the first playlist is created.
 public struct NoPlaylistsState: View {
   public static let title = "No playlists yet"
   public static let message = "Create a playlist to organize your Sets."
@@ -78,8 +68,6 @@ public struct NoPlaylistsState: View {
   }
 }
 
-/// A Playlist with no Sets in it. An empty Playlist is not an empty Library: the Sets exist,
-/// they are somewhere else, and the way out is to add one.
 public struct EmptyPlaylistState: View {
   public static let title = "This Playlist is empty"
   public static let message = "Add Sets from your Library to fill it."
@@ -100,16 +88,12 @@ public struct EmptyPlaylistState: View {
   }
 }
 
-/// A Library that has Sets, none of which match what is being asked for. The difference from
-/// `EmptyLibraryState` matters: the person has a library, and the filter is hiding it.
 public struct NoResultsState: View {
   public static let title = "No matching sets"
   public static let message = "Try a different title, tag, or source link."
   public static let symbol = "magnifyingglass"
   public static let recoveryLabel = "Clear filters"
 
-  /// A search screen clears a query where a filtered list clears a filter, and the label is
-  /// the part that has to say which.
   private let label: String
   private let recover: () -> Void
 
@@ -126,9 +110,6 @@ public struct NoResultsState: View {
   }
 }
 
-/// The service could not be reached, or answered with something Orbis cannot use. The caller
-/// supplies the failure, which carries its own heading, sentence, and retryability, so a
-/// failure that trying again cannot mend does not offer to try again.
 public struct UnavailableState: View {
   public static let recoveryLabel = "Try again"
 
@@ -142,7 +123,6 @@ public struct UnavailableState: View {
     self.retry = retry
   }
 
-  /// A Try again button appears only when trying again could change the answer.
   public static func showsRetry(for failure: OrbisFailure) -> Bool { failure.isRetryable }
 
   public var body: some View {
@@ -160,13 +140,7 @@ public struct UnavailableState: View {
   }
 }
 
-/// Rows that have not arrived yet.
-///
-/// The real `SetRow` layout is drawn with placeholder content and then redacted, so the
-/// silhouette on screen is the one the Sets will take. A bare spinner would say the same thing
-/// with less truth, and the list would jump when the content landed.
 public struct LoadingState: View {
-  /// A state that is still coming has nothing to recover from, so it states no action.
   public static let recoveryLabel: String? = nil
   public static let announcement = "Loading"
 
@@ -286,8 +260,6 @@ public struct LoadingState: View {
     .preferredColorScheme(.dark)
 }
 
-/// Every state at the sizes the matrix covers, which is where a state that cannot wrap shows
-/// itself.
 private struct StatesSample: View {
   var body: some View {
     ScrollView {

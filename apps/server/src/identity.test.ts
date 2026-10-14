@@ -49,7 +49,6 @@ test("device ingress rejects spoofed loopback authorities and invalid credential
     method: "GET",
     url: "/sets",
   } as const;
-  // The last variant spoofs the Host header while the URL authority stays loopback.
   const spoofed = [
     { authority: "127.0.0.1:4310", host: "localhost" },
     { authority: "127.0.0.1:4310", host: "localhost:4310" },
@@ -88,7 +87,6 @@ test("device ingress rejects spoofed loopback authorities and invalid credential
       spoofed.map(() => 401)
     );
 
-    // An invalid credential is still 401 on local ingress, never a silent fallback.
     const invalidLocal = await Promise.all(
       loopbackHosts.map((host) =>
         request(app, {
@@ -319,9 +317,6 @@ test("migration preserves digests and identities and ignores a recreated JSON fi
   }
 });
 
-// A trust database from before ADR 0020 still holds Invites that point at
-// People. If the upgrade kept them, rewriting `people` would break their
-// foreign keys, so removing a Person or setting the passcode would fail.
 const PRE_PASSCODE_TRUST = `CREATE TABLE people (
       id TEXT PRIMARY KEY NOT NULL, username TEXT NOT NULL, removed INTEGER NOT NULL,
       social INTEGER NOT NULL DEFAULT 0, auto_download INTEGER NOT NULL DEFAULT 1,
@@ -357,7 +352,6 @@ test("an existing trust database drops Invites and keeps the passcode across res
     database.close();
   }
   const host = { authorization: "Bearer pre-passcode-admin" };
-  // Without a file database, only the trust adapter upgrades the trust file.
   const first = createApp({ devicesPath });
   try {
     const removed = await request(first, {
@@ -415,8 +409,6 @@ test("a key stored as admin reports Presence after the upgrade and keeps Host po
   } finally {
     database.close();
   }
-  // Without key-use writes, nothing rewrites the trust tables, so only the
-  // upgrade itself can turn the stored admin key into a daily one.
   const app = createApp({ databasePath, devicesPath, recordKeyUse: false });
   const host = { authorization: "Bearer pre-passcode-iphone" };
   try {

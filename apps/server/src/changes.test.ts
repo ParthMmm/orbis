@@ -15,7 +15,6 @@ import { startFixtureServer } from "./fixture-server.js";
 import { hashToken } from "./identity.js";
 import { createTestApp as createApp } from "./test-app.js";
 
-// The union that shipped before `changed` existed: what a cached web bundle decodes with.
 const OldEvent = Schema.Union([
   Schema.Struct({ kind: Schema.Literal("queue"), queue: ListeningQueueSchema }),
   Schema.Struct({
@@ -56,7 +55,6 @@ beforeAll(async () => {
         { id: "a", removed: false, social: true, username: "a" },
         { id: "b", removed: false, social: true, username: "b" },
         {
-          // c hides from b and does not look at a.
           filters: [
             { appear: false, personId: "b", see: true },
             { appear: true, personId: "a", see: false },
@@ -119,7 +117,6 @@ const call = async (key: Key, route: string, method = "GET", body?: Body) => {
   return response.json();
 };
 
-/** Opens `/events` and yields raw `data:` payloads in arrival order. */
 const open = async (key: Key, route = "/events?changes=1") => {
   const response = await fetch(new URL(route, url), {
     headers: { authorization: `Bearer ${key}` },
@@ -151,7 +148,6 @@ const open = async (key: Key, route = "/events?changes=1") => {
   return {
     close: () => reader.cancel().catch(() => null),
     data,
-    /** The next `changed` topic, skipping Queue, Presence, and heartbeat frames. */
     nextTopic: async () => {
       for (;;) {
         const raw = await data();
@@ -179,7 +175,6 @@ test("a Library change on one device reaches the Person's other device only", as
     await tagA("one");
     expect(await a1.nextTopic()).toBe("library");
     await call("b1", "/playlists", "POST", { name: "Marker" });
-    // b's first change is its own: a's Library change never reached b.
     expect(await b1.nextTopic()).toBe("playlist");
   } finally {
     await a1.close();
@@ -232,7 +227,6 @@ test("an old client decoder reads the plain stream, and would reject a changed f
     await tagA("old");
     expect(await opted.nextTopic()).toBe("library");
     const kinds: string[] = [];
-    // The plain stream opens with the Queue snapshot; a tag change adds nothing to it.
     await call("a2", "/queue/active", "PUT", { setId: "s1" });
     for (;;) {
       const raw = await plain.data();

@@ -51,8 +51,6 @@ const writeLegacyDatabase = (databasePath: string) => {
   }
 };
 
-// A frozen snapshot of the version-1 schema. Keep it literal: it describes the shape an
-// existing database already has, not whatever the creator builds today.
 const VERSION_ONE_SCHEMA = `PRAGMA journal_mode = WAL;
     PRAGMA foreign_keys = ON;
     CREATE TABLE IF NOT EXISTS sets (
@@ -133,7 +131,6 @@ const writeVersionOneDatabase = (
   }
 };
 
-// A version-0 database: the base tables, no extended columns, and no version marker.
 const writeVersionZeroDatabase = (databasePath: string) => {
   const database = new Database(databasePath, { create: true });
   try {
@@ -211,8 +208,6 @@ const expectMigratedWithReverseIndex = (state: SchemaState) => {
   expect(state.reverseIndexColumns).toEqual(["set_id", "playlist_id"]);
 };
 
-// The correlated membership expression from SET_COLUMNS in library.ts. It is repeated here
-// because the plan forbids exporting private SQL constants just to test them.
 const MEMBERSHIP_LOOKUP_PLAN = `EXPLAIN QUERY PLAN
   SELECT (SELECT COALESCE(json_group_array(playlist_id ORDER BY playlist_id), '[]')
    FROM playlist_sets WHERE playlist_sets.set_id = sets.id) AS playlistIds

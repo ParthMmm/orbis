@@ -25,7 +25,6 @@ public struct TagListEditor: View {
 
   public var body: some View {
     Group { sections }
-      // Picking a Tag you already use is a tap, not typing: it lands without raising the keyboard.
       .sensoryFeedback(trigger: tags) { old, new in
         new.count > old.count ? .impact(flexibility: .soft) : .selection
       }

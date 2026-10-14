@@ -14,7 +14,6 @@ import {
 import { createTestApp as createApp } from "./test-app.js";
 import { request } from "./test-http.js";
 
-/** A record that points at itself, so the sanitizer has to stop on depth alone. */
 interface CyclicNote {
   name: string;
   self?: CyclicNote;

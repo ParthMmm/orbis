@@ -1,29 +1,16 @@
 import SwiftUI
 
-/// A symbol effect a motion can play, named so the choice is data rather than a call a test
-/// cannot read.
-///
-/// Every case is discrete: nothing here repeats and nothing runs on its own.
 public enum OrbisSymbolEffect: String, CaseIterable, Sendable {
-  /// A short hop. Movement, for something that worked.
   case bounce
-  /// A short shake. Movement, for something that was refused.
   case wiggle
-  /// A fade in place. The Reduce Motion form of both: the feedback stays, the movement goes.
   case pulse
 }
 
-/// The timing a motion settles with.
 public enum OrbisCurve: String, CaseIterable, Sendable {
-  /// A toggle, or a small state change.
   case snappy
-  /// A row or a card arriving in a new place.
   case smooth
-  /// The Reduce Motion form: the change lands without travelling.
   case immediate
-  /// A finger on a control: fast enough to feel attached to the touch.
   case press
-  /// Something with weight landing: overshoots a little, the way a record settles.
   case lively
 
   public var animation: Animation? {
@@ -37,30 +24,15 @@ public enum OrbisCurve: String, CaseIterable, Sendable {
   }
 }
 
-/// The motions Orbis uses, named for what they mean rather than for how they look.
-///
-/// A view asks for `filingSucceeded`, not for a bounce, so the Reduce Motion form is decided in
-/// one place and a redesign changes every use at once. Nothing here runs on appear. A motion is
-/// played by a change the person just made, and it ends on its own, with two exceptions that
-/// last exactly as long as what they show: the bars while a Set plays, and the waveform while a
-/// link is read. The trigger for an effect must change only when the motion should play — a
-/// flag that returns to false would play it a second time on the way back.
 public enum OrbisMotion: String, CaseIterable, Sendable {
-  /// A Source Link became a Set.
   case filingSucceeded
-  /// The service refused a Source Link.
   case filingFailed
-  /// A Tag filter turned on or off.
   case tagToggled
-  /// A Set moved within a Playlist.
   case playlistReordered
   case pageTinted
   case downloadProgressed
-  /// A card or row is under a finger.
   case pressed
-  /// A Set started or paused.
   case playbackToggled
-  /// The mix moved on to its next Cue.
   case cueChanged
 
   public var purpose: String {
@@ -77,8 +49,6 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
     }
   }
 
-  /// The symbol effect the motion plays, or none when the motion is a curve rather than a
-  /// symbol. Every case that exists is discrete.
   public var effect: OrbisSymbolEffect? {
     switch self {
     case .filingSucceeded: .bounce
@@ -89,8 +59,6 @@ public enum OrbisMotion: String, CaseIterable, Sendable {
     }
   }
 
-  /// What a symbol motion becomes when Reduce Motion is on. A fade keeps the answer and drops
-  /// the movement, and the two filing outcomes still differ by symbol, word, and announcement.
   public var reduceMotionEffect: OrbisSymbolEffect { .pulse }
 
   public func effect(reduceMotion: Bool) -> OrbisSymbolEffect? {
@@ -125,8 +93,6 @@ extension EnvironmentValues {
   }
 }
 
-/// Plays a motion's symbol effect when the trigger changes, in the form the accessibility
-/// setting asks for.
 private struct OrbisSymbolEffectModifier<Trigger: Equatable>: ViewModifier {
   let motion: OrbisMotion
   let trigger: Trigger
@@ -151,7 +117,6 @@ private struct OrbisSymbolEffectModifier<Trigger: Equatable>: ViewModifier {
   }
 }
 
-/// Settles a change with a motion's curve, or with none when Reduce Motion is on.
 private struct OrbisAnimationModifier<Trigger: Equatable>: ViewModifier {
   let motion: OrbisMotion
   let trigger: Trigger
@@ -191,10 +156,6 @@ private struct OrbisWorkingModifier: ViewModifier {
   }
 }
 
-/// Three bars bouncing, the oldest sign that something is playing.
-///
-/// They move only while the Set plays, and stand still under Reduce Motion, where the bars
-/// still say "this one" without the movement. Callers set the height; the width is fixed.
 public struct EqualizerBars: View {
   public let isPlaying: Bool
   public var color: Color
@@ -240,31 +201,23 @@ extension View {
     modifier(OrbisSymbolEffectModifier(motion: motion, trigger: trigger))
   }
 
-  /// Settles `value`'s change with the curve `motion` names.
   public func orbisAnimation(_ motion: OrbisMotion, value: some Equatable) -> some View {
     modifier(OrbisAnimationModifier(motion: motion, trigger: value))
   }
 
-  /// Swaps one symbol for the next, play for pause, by morphing it; a fade under Reduce Motion.
   public func orbisSymbolReplace() -> some View {
     modifier(OrbisSymbolReplaceModifier())
   }
 
-  /// The waveform Orbis shows while it reads a link: it ripples while `isActive`, and holds
-  /// still under Reduce Motion.
   public func orbisWorking(_ isActive: Bool) -> some View {
     modifier(OrbisWorkingModifier(isActive: isActive))
   }
 
-  /// Forces the Reduce Motion form, so a preview or a test can show both forms side by side.
   public func orbisReduceMotion(_ enabled: Bool) -> some View {
     environment(\.orbisReduceMotion, enabled)
   }
 }
 
-/// One motion, in one form, with a control that plays it. Nothing plays on appear: the trigger
-/// changes only when the button is pressed, and a motion that is a curve settles the same
-/// change the button made.
 private struct MotionSample: View {
   let sample: MotionPreview.Sample
   let form: MotionPreview.Form
@@ -296,7 +249,6 @@ private struct MotionSample: View {
   }
 }
 
-/// Every motion in one form, so the two forms sit side by side.
 private struct MotionFormColumn: View {
   let form: MotionPreview.Form
 

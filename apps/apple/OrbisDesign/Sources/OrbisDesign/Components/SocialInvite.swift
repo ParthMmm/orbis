@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// People while Social is off: a fan of artwork with a few friends around it, what turning
-/// Social on shows, and the one button that turns it on.
 public struct SocialInvite: View {
   public let unavailable: String?
   public let turnOn: () -> Void
@@ -63,8 +61,6 @@ public struct SocialInvite: View {
     .accessibilityIdentifier("social-invite")
   }
 
-  /// Three pieces of artwork with three friends around them, drawn from fixed seeds so the picture
-  /// never changes.
   private var fan: some View {
     SleeveFan(seed: "people", artwork: [nil, nil, nil], category: .pink, width: 150)
       .frame(maxWidth: .infinity, maxHeight: .infinity)

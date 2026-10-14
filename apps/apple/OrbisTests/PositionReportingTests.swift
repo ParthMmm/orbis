@@ -3,9 +3,6 @@ import XCTest
 
 @testable import Orbis
 
-/// When the app tells the service where playback has reached. The bound matters more than the
-/// timing: a position write every five seconds of playback is twelve a minute, and a position that
-/// stands still is not worth a request at all.
 final class PositionReportingTests: XCTestCase {
   func testASecondOfPlaybackIsReportedOnce() {
     var reports = PositionReporting()
@@ -18,12 +15,9 @@ final class PositionReportingTests: XCTestCase {
   func testPausingAndResumingAreBothWorthReporting() {
     var reports = PositionReporting()
 
-    // The pause is where the other device should resume, so it is news even at the same second.
     XCTAssertEqual(reports.position(elapsed: 30, state: .playing), 30)
     XCTAssertEqual(reports.position(elapsed: 30, state: .paused), 30)
-    // Standing still is not.
     XCTAssertNil(reports.position(elapsed: 30, state: .paused))
-    // Resuming is.
     XCTAssertEqual(reports.position(elapsed: 30, state: .playing), 30)
   }
 

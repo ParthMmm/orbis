@@ -1,4 +1,3 @@
-/** The signed-in header's links. Each screen adds its own entry. */
 export const NAV_ITEMS = [
   { hostOnly: false, label: "Library", to: "/" },
   { hostOnly: false, label: "Playlists", to: "/playlists" },

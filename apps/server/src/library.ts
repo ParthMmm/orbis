@@ -122,7 +122,6 @@ export class Library extends Context.Service<
       input: SaveSetInput
     ) => Effect.Effect<SavedSet, LibraryError>;
     readonly find: (id: string) => Effect.Effect<SavedSet, LibraryError>;
-    /** The Sets with these identifiers, in the order asked for. Missing ones are left out. */
     readonly byIds: (
       ids: readonly string[]
     ) => Effect.Effect<SavedSet[], LibraryError>;
@@ -269,7 +268,6 @@ export class Library extends Context.Service<
             const tags = yield* decodeJsonArray(
               entry?.tags ?? (personId === "host" ? row.tags : "[]")
             );
-            // The source details stay on the server; the client contract does not carry them.
             const {
               creatorUrl: _creatorUrl,
               description: _description,
@@ -580,7 +578,6 @@ export class Library extends Context.Service<
         execute(resolve(id).pipe(Effect.flatMap((row) => hydrateSet(row))))
       );
 
-      // Queue order comes from the caller; each Set must resolve for this Person.
       const byIds = Effect.fn("Library.byIds")((ids: readonly string[]) =>
         execute(
           Effect.gen(function* byIdsEffect() {
@@ -594,9 +591,6 @@ export class Library extends Context.Service<
         )
       );
 
-      // A position past the end of the Set is not a place to resume from, and a fraction of a
-      // second is not a value the app can read back, so both are settled here rather than stored
-      // and explained later.
       const setPlaybackPosition = Effect.fn("Library.setPlaybackPosition")(
         (id: string, seconds: number) =>
           execute(
@@ -630,7 +624,6 @@ export class Library extends Context.Service<
                   artworkUrl: metadata.artworkUrl,
                   creator: metadata.creator,
                   durationSeconds: metadata.durationSeconds,
-                  // A retry that yt-dlp could not answer keeps the details an earlier run stored.
                   ...(metadata.extras && extrasColumns(metadata.extras)),
                   metadataState: "enriched",
                   releasedAt: metadata.releasedAt,
@@ -647,7 +640,6 @@ export class Library extends Context.Service<
           )
       );
 
-      // The provider's own values stay: a Set is filled where it has a gap, never overwritten.
       const recordDetails = Effect.fn("Library.recordDetails")(
         (id: string, details: SourceDetails) =>
           execute(
@@ -859,8 +851,6 @@ export class Library extends Context.Service<
             })
           )
       );
-      // Only a download still running can fail. A cancel that won the race already
-      // moved the row to none, and a failure must not drag it back to failed.
       const failDownload = Effect.fn("Library.failDownload")((id: string) =>
         execute(
           Effect.gen(function* failDownloadEffect() {
@@ -878,18 +868,11 @@ export class Library extends Context.Service<
           })
         )
       );
-      // Finished downloads are kept: canceling a ready set is a conflict, not a delete.
-      // The app reports a 409 as a duplicate library entry, so a finished download
-      // that cannot be canceled answers 400 with its own sentence.
       const cancelDownload = Effect.fn("Library.cancelDownload")((id: string) =>
         execute(
           Effect.gen(function* cancelDownloadEffect() {
             const canceled = yield* db.transaction((tx) =>
               Effect.gen(function* cancel() {
-                // Any Person who sees a Set may ask for its Download (ADR 0010);
-                // only the one who asked, or the Host, may take it away from the
-                // others while it is still in flight. A finished one answers the
-                // 400 below.
                 const [job] = yield* tx
                   .select({
                     personId: downloadJobs.personId,
@@ -937,8 +920,6 @@ export class Library extends Context.Service<
           })
         )
       );
-      // A restart must not leave a download stuck mid-flight: whatever was running
-      // when the process died goes back to queued and the worker picks it up again.
       const resetStuckDownloads = Effect.fn("Library.resetStuckDownloads")(() =>
         execute(
           Effect.gen(function* resetStuckDownloadsEffect() {

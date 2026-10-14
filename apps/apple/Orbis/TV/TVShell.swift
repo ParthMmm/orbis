@@ -2,9 +2,6 @@
   import OrbisDesign
   import SwiftUI
 
-  /// A tab in the Apple TV's top bar. The four places map onto the `Destination` the phone and Mac
-  /// use, so `model.openedSets` and `showPlaylist` keep working; Now Playing and Settings are the
-  /// TV's own, as Apple Music lays them out on the TV.
   enum TVTab: Hashable, Identifiable, CaseIterable {
     case home
     case library
@@ -54,13 +51,9 @@
     }
   }
 
-  /// The TV's root: the system top tab bar over the four places, Now Playing while a Set is in
-  /// the player, and Settings. The Siri Remote's play/pause reaches the player from anywhere.
   struct TVShell: View {
     @Bindable var model: AppModel
     @State private var tab: TVTab
-    /// Up Next covers the whole shell, so playback ending while it is open cannot take the
-    /// presenting tab away under it.
     @State private var isShowingQueue = false
 
     init(model: AppModel) {
@@ -72,8 +65,6 @@
       TVTab.allCases.filter { $0 != .nowPlaying || model.audioPlayer.currentSetId != nil }
     }
 
-    /// The one place a tab changes: the bar and the model's destination move together, so a Set
-    /// opened from a tab lands in that tab's own stack.
     private func select(_ next: TVTab) {
       tab = next
       if let destination = next.destination { model.destination = destination }
@@ -100,7 +91,6 @@
       .onChange(of: model.audioPlayer.currentSetId) { _, id in
         if id == nil, tab == .nowPlaying { select(.home) }
       }
-      // A chip sets the model's destination, the way it does on the phone; the bar follows.
       .onChange(of: model.destination) { _, destination in
         let next = TVTab(destination)
         if next != tab { tab = next }
@@ -109,8 +99,6 @@
       .onPlayPauseCommand { model.togglePlayback() }
     }
 
-    /// Six named tabs overrun the bar once Now Playing joins it, so Settings is its gear alone,
-    /// the way a system app's trailing tab is.
     @ViewBuilder private func tabLabel(_ tab: TVTab) -> some View {
       if tab == .settings {
         Image(systemName: tab.label.systemImage)

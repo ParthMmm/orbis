@@ -5,12 +5,6 @@ import { Database } from "./db/database.js";
 import { sets } from "./db/schema.js";
 import { Metadata } from "./metadata.js";
 
-/**
- * Gives the Sets that were enriched before artwork came in two sizes the image they are missing.
- *
- * It reads only rows whose large image is empty and writes only the two artwork columns, so a
- * second run does nothing and a title someone chose stays out of its reach.
- */
 export const backfillArtwork = Effect.gen(function* backfillArtworkEffect() {
   const db = yield* Database;
   const metadata = yield* Metadata;
@@ -22,7 +16,6 @@ export const backfillArtwork = Effect.gen(function* backfillArtworkEffect() {
       and(eq(sets.metadataState, "enriched"), isNull(sets.artworkLargeUrl))
     );
 
-  // One at a time: the provider is a network and a library is small.
   const results = yield* Effect.forEach((row: (typeof rows)[number]) =>
     Effect.gen(function* fillOne() {
       const image = yield* metadata.enrich({

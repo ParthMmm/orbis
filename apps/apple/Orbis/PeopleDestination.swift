@@ -1,8 +1,6 @@
 import OrbisDesign
 import SwiftUI
 
-/// People (ADR 0009): the invite while the signed-in Person has Social off; once it is on, who is
-/// listening now and everyone in the Group with Social on, each opening their own page.
 struct PeopleDestination: View {
   @Bindable var model: AppModel
   @State private var people: PeopleModel
@@ -17,7 +15,6 @@ struct PeopleDestination: View {
     content
       .sidebarPageTitle("People")
       .largeTitleOnIOS()
-      // Runs on every appearance, so Social turned on in Settings shows when People opens again.
       .task(id: model.client?.token) { await people.load() }
       .task(id: PresenceKey(token: model.client?.token, social: people.isSocial)) {
         await people.watchPresence()
@@ -96,8 +93,6 @@ struct PeopleDestination: View {
     return count == 1 ? "1 listening now" : "\(count) listening now"
   }
 
-  // MARK: Listening now
-
   private var listeningNow: some View {
     VStack(alignment: .leading, spacing: 14) {
       SectionHeading("Listening now")
@@ -116,8 +111,6 @@ struct PeopleDestination: View {
       .scrollClipDisabled()
     }
   }
-
-  // MARK: Your Group
 
   private var group: some View {
     VStack(alignment: .leading, spacing: 10) {
@@ -199,8 +192,6 @@ struct PeopleDestination: View {
   }
 }
 
-/// What a friend is playing now, as a card in the Listening now rail: the artwork with their
-/// name on it, the title, and a button that plays the same Set here.
 private struct ListeningCard: View {
   @Bindable var model: AppModel
   let presence: Presence
@@ -282,16 +273,11 @@ private struct ListeningCard: View {
   }
 }
 
-/// Keys the Presence stream, so it opens once Social is on and again for a new key.
 private struct PresenceKey: Equatable {
   let token: String?
   let social: Bool
 }
 
-// MARK: - One Person
-
-/// A friend's page: who they are, what they are playing, what they played lately, their
-/// Playlists and Library, and the two switches between the two of you.
 struct PersonScreen: View {
   @Bindable var model: AppModel
   let people: PeopleModel
@@ -556,8 +542,6 @@ struct PersonScreen: View {
   }
 }
 
-/// A Set in a friend's Library: artwork, title and who made it. Tapping plays it when its audio is
-/// on the service; one that is not shows that it cannot play yet.
 private struct FriendSetRow: View {
   @Bindable var model: AppModel
   let set: SavedSet
@@ -597,7 +581,6 @@ private struct FriendSetRow: View {
   }
 }
 
-/// One of a friend's Playlists, as a sheet of its Sets.
 private struct FriendPlaylistSheet: View {
   @Bindable var model: AppModel
   let playlist: FriendPlaylist
@@ -627,16 +610,12 @@ private struct FriendPlaylistSheet: View {
   }
 }
 
-// MARK: - Models
-
-/// What People shows and the requests that change it.
 @MainActor
 @Observable
 final class PeopleModel {
   private let app: AppModel
   var me: Loadable<Me> = .idle
   var people: [PersonFilters] = []
-  /// What visible People are playing now, as the event stream last said.
   var listening: [Presence] = []
   var failure: OrbisFailure?
   var isSaving = false
@@ -654,8 +633,6 @@ final class PeopleModel {
     listening.first { $0.personId == personId }
   }
 
-  /// Reads `/me` each time, not once: Social is switched in Settings too, and a stale answer is
-  /// what kept this screen on the invite after Social was on.
   func load() async {
     guard app.isConfigured else { return }
     if loadedToken != app.client?.token {
@@ -699,8 +676,6 @@ final class PeopleModel {
     people[index].appear = saved.appear
   }
 
-  /// Follows the event stream while People is on screen, reconnecting after a drop. Only the
-  /// People this Person sees are kept, because See is decided here and the stream does not know it.
   func watchPresence() async {
     guard isSocial else {
       listening = []
@@ -732,21 +707,18 @@ final class PeopleModel {
   }
 }
 
-/// One friend's Library, Playlists and Listens, loaded together for their page.
 @MainActor
 @Observable
 final class FriendModel {
   struct Content: Equatable {
     var sets: [SavedSet]
     var playlists: [FriendPlaylist]
-    /// The newest Listen of each Set, so a Set played twice shows once.
     var recent: [Listen]
   }
 
   private let app: AppModel
   let personId: String
   var state: Loadable<Content> = .idle
-  /// Sets saved from this page, so their button says so before the Library reloads.
   var savedIds: Set<String> = []
 
   init(app: AppModel, personId: String) {
@@ -779,7 +751,6 @@ final class FriendModel {
     state = .loaded(Content(sets: sets, playlists: playlists, recent: Array(recent)))
   }
 
-  /// Saves a friend's Set into the signed-in Person's own Library, by its link.
   func save(_ set: SavedSet) async {
     let saved = await settingsRequest(app, { _ in }, { try await $0.save(url: set.url) })
     if saved != nil {

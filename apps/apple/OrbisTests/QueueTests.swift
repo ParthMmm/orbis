@@ -3,13 +3,8 @@ import XCTest
 
 @testable import Orbis
 
-/// The Listening Queue is what makes playback shared state: playing makes a Set active on the
-/// service, and the queue that comes back is what the app shows. These tests assert the request
-/// each action makes and the state that follows it.
 @MainActor
 final class QueueTests: XCTestCase {
-  /// Every request a model made, in order. `StubProtocol` keeps only the last one, and the order
-  /// matters to a test that finishes a Set and watches what starts next.
   final class RequestLog: @unchecked Sendable {
     private let lock = NSLock()
     private var entries: [String] = []
@@ -42,8 +37,6 @@ final class QueueTests: XCTestCase {
     return "{\"queue\":{\"activeSetId\":\(activeJson),\"entries\":[\(entries.joined(separator: ","))]}}"
   }
 
-  /// The JSON a request carried, as fields, because `JSONEncoder` decides the order of keys and a
-  /// test that compares raw text is testing the encoder rather than the request.
   private func body(_ data: Data?) -> [String: String] {
     guard let data,
       let fields = try? JSONSerialization.jsonObject(with: data) as? [String: String]

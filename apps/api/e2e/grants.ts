@@ -139,7 +139,6 @@ try {
     issueStreamGrant(secret, "wrong-set", "host"),
     `1000000000000.host.${"a".repeat(64)}`,
   ]) {
-    // Each request checks that a valid key cannot repair an invalid grant.
     // eslint-disable-next-line no-await-in-loop
     const rejected = await audio(invalid, "Bearer smoke-token");
     assert.equal(rejected.status, 401);

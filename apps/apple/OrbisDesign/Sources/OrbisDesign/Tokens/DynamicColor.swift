@@ -6,7 +6,6 @@ import SwiftUI
   import AppKit
 #endif
 
-/// A Display P3 color, components 0…1.
 nonisolated struct P3: Equatable, Sendable {
   let red: Double
   let green: Double
@@ -19,17 +18,12 @@ nonisolated struct P3: Equatable, Sendable {
   }
 }
 
-/// A color with a value per contrast setting, resolved by the platform at draw time so it
-/// follows the window's appearance and Increase Contrast setting, not the app's.
 nonisolated struct DynamicColor: Sendable {
   let light: P3
   let dark: P3
   let increasedContrastLight: P3
   let increasedContrastDark: P3
 
-  /// The value for one combination of appearance and setting. Pure, so a test can name what
-  /// each setting resolves to without a window, and so the platform providers below cannot
-  /// disagree about which trait means what.
   func p3(dark isDark: Bool, increasedContrast isIncreasedContrast: Bool) -> P3 {
     switch (isDark, isIncreasedContrast) {
     case (false, false): light
@@ -39,9 +33,6 @@ nonisolated struct DynamicColor: Sendable {
     }
   }
 
-  /// Which value a caller wants. `.system` reads the platform traits; `.increased` resolves the
-  /// Increase Contrast value for whichever appearance is current, which is what a preview needs
-  /// because a preview canvas cannot switch the system setting on.
   enum ContrastSetting {
     case increased
     case system

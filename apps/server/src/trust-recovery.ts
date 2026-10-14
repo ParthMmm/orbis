@@ -20,7 +20,6 @@ const recoveryUrl = (base: string): URL => {
   return url;
 };
 
-/** Asks the Group for a Host Sign-in Code with Vanta's node key (ADR 0020). */
 export const recoverHost = async (input: {
   readonly url: string;
   readonly nodeKey: string;

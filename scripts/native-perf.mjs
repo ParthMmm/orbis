@@ -1,8 +1,4 @@
 #!/usr/bin/env node
-// Measures the Library list against a temporary service with a realistic library, so the
-// performance gate has a probe that anyone can rerun.
-//
-// Usage: node scripts/native-perf.mjs [--sets 500] [--samples 20] [--budget-ms 250]
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -36,7 +32,6 @@ const server = spawn("bun", ["scripts/fixture.ts"], {
   stdio: "ignore",
 });
 
-/// Any HTTP status means the service is listening.
 const waitForService = async (deadline = Date.now() + 30_000) => {
   try {
     await fetch(`${base}/health`);

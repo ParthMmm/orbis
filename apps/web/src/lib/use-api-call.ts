@@ -4,10 +4,6 @@ import { useState } from "react";
 import { problemFor } from "@/lib/orbis";
 import type { ApiResult } from "@/lib/orbis";
 
-/**
- * One control's API calls. `run` keeps a failure for the control to show;
- * `change` also reloads the route's data after a call that changed it.
- */
 export const useApiCall = () => {
   const router = useRouter();
   const [busy, setBusy] = useState(false);

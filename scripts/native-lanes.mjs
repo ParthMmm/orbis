@@ -1,19 +1,4 @@
 #!/usr/bin/env node
-// Drives the native lanes. Starts a temporary Orbis service, pairs a device, generates the
-// Xcode project with that service's address and token, runs the tests, and exports the
-// screenshots the journeys attached.
-//
-// Usage:
-//   node scripts/native-lanes.mjs --unit        # unit tests only
-//   node scripts/native-lanes.mjs --journeys    # UI journeys on two simulator clones
-//   node scripts/native-lanes.mjs               # both
-//   node scripts/native-lanes.mjs --unit --macos # unit tests on the macOS host
-//   node scripts/native-lanes.mjs --tvos --journeys # the TV journey on the Apple TV simulator
-//
-// Options: --name <simulator name>  --udid <simulator UUID>  --out <screenshot directory>
-// --macos runs the unit tests on the macOS destination instead of the simulator.
-// --tvos runs the OrbisTV scheme on the Apple TV simulator (default name "Apple TV"), with
-// silent audio seeded so a playback check never sounds in the room.
 
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -41,9 +26,6 @@ const argument = (name, fallback) => {
 
 const unitOnly = process.argv.includes("--unit");
 const journeysOnly = process.argv.includes("--journeys");
-// A hosted macOS run proves the tests never touch real pairing storage on the machine that
-// runs them, which the simulator run cannot show. Journeys stay simulator-only: the UI test
-// bundle is iOS-only, so --macos always means the unit tests.
 const macos = process.argv.includes("--macos");
 const tvos = process.argv.includes("--tvos");
 const simulator = argument("name", tvos ? "Apple TV" : "Orbis Lanes");
@@ -53,8 +35,6 @@ const shots = path.resolve(
 );
 
 const only = [];
-// --only narrows a lane to one test, which is how a single journey is re-run after a failure
-// without running the remaining journeys.
 const onlyTest = argument("only");
 const parallelJourneys =
   journeysOnly && !macos && !tvos && !unitOnly && !onlyTest;
@@ -82,8 +62,6 @@ const run = (command, options) => {
   return result.stdout ?? "";
 };
 
-/// Waits for the service to answer. Any HTTP status means it is listening. Written as a
-/// bounded retry rather than a polling loop so each attempt is a separate await.
 const waitForService = async (address, deadline = Date.now() + 30_000) => {
   try {
     await fetch(`${address}/health`);
@@ -131,7 +109,6 @@ let seedServer;
 
 const stop = () => {
   if (tvos) {
-    // A failed TV run must not leave the Set playing on the simulator.
     spawnSync("xcrun", [
       "simctl",
       "terminate",
@@ -153,14 +130,9 @@ process.on("SIGINT", () => {
 });
 
 try {
-  // A journeys-only run is for UI journeys, so the style gate and the design package are left
-  // to the unit run and CI.
   if (!journeysOnly && !onlyTest) {
-    // swift-format ships with the Xcode toolchain, so the native style gate needs no install.
     run(["bun", "run", "native:format"], { cwd: root });
 
-    // The design system is a package the app links, so its own rules are verified in the same
-    // run as the app's tests rather than by a separate command someone has to remember.
     const design = run(["swift", "test"], {
       cwd: path.join(native, "OrbisDesign"),
     });
@@ -205,7 +177,6 @@ try {
     throw new Error("The lane requires a fixture token.");
   }
 
-  // Seed one Set through the service's own HTTP path so a journey has something to find.
   const seeded = await fetch(`${address}/sets`, {
     body: JSON.stringify({
       tags: ["techno"],

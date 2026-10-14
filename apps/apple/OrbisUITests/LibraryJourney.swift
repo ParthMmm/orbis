@@ -34,15 +34,10 @@ class LibraryJourney: XCTestCase {
       .tap()
   }
 
-  /// Search is a tab on a compact width class and a sidebar item on a regular one, so the
-  /// journey proves the platform's navigation rather than assuming one shape.
-  /// Returns nil on iPhone, where the field stays at the top and can be found again by type.
   @discardableResult
   func openSearch(in app: XCUIApplication) -> XCUICoordinate? {
     let tab = app.tabBars.buttons["Search"]
     if tab.waitForExistence(timeout: 8) {
-      // The field sits at the top of Search, as in Apple Music. The first tap opens Search and
-      // the second, on Search again, focuses the field.
       tab.tap()
       XCTAssertTrue(
         app.searchFields.firstMatch.waitForExistence(timeout: 15),
@@ -62,8 +57,6 @@ class LibraryJourney: XCTestCase {
     return nil
   }
 
-  /// Home is the first tab after pairing. The Library list, its filter, and File a set live on
-  /// the Library tab, so a journey that wants them has to select it.
   func openLibrary(in app: XCUIApplication) {
     selectTab("Library", in: app, sidebarIdentifier: "sidebar-library")
   }
@@ -101,7 +94,6 @@ class LibraryJourney: XCTestCase {
   /// The prompt the field shows while it is empty. XCUITest reports it as the field's value.
   static let searchPrompt = "Title, tag, or source link"
 
-  /// What the field holds, with the prompt an empty field shows treated as nothing.
   func searchText(in app: XCUIApplication) -> String {
     let value = (app.searchFields.firstMatch.value as? String) ?? ""
     return value == Self.searchPrompt ? "" : value
@@ -126,8 +118,6 @@ class LibraryJourney: XCTestCase {
     )
   }
 
-  /// Types a query and submits it. Whatever the field held is replaced, so one launch can
-  /// search twice.
   func submitSearch(_ query: String, in app: XCUIApplication, spot: XCUICoordinate?) {
     focusSearch(in: app, spot: spot)
     let existing = searchText(in: app)
@@ -138,7 +128,6 @@ class LibraryJourney: XCTestCase {
     app.typeText("\n")
   }
 
-  /// The state an unmatched search shows, matched by its words rather than its shape.
   func noResults(in app: XCUIApplication) -> XCUIElement {
     app.descendants(matching: .any)
       .matching(NSPredicate(format: "label CONTAINS %@", "No matching sets")).firstMatch
@@ -149,9 +138,6 @@ class LibraryJourney: XCTestCase {
       .matching(NSPredicate(format: "label BEGINSWITH %@", "Search your")).firstMatch
   }
 
-  /// A confirmation dialog is a sheet on a phone and an alert on a Mac, so a journey asks for
-  /// both rather than assuming one shape. Each is waited for, because a dialog that is still
-  /// rising has not been found yet.
   func confirmationButton(_ label: String, in app: XCUIApplication) -> XCUIElement {
     let sheet = app.sheets.buttons[label]
     if sheet.waitForExistence(timeout: 5) {

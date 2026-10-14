@@ -12,8 +12,6 @@ const haveFfmpeg =
   Bun.which("ffmpeg") !== null && Bun.which("ffprobe") !== null;
 const testFfmpeg = haveFfmpeg ? test : test.skip;
 
-// The stub only routes on the URL; Cobalt's full request shape is asserted by the
-// worker's Schema decode, so the stub names just the field it reads.
 interface CobaltProbeBody {
   readonly url?: string;
 }
@@ -114,8 +112,6 @@ const rawRequest = (
   );
 };
 
-// Polling is inherent: the worker runs on its own fiber, so the test waits for a
-// terminal state with a deadline rather than sleeping a fixed duration.
 const waitForState = async (
   app: ReturnType<typeof createApp>,
   id: string,
@@ -212,7 +208,6 @@ test("a download request queues and re-requesting answers the current state", as
     expect(
       ["queued", "downloading"].includes(second.json().downloadState)
     ).toBe(true);
-    // A cobalt error must land the set in failed, never stuck.
     const failed = await waitForState(app, id, ["failed"]);
     expect(failed.state).toBe("failed");
   } finally {
@@ -519,8 +514,6 @@ test("retrying a failed download queues it again", async () => {
     expect(retry.statusCode).toBe(202);
     expect(retry.json().downloadState).toBe("queued");
     if (haveFfmpeg) {
-      // Without ffmpeg the fixture may fail again after remux; the queue step is the
-      // contract under test here.
       await waitForState(app, id, ["ready", "failed"]);
     }
   } finally {
@@ -566,7 +559,6 @@ test("only the Person who asked for a Download, or the Host, can cancel it", asy
       version: 2,
     })
   );
-  // The worker stays off, so the Download sits in the queue for the whole test.
   const app = createApp({
     audio: {
       audioDir: path.join(root, "audio"),

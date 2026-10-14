@@ -6,7 +6,6 @@ After=network-online.target
 Type=oneshot
 WorkingDirectory=%h/orbis-service/apps/server
 Environment=ORBIS_DATA_DIR=%h/orbis-service-data
-# The same provider settings as the service: Cobalt's URL and key.
 EnvironmentFile=%h/orbis/apps/server/.env.local
 Environment=ORBIS_YTDLP_BIN=%h/.local/bin/yt-dlp
 # yt-dlp needs Deno, which uv installs beside it.

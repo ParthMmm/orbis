@@ -206,10 +206,6 @@ const meBody = (person: PersonRecord) => ({
 const PRESENCE_WINDOW_MS = 30_000;
 const tooManyAttempts = () =>
   Response.json({ message: "Too many invalid keys." }, { status: 429 });
-/**
- * Routes a new device calls before it has a key (ADR 0020). They run whatever
- * the Authorization header says, so a key cannot skip the failed-key limit.
- */
 const OPEN_ROUTES: ReadonlySet<string> = new Set([
   "/sign-in/code",
   "/sign-in/join",
@@ -252,11 +248,6 @@ const logDetailsFailure = (set: SavedSet, reason: string) =>
     Effect.annotateLogs({ reason, set: set.id })
   );
 
-/**
- * A failed library call is the one server-side failure the response status does not
- * explain on its own, so it is logged with the status the client receives. A rejected
- * request body is not logged: its 400 already appears on the request event.
- */
 const logLibraryFailure = <E>(error: E) => {
   if (!(error instanceof LibraryError)) {
     return Effect.void;
@@ -306,12 +297,9 @@ export const createPortableApp = (options: {
   logging?: LoggingOptions;
   recordKeyUse?: boolean;
   metadata?: Layer.Layer<Metadata>;
-  /** How long after a Playback Position report a Person still counts as listening. */
   presenceWindowMs?: number;
   presence?: PresenceOptions & { journal?: Layer.Layer<PresenceJournal> };
-  /** The clock Sign-in Codes expire by. Tests move it to prove expiry. */
   signInCodeNow?: () => number;
-  /** Follows short links such as `on.soundcloud.com`. Tests pass a stub to stay offline. */
   shortLinkFetch?: (url: string, signal: AbortSignal) => Promise<Response>;
   titleReviser?: Layer.Layer<TitleReviser>;
   versos?: Layer.Layer<Versos>;
@@ -350,8 +338,6 @@ export const createPortableApp = (options: {
       const versos = yield* Versos;
       const scope = yield* Scope.Scope;
       const signals = yield* QueueSignals;
-      // Every open `/events` stream reads this hub. A `changed` entry decides its own
-      // recipients when delivered; `access` makes each stream recheck its key.
       const changes = yield* PubSub.unbounded<
         | {
             readonly kind: "changed";
@@ -459,13 +445,9 @@ export const createPortableApp = (options: {
           })
           .pipe(
             Effect.map((title) => ({ ...enriched, title })),
-            // A revision failure keeps the provider title: a bad rename must
-            // never fail enrichment, which already has a retry path.
             Effect.catchTag("TitleReviserError", keepProviderTitle)
           );
       });
-      // The slow yt-dlp read runs after the response, tied to the app so `dispose` stops it. A
-      // failure is logged and marks the Set's details failed; the save itself is unaffected.
       const fillDetails = Effect.fn("fillSavedSetDetails")((set: SavedSet) =>
         metadata.details({ source: set.source, url: set.url }).pipe(
           Effect.flatMap((details) => library.recordDetails(set.id, details)),
@@ -486,8 +468,6 @@ export const createPortableApp = (options: {
           Effect.asVoid
         )
       );
-      // Enrichment failure is swallowed so the save still succeeds, so it is the
-      // one outcome a client cannot see. The log records which set and which reason.
       const enrichSavedSet = Effect.fn("enrichSavedSet")((
         set: SavedSet,
         personal: typeof Library.Service
@@ -502,7 +482,6 @@ export const createPortableApp = (options: {
           Effect.flatMap((enriched) =>
             library
               .recordEnrichment(set.id, enriched)
-              // The yt-dlp fallback already stored the details, so a second read is skipped.
               .pipe(
                 Effect.tap(() =>
                   enriched.extras ? startTracklist(set.id) : fillDetails(set)
@@ -1522,8 +1501,6 @@ export const createPortableApp = (options: {
           ),
           (issued) => HttpServerResponse.jsonUnsafe(issued, { status: 201 })
         );
-      // Devices act for the Person behind a key. A stream grant has no key, so
-      // it is refused.
       const deviceCall = <A>(
         action: (storePath: string, personId: string, keyId: string) => A
       ) =>
@@ -1540,8 +1517,6 @@ export const createPortableApp = (options: {
             action(storePath, caller.person.id, keyId)
           );
         });
-      // The key is already gone, so a failed clear is logged: the next settle sweeps the
-      // rows and the lease bounds how long the stale Presence can show.
       const clearRevokedPresence = (keyId: string) =>
         presence.revokeKey(keyId).pipe(
           Effect.catchTag("LibraryError", (failure) =>
@@ -1795,7 +1770,6 @@ export const createPortableApp = (options: {
               Stream.drop(1),
               Stream.map(() => ({ kind: "heartbeat" as const }))
             );
-            // A null entry only makes `authorized` run, so a revoked key closes at once.
             const changeFrames = Stream.fromPubSub(changes).pipe(
               Stream.mapEffect((change) =>
                 change.kind === "changed" && query.changes === "1"
@@ -1962,11 +1936,6 @@ export const createPortableApp = (options: {
       middleware: makeRequestLogMiddleware(options.logging),
     }
   );
-  /**
-   * A sign-in attempt counts toward the failed-key limit before it runs. A
-   * client over the limit is refused before any lookup, so it cannot spend a
-   * code.
-   */
   const openRoute = (request: Request, client: string): Promise<Response> => {
     if (attempts.signInAttempt(client)) {
       return Promise.resolve(tooManyAttempts());
@@ -2050,8 +2019,6 @@ export const createPortableApp = (options: {
           requestId: crypto.randomUUID(),
         });
         if (registry.storeError !== undefined) {
-          // A damaged trust store refuses every device. Without this field the
-          // only visible symptom is a sudden run of 401 responses.
           logger.set({ trustStore: registry.storeError });
         }
         finishRequestLog(

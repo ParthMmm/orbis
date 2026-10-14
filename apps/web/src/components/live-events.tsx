@@ -8,10 +8,8 @@ import type { Credentials } from "@/lib/orbis";
 import { forgetKey } from "@/lib/stored-key";
 
 const RECONNECT_MS = 1000;
-// One reload covers a burst of `changed` frames, such as a Playlist reorder.
 const COALESCE_MS = 250;
 
-/** The routes whose loaders read each topic's HTTP routes. */
 const TOPIC_ROUTES: Record<ChangeTopic, readonly string[]> = {
   library: [
     "/_app/",
@@ -30,11 +28,8 @@ const TOPIC_ROUTES: Record<ChangeTopic, readonly string[]> = {
 };
 
 export interface LiveEvents {
-  /** The Person's Listening Queue, or null until the stream sends it. */
   readonly queue: ListeningQueue | null;
-  /** What visible People are listening to now (ADR 0009). */
   readonly presence: Presence;
-  /** True while the stream is down and the page retries every second. */
   readonly reconnecting: boolean;
 }
 
@@ -44,12 +39,6 @@ const LiveEventsContext = createContext<LiveEvents>({
   reconnecting: false,
 });
 
-/**
- * One `/events` stream for every signed-in page. A `changed` frame reloads the
- * routes that read its topic. The stream reconnects a second after it drops,
- * reloads every route because it may have missed frames, and signs out when the
- * API refuses the key.
- */
 export const LiveEventsProvider = ({
   children,
   credentials: { apiUrl, key },

@@ -1,9 +1,6 @@
 import OrbisDesign
 import SwiftUI
 
-/// The Playlists destination: every Playlist the library holds, and the ordered Sets inside
-/// one when it is opened. Creation, renaming, deletion, membership, and reordering all live
-/// here rather than behind the Library filter.
 struct PlaylistsDestination: View {
   @Bindable var model: AppModel
   @State private var isCreating = false
@@ -57,14 +54,12 @@ struct PlaylistsDestination: View {
       if model.playlists == .idle {
         await model.loadPlaylists()
       }
-      // The folders show their Sets' artwork, which the Library holds.
       if case .idle = model.library {
         await model.loadLibrary()
       }
     }
   }
 
-  /// The artwork of a Playlist's Sets, in Library order, for its folder.
   private func artwork(of playlist: Playlist) -> [URL?] {
     guard case .loaded(let sets) = model.library else { return [] }
     return sets.filter { $0.playlistIds.contains(playlist.id) }
@@ -102,8 +97,6 @@ struct PlaylistsDestination: View {
     .macSearchToolbarBackground(isSearching: !playlistQuery.isEmpty)
   }
 
-  /// Every Playlist as a folder with its Sets' artwork fanned out of it, and a last tile that
-  /// starts a new one.
   private func playlistGrid(_ items: [Playlist]) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 18) {
@@ -222,8 +215,6 @@ struct PlaylistsDestination: View {
   }
 }
 
-/// One Playlist's ordered members. Reorder uses the platform list, add opens the library's
-/// Sets, and remove drops membership without deleting the Set.
 struct PlaylistDetailView: View {
   @Bindable var model: AppModel
   let playlist: Playlist
@@ -231,7 +222,6 @@ struct PlaylistDetailView: View {
   @State private var renaming = false
   @State private var renameDraft = ""
   @State private var isConfirmingDelete = false
-  /// The play a person asked for while something else was playing, held until they confirm.
   @State private var pendingPlay: PlayOrder?
 
   private enum PlayOrder {
@@ -336,8 +326,6 @@ struct PlaylistDetailView: View {
     Binding(get: { pendingPlay != nil }, set: { if !$0 { pendingPlay = nil } })
   }
 
-  /// Plays now, or asks first when something else is playing, since either way the queue is
-  /// replaced.
   private func play(shuffled: Bool) {
     pendingPlay = shuffled ? .shuffled : .inOrder
     if !model.isPlayingNow { startPlayback() }
@@ -355,12 +343,9 @@ struct PlaylistDetailView: View {
     }
   }
 
-  /// The Playlist, large: its Sets' artwork fanned out, its name and length, and the two ways to
-  /// play it.
   private func hero(_ sets: [SavedSet]) -> some View {
     let seconds = sets.compactMap(\.durationSeconds).reduce(0, +)
     let count = sets.count == 1 ? "1 set" : "\(sets.count) sets"
-    // On a Mac the fan sits beside the name and the buttons, as Home's hero does.
     let layout = HeroLayout.stack(spacing: 14)
     return layout {
       SleeveFan(
@@ -458,8 +443,6 @@ struct PlaylistDetailView: View {
   }
 }
 
-/// Every Set in the Library that is not already in the Playlist. Choosing one adds it at the
-/// end, which is what a person expects when they are filling a playlist.
 struct AddSetsToPlaylistSheet: View {
   @Bindable var model: AppModel
   let playlistId: String
@@ -509,7 +492,6 @@ struct AddSetsToPlaylistSheet: View {
   }
 }
 
-/// What the last Playlist change left behind, shown where the action was taken.
 struct PlaylistChangeStatus: ViewModifier {
   let model: AppModel
 

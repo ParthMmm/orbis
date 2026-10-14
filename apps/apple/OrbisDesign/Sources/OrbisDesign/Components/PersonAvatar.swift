@@ -1,10 +1,5 @@
 import SwiftUI
 
-/// A Person in the Group, as a disc of their colour with their initial. People have no picture,
-/// so the colour comes from the username the way a Tag's comes from its name, and stays put.
-///
-/// A Person listening now carries a green dot at the edge, the one thing the disc says beyond
-/// who it is.
 public struct PersonAvatar: View {
   public let username: String
   public let diameter: CGFloat

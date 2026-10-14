@@ -15,7 +15,6 @@ import { FAILURE_MESSAGES, fetchMe } from "@/lib/orbis";
 import type { Credentials, Person } from "@/lib/orbis";
 import { forgetKey, readKey } from "@/lib/stored-key";
 
-/** The signed-in Person, and what every call from their pages carries. */
 export interface Session extends Credentials {
   readonly person: Person;
 }
@@ -86,9 +85,7 @@ export const Route = createFileRoute("/_app")({
     }
     throw new Error(FAILURE_MESSAGES[me.failure]);
   },
-  // The route hands its own context down, which keeps the context's type exact.
   component: () => <AppShell session={Route.useRouteContext().session} />,
   errorComponent: RouteProblem,
-  // The key lives in the browser, so signed-in pages never render on the Worker.
   ssr: false,
 });

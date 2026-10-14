@@ -1,34 +1,18 @@
 import OrbisDesign
 import SwiftUI
 
-/// The controls for the Set in the player: the seek bar, the clock, the skips, and Play.
-///
-/// Shared by the Set's page and the Now Playing screen, so the two never drift. The bar takes
-/// the whole width on its own line, the way a music app lays it out: a Set runs an hour or
-/// more, and every point of width is seconds of precision. The clock sits under its ends, and
-/// the skips beside Play are the fine control the bar cannot give.
 struct Transport: View {
   let player: AudioPlayer
-  /// The Set's own length, for a bar drawn before the player has measured the audio.
   let fallbackDuration: TimeInterval?
-  /// What a journey reads the controls by, so the page and Now Playing stay distinguishable.
   var identifierPrefix = "detail"
   var isCurrent = true
   var savedPosition: TimeInterval = 0
   var start: () -> Void = {}
   var leading: AnyView?
   var trailing: AnyView?
-  /// Play as the tinted glass disc, or, on Now Playing, as a large plain glyph over the artwork's
-  /// colour.
   var prominentPlay = true
-  /// Previous and next track beside Play, the way a music player lays them out; the skips
-  /// move outward. Only Now Playing asks for it.
   var showsCueSkips = false
-  /// The skips and Play. Off on the Set's page, which carries its own Play and only needs the
-  /// seek bar once the Set is in the player.
   var showsControls = true
-  /// Where the Set's Cues start. Each one is a mark on the seek bar, so the shape of the mix
-  /// is visible before it is heard.
   var cueStarts: [TimeInterval] = []
 
   private var isPlaying: Bool {
@@ -132,9 +116,6 @@ struct Transport: View {
   }
 }
 
-/// The seek bar and the clock for it, in their own view because the player publishes elapsed time
-/// twice a second and SwiftUI redraws the body that read the value. From the page's own body that
-/// was the whole page, tag chips and Playlist picker included, on every tick.
 private struct PlaybackProgress: View {
   let player: AudioPlayer
   let duration: TimeInterval?
@@ -143,7 +124,6 @@ private struct PlaybackProgress: View {
   let identifierPrefix: String
   let cueStarts: [TimeInterval]
 
-  /// Where the person has dragged to but not let go of. Nil is following the player.
   @State private var scrubPosition: TimeInterval?
 
   private var position: Binding<TimeInterval> {

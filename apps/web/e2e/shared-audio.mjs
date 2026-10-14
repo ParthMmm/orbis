@@ -1,8 +1,3 @@
-// Social through the built web client against a real Orbis API (e2e/api-server.ts):
-// two People in two browser contexts turn Social on, see each other, watch Presence
-// arrive live, open a friend's Library by URL, save and download a friend's Set, use
-// See and Appear, and lose sight of each other when one turns Social off (ADR 0009,
-// 0010). Screenshots and a result.json are the artifact.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -53,7 +48,6 @@ const keyRecord = (personId, token) => ({
   tokenHash: createHash("sha256").update(token).digest("hex"),
 });
 
-/** One call to the API as a Person, the way another of their devices would. */
 const callAs = async (person, method, route, payload) => {
   const headers = { authorization: `Bearer ${tokens[person]}` };
   const init = { headers, method };
@@ -94,8 +88,6 @@ await writeFile(
   path.join(dataDirectory, "devices.json"),
   JSON.stringify({
     keys: [keyRecord("alice", tokens.alice), keyRecord("bob", tokens.bob)],
-    // Social is off for both, as for every new Person. Auto Download is off, so a
-    // friend's Set can arrive without audio.
     people: [
       { id: "host", removed: false, username: "host" },
       { autoDownload: false, id: "alice", removed: false, username: "alice" },
@@ -204,7 +196,6 @@ try {
     await callAs("bob", "PUT", `/playlists/${playlist.id}/sets`, {
       setIds: [bobsSet.id, bobsOther.id],
     });
-    // Only a Set with audio can be in the queue.
     await callAs("bob", "POST", `/sets/${bobsSet.id}/audio/download`);
     for (let attempt = 0; ; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop
@@ -226,7 +217,6 @@ try {
     });
     step("bob saves two Sets, files them in a Playlist, and starts one");
 
-    // No reload: Presence arrives on the page's one event stream.
     await bobRow.getByText("bob is listening to Bob's set").waitFor();
     await shot(alice, "presence.png");
     step("alice sees bob's Presence live, without reloading");
@@ -359,7 +349,6 @@ try {
     await bob
       .getByText("Turn Social on to see the People who turned it on too.")
       .waitFor();
-    // Presence drops live; the list itself loads with the page.
     await bobRow.getByText("Not listening right now").waitFor();
     await alice.reload();
     await alice.getByText("Nobody else has Social on yet.").waitFor();

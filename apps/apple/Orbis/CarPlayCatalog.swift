@@ -1,12 +1,7 @@
 import Foundation
 import OrbisDesign
 
-/// What the car shows, read from the model in one pass. A value, so the scene redraws only when
-/// it changes, and so the rules for what reaches the car hold without a car to look at.
-///
-/// Only Sets with Retained Audio reach the car: a row there is a promise that a tap plays.
 struct CarPlayCatalog: Equatable {
-  /// A tab's state before it has rows: still loading, or a reason it has none.
   enum Status: Equatable {
     case loading
     case signedOut
@@ -16,14 +11,10 @@ struct CarPlayCatalog: Equatable {
 
   let library: Status
   let playlistsStatus: Status
-  /// Home, picked by the same rules as the phone's, from the playable Sets.
   let home: HomeSelection
   let playlists: [Playlist]
-  /// Every playable Set, in the Library's order.
   let sets: [SavedSet]
-  /// The Set in the player, which its rows mark.
   let playingSetId: String?
-  /// The Tracklist of the Set in the player, for Up Next.
   let cues: [Cue]
 
   @MainActor

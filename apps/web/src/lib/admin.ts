@@ -1,8 +1,6 @@
 import { callOrbis, problemFor } from "@/lib/orbis";
 import type { ApiResult, Credentials } from "@/lib/orbis";
 
-/** Host-only calls (ADR 0020). They carry the Host's own signed-in key. */
-
 const unwrap = <A>(result: ApiResult<A>): A => {
   if (!result.ok) {
     throw new Error(problemFor(result));
@@ -10,7 +8,6 @@ const unwrap = <A>(result: ApiResult<A>): A => {
   return result.value;
 };
 
-/** Everything the admin page shows. A failure surfaces as the route's problem. */
 export const loadAdmin = async (credentials: Credentials) => {
   const [passcode, people, keys] = await Promise.all([
     callOrbis(credentials, (client) => client.admin.passcode()),
@@ -28,7 +25,6 @@ export type AdminData = Awaited<ReturnType<typeof loadAdmin>>;
 export type AdminPerson = AdminData["people"][number];
 export type AdminKey = AdminData["keys"][number];
 
-/** `null` closes joining. */
 export const setPasscode = (
   credentials: Credentials,
   passcode: string | null
@@ -47,7 +43,6 @@ export const removePerson = (credentials: Credentials, id: string) =>
     client.admin.removePerson({ params: { id } })
   );
 
-/** A daily key for a client that cannot sign in by code, such as Raycast. */
 export const createKey = (
   credentials: Credentials,
   personId: string,

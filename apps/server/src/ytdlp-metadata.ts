@@ -2,11 +2,9 @@ import { Effect, Option, Schema, Semaphore } from "effect";
 
 import { MetadataError } from "./metadata-error.js";
 
-/** Everything yt-dlp reports about one Source Link that Orbis can group, tag, or search by. */
 export interface SourceDetails {
   readonly chapters: readonly Chapter[];
   readonly creator: string | null;
-  /** The provider's stable id for the creator. Names change and collide; ids do not. */
   readonly creatorId: string | null;
   readonly creatorUrl: string | null;
   readonly description: string | null;
@@ -27,7 +25,6 @@ export interface YtDlpMetadataService {
   readonly read: (url: string) => Effect.Effect<SourceDetails, MetadataError>;
 }
 
-/** Runs the binary with these arguments and returns its stdout, or `null` when it exits non-zero. */
 export type RunYtDlp = (
   binPath: string,
   args: readonly string[],
@@ -35,9 +32,7 @@ export type RunYtDlp = (
 ) => Promise<string | null>;
 
 export interface YtDlpMetadataOptions {
-  /** Absolute path to the pinned binary. It is never resolved through `PATH`. */
   readonly binPath: string;
-  /** How many yt-dlp processes may run at once. Further reads wait for a free slot. */
   readonly maxConcurrent?: number;
   readonly run?: RunYtDlp;
 }
@@ -96,7 +91,6 @@ const ENTITY =
 const isCodePoint = (code: number) =>
   code > 0 && code <= 0x10_ff_ff && !(code >= 0xd8_00 && code <= 0xdf_ff);
 
-/** One pass, so `&amp;lt;` becomes `&lt;` and not `<`. Unknown or invalid entities stay as written. */
 export const decodeHtmlEntities = (value: string): string =>
   value
     .replaceAll(
@@ -195,7 +189,6 @@ export const ytDlpMetadata = (
         duration: TIMEOUT,
         orElse: () => Effect.fail(failure("yt-dlp did not answer in time.")),
       }),
-      // The permit wraps the timeout, so the 15 seconds count from the start of the run.
       slots.withPermits(1)
     );
     if (output === null) {

@@ -22,7 +22,6 @@ export interface DownloadProgress {
   readonly total: number | null;
 }
 
-// A backend failure is retryable on the next backend. A cancel is terminal.
 const fetchWithFallback = (
   names: readonly BackendName[],
   fetchWith: (backend: BackendName) => Effect.Effect<void, LibraryError>,

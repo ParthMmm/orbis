@@ -16,10 +16,6 @@ import { Button } from "@/components/ui/button";
 import type { ApiResult } from "@/lib/orbis";
 import { useApiCall } from "@/lib/use-api-call";
 
-/**
- * A destructive call behind a confirmation. The dialog stays open on failure and
- * shows why, and closes only after the call succeeds.
- */
 export const ConfirmDialog = ({
   action,
   call,

@@ -1,7 +1,3 @@
-// List, add, and revoke devices against a real Orbis API: the built web client in
-// `vite preview` calls a throwaway server whose trust store holds two of the Host's
-// daily keys, a key stored as admin, and a key for a second Person. A second browser
-// signs in with a Sign-in Code from the Devices page.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -79,7 +75,6 @@ const web = spawn(
   }
 );
 
-// A direct call with no Origin, the way a native client would make it.
 const meStatus = async (token) => {
   const response = await fetch(`${apiUrl}/me`, {
     headers: { authorization: `Bearer ${token}` },

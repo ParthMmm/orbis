@@ -38,7 +38,6 @@ const LibrarySearch = Schema.Struct({
 
 const SEARCH_DELAY_MS = 250;
 
-/** What saving says when Auto Download could not start the Download. */
 const saveNotice = (result: AutoDownloadResult): string | null => {
   switch (result) {
     case "queueFull": {
@@ -260,7 +259,6 @@ const Library = ({
 };
 
 export const Route = createFileRoute("/_app/")({
-  // The route hands its own data down, which keeps the types exact.
   component: () => {
     const { session } = Route.useRouteContext();
     const { playlists, sets, tags } = Route.useLoaderData();

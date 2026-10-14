@@ -4,7 +4,6 @@ import type { Table } from "drizzle-orm";
 // A Durable Object's SQLite binds at most 100 values in one statement.
 const MAX_BOUND_VALUES = 100;
 
-// Splits rows into inserts the Group accepts. Each row binds at most one value per column.
 export const insertBatches = <Row>(
   table: Table,
   rows: readonly Row[]

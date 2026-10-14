@@ -1,4 +1,3 @@
-// A real browser, API, and SQLite database verify the Set page and Cue seek.
 import assert from "node:assert/strict";
 import { spawn, execFileSync } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";

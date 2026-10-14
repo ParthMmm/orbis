@@ -18,7 +18,6 @@ import { listPeopleFilters, setFilter, setSocial } from "@/lib/people";
 import type { PersonFilters } from "@/lib/people";
 import type { Session } from "@/routes/_app";
 
-/** Runs one change, shows its failure, and reloads the page's data on success. */
 const useChange = () => {
   const router = useRouter();
   const [pending, setPending] = useState(false);
@@ -32,7 +31,6 @@ const useChange = () => {
       return;
     }
     setProblem(null);
-    // Re-runs the shell's `/me` too, so the Social switch shows the saved value.
     await router.invalidate();
   };
   return { change, pending, problem };

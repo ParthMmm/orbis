@@ -2,9 +2,6 @@
   import OrbisDesign
   import SwiftUI
 
-  /// Home on the TV: the Set to go back to, large, beside its words, then the Tags, the rails a
-  /// music app's home gives its sections, and the Playlists as folders. The page takes its light
-  /// from the lead Set's artwork, so the glass on it has colour to bend.
   struct TVHome: View {
     @Bindable var model: AppModel
 
@@ -94,7 +91,6 @@
     }
   }
 
-  /// The Set Home leads with, large: its artwork beside its name, and the button that plays it.
   private struct TVHomeHero: View {
     @Bindable var model: AppModel
     let set: SavedSet
@@ -156,7 +152,6 @@
               .buttonStyle(.glassProminent)
               .tint(Color.orbis.tint)
               .focused($focus, equals: .play)
-              // The title is a length, so the verb is said here.
               .accessibilityLabel(isPlaying ? "Pause" : isResume ? "Resume" : "Play")
               .accessibilityValue(isPlaying ? "" : SetPresentation.timeLeft(set) ?? "")
               .accessibilityIdentifier("home-hero-play")

@@ -4,7 +4,6 @@ import type { ErrorComponentProps } from "@tanstack/react-router";
 import { Button } from "@/components/ui/button";
 import { FAILURE_MESSAGES } from "@/lib/orbis";
 
-/** A route whose data could not load, with a retry that re-runs its loaders. */
 export const RouteProblem = ({ error }: ErrorComponentProps) => {
   const router = useRouter();
   // Invalidating re-runs beforeLoad and the loaders; resetting alone would not.

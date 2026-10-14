@@ -70,10 +70,6 @@ export class TitleReviser extends Context.Service<
   TitleReviser,
   TitleReviserService
 >()("@orbis/TitleReviser") {
-  /**
-   * Revision backed by any `LanguageModel`. `layer` uses this with OpenRouter;
-   * tests supply a stub instead of reaching the network.
-   */
   static layerWithModel<R>(
     model: Layer.Layer<LanguageModel.LanguageModel, never, R>
   ): Layer.Layer<TitleReviser, never, R> {
@@ -134,11 +130,6 @@ export class TitleReviser extends Context.Service<
     );
   }
 
-  /**
-   * The provider layer reads its settings from the environment through
-   * `Config`, so the key arrives redacted and a missing setting degrades to
-   * the unconfigured reviser with one warning instead of a failed startup.
-   */
   static layerConfig(): Layer.Layer<TitleReviser> {
     const missingVariable = (name: string) =>
       Effect.logWarning(
@@ -190,11 +181,6 @@ export class TitleReviser extends Context.Service<
     );
   }
 
-  /**
-   * No title model is configured. This is the default so that enrichment never
-   * waits on the network unless a caller asks for the provider, which keeps
-   * tests offline by construction.
-   */
   static unconfigured(): Layer.Layer<TitleReviser> {
     return Layer.succeed(TitleReviser, {
       revise: (input) =>

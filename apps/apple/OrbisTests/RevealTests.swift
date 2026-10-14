@@ -3,8 +3,6 @@ import XCTest
 
 @testable import Orbis
 
-/// The reveal is the step between filing a link and the Set being named, so what it sends and
-/// what it leaves behind are both worth pinning.
 @MainActor
 final class RevealTests: XCTestCase {
   private func set(
@@ -60,8 +58,6 @@ final class RevealTests: XCTestCase {
     XCTAssertTrue(AppModel.Reveal(set: set(), title: "Night session", tags: ["techno"]).hasChanges)
   }
 
-  /// A failed enrichment leaves a placeholder title, and the field starts empty. Done must not
-  /// send that emptiness back over the title the Set still has.
   func testAnEmptyTitleLeavesTheNameThatArrivedAlone() {
     let open = AppModel.Reveal(set: set(title: "YouTube video"), title: "", tags: [])
     XCTAssertNil(open.renamedTitle)
@@ -75,9 +71,6 @@ final class RevealTests: XCTestCase {
     XCTAssertEqual(open.renamedTitle?.count, 200)
   }
 
-  /// While the Library is showing one playlist, filing keeps that list truthful: a Set the
-  /// playlist holds joins the top, and one it does not hold stays out instead of inventing
-  /// a row the playlist does not have.
   func testFilingIntoThePlaylistBeingViewedKeepsTheListTruthful() async {
     let saveBody = OrbisClientTests.savedSet(title: "Fresh paste", tags: [])
     let belonging = saveBody.replacingOccurrences(
@@ -112,10 +105,6 @@ final class RevealTests: XCTestCase {
     expected.count > 1 ? "joins" : "stays out of"
   }
 
-  // MARK: - Drafts during a metadata retry
-
-  /// A model with one open reveal whose metadata retry the stub answers after a hold, so the
-  /// test can edit the draft while the request is out.
   private func retryModel(
     set: SavedSet,
     title: String,
@@ -128,8 +117,6 @@ final class RevealTests: XCTestCase {
       responder: { _ in (200, body) }, holding: { _ in hold })
   }
 
-  /// The same, with the answer chosen and held per request, for tests that count requests or
-  /// answer with a refusal.
   private func retryModel(
     set: SavedSet,
     title: String,
@@ -147,8 +134,6 @@ final class RevealTests: XCTestCase {
     return model
   }
 
-  /// Waits until the stub has the metadata request, so the response is really held before the
-  /// test edits anything.
   private func waitForTheRetryRequest() async throws {
     var waited = 0
     while !(StubProtocol.lastRequest?.url?.path().hasSuffix("/metadata") ?? false), waited < 200 {
@@ -162,10 +147,6 @@ final class RevealTests: XCTestCase {
       "the retry must be the request the stub is holding")
   }
 
-  /// Starts a metadata retry, waits for the request, and applies the draft edits on the main
-  /// actor in the same turn as the pending-state check. Every setup failure awaits the started
-  /// task before reporting, so a delayed stub response cannot land in the next test. A hold
-  /// window that closed early is a setup failure, never evidence that a draft survived.
   private func startRetryAndEdit(
     _ model: AppModel,
     file: StaticString = #filePath,
@@ -205,8 +186,6 @@ final class RevealTests: XCTestCase {
     XCTAssertEqual(model.reveal?.tags, ["techno", "morning"])
   }
 
-  /// An empty field still means "use the name that came back", and the saved Set the Library
-  /// holds takes that same name.
   func testAnUntouchedTitleAdoptsTheNameTheRetryBrought() async {
     let open = set(title: "YouTube video", metadataState: "failed")
     let model = retryModel(
@@ -225,8 +204,6 @@ final class RevealTests: XCTestCase {
     XCTAssertFalse(model.isSavingReveal)
   }
 
-  /// A title the person typed before the retry belongs to them, so a name that arrives later
-  /// only refreshes what the Set is, not what the field says.
   func testATitleTypedBeforeTheRetryStaysThePersons() async {
     let open = set(title: "YouTube video", metadataState: "failed")
     let model = retryModel(
@@ -278,8 +255,6 @@ final class RevealTests: XCTestCase {
       "the abandoned request must not publish over the Library either")
   }
 
-  /// A second press while the first is out would stack two answers over one draft, so it sends
-  /// nothing at all.
   func testASecondRetryWhileOneIsOutSendsNothing() async {
     let requests = RequestCounter()
     let model = retryModel(
@@ -300,9 +275,6 @@ final class RevealTests: XCTestCase {
     XCTAssertFalse(model.isSavingReveal)
   }
 
-  /// A provider that still cannot name the Set answers with an HTTP 200 and a `failed` state,
-  /// which runs the merge: the draft survives, the saved baseline still takes the placeholder,
-  /// and the busy state clears.
   func testAProviderFailureStillKeepsTheDraftAndRefreshesTheSavedSet() async {
     let placeholder =
       OrbisClientTests.savedSet(title: "YouTube video", tags: [])
@@ -322,8 +294,6 @@ final class RevealTests: XCTestCase {
     XCTAssertFalse(model.isSavingReveal)
   }
 
-  /// A refusal takes the native catch path: the draft is untouched, the saved baseline stays
-  /// where it was, and the screen says what went wrong.
   func testARefusedRetryKeepsTheDraftAndTheSavedSetItStartedWith() async {
     let open = set(title: "YouTube video", metadataState: "failed")
     let model = retryModel(
@@ -344,7 +314,6 @@ final class RevealTests: XCTestCase {
   }
 }
 
-/// Counts the requests a stub answered, so a test can prove one retry did not go out twice.
 private final class RequestCounter: Sendable {
   private let hits = Mutex(0)
 

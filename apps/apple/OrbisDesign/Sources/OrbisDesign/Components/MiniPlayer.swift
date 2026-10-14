@@ -1,12 +1,5 @@
 import SwiftUI
 
-/// Now playing, docked above the tab bar on every screen but the Set's own page.
-///
-/// Glass, because it floats over content the way the tab bar does. Tapping it opens Now Playing.
-///
-/// On iOS the tab view's bottom accessory is the right home: the system draws that glass and
-/// morphs the bar with the tab bar, so the player passes `.accessory` and draws none of its own.
-/// Anywhere else it is `.floating` and wears its own.
 public struct MiniPlayer: View {
   public enum Surface: Sendable {
     /// The system supplies the glass, as `tabViewBottomAccessory` does.
@@ -16,14 +9,12 @@ public struct MiniPlayer: View {
   }
 
   public let title: String
-  /// The track playing inside the Set, when its Tracklist knows.
   public let subtitle: String?
   public let artwork: URL?
   public let isPlaying: Bool
   /// How far listening got, from 0 to 1, for the hairline along the bottom edge.
   public let progress: Double?
   public let surface: Surface
-  /// Where Now Playing zooms out of: the artwork, marked in this namespace.
   public let transition: Namespace.ID?
   public let toggle: () -> Void
   /// Moves to the next track in the Set's Tracklist. Nil when there is no next track.
@@ -47,10 +38,8 @@ public struct MiniPlayer: View {
     self.open = open
   }
 
-  /// The id the artwork is marked with, for a zoom into Now Playing.
   public static let transitionID = "now-playing-artwork"
 
-  /// What the control reads out. Named for the change it makes, as a control should be.
   public static func toggleLabel(isPlaying: Bool) -> String {
     isPlaying ? "Pause" : "Play"
   }

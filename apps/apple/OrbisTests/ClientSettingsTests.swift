@@ -3,21 +3,14 @@ import XCTest
 
 @testable import Orbis
 
-/// Pairing storage is the one place the app writes a credential, so a test that reaches it
-/// would overwrite a real pairing. These cases prove that every path a test can take lands in
-/// a store of its own.
 @MainActor
 final class ClientSettingsTests: XCTestCase {
-  /// A live store reachable only by this test: its own keychain namespace and the development
-  /// file switched off. The values are synthetic; nothing here names a real token.
   private func isolatedLiveSettings() -> (settings: LiveClientSettings, cleanup: () -> Void) {
     let keychain = KeychainStore(
       service: "app.orbis.tests.\(UUID().uuidString)", account: "device-token")
     return (LiveClientSettings(keychain: keychain, developmentToken: { nil }), { keychain.delete() })
   }
 
-  /// Signing in and out through a model must move only the store that model was given. A store
-  /// the model never saw is the proof that nothing global was touched.
   func testSigningInAndOutChangeOnlyTheInjectedStore() async {
     let sentinel = MemoryClientSettings()
     XCTAssertTrue(sentinel.store(deviceToken: "synthetic-sentinel-token"))
@@ -44,8 +37,6 @@ final class ClientSettingsTests: XCTestCase {
     XCTAssertEqual(sentinel.deviceToken, "synthetic-sentinel-token")
   }
 
-  /// A hosted test must land in memory even when the scheme's override went missing or was
-  /// mistyped, and the live store must not be built on the way there.
   func testEveryTestProcessSelectsMemoryWithoutBuildingTheLiveStore() {
     var liveConstructions = 0
     let cases: [(environment: [String: String], isTestHost: Bool, why: String)] = [
@@ -82,8 +73,6 @@ final class ClientSettingsTests: XCTestCase {
     XCTAssertTrue(settings is LiveClientSettings)
   }
 
-  /// The real store is exercised the way a device uses it: write, replace, clear. Only the
-  /// namespace this test created is ever touched.
   func testALiveStoreRoundTripsThroughAnIsolatedKeychain() {
     let (settings, cleanup) = isolatedLiveSettings()
     defer { cleanup() }
@@ -121,7 +110,6 @@ final class ClientSettingsTests: XCTestCase {
     XCTAssertEqual(second.deviceToken, "synthetic-second-token")
   }
 
-  /// A client needs a key, and talks to the address it was given.
   func testConfiguredClientNeedsAToken() {
     let settings = MemoryClientSettings()
     let address = URL(string: "https://vanta.example.ts.net/api")!
@@ -134,8 +122,6 @@ final class ClientSettingsTests: XCTestCase {
     XCTAssertEqual(settings.configuredClient(address: address)?.address, address)
   }
 
-  /// A Debug journey points the app at its lane's service. The token rides on every request, so
-  /// an address that is neither TLS nor loopback is ignored.
   func testTheServiceAddressArgumentAcceptsOnlyTLSOrLoopback() {
     for accepted in ["http://127.0.0.1:4310", "https://lane.example/api"] {
       XCTAssertEqual(
@@ -146,8 +132,6 @@ final class ClientSettingsTests: XCTestCase {
       OrbisService.address(for: ["-orbisServiceAddress", refused]).absoluteString, refused)
   }
 
-  /// The reset launch argument is exercised against a supplied store, so the proof does not
-  /// need an app started against a real pairing.
   func testTheResetLaunchArgumentClearsOnlyTheInjectedStore() {
     let settings = MemoryClientSettings()
     XCTAssertTrue(settings.store(deviceToken: "synthetic-stale-token"))
@@ -161,9 +145,6 @@ final class ClientSettingsTests: XCTestCase {
     XCTAssertNil(settings.deviceToken)
   }
 
-  /// Every write must reach Security through the injected adapter, so a test can hold the
-  /// statuses a real keychain would not produce on demand. The query and the attributes stay
-  /// separately visible, because the write policy depends on that split.
   func testASuccessfulWriteReachesSecurityThroughTheAdapter() {
     let existing = FakeKeychainOperations(storedToken: "synthetic-old-token")
     let store = KeychainStore(
@@ -220,9 +201,6 @@ final class ClientSettingsTests: XCTestCase {
       "the attributes must carry the device-only accessibility policy")
   }
 
-  /// `SecItemUpdate` takes the item class and the search properties in its query, not among
-  /// the attributes it applies. Copying the identity into the attributes is what made the old
-  /// failure branch look like a whole-item replacement, so the split is asserted directly.
   func testTheUpdateAttributesCarryNoIdentityQueryKeys() {
     let operations = FakeKeychainOperations(storedToken: "synthetic-old-token")
     let store = KeychainStore(
@@ -242,9 +220,6 @@ final class ClientSettingsTests: XCTestCase {
       "the attributes must not repeat the query's identity keys: \(update.attributeKeys)")
   }
 
-  /// A status that is neither success nor "nothing stored yet" means the write did not
-  /// happen. Deleting the item that could not be updated would throw away the pairing this
-  /// device already holds, and the add that followed could fail too.
   func testAFailedUpdateKeepsTheStoredPairingAndStopsThere() {
     let statuses: [(status: OSStatus, why: String)] = [
       (errSecInteractionNotAllowed, "the device refused to unlock the item"),
@@ -273,8 +248,6 @@ final class ClientSettingsTests: XCTestCase {
     }
   }
 
-  /// Nothing was stored, so the write's whole job is one add. If that add fails there is still
-  /// nothing to delete, and the caller must hear the truth rather than a stored pairing.
   func testAnAbsentItemThatCannotBeAddedReportsFailureWithoutDeleting() {
     let operations = FakeKeychainOperations()
     operations.updateStatus = errSecItemNotFound
@@ -290,8 +263,6 @@ final class ClientSettingsTests: XCTestCase {
     XCTAssertNil(operations.storedToken, "a failed first save must not read as stored")
   }
 
-  /// Another writer can create the item between the update that found nothing and the add.
-  /// That add fails, and the competing item is the one that must survive.
   func testADuplicateItemOnAddIsReportedWithoutDeletingTheExistingOne() {
     let operations = FakeKeychainOperations(storedToken: "synthetic-competing-token")
     operations.updateStatus = errSecItemNotFound
@@ -309,8 +280,6 @@ final class ClientSettingsTests: XCTestCase {
       "the item another writer created must not be deleted")
   }
 
-  /// An add creates the whole item, so it carries the identity the update query carried plus
-  /// the value attributes. Only the query stays identity-only.
   func testTheAddDictionaryCarriesIdentityAndTheValueAttributes() {
     let operations = FakeKeychainOperations()
     operations.updateStatus = errSecItemNotFound
@@ -335,14 +304,8 @@ final class ClientSettingsTests: XCTestCase {
   }
 }
 
-/// A Security adapter that never reaches the system keychain. It holds one fixture value,
-/// records every call and the dictionary keys it was handed, and answers with the statuses a
-/// test chose. Nothing here can touch a real pairing, so the failure paths are provable
-/// without locking, corrupting, or deleting a developer's stored credential.
 @MainActor
 final class FakeKeychainOperations: KeychainOperations {
-  /// One recorded call. The keys are kept rather than the dictionaries, because the
-  /// dictionaries are not comparable and the keys are what the assertions turn on.
   enum Call: Equatable {
     case update(queryKeys: Set<String>, attributeKeys: Set<String>)
     case add(attributeKeys: Set<String>)
@@ -359,12 +322,10 @@ final class FakeKeychainOperations: KeychainOperations {
     stored = storedToken.map { Data($0.utf8) }
   }
 
-  /// What the fake holds, which is what a real keychain would hand back on the next read.
   var storedToken: String? {
     stored.map { String(decoding: $0, as: UTF8.self) }
   }
 
-  /// The calls in order, so a test can prove nothing extra happened.
   var callOrder: [String] {
     calls.map {
       switch $0 {

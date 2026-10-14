@@ -1,6 +1,3 @@
-// Every Library action through the built web client against a real Orbis API
-// (e2e/api-server.ts): save, duplicate save, rename, Tags, filters, search,
-// Download, and remove, with screenshots and a result.json as the artifact.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -53,7 +50,6 @@ await writeFile(
         tokenHash: createHash("sha256").update(key).digest("hex"),
       },
     ],
-    // Auto Download off, so the journey starts the Download itself.
     people: [
       { autoDownload: false, id: "host", removed: false, username: "host" },
     ],

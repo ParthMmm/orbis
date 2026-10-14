@@ -3,10 +3,6 @@ import { setResponseHeaders } from "@tanstack/react-start/server";
 
 import { apiUrl } from "@/lib/api-url";
 
-/**
- * The page runs only its own code, talks only to the Orbis API, and plays audio
- * only from Vanta (ADR 0015). A fresh nonce admits the router's inline scripts.
- */
 const securityHeaders = createMiddleware().server(({ next }) => {
   const nonce = crypto.randomUUID().replaceAll("-", "");
   const api = new URL(apiUrl()).origin;

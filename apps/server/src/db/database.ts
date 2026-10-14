@@ -23,9 +23,6 @@ const LEGACY_MIGRATIONS: readonly (readonly string[])[] = [
     "ALTER TABLE sets ADD COLUMN artwork_url TEXT",
     "ALTER TABLE sets ADD COLUMN duration_seconds INTEGER",
     "ALTER TABLE sets ADD COLUMN metadata_state TEXT NOT NULL DEFAULT 'pending'",
-    // A title was required before this column existed, so every row that predates it holds a
-    // title a person typed. The default backfills them as edited, which keeps a metadata retry
-    // from replacing a title someone chose. New rows always state the value themselves.
     "ALTER TABLE sets ADD COLUMN title_edited_by_user INTEGER NOT NULL DEFAULT 1",
     "ALTER TABLE sets ADD COLUMN download_state TEXT NOT NULL DEFAULT 'none'",
     "ALTER TABLE sets ADD COLUMN retained_audio_bytes INTEGER",
@@ -95,9 +92,6 @@ const migrateDatabase = (
   Effect.gen(function* migrateDatabaseEffect() {
     const migrationTable = yield* hasTable(db, "__drizzle_migrations");
     if (!migrationTable && legacyDatabase) {
-      // Existing Orbis databases were migrated with PRAGMA user_version before Drizzle was
-      // introduced. The legacy columns are already in place, so record the Drizzle baseline
-      // without replaying its CREATE TABLE statements.
       yield* db.run(
         sql.raw(`
           CREATE TABLE IF NOT EXISTS __drizzle_migrations (

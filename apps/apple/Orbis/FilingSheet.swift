@@ -66,8 +66,6 @@ struct FilingSheet: View {
     }
   }
 
-  // MARK: The link
-
   @ViewBuilder private var linkSections: some View {
     Section {
       LinkField(
@@ -120,8 +118,6 @@ struct FilingSheet: View {
       }
     }
   }
-
-  // MARK: Naming
 
   @ViewBuilder private func revealSections(_ reveal: AppModel.Reveal) -> some View {
     Section {

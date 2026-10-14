@@ -7,12 +7,6 @@ import MediaPlayer
   import UIKit
 #endif
 
-/// Plays one Set's retained audio, streamed from the service with the device token.
-///
-/// Everything here stays on the main actor: playback control is not CPU-bound, and
-/// AVPlayer does its own threading. Observers that the system can call from any thread
-/// capture plain values first and hop back here before touching state. The audio session
-/// is the one exception, and it runs off the main actor: see `sessionWork`.
 @MainActor
 @Observable
 final class AudioPlayer {
@@ -27,20 +21,15 @@ final class AudioPlayer {
   private(set) var state = PlaybackState.idle
   private(set) var currentSetId: String?
   private(set) var currentTitle = ""
-  /// Who made the Set, for the artist line the system draws under the title.
   private(set) var currentArtist: String?
   private var cues: [Cue] = []
-  /// Where each Cue starts, for the marks along the seek bar.
   var cueStarts: [TimeInterval] { cues.compactMap(\.startSeconds) }
   var currentCue: Cue? {
     cues.last { cue in cue.startSeconds.map { $0 <= elapsed } ?? false }
   }
-  /// The Cue the mix moves into next, once it has a start time.
   var nextCue: Cue? {
     cues.first { cue in cue.startSeconds.map { $0 > elapsed } ?? false }
   }
-  /// The Set's artwork, once it has arrived, for the lock screen, the Dynamic Island, and
-  /// Control Center. Fetched after playback starts so a slow image never delays the sound.
   private var currentArtwork: MPMediaItemArtwork?
   private var artworkFetch: Task<Void, Never>?
   private(set) var elapsed: TimeInterval = 0
@@ -57,23 +46,12 @@ final class AudioPlayer {
   private var pendingSeek: TimeInterval?
   private var isSeeking = false
 
-  /// Called with the Set that has just played to its natural end, so the caller can finish its
-  /// Listen and start whatever the Listening Queue holds next. Nothing is called when playback
-  /// stops early: that Set keeps its position and its Listen.
   @ObservationIgnored var onFinished: ((String) -> Void)?
 
-  /// Which observations are current: a callback carrying an older number is dropped.
   private var playbackGeneration = 0
 
-  /// The audio session work still in flight. Bringing the session up or letting it go talks
-  /// to the audio server and takes long enough to freeze a screen that waits for it, so it
-  /// happens off the main actor. Each step waits for the one before it, because a stop that
-  /// deactivates must never land after the play that follows it.
   private var sessionWork: Task<Void, Never>?
 
-  /// The registrations this player made outside itself, held nonisolated so `deinit`, which
-  /// cannot hop actors, takes back exactly its own handlers instead of clearing the shared
-  /// command center. Ignored by observation: nothing reads them.
   @ObservationIgnored nonisolated(unsafe) private var commandTargets: [Any] = []
   @ObservationIgnored nonisolated(unsafe) private var observers: [NSObjectProtocol] = []
   private var isObservingInterruptions = false
@@ -83,9 +61,6 @@ final class AudioPlayer {
   }
 
   deinit {
-    // A nonisolated deinit cannot touch MainActor state, so everything owned here
-    // is released through stop(), which every play() enters through first. What
-    // remains is global, and only this player's own registrations are taken back.
     let center = MPRemoteCommandCenter.shared()
     let commands = [
       center.playCommand, center.pauseCommand, center.togglePlayPauseCommand,
@@ -117,7 +92,6 @@ final class AudioPlayer {
     AVURLAsset(url: url, options: assetOptions(token: token))
   }
 
-  /// The Set's own audio file under the service address.
   static func fileURL(setID: String, baseURL: URL) -> URL {
     baseURL.appending(path: "sets/\(setID)/audio")
   }
@@ -138,8 +112,6 @@ final class AudioPlayer {
       MPMediaItemPropertyTitle: cue?.title ?? title,
       MPNowPlayingInfoPropertyElapsedPlaybackTime: elapsed,
       MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
-      // A Set is one long recording, which the system otherwise treats as a song and
-      // offers to skip past.
       MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
     ]
     if let cue {
@@ -157,9 +129,6 @@ final class AudioPlayer {
     return info
   }
 
-  /// The image the provider offered, as the system wants it: a handler that returns the same
-  /// image at any size, since the provider gives one size and the system scales it.
-  ///
   /// Nonisolated, and it has to be. The system calls the handler on its own Now Playing queue
   /// whenever it wants the image at a new size, so a handler built on the main actor traps the
   /// moment it is asked. Nothing in here touches the main actor: the image is already decoded
@@ -179,20 +148,15 @@ final class AudioPlayer {
     return MPMediaItemArtwork(boundsSize: image.size) { _ in image }
   }
 
-  /// The middle 16:9 band of an image that is taller than 16:9; an image that is already as
-  /// wide, or wider, is returned as it is.
   nonisolated static func widescreen(_ image: CGImage) -> CGImage {
     let width = image.width
     let height = image.height
     let target = width * 9 / 16
-    // A few pixels of tolerance, so a 1280×721 render is not cropped for nothing.
     guard height > target + 2 else { return image }
     let rect = CGRect(x: 0, y: (height - target) / 2, width: width, height: target)
     return image.cropping(to: rect) ?? image
   }
 
-  /// Brings the audio session up for playback and answers whether it came up.
-  ///
   /// Nonisolated, so none of it runs on the main actor: activation is a slow call that the
   /// system warns will freeze a screen that makes it. From iOS 27 the framework offers a
   /// handler and never blocks at all; before that the blocking call is the only one there
@@ -223,9 +187,6 @@ final class AudioPlayer {
     #endif
   }
 
-  /// Lets the audio session go, off the main actor for the same reason, and tells whoever this
-  /// playback interrupted that it may resume. Waits for the answer, so the next activation
-  /// queued behind it cannot be undone by this deactivation landing late.
   private nonisolated static func endSession() async {
     #if !os(macOS)
       let session = AVAudioSession.sharedInstance()
@@ -253,8 +214,6 @@ final class AudioPlayer {
     pendingSeek = startAt > 0 ? startAt : nil
     duration = nil
     state = .loading
-    // The asset is the Set's own audio file, not the service root: loading the
-    // root answers 404 and the player fails without ever asking for audio.
     let item = AVPlayerItem(
       asset: Self.asset(url: Self.fileURL(setID: set.id, baseURL: baseURL), token: token)
     )
@@ -262,9 +221,6 @@ final class AudioPlayer {
     self.player = player
     playbackGeneration += 1
     let generation = playbackGeneration
-    // KVO can call back on any thread, so each handler captures plain values and
-    // hops here before touching state. The generation check drops a callback that a
-    // stopped or replaced player queued before this one took over.
     statusObservation = item.observe(\.status, options: [.new]) { [weak self] item, _ in
       let status = item.status
       let seconds = item.duration.seconds
@@ -292,8 +248,6 @@ final class AudioPlayer {
       queue: .main
     ) { [weak self] time in
       let seconds = time.seconds
-      // Registered on the main queue, so this closure is already on the main actor; assuming it
-      // avoids a task on every tick.
       MainActor.assumeIsolated {
         guard let self, self.playbackGeneration == generation else { return }
         guard !self.isSeeking, self.pendingSeek == nil else { return }
@@ -306,8 +260,6 @@ final class AudioPlayer {
     }
     observeCompletion(of: item, generation: generation)
     observeInterruptions()
-    // The screen already reads as loading, so the sound can wait for the session rather than
-    // the screen waiting for both. A generation that has moved on drops what comes back.
     let previous = sessionWork
     sessionWork = Task { [weak self] in
       await previous?.value
@@ -323,8 +275,6 @@ final class AudioPlayer {
     }
   }
 
-  /// The largest image the provider offered, fetched off the play path. A stale fetch, one that
-  /// lands after another Set took over, is dropped by the generation it was made under.
   private func fetchArtwork(for set: SavedSet, generation: Int) {
     artworkFetch?.cancel()
     guard let url = (set.artworkLargeUrl ?? set.artworkUrl).flatMap(URL.init(string:)) else {
@@ -369,17 +319,13 @@ final class AudioPlayer {
     publishNowPlaying(isPlaying: state == .playing)
   }
 
-  /// Whether the Set's Tracklist has start times to step between.
   var canSkipCues: Bool { !cueStarts.isEmpty }
 
-  /// Jumps to the start of the next Cue. Past the last one there is nowhere to go.
   func skipToNextCue() {
     guard let start = nextCue?.startSeconds else { return }
     seek(to: start)
   }
 
-  /// Jumps back the way a music player's back button does: to the start of this Cue, or to the
-  /// previous one when this one has barely begun.
   func skipToPreviousCue() {
     let starts = cueStarts.filter { $0 <= elapsed }
     guard let current = starts.last else {
@@ -400,7 +346,6 @@ final class AudioPlayer {
   }
 
   func stop() {
-    // Anything the player in hand still has queued belongs to a playback that is over.
     playbackGeneration += 1
     artworkFetch?.cancel()
     artworkFetch = nil
@@ -440,8 +385,6 @@ final class AudioPlayer {
     }
   }
 
-  /// Where a resumed Set starts. A position past the end of the audio would leave the item
-  /// finished the moment it began, so the seek is bounded by the length the item reports.
   private func applyPendingSeek() {
     guard let pendingSeek else { return }
     self.pendingSeek = nil
@@ -463,8 +406,6 @@ final class AudioPlayer {
     }
   }
 
-  /// The end of the audio, which is the one way a Listen finishes. Registered per play, because
-  /// the notification names the item that ended.
   private func observeCompletion(of item: AVPlayerItem, generation: Int) {
     observers.append(
       NotificationCenter.default.addObserver(
@@ -472,7 +413,6 @@ final class AudioPlayer {
         object: item,
         queue: .main
       ) { [weak self] _ in
-        // Registered on the main queue, so this block is already on the main actor.
         MainActor.assumeIsolated {
           guard let self, self.playbackGeneration == generation,
             let finished = self.currentSetId
@@ -564,7 +504,6 @@ final class AudioPlayer {
       return .success
     }
     center.togglePlayPauseCommand.isEnabled = true
-    // The same skips as the transport beside Play, so the Lock Screen and the car offer them too.
     // The interval is set before the target, because the system reads it when the target arrives.
     center.skipBackwardCommand.preferredIntervals = [Self.skipBack as NSNumber]
     let back = center.skipBackwardCommand.addTarget { [weak self] event in
@@ -584,12 +523,10 @@ final class AudioPlayer {
   static let skipBack: TimeInterval = 15
   static let skipAhead: TimeInterval = 30
 
-  /// Moves the playhead by a number of seconds, back when negative.
   func skip(by seconds: TimeInterval) {
     seek(to: elapsed + seconds)
   }
 
-  /// Siri can ask for a skip of its own length, so the event's interval wins over the button's.
   private static func interval(of event: MPRemoteCommandEvent, default fallback: TimeInterval)
     -> TimeInterval
   {
@@ -601,8 +538,6 @@ final class AudioPlayer {
     isObservingInterruptions = true
     #if !os(macOS)
       let center = NotificationCenter.default
-      // The observer block is nonisolated and Notification is not Sendable, so each
-      // block extracts plain values first and only those cross into the hop below.
       observers.append(
         center.addObserver(
           forName: AVAudioSession.interruptionNotification,

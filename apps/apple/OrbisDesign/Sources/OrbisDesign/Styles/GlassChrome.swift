@@ -1,10 +1,5 @@
 import SwiftUI
 
-/// Liquid Glass for custom chrome — a floating bar or an overlay control group.
-///
-/// Standard chrome (`NavigationSplitView` sidebar, toolbars, `TabView`, sheets) is glass
-/// already; do not wrap it. Content — rows, cards, the paste hero — never gets glass;
-/// give it `Color.orbis.paperRaised`. Regular variant only; Clear is not used in Orbis.
 public struct GlassChrome: ViewModifier {
   let radius: CGFloat
   let interactive: Bool
@@ -24,14 +19,10 @@ extension View {
     modifier(GlassChrome(radius: radius, interactive: interactive))
   }
 
-  /// Content-layer surface: grouped lists, cards, the paste hero.
   public func orbisRaised(radius: CGFloat = Radius.list) -> some View {
     background(Color.orbis.paperRaised, in: .rect(cornerRadius: radius))
   }
 
-  /// A row that can be pressed. Touch platforms give it the 44 points a finger needs; a Mac
-  /// pointer does not, and padding a Mac row to a finger's size just wastes the pointer's
-  /// precision.
   public func orbisRowHeight() -> some View {
     #if os(iOS)
       frame(minHeight: 44)

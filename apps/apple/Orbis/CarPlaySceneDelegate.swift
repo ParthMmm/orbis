@@ -3,15 +3,10 @@
   import OrbisDesign
   import UIKit
 
-  /// The car's Orbis: Home, Library, and Playlists tabs over the phone's player. The tabs are
-  /// built once per connection and refilled from a `CarPlayCatalog` whenever the model changes, so
-  /// the tab bar and anything pushed on it stay put while the rows update.
   @MainActor
   final class CarPlaySceneDelegate: UIResponder, CPTemplateApplicationSceneDelegate,
     CPNowPlayingTemplateObserver
   {
-    /// What a row does when it is chosen. Every handler goes through `perform`, so each
-    /// action has one path whichever list the row is on.
     private enum Action {
       case playSet(String)
       case playPlaylist(String)
@@ -25,15 +20,11 @@
     private let model = OrbisSession.model
     private let artwork = CarPlayArtwork()
     private var catalog: CarPlayCatalog?
-    /// Which connection the observation loop serves, so a loop left from an earlier connection
-    /// stops instead of redrawing beside the new one.
     private var connection = 0
 
     private let homeTab = CPListTemplate(title: Destination.home.rawValue, sections: [])
     private let playlistsTab = CPListTemplate(title: Destination.playlists.rawValue, sections: [])
     private let libraryTab = CPListTemplate(title: Destination.library.rawValue, sections: [])
-    /// The Tracklist pushed over Now Playing, so a Tracklist that arrives late fills it. Weak: the
-    /// car's stack owns it while it is on screen.
     private weak var tracklist: CPListTemplate?
 
     func templateApplicationScene(
@@ -52,7 +43,6 @@
       let templates: [Destination: CPListTemplate] = [
         .home: homeTab, .library: libraryTab, .playlists: playlistsTab,
       ]
-      // Ordered by `Destination`, the phone's tab order, so the car's tabs cannot drift from it.
       let tabs = Destination.allCases.compactMap { destination in
         templates[destination].map { template in
           template.tabTitle = destination.rawValue
@@ -83,11 +73,6 @@
       MainActor.assumeIsolated { showTracklist() }
     }
 
-    // MARK: Model to templates
-
-    /// Reads the catalog under observation and redraws when it differs from the last one. The
-    /// redraw runs outside the observed read, so building rows never subscribes the car to the
-    /// player's clock.
     private func observeModel(_ connection: Int) {
       guard connection == self.connection, interfaceController != nil else { return }
       let next = withObservationTracking {
@@ -123,8 +108,6 @@
       }
     }
 
-    /// Fills a list for its status. A failure is a row that tries again, so the car never sends
-    /// the driver to the phone to recover.
     private func fill(
       _ template: CPListTemplate, status: CarPlayCatalog.Status, empty: String,
       sections: () -> [CPListSection]
@@ -148,7 +131,6 @@
       }
     }
 
-    /// Home in the phone's order: the lead Set as a card, the two rails, then the Playlists.
     private func homeSections(_ catalog: CarPlayCatalog) -> [CPListSection] {
       let home = catalog.home
       var sections: [CPListSection] = []
@@ -185,8 +167,6 @@
       return sections
     }
 
-    /// A rail as a row of artwork. A tap on a picture plays that Set; a tap on the title opens
-    /// the rail as a list, where every Set has its full name.
     private func rail(
       _ title: String, sets: [SavedSet], detail: (SavedSet) -> String?
     ) -> CPListImageRowItem {
@@ -219,8 +199,6 @@
       return item
     }
 
-    /// Rows for as many Sets as a list can show, built before any artwork is asked for, so a
-    /// long library fetches only the pictures the car will draw.
     private func setItems(_ sets: [SavedSet], catalog: CarPlayCatalog?) -> [CPListItem] {
       sets.prefix(Int(CPListTemplate.maximumItemCount)).map { set in
         let item = CPListItem(
@@ -242,7 +220,6 @@
         let item = CPListItem(
           text: cue.title, detailText: [cue.artist, start].compactMap(\.self).joined(separator: " · "))
         item.isPlaying = cue == current
-        // A Cue with no start time has nowhere to seek to.
         item.isEnabled = cue.startSeconds != nil
         item.handler = handler(.playCue(cue, setId: setId))
         return item
@@ -258,8 +235,6 @@
       return CPListSection(items: [retry], header: failure.title, sectionIndexTitle: nil)
     }
 
-    /// Keeps a list inside the car's limits: the first sections it allows, and the first rows
-    /// across them. A car that limits lists while moving lowers both.
     private static func fit(_ sections: [CPListSection]) -> [CPListSection] {
       var budget = Int(CPListTemplate.maximumItemCount)
       return sections.prefix(Int(CPListTemplate.maximumSectionCount)).compactMap { section in
@@ -270,15 +245,12 @@
       }
     }
 
-    // MARK: Actions
-
     private func handler(_ action: Action) -> (any CPSelectableListItem, @escaping () -> Void) -> Void {
       { [weak self] _, completion in
         self?.perform(action, completion: completion) ?? completion()
       }
     }
 
-    /// Runs an action and holds the row's spinner until it settles.
     private func perform(_ action: Action, completion: @escaping () -> Void) {
       Task {
         defer { completion() }
@@ -305,7 +277,6 @@
       }
     }
 
-    /// A Playlist's own list: Play All, then its playable Sets in Playlist order.
     private func openPlaylist(_ playlist: Playlist) async {
       let template = CPListTemplate(title: playlist.name, sections: [])
       template.showsSpinnerWhileEmpty = true
@@ -333,7 +304,6 @@
       }
     }
 
-    /// Opens Now Playing after a play, or says in the car why nothing started.
     private func showNowPlaying(ifPlaying isPlaying: Bool) {
       guard let interfaceController else { return }
       guard isPlaying else {
@@ -359,13 +329,10 @@
     }
   }
 
-  /// Artwork for the car's rows, fetched the way the player fetches its own and drawn once at
-  /// the size the car asks for, so a long list does not hold full-size images.
   @MainActor
   final class CarPlayArtwork {
     static let placeholder = UIImage(systemName: "music.note") ?? UIImage()
 
-    /// The car screen's scale, which is not the phone's.
     var scale: CGFloat = 2
 
     private let images = NSCache<NSString, UIImage>()
@@ -375,7 +342,6 @@
       images.countLimit = 200
     }
 
-    /// Hands the image to `deliver` now when it is drawn already, or when it arrives.
     func apply(_ url: URL?, size: CGSize, deliver: @escaping (UIImage) -> Void) {
       guard let url else { return }
       let key = "\(url.absoluteString)@\(size.width)x\(size.height)"

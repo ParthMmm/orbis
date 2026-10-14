@@ -43,7 +43,6 @@ const stream = (response: Response) => {
   };
   return {
     close: () => reader.cancel(),
-    /** Reads frames until a presence event satisfies `accept`; fails after `ms`. */
     presence: async (accept: (usernames: string[]) => boolean, ms = 6000) => {
       const deadline = Date.now() + ms;
       while (Date.now() < deadline) {
@@ -129,7 +128,6 @@ test("Presence reaches only viewers who pass the gate and lapses when reports st
     const viewerA = stream(await call("a", "/events"));
     const viewerC = stream(await call("c", "/events"));
     opened.push(viewerA, viewerC);
-    // C hides from nobody but A stops seeing C; B is later hidden from C.
     expect(
       await statusOf("c", "/people/b/filters", "PUT", { see: false })
     ).toBe(200);
@@ -156,11 +154,9 @@ test("Presence reaches only viewers who pass the gate and lapses when reports st
 
     const seen = await viewerA.presence((names) => names.includes("b"));
     expect(seen).toMatchObject([{ personId: "b", set: { id: set.id } }]);
-    // C fails the gate, so C never receives B's Presence.
     await expect(
       viewerC.presence((names) => names.includes("b"), 2500)
     ).rejects.toThrow("No matching presence event arrived");
-    // B stops reporting, so the Presence lapses.
     await viewerA.presence((names) => names.length === 0);
   } finally {
     await Promise.all(opened.map((open) => open.close().catch(() => null)));

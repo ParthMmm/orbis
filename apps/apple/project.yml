@@ -23,17 +23,7 @@ settings:
     GENERATE_INFOPLIST_FILE: YES
     CURRENT_PROJECT_VERSION: 1
     MARKETING_VERSION: 0.1.0
-    # The app speaks TLS to the service over the tailnet and uses no other cryptography, so it
-    # carries no non-exempt encryption. App Store Connect asks on every upload.
     INFOPLIST_KEY_ITSAppUsesNonExemptEncryption: NO
-    # Nothing here relaxes App Transport Security: the lanes' service is on 127.0.0.1, which ATS
-    # exempts as loopback. A nested ATS dictionary needs a real Info.plist anyway, because these
-    # settings write flat keys. Reaching a service by name over HTTP would need one.
-    # Signing is stated here because this file is the source the project is generated from, and
-    # the project itself is gitignored. Setting a team in Xcode writes it into a file that the
-    # next `xcodegen generate` replaces, which is why the team kept disappearing. The lanes still
-    # override on the command line: ad-hoc signing for a Mac build, and ad-hoc signing for the
-    # simulator, which is what gives the lane build the entitlement its keychain needs.
     DEVELOPMENT_TEAM: JR398S689Z
     CODE_SIGN_STYLE: Automatic
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -66,10 +56,7 @@ targets:
         # iOS; this one signs macOS.
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": Orbis/Orbis-macOS.entitlements
         "CODE_SIGN_ENTITLEMENTS[sdk=appletv*]": Orbis/Orbis-tvOS.entitlements
-        # orbis.icon, the Icon Composer document. This replaces the AppIcon image set.
         ASSETCATALOG_COMPILER_APPICON_NAME: orbis
-        # The system tint (tab selection, links, toggles) comes from the catalog, so it carries the
-        # same values as the tint token in docs/design/tokens.json.
         ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME: AccentColor
         INFOPLIST_KEY_CFBundleDisplayName: Orbis
         INFOPLIST_KEY_LSApplicationCategoryType: public.app-category.music
@@ -78,9 +65,6 @@ targets:
         # UILaunchScreen names the color the splash is drawn on. Everything flat stays here.
         INFOPLIST_FILE: Orbis/Info.plist
         INFOPLIST_KEY_UIApplicationSceneManifest_Generation: NO
-        # The TV builds its own screens under Orbis/TV, and these phone and Mac screens carry
-        # API tvOS lacks (filing, sharing, the slider transport, swipe actions), so they are
-        # left out of the tvOS build here rather than wrapped in the files themselves.
         "EXCLUDED_SOURCE_FILE_NAMES[sdk=appletv*]": >-
           AddToPlaylistSheet.swift FilingSheet.swift LibraryView.swift NowPlayingScreen.swift PeopleDestination.swift PlaylistViews.swift QueueScreen.swift RootView.swift SetDetailScreen.swift SetManagementSection.swift SettingsView.swift Transport.swift
   OrbisShare:
@@ -109,7 +93,6 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: app.orbis.client.share
         PRODUCT_NAME: OrbisShare
-        # See the app target: the extension sandboxes on macOS and shares the app's container.
         "CODE_SIGN_ENTITLEMENTS[sdk=macosx*]": OrbisShare/OrbisShare-macOS.entitlements
         INFOPLIST_FILE: OrbisShare/Info.plist
         SKIP_INSTALL: YES
@@ -133,9 +116,6 @@ targets:
         "EXCLUDED_SOURCE_FILE_NAMES[sdk=appletv*]": AddToPlaylistTests.swift ClipboardLinkTests.swift
   OrbisUITests:
     type: bundle.ui-testing
-    # iOS only. The macOS UI test runner is killed before bootstrap on the host that runs
-    # the lanes, so macOS is verified by the unit tests on the macOS destination and by
-    # reading the running app through accessibility.
     supportedDestinations: [iOS]
     sources:
       - OrbisUITests
@@ -173,18 +153,11 @@ schemes:
         - OrbisTests
         - OrbisUITests
       environmentVariables:
-        # A hosted test run must never read the device's own pairing, so the whole run is put
-        # on in-memory settings. The app's own default model picks this up before any test
-        # method runs; the Debug factory also fails closed on a recognized test host.
         ORBIS_TEST_SETTINGS: memory
-        # Substituted at generation time, so the lane's temporary service is what the
-        # journey tests type into the connection screen.
         ORBIS_UI_TEST_ADDRESS: ${ORBIS_UI_TEST_ADDRESS}
         ORBIS_UI_TEST_SEED_ADDRESS: ${ORBIS_UI_TEST_SEED_ADDRESS}
         ORBIS_UI_TEST_SETTINGS_TOKEN: ${ORBIS_UI_TEST_SETTINGS_TOKEN}
         ORBIS_UI_TEST_TOKEN: ${ORBIS_UI_TEST_TOKEN}
-  # The Apple TV lane: the same app and unit tests on the tvOS destination, with the TV journey
-  # in place of the iOS ones.
   OrbisTV:
     build:
       targets:

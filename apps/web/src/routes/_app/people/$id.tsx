@@ -37,14 +37,12 @@ const timeFormat = new Intl.DateTimeFormat(undefined, {
 export interface Profile {
   readonly id: string;
   readonly listens: readonly Listen[];
-  /** The ids of the Sets in the viewer's own Library. */
   readonly mine: readonly string[];
   readonly playlists: readonly FriendPlaylist[];
   readonly sets: readonly SavedSet[];
   readonly username: string;
 }
 
-/** Why saving or downloading a friend's Set did not do what the Person asked. */
 const actionProblem = (result: ApiResult<unknown>): string | null => {
   if (result.ok) {
     return null;
@@ -74,7 +72,6 @@ const FriendSetRow = ({
     setPending(true);
     const result = await run();
     setPending(false);
-    // Saving a Set already in the Library is a conflict, and the result is the same.
     const settled =
       result.ok || result.failure === "conflict" ? null : actionProblem(result);
     setProblem(settled);

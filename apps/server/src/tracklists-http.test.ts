@@ -468,7 +468,6 @@ test("shutting down a stale HTTP worker preserves a newer active claim and its C
     }),
   });
   try {
-    // Finish the second app's migrations before holding a SQLite inspection connection.
     const initial = await read(newer, id);
     expect(initial.statusCode).toBe(200);
     const db = new Sqlite(server.databasePath);

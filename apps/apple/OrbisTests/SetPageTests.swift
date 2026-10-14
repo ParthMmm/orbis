@@ -3,8 +3,6 @@ import XCTest
 
 @testable import Orbis
 
-/// The Set page changes one Set at a time. What a refusal leaves behind matters as much as what
-/// a success does, because the person is looking at the Set when it happens.
 @MainActor
 final class SetPageTests: XCTestCase {
   private func set(
@@ -83,8 +81,6 @@ final class SetPageTests: XCTestCase {
     XCTAssertNil(model.openedSetId)
   }
 
-  /// The Set stays on screen with the reason beside it, so the removal can be tried again
-  /// rather than leaving a person wondering whether it worked.
   func testARefusedRemovalKeepsTheSetAndSaysWhy() async {
     let model = model(
       sets: [set()], status: 500, body: #"{"message":"The library is busy."}"#)
@@ -117,8 +113,6 @@ final class SetPageTests: XCTestCase {
     XCTAssertEqual((sent as? [String: Any])?["tags"] as? [String], ["techno", "live"])
   }
 
-  /// Orbis holds a Set in one Playlist, so choosing another states the whole membership and
-  /// leaves the Playlist it came from.
   func testMovingASetStatesTheWholeMembership() async {
     let model = model(sets: [set(playlists: ["old"])])
 
@@ -139,8 +133,6 @@ final class SetPageTests: XCTestCase {
     XCTAssertEqual((sent as? [String: Any])?["playlistIds"] as? [String], [])
   }
 
-  /// While the Library is showing one playlist, a Set that moves out of it must leave the
-  /// list; keeping the row would say the move did nothing.
   func testMovingASetOutOfThePlaylistBeingViewedTakesItsRowWithIt() async {
     let model = model(
       sets: [set(id: "1", playlists: ["viewed"]), set(id: "2", title: "Stays", playlists: ["viewed"])]
@@ -155,7 +147,6 @@ final class SetPageTests: XCTestCase {
     XCTAssertEqual(sets.map(\.id), ["2"], "the row must leave with the playlist it moved out of")
   }
 
-  /// A change that does not touch membership keeps the row where it was.
   func testRenamingASetInThePlaylistBeingViewedKeepsItsRow() async {
     let body = OrbisClientTests.savedSet(title: "Renamed", tags: []).replacingOccurrences(
       of: "\"playlistIds\":[]", with: "\"playlistIds\":[\"viewed\"]")

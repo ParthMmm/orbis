@@ -4,8 +4,6 @@ import UniformTypeIdentifiers
 #if os(iOS)
   import UIKit
 
-  /// Compact share confirmation: validates the Source Link, optional Tags / Playlist /
-  /// Download-after-saving, then saves through the same OrbisClient contract as the app.
   @MainActor
   final class ShareViewController: UIViewController {
     private var hosting: UIHostingController<ShareConfirmationView>?

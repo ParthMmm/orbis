@@ -25,11 +25,6 @@ export interface SetSeed {
   readonly id: string;
 }
 
-/**
- * Sets are written straight into the database because the queue admits only Sets with Retained
- * Audio, and Retained Audio comes from a Download that needs Cobalt and ffmpeg. The subject here
- * is what the Queue and Stats do with a Set, not how the Set came to have audio.
- */
 export const seedSets = async (
   databasePath: string,
   seeds: readonly SetSeed[]
@@ -69,7 +64,6 @@ export const seedSets = async (
   }
 };
 
-/** The Sets the queue can hold, all with Retained Audio. */
 export const ready = (ids: readonly string[]): SetSeed[] =>
   ids.map((id) => ({ downloadState: "ready", id }));
 
@@ -92,18 +86,15 @@ export const withSeededApp = async (
   }
 };
 
-/** The queue a response carried. Every queue route answers with the whole queue. */
 const queueIn = (response: Response): Queue =>
   // SAFETY: the queue contract is { queue: { activeSetId, entries: SavedSet[] } }, which the
   // tests then assert field by field.
   response.json().queue as Queue;
 
-/** The sentence a refused request carried. */
 export const messageIn = (response: Response): string =>
   // SAFETY: a refusal answers with { message } from the application's failure response.
   response.json().message as string;
 
-/** The Set a response carried. */
 export const setIn = (response: Response): SavedSet =>
   // SAFETY: the Set routes answer with the SavedSet contract, which the tests read by field.
   response.json() as SavedSet;

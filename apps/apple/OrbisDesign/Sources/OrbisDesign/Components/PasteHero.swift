@@ -1,9 +1,5 @@
 import SwiftUI
 
-/// The first thing on the Library screen: paste a link, file a Set.
-///
-/// Content layer, so it sits on `paperRaised`, not glass. The one glass element is the
-/// primary button — tinted, prominent, and the only tinted control on the screen.
 public struct PasteHero: View {
   @Binding public var link: String
   public let state: LinkFieldState
@@ -12,10 +8,7 @@ public struct PasteHero: View {
   /// Files the link the clipboard already holds, given the text it held. Absent on a screen that
   /// cannot file, and the button is absent with it.
   public let paste: ((String) -> Void)?
-  /// What the last paste had to say when the clipboard held nothing worth filing, said here rather
-  /// than written into the field, because the field is the person's.
   public let pasteNotice: String?
-  /// Set by a caller that wants the field to take focus, such as the empty Library's action.
   @Binding public var focusRequest: Bool
   public let file: () -> Void
 
@@ -57,15 +50,9 @@ public struct PasteHero: View {
     .orbisRaised(radius: Radius.hero)
   }
 
-  /// The one-tap path for a link that is already on the clipboard.
-  ///
   /// `PasteButton` rather than reading the pasteboard, because the system asks the person for
   /// permission before an app reads what they copied, and a button they press is the permission.
-  /// Neutral rather than tinted: the tinted control in this hero stays the one that files what the
-  /// person typed.
   private func pasteButton(_ paste: @escaping (String) -> Void) -> some View {
-    // `PasteButton` draws its own title and takes no label, which is the price of the system
-    // asking the person for permission instead of the app reading the pasteboard behind their back.
     #if os(tvOS)
       EmptyView()
     #else
@@ -77,9 +64,6 @@ public struct PasteHero: View {
       .controlSize(.extraLarge)
       .buttonBorderShape(.capsule)
       .buttonStyle(.bordered)
-      // The system draws this button in the accent colour. Orbis gives tint to the one action a
-      // screen is for, which in this hero is the button that files what was typed, so the paste
-      // shortcut is drawn in the muted ink instead.
       .tint(Color.orbis.muted)
       .frame(maxWidth: .infinity)
       .accessibilityIdentifier("paste-and-file")
@@ -105,8 +89,6 @@ public struct PasteHero: View {
   .background(Color.orbis.paper)
 }
 
-/// The hero at the sizes the matrix covers, where the field has to give up its button to keep
-/// both readable.
 private struct PasteHeroSample: View {
   @State private var link = "https://youtu.be/tPEMP9oYxTo"
 

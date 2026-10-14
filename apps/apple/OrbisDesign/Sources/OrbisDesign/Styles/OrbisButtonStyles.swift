@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// The one tinted action in a view. Liquid Glass, prominent, in the app tint.
-/// Use for File it, Open, Save. Never more than one per screen.
 public struct OrbisPrimaryButtonStyle: PrimitiveButtonStyle {
   public init() {}
 
@@ -15,7 +13,6 @@ public struct OrbisPrimaryButtonStyle: PrimitiveButtonStyle {
   }
 }
 
-/// A secondary action beside a primary one. Neutral glass, no tint.
 public struct OrbisSecondaryButtonStyle: PrimitiveButtonStyle {
   public init() {}
 
@@ -27,7 +24,6 @@ public struct OrbisSecondaryButtonStyle: PrimitiveButtonStyle {
   }
 }
 
-/// Removal. Red label, no fill, so it never competes with the primary action.
 public struct OrbisDestructiveButtonStyle: PrimitiveButtonStyle {
   public init() {}
 

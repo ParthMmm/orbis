@@ -19,8 +19,6 @@ const UNNAMED_SET_URL = "https://www.youtube.com/watch?v=pendingpend";
 
 const migrationsFolder = path.resolve(import.meta.dir, "../drizzle");
 
-/// A library written before artwork came in two sizes: one Set holding only the listing
-/// image, one holding both already, and one whose metadata never arrived.
 const seedLibrary = async (databasePath: string) => {
   const app = createApp({ databasePath });
   try {
@@ -124,8 +122,6 @@ test("fills both images on a Set that holds only one", async () => {
       attempted: 1,
       filled: 1,
     });
-    // The Set that holds both is not asked about again, and a Set whose metadata never
-    // arrived is left for the retry action that owns it.
     expect(asked).toEqual([OLD_SET_URL]);
     expect(readImages(databasePath)).toEqual({
       artwork_large_url: "https://example.test/large.jpg",

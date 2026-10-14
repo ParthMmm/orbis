@@ -1,10 +1,7 @@
 import { isIPv6 } from "node:net";
 
-/** Failed key attempts one client may make before it gets 429. */
 export const FAILED_KEY_LIMIT = 20;
-/** Failed sign-in attempts the whole Group accepts, from every address together. */
 export const FAILED_SIGN_IN_LIMIT = 100;
-/** A count expires this long after the client's last counted attempt. */
 const WINDOW_MS = 60_000;
 
 interface Tally {
@@ -43,16 +40,7 @@ export const clientBucket = (address: string): string => {
   return `${prefix}::/64`;
 };
 
-/**
- * Counts failed key and sign-in attempts: one tally per client bucket, and
- * one for the whole Group. A tally expires a minute after its last counted
- * attempt. A sign-in attempt is counted when it starts, so a burst of
- * concurrent guesses cannot all slip under the limit, and a real sign-in
- * costs one count too; nobody signs in a hundred times a minute.
- */
 export const makeAttemptLimiter = (now: () => number = Date.now) => {
-  // Every bump re-inserts its entry, so the map stays ordered by expiry and
-  // pruning stops at the first live entry.
   const clients = new Map<string, Tally>();
   let group: Tally = { count: 0, until: 0 };
   const over = (tally: Tally | undefined, limit: number): boolean =>
@@ -76,13 +64,7 @@ export const makeAttemptLimiter = (now: () => number = Date.now) => {
     return next.count > FAILED_KEY_LIMIT;
   };
   return {
-    /** Counts a request with a wrong key; true once the client is over its limit. */
     badKey: (address: string): boolean => bumpBucket(clientBucket(address)),
-    /**
-     * True when the attempt must be refused. A client or Group already over
-     * its limit is refused without being counted, so refusals do not extend
-     * the lockout.
-     */
     signInAttempt: (address: string): boolean => {
       const bucket = clientBucket(address);
       if (

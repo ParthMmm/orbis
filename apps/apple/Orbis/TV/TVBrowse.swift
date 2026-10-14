@@ -2,12 +2,10 @@
   import OrbisDesign
   import SwiftUI
 
-  /// The spacing the TV pages share, so a grid, a rail, and a hero line up with each other.
   @MainActor
   enum TVLayout {
     static let gap: CGFloat = 48
     static let columns = Array(repeating: GridItem(.flexible(), spacing: gap, alignment: .top), count: 4)
-    /// Room above and below a rail for the focus lift, which `scrollClipDisabled` lets escape.
     static let liftInset: CGFloat = 40
   }
 
@@ -25,9 +23,6 @@
     }
   }
 
-  /// Sets as focusable tiles. The Library, a Playlist page, and Search results all draw their
-  /// Sets this way, so one grid decides what a Set looks like on the TV. A tile fills its column,
-  /// so the grid runs edge to edge whatever the width.
   struct TVSetGrid: View {
     @Bindable var model: AppModel
     let sets: [SavedSet]
@@ -44,9 +39,6 @@
     }
   }
 
-  /// A Set as a tile: its artwork is the button, lifted on focus the way the system lifts a
-  /// poster, and its words sit under it where the lift leaves them be. Marked when it is the one
-  /// in the player.
   struct TVSetTile: View {
     let model: AppModel
     let set: SavedSet
@@ -96,15 +88,12 @@
           }
         }
         .padding(.horizontal, 4)
-        // The button already says the title, so the words under it are not read a second time.
         .accessibilityHidden(true)
       }
       .frame(width: size.width, alignment: .leading)
     }
   }
 
-  /// A row of cards that scrolls sideways, as a music app's home lays out its sections. The focus
-  /// lift is not clipped, and the whole rail is one focus section so a swipe moves along it.
   struct TVRail<Cards: View>: View {
     let title: String
     var subtitle: String?
@@ -124,8 +113,6 @@
     }
   }
 
-  /// Tags as glass chips a swipe runs along. Pressing one is what the caller decides: a filter on
-  /// the Library, or a jump to it.
   struct TVTagChips: View {
     let tags: [String]
     let counts: [String: Int]
@@ -150,7 +137,6 @@
       .focusSection()
     }
 
-    /// One style per chip, varied by tint: a press must not rebuild the button the focus is on.
     private func chip(_ tag: String) -> some View {
       let category = SetPresentation.category(for: tag)
       let isSelected = tag == selected
@@ -173,8 +159,6 @@
     }
   }
 
-  /// A chip's words. The glass style writes them in the tint, which is too faint on dark glass,
-  /// so unfocused they take the primary colour; focused, the system's light pill chooses.
   private struct TVChipWords: View {
     let tag: String
     let count: Int?
@@ -197,7 +181,6 @@
     }
   }
 
-  /// A state the TV pages show in the space a grid would take.
   struct TVPageState<Content: View>: View {
     @ViewBuilder let content: () -> Content
 
@@ -207,8 +190,6 @@
     }
   }
 
-  /// The Library: the Tags to filter by, then every Set as a tile, in the order the person chose
-  /// on their other devices.
   struct TVLibrary: View {
     @Bindable var model: AppModel
 
@@ -284,7 +265,6 @@
     }
   }
 
-  /// A Library with nothing in it yet.
   struct TVEmptyLibrary: View {
     var body: some View {
       ContentUnavailableView {
@@ -295,7 +275,6 @@
     }
   }
 
-  /// Every Playlist as a folder; pressing one opens its page.
   struct TVPlaylists: View {
     @Bindable var model: AppModel
 
@@ -308,8 +287,6 @@
         .prefix(3).map { SetPresentation.row($0).artwork }
     }
 
-    /// Popping the page with Menu closes the Playlist the way the phone's back button does, so
-    /// its members and any failure do not wait for the next one.
     private var openedPlaylist: Binding<String?> {
       Binding(
         get: { model.openedPlaylistId },
@@ -381,8 +358,6 @@
     }
   }
 
-  /// One Playlist: its Sets fanned out large, the two ways to play it, then its Sets as tiles.
-  /// The page reads the Playlist from the model on every pass, so a reload never blanks it.
   struct TVPlaylistPage: View {
     @Bindable var model: AppModel
     let playlistId: String
@@ -545,8 +520,6 @@
     }
   }
 
-  /// Search: before a query, the Tags and creators to browse by; after one, the Sets found and the
-  /// tracks found inside Tracklists.
   struct TVSearch: View {
     @Bindable var model: AppModel
 
@@ -557,7 +530,6 @@
       return false
     }
 
-    /// One Set per creator, the newest.
     private var creators: [SavedSet] {
       guard case .loaded(let sets) = model.library else { return [] }
       var seen = Set<String>()
@@ -681,7 +653,6 @@
       }
     }
 
-    /// A track found inside a Tracklist.
     private func cueRow(_ match: CueMatch) -> some View {
       Button {
         Task { await model.playCue(match.cue, in: match.set.id) }

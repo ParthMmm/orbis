@@ -1,11 +1,7 @@
 import XCTest
 
-/// Filtering the Library by Tag, from the Library and from Home, and a refused address.
 final class FilterUITests: LibraryJourney {
-  /// The tag tile is the only way to reach either state from the Library. A control that turns a filter off but never on looks alive while
-  /// leaving the Library unfilterable, so both directions are tapped.
   func testFiltersTheLibraryByTag() throws {
-    // An untagged Set, so the filter has something to hide.
     _ = try LaneService().saveSet(
       title: "Untagged set", url: "https://www.youtube.com/watch?v=untagged001")
     let app = try launch()
@@ -61,10 +57,6 @@ final class FilterUITests: LibraryJourney {
     capture("home-tag-filtered-library")
   }
 
-  /// A filter that hides every Set is not an empty collection. The screen once said "Start your
-  /// collection" about a collection that was not empty, with no filter row and no way out but a
-  /// relaunch.
-  ///
   /// The recovery itself is not driven here. A tap into the content of this state does not reach
   /// the app under XCUITest — the same tap, at the same point, on the same build, works when the
   /// app is driven by hand — and neither the filter pill nor the state's own action accepts one.

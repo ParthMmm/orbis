@@ -3,7 +3,6 @@ import type { PresenceAction } from "@orbis/contracts";
 import { callOrbis } from "@/lib/orbis";
 import type { ApiResult, Credentials } from "@/lib/orbis";
 
-/** Playback Position bounds the API accepts, in seconds (one week). */
 const MAX_POSITION = 604_800;
 
 export const playSet = (credentials: Credentials, setId: string) =>

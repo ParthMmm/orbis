@@ -94,7 +94,6 @@ test("People see a friend's full Library only while both sides allow it", async 
         "INSERT INTO playlist_sets (playlist_id, set_id, position) VALUES (?, ?, 2)"
       )
       .run(playlistId, outside.json().id);
-    // Newer than the Listens this test records below, whenever it runs.
     const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString();
     sqlite
       .query(
@@ -181,11 +180,6 @@ test("People see a friend's full Library only while both sides allow it", async 
   }
 });
 
-// Ways this list could go wrong, each checked below: it shows a Person while the
-// caller's Social is off, shows a Person whose Social is off, shows a removed
-// Person or the caller, reveals a Person who hid from the caller (Appear off),
-// drops a Person the caller stopped seeing (so See could never be turned back
-// on), or reports filters other than the caller's own.
 test("A Person lists their See and Appear filters for everyone they could see", async () => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-filters-"));
   const tokens = { a: "alice-key", b: "bob-key", c: "carol-key" };
@@ -242,7 +236,6 @@ test("A Person lists their See and Appear filters for everyone they could see", 
   try {
     expect(await filters("a")).toEqual({ people: [] });
     expect(await status("a", "PATCH", "/me", { social: true })).toBe(200);
-    // Nobody else has Social on yet.
     expect(await filters("a")).toEqual({ people: [] });
     expect(await status("b", "PATCH", "/me", { social: true })).toBe(200);
     expect(await status("c", "PATCH", "/me", { social: true })).toBe(200);
@@ -253,7 +246,6 @@ test("A Person lists their See and Appear filters for everyone they could see", 
       ],
     });
 
-    // Alice stops seeing Bob and stops appearing to Carol: both stay listed.
     expect(await status("a", "PUT", "/people/b/filters", { see: false })).toBe(
       200
     );
@@ -266,14 +258,12 @@ test("A Person lists their See and Appear filters for everyone they could see", 
         { appear: false, id: "c", see: true, username: "carol" },
       ],
     });
-    // Alice's filters are hers; Bob still lists Alice with his own defaults.
     expect(await filters("b")).toEqual({
       people: [
         { appear: true, id: "a", see: true, username: "alice" },
         { appear: true, id: "c", see: true, username: "carol" },
       ],
     });
-    // Carol cannot tell that Alice exists, since Alice hid from her.
     expect(await filters("c")).toEqual({
       people: [{ appear: true, id: "b", see: true, username: "bob" }],
     });

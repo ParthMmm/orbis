@@ -1,6 +1,5 @@
 import XCTest
 
-/// Downloads, playback, the Tracklist, the mini player and Now Playing.
 final class PlaybackUITests: LibraryJourney {
   func testCancelsAndRetriesADownload() throws {
     let service = try LaneService()

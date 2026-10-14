@@ -1,8 +1,5 @@
 import XCTest
 
-/// The lane's service, reached over HTTP from the test runner. A journey seeds the state it needs
-/// and reads back what the app stored, so it proves the change reached the service rather than
-/// only the screen.
 struct LaneService {
   let address: String
   let token: String
@@ -176,31 +173,26 @@ struct LaneService {
   private struct People: Decodable { let people: [Person] }
   private struct Passcode: Decodable { let passcode: String? }
 
-  /// A Sign-in Code for this lane's Person, as Settings on another device would show it.
   func signInCode() throws -> String {
     let code: SignInCode = try send("POST", "me/sign-in-codes", nil)
     return code.code
   }
 
-  /// The Group Passcode. Host only.
   func passcode() throws -> String? {
     let answer: Passcode = try send("GET", "admin/passcode", nil)
     return answer.passcode
   }
 
-  /// Sets the Group Passcode. Host only; nil closes joining.
   func setPasscode(_ passcode: String?) throws {
     let value: Any = passcode.map { $0 as Any } ?? NSNull()
     let _: Passcode = try send("PUT", "admin/passcode", ["passcode": value])
   }
 
-  /// Everyone in the Group. Host only.
   func people() throws -> [Person] {
     let answer: People = try send("GET", "admin/people", nil)
     return answer.people
   }
 
-  /// Adds a Person without a device, for a journey that removes one. Host only.
   func addPerson(_ username: String) throws -> Person {
     try send("POST", "admin/people", ["username": username])
   }
@@ -261,9 +253,6 @@ struct LaneService {
 }
 
 extension XCTestCase {
-  /// Launches Orbis against `address`, signed in with `token` when one is given. Settings live
-  /// in memory, so nothing a journey stores outlives the launch, unless `keychain` asks for the
-  /// device's real storage, which starts cleared.
   func launchOrbis(
     address: String, token: String? = nil, keychain: Bool = false, arguments: [String] = []
   ) -> XCUIApplication {

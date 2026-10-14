@@ -1,20 +1,14 @@
 import Foundation
 import OrbisDesign
 
-/// A failure the user can act on. Each case carries the sentence the app shows, so the
-/// recovery action is decided in one place rather than in every view.
 enum OrbisError: Error, Equatable {
   case unreachable
   case notSignedIn
   case duplicate
-  /// The view that started the request went away before it finished. Not a failure, and never
-  /// shown to anyone, because the screen that replaces it loads on its own.
   case cancelled
   case server(status: Int, message: String)
   case malformed
-  /// A web server answered instead of Orbis, such as a proxy's error page.
   case notOrbis
-  /// The device refused to hold the key, so nothing was saved and nothing was changed.
   case storageRefused
 
   var message: String {
@@ -40,8 +34,6 @@ enum OrbisError: Error, Equatable {
 }
 
 extension OrbisError {
-  /// `address` is where the app was looking. Anything other than Orbis answering is the first
-  /// thing worth knowing, and the person reading the screen can check it in one look.
   func failure(at address: URL? = nil) -> OrbisFailure {
     var failure: OrbisFailure
     switch self {
@@ -101,9 +93,6 @@ extension OrbisError {
 }
 
 extension OrbisFailure {
-  /// What a sign-in or Settings request failed with. The service explains a refusal, such as a
-  /// wrong Group Passcode, a taken username, or an expired code, in a sentence meant for the
-  /// person, so that sentence is shown as it came.
   static func explaining(_ error: any Error, at address: URL) -> OrbisFailure {
     let known = (error as? OrbisError) ?? .unreachable
     guard case .server(let status, let message) = known, (400..<500).contains(status),
@@ -115,14 +104,9 @@ extension OrbisFailure {
   }
 }
 
-/// The Orbis service this app is built for (ADR 0020). The address is not a secret and is not
-/// stored: a fresh install asks only for a sign-in.
 enum OrbisService {
   static let address = URL(string: "https://orbis.p11a.xyz/api")!
 
-  /// The address this launch talks to. A Debug journey points it at the lane's service with
-  /// `-orbisServiceAddress <address>`, and a Debug Mac build at the service its development
-  /// token belongs to; every other build uses the built-in one.
   static func address(for arguments: [String]) -> URL {
     #if DEBUG
       if let flag = arguments.firstIndex(of: "-orbisServiceAddress"),
@@ -141,7 +125,6 @@ enum OrbisService {
   }
 }
 
-/// The signed-in Person, as `/me` answers.
 struct Me: Codable, Equatable, Sendable {
   let autoDownload: Bool
   let host: Bool
@@ -150,7 +133,6 @@ struct Me: Codable, Equatable, Sendable {
   let username: String
 }
 
-/// A change to the signed-in Person. Absent fields are left as they are.
 struct MeUpdate: Encodable {
   var autoDownload: Bool?
   var social: Bool?
@@ -162,7 +144,6 @@ struct GroupPerson: Decodable, Equatable, Identifiable, Sendable {
   let username: String
 }
 
-/// A Person the caller could see, with the caller's See and Appear for them (ADR 0009).
 struct PersonFilters: Decodable, Equatable, Identifiable, Sendable {
   let id: String
   let username: String
@@ -170,26 +151,22 @@ struct PersonFilters: Decodable, Equatable, Identifiable, Sendable {
   var appear: Bool
 }
 
-/// The caller's See and Appear for one Person.
 struct SocialFilters: Decodable, Equatable, Sendable {
   let see: Bool
   let appear: Bool
 }
 
-/// A change to the caller's filters for one Person. Absent fields are left as they are.
 struct SocialFiltersUpdate: Encodable {
   var see: Bool?
   var appear: Bool?
 }
 
-/// What a visible Person is playing now, as `/events` reports it (ADR 0019).
 struct Presence: Decodable, Equatable, Sendable {
   let personId: String
   let set: SavedSet
   let username: String
 }
 
-/// One of a visible Person's Playlists, with its Sets.
 struct FriendPlaylist: Decodable, Equatable, Identifiable, Sendable {
   let id: String
   let name: String
@@ -197,28 +174,22 @@ struct FriendPlaylist: Decodable, Equatable, Identifiable, Sendable {
   let sets: [SavedSet]
 }
 
-/// One time a visible Person played a Set. `finishedAt` is nil while it is still going or was
-/// left part-way.
 struct Listen: Decodable, Equatable, Sendable {
   let set: SavedSet
   let startedAt: String
   let finishedAt: String?
 }
 
-/// A one-time code another device types to sign in as the same Person (ADR 0020).
 struct SignInCode: Decodable, Equatable, Sendable {
   let code: String
   let expiresAt: String
 
   static let length = 8
 
-  /// `ABCDEFGH` as `ABCD-EFGH`, which is easier to read aloud and type.
   var formatted: String {
     code.count == Self.length ? "\(code.prefix(4))-\(code.suffix(4))" : code
   }
 
-  /// What a person typed, as the service compares it: `abcd efgh` and `ABCD-EFGH` are the
-  /// same code.
   static func normalized(_ typed: String) -> String {
     typed.uppercased().filter { $0.isASCII && ($0.isLetter || $0.isNumber) }
   }
@@ -254,14 +225,11 @@ private struct ListensResponse: Decodable {
   let listens: [Listen]
 }
 
-/// A frame of `/events`. Only Presence is read here; the queue and heartbeats are skipped.
 private struct EventFrame: Decodable {
   let kind: String
   let presence: [Presence]?
 }
 
-/// Talks to the Orbis service. Every request carries the device token, and the same
-/// failure mapping is used everywhere, so a view only has to render `message`.
 struct OrbisClient: Sendable {
   let address: URL
   let token: String
@@ -273,9 +241,6 @@ struct OrbisClient: Sendable {
     self.session = session
   }
 
-  /// An address is accepted only when it would carry the key safely: TLS, or the
-  /// loopback service the server itself trusts, which is what the temporary lane services
-  /// run on.
   static func accepts(_ url: URL) -> Bool {
     guard let scheme = url.scheme?.lowercased(), let host = url.host?.lowercased() else {
       return false
@@ -284,7 +249,6 @@ struct OrbisClient: Sendable {
     return scheme == "https" || (scheme == "http" && loopback.contains(host))
   }
 
-  /// Shared by every call, so one coder's configuration is the whole app's.
   private static let decoder = JSONDecoder()
   private static let encoder = JSONEncoder()
 
@@ -299,9 +263,6 @@ struct OrbisClient: Sendable {
     return try Self.decode(Me.self, from: response)
   }
 
-  // MARK: - Social (ADR 0009)
-
-  /// The People with Social on whom the caller could see, with the caller's See and Appear.
   func socialFilters() async throws -> [PersonFilters] {
     let response = try await send(path: "people/filters", method: "GET", body: nil)
     return try Self.decode(PeopleFiltersResponse.self, from: response).people
@@ -313,7 +274,6 @@ struct OrbisClient: Sendable {
     return try Self.decode(SocialFilters.self, from: response)
   }
 
-  /// A visible Person's Library.
   func friendSets(_ personId: String) async throws -> [SavedSet] {
     let response = try await send(path: "people/\(personId)/sets", method: "GET", body: nil)
     return try Self.decode(LibraryResponse.self, from: response).sets
@@ -324,14 +284,11 @@ struct OrbisClient: Sendable {
     return try Self.decode(FriendPlaylistsResponse.self, from: response).playlists
   }
 
-  /// What a visible Person played, newest first.
   func friendListens(_ personId: String) async throws -> [Listen] {
     let response = try await send(path: "people/\(personId)/listens", method: "GET", body: nil)
     return try Self.decode(ListensResponse.self, from: response).listens
   }
 
-  /// Reads `/events` until the stream closes, handing every Presence frame to `receive`. The
-  /// service sends one as the stream opens and another whenever someone starts or stops.
   func watchPresence(_ receive: @escaping @MainActor @Sendable ([Presence]) -> Void) async throws {
     let root = address.absoluteString
     guard let url = URL(string: root.hasSuffix("/") ? root + "events" : root + "/events") else {
@@ -340,7 +297,6 @@ struct OrbisClient: Sendable {
     var request = URLRequest(url: url)
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-    // The service sends a heartbeat every 30 seconds, so a minute of silence is a dead stream.
     request.timeoutInterval = 60
     let bytes: URLSession.AsyncBytes
     let response: URLResponse
@@ -366,10 +322,6 @@ struct OrbisClient: Sendable {
     }
   }
 
-  // MARK: - Signing in (ADR 0020)
-
-  /// Joins the Group as a new Person with the Group Passcode. Needs no key: a signed-out client
-  /// calls it, and the answer is this device's key.
   func join(username: String, passcode: String, label: String) async throws -> String {
     let body = try Self.encoder.encode([
       "label": label, "passcode": passcode, "username": username,
@@ -378,36 +330,28 @@ struct OrbisClient: Sendable {
     return try Self.decode(SignedIn.self, from: response).key
   }
 
-  /// Signs in as the Person who showed `code` on another device. Needs no key.
   func redeem(code: String, label: String) async throws -> String {
     let body = try Self.encoder.encode(["code": code, "label": label])
     let response = try await send(path: "sign-in/code", method: "POST", body: body)
     return try Self.decode(SignedIn.self, from: response).key
   }
 
-  /// A code another device types to sign in as this Person.
   func signInCode() async throws -> SignInCode {
     let response = try await send(path: "me/sign-in-codes", method: "POST", body: nil)
     return try Self.decode(SignInCode.self, from: response)
   }
 
-  // MARK: - The Host's controls
-
-  /// A code that signs a device in as `personId`, which is how a friend who lost every device
-  /// gets back in.
   func signInCode(for personId: String) async throws -> SignInCode {
     let response = try await send(
       path: "admin/people/\(personId)/sign-in-codes", method: "POST", body: nil)
     return try Self.decode(SignInCode.self, from: response)
   }
 
-  /// The Group Passcode, or nil while joining is closed.
   func passcode() async throws -> String? {
     let response = try await send(path: "admin/passcode", method: "GET", body: nil)
     return try Self.decode(GroupPasscode.self, from: response).passcode
   }
 
-  /// Sets the Group Passcode. Nil closes joining.
   func setPasscode(_ passcode: String?) async throws -> String? {
     let body = try Self.encoder.encode(GroupPasscode(passcode: passcode))
     let response = try await send(path: "admin/passcode", method: "PUT", body: body)
@@ -474,7 +418,6 @@ struct OrbisClient: Sendable {
     return try Self.decode(Playlist.self, from: response)
   }
 
-  /// States the ordered Sets a Playlist holds. Removing a Set here leaves it in the Library.
   func setPlaylistMembers(_ id: String, setIds: [String]) async throws -> [SavedSet] {
     let body = try Self.encoder.encode(PlaylistMembersRequest(setIds: setIds))
     let response = try await send(path: "playlists/\(id)/sets", method: "PUT", body: body)
@@ -499,14 +442,11 @@ struct OrbisClient: Sendable {
     return try decodedSet(response)
   }
 
-  /// Asks the service to name a Set it could not name when the link was filed.
   func retryMetadata(_ id: String) async throws -> SavedSet {
     let response = try await send(path: "sets/\(id)/metadata", method: "POST", body: nil)
     return try decodedSet(response)
   }
 
-  /// States the Playlists a Set belongs to. Sending the whole membership is what lets the
-  /// service work out which Playlist the Set left.
   func updatePlaylists(_ id: String, playlistIds: [String]) async throws -> SavedSet {
     let body = try Self.encoder.encode(SetPlaylistsRequest(playlistIds: playlistIds))
     let response = try await send(path: "sets/\(id)/playlists", method: "PUT", body: body)
@@ -518,36 +458,26 @@ struct OrbisClient: Sendable {
     return try decodedSet(response)
   }
 
-  /// Asks the service to fetch this Set's audio through Cobalt and keep it. The answer
-  /// is the Set with its new download state; progress arrives through audioState.
   func requestAudioDownload(_ id: String) async throws -> SavedSet {
     let response = try await send(path: "sets/\(id)/audio/download", method: "POST", body: nil)
     return try decodedSet(response)
   }
 
-  /// How far the service has got with this Set's audio, if it has started.
   func audioState(_ id: String) async throws -> AudioState {
     let response = try await send(path: "sets/\(id)/audio/state", method: "GET", body: nil)
     return try Self.decode(AudioState.self, from: response)
   }
 
-  /// Stops a running download and drops its partial file. A finished download stays
-  /// finished: the service refuses that with its own sentence.
   func cancelAudioDownload(_ id: String) async throws -> SavedSet {
     let response = try await send(path: "sets/\(id)/audio/download", method: "DELETE", body: nil)
     return try decodedSet(response)
   }
 
-  // MARK: - The Listening Queue
-
-  /// The one Listening Queue, in play order.
   func listeningQueue() async throws -> ListeningQueue {
     let response = try await send(path: "queue", method: "GET", body: nil)
     return try decodedQueue(response)
   }
 
-  /// Makes a Set the active one, which is what playing it does. The Set keeps its place when it
-  /// is already queued, and takes the listening position when it is not.
   func playSet(_ id: String) async throws -> ListeningQueue {
     let body = try Self.encoder.encode(SetIdRequest(setId: id))
     let response = try await send(path: "queue/active", method: "PUT", body: body)
@@ -561,23 +491,18 @@ struct OrbisClient: Sendable {
     return try decodedQueue(response)
   }
 
-  /// Replaces the queue with a Playlist's playable members, in Playlist order.
   func playPlaylist(_ playlistId: String) async throws -> ListeningQueue {
     let body = try Self.encoder.encode(PlaylistQueueRequest(playlistId: playlistId))
     let response = try await send(path: "queue/playlist", method: "PUT", body: body)
     return try decodedQueue(response)
   }
 
-  /// Reports that the active Set reached its natural end. The service removes it, resets its
-  /// Playback Position, and starts the next entry; a repeat of the same signal does nothing.
   func reportCompletion(_ id: String) async throws -> ListeningQueue {
     let body = try Self.encoder.encode(SetIdRequest(setId: id))
     let response = try await send(path: "queue/completion", method: "POST", body: body)
     return try decodedQueue(response)
   }
 
-  /// Reports where playback has reached. The answer is the Set, so the stored position comes
-  /// back rather than being assumed.
   func reportPosition(_ id: String, seconds: Int) async throws -> SavedSet {
     let body = try Self.encoder.encode(PlaybackPositionRequest(seconds: seconds))
     let response = try await send(path: "sets/\(id)/position", method: "PUT", body: body)
@@ -592,9 +517,6 @@ struct OrbisClient: Sendable {
     try Self.decode(QueueResponse.self, from: response).queue
   }
 
-  /// Decodes a body, reporting a shape this build cannot read as the one error the screens explain.
-  /// The failing key path reaches the debug log and the values do not: a version skew is worth
-  /// knowing by field, and the fields hold the library's own titles and links.
   private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
     do {
       return try decoder.decode(type, from: data)
@@ -609,7 +531,6 @@ struct OrbisClient: Sendable {
     }
   }
 
-  /// Where a decode failed, as the fields leading to it. No value is named.
   private static func path(of error: DecodingError) -> String {
     let codingPath: [any CodingKey]
     switch error {
@@ -625,8 +546,6 @@ struct OrbisClient: Sendable {
     return codingPath.map(\.stringValue).joined(separator: ".")
   }
 
-  /// What a debug line may say about a request: method, host, and path, because a query string
-  /// carries what the person typed.
   private static func redacted(method: String, url: URL) -> String {
     "\(method) \(url.host() ?? "") \(url.path())"
   }
@@ -635,7 +554,6 @@ struct OrbisClient: Sendable {
     // Resolving against the address would drop its last path segment, so an address such as
     // the Funnel address with `/api` would lose `/api`. Join the strings instead.
     let root = address.absoluteString
-    // Only an id the service never sends could make this fail.
     guard let url = URL(string: root.hasSuffix("/") ? root + path : root + "/" + path) else {
       throw OrbisError.malformed
     }
@@ -659,10 +577,6 @@ struct OrbisClient: Sendable {
       throw OrbisError.cancelled
     } catch {
       #if DEBUG
-        // A transport failure is otherwise invisible, which makes a wrong address, a
-        // blocked connection, and a rejected certificate look identical. Written to
-        // standard error because stdout is buffered and a killed run loses it. The
-        // error is named by its code: its own description carries the URL back in.
         let code = (error as? URLError)?.code.rawValue ?? -1
         let line = "Orbis transport failure \(Self.redacted(method: method, url: url)): URLError \(code)\n"
         FileHandle.standardError.write(Data(line.utf8))
@@ -673,8 +587,6 @@ struct OrbisClient: Sendable {
       throw OrbisError.malformed
     }
     let head = data.prefix(160)
-    // Markup at any status means a web server answered, not Orbis. Reported before the status
-    // is judged, because a 403 from a web page is not a refusal by the library.
     if head.first == UInt8(ascii: "<") {
       #if DEBUG
         let line = "Orbis read a web page from \(Self.redacted(method: method, url: url))\n"
@@ -683,9 +595,6 @@ struct OrbisClient: Sendable {
       throw OrbisError.notOrbis
     }
     #if DEBUG
-      // A body that is not JSON and not a web page is usually a version skew: something
-      // answered in a shape this build does not know. Its size is printed rather than its
-      // first bytes, which are the library's own.
       if head.first != UInt8(ascii: "{"), head.first != UInt8(ascii: "[") {
         let line =
           "Orbis read a non-JSON body from \(Self.redacted(method: method, url: url)): \(data.count) bytes\n"

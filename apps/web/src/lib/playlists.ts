@@ -1,15 +1,12 @@
 import { callOrbis } from "@/lib/orbis";
 import type { ApiResult, Credentials } from "@/lib/orbis";
 
-/** The caller's own Playlists. */
 export const listPlaylists = (credentials: Credentials) =>
   callOrbis(credentials, (client) => client.playlists.list());
 
-/** Collaborative Playlists another Person made the caller an editor of. */
 export const listSharedPlaylists = (credentials: Credentials) =>
   callOrbis(credentials, (client) => client.playlists.shared());
 
-/** One Playlist, its members in order, and whether the caller created it. */
 export const readPlaylist = (credentials: Credentials, id: string) =>
   callOrbis(credentials, (client) => client.playlists.read({ params: { id } }));
 
@@ -32,7 +29,6 @@ export const deletePlaylist = (credentials: Credentials, id: string) =>
     client.playlists.remove({ params: { id } })
   );
 
-/** Replaces the members, in order; adding, removing, and reordering all use it. */
 export const replaceMembers = (
   credentials: Credentials,
   id: string,
@@ -45,7 +41,6 @@ export const replaceMembers = (
     })
   );
 
-/** Puts one Set in exactly these of the caller's own Playlists. */
 export const replaceSetPlaylists = (
   credentials: Credentials,
   setId: string,
@@ -87,7 +82,6 @@ export const setEditors = (
     })
   );
 
-/** The People the caller can see, who are the only possible editors. */
 export const listPeople = (credentials: Credentials) =>
   callOrbis(credentials, (client) => client.people.list());
 

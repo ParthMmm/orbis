@@ -1,11 +1,5 @@
 import SwiftUI
 
-/// The artwork's own colours, blown up and blurred into a field of light behind a page.
-///
-/// Liquid Glass refracts what is under it, and a flat page gives it nothing to bend. The glow
-/// is what the glass reads: a Set's picture, out of focus, so every control floating over it
-/// takes that Set's colours. Dark is where it is strongest, the eclipse the icon draws; light
-/// keeps a wash of it.
 public struct ArtworkGlow: View {
   public let url: URL?
   /// How much of the page the glow covers before it gives way to paper, from 0 to 1.
@@ -48,7 +42,6 @@ public struct ArtworkGlow: View {
             startPoint: .top, endPoint: .bottom
           )
         }
-        // A scrim the colour of the page, so text over the brightest artwork still reads.
         LinearGradient(
           colors: [Color.orbis.paper.opacity(0.15), Color.orbis.paper.opacity(0.55)],
           startPoint: .top, endPoint: .bottom
@@ -60,8 +53,6 @@ public struct ArtworkGlow: View {
   }
 }
 
-/// A wash of the tint over the top of a page that has no artwork to take its light from, so the
-/// glass on Search, Settings, or a Set without a picture still has colour to bend.
 public struct TintGlow: View {
   public init() {}
 

@@ -2,8 +2,6 @@ import XCTest
 
 @testable import Orbis
 
-/// The filter is derived from the loaded library rather than fetched, so it is worth pinning
-/// what the screen shows for a given library.
 @MainActor
 final class LibraryFilterTests: XCTestCase {
   private func set(

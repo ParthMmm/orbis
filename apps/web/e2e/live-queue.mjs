@@ -1,6 +1,3 @@
-// The player and the Listening Queue through the built web client against a real
-// Orbis API (e2e/api-server.ts): stream grants, Playback Position, the live queue,
-// reconnecting after the API restarts, and moving on when a Set ends.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
@@ -37,7 +34,6 @@ const waitFor = async (url) => {
   throw new Error(`${url} did not start`);
 };
 
-// The same Person from a second client, as another device would call the API.
 const api = async (method, route, body, token = key) => {
   const init = {
     headers: {
@@ -134,7 +130,6 @@ try {
   await Promise.all([waitFor(`${apiUrl}/health`), waitFor(webUrl)]);
   await mkdir(artifacts, { recursive: true });
 
-  // Two Sets with kept audio, saved from "another device".
   const sets = {};
   for (const [name, link] of [
     ["First set", "https://www.youtube.com/watch?v=aaaaaaaaaaa"],

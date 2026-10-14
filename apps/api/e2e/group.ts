@@ -123,7 +123,6 @@ try {
   const heartbeatDeadline = Date.now() + 40_000;
   let heartbeatSeen = false;
   while (Date.now() < heartbeatDeadline) {
-    // A stream must be consumed in order.
     // eslint-disable-next-line no-await-in-loop
     const chunk = await reader.read();
     assert.equal(chunk.done, false);

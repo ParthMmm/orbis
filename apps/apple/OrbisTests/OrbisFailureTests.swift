@@ -3,10 +3,6 @@ import XCTest
 
 @testable import Orbis
 
-/// The library's failure state used to wear one heading for every failure, so a service older
-/// than the app told a person their network was down and offered a retry that could never work.
-/// These pin the two halves of that: the heading names the real cause, and a retry appears only
-/// when retrying could change the answer.
 final class OrbisFailureTests: XCTestCase {
   func testAVersionSkewDoesNotBlameTheNetwork() {
     let failure = OrbisError.malformed.failure(at: URL(string: "https://library.example"))

@@ -10,16 +10,9 @@ import { Metadata } from "./metadata.js";
 import { ytDlpMetadata } from "./ytdlp-metadata.js";
 
 export interface BackfillDetailsOptions {
-  /** Pause between Sets, in milliseconds, so a provider is not hit in a burst. */
   readonly delayMillis: number;
 }
 
-/**
- * Fills the source details of every Set that has none yet (`details_state` is not `filled`).
- *
- * The column is server-only, so this reads the table directly. A Set that fails keeps what it
- * has and stays unfilled, so a second run picks it up.
- */
 export const backfillDetails = Effect.fn("backfillDetails")(
   function* backfillDetailsEffect(options: BackfillDetailsOptions) {
     const db = yield* Database;
@@ -62,14 +55,6 @@ export const backfillDetails = Effect.fn("backfillDetails")(
 
 const DEFAULT_DELAY_MILLIS = 1000;
 
-/**
- * Runs the details backfill against the library on this host.
- *
- * Usage: ORBIS_YTDLP_BIN=/abs/path/to/yt-dlp bun run backfill:details
- * Optional: ORBIS_DATA_DIR, ORBIS_BACKFILL_DELAY_MS (default 1000).
- *
- * Exits non-zero when a Set could not be filled; a second run picks up those Sets.
- */
 const main = async () => {
   const binPath = process.env.ORBIS_YTDLP_BIN;
   if (!binPath || !path.isAbsolute(binPath)) {

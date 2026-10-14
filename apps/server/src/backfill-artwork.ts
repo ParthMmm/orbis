@@ -6,13 +6,6 @@ import { backfillArtwork } from "./artwork.js";
 import { layer as databaseLayer } from "./db/database.js";
 import { Metadata } from "./metadata.js";
 
-/**
- * Runs the artwork backfill against the library on this host.
- *
- * Usage: ORBIS_YOUTUBE_API_KEY=<key> bun run backfill:artwork
- *
- * Exits non-zero when a Set could not be filled; a second run picks up those Sets.
- */
 const dataDirectory = path.resolve(process.env.ORBIS_DATA_DIR ?? "data");
 const databasePath = path.join(dataDirectory, "library.sqlite");
 const youTubeApiKey = process.env.ORBIS_YOUTUBE_API_KEY;

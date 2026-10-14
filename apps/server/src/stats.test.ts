@@ -9,11 +9,6 @@ import {
   withSeededApp,
 } from "./test-library.js";
 
-/**
- * A Listen is an activation, not a press: the Set that is active holds the open Listen, and a
- * Finish is that Listen reaching the end of the Set. So the signals a client sends are judged
- * against the stored state, which is what makes a retried one do nothing.
- */
 test("becoming the active Set counts one Listen and dates it", async () => {
   await withSeededApp(ready(["a"]), async (app) => {
     const unheard = await savedSet(app, "a");
@@ -96,8 +91,6 @@ test("a completion repeated from another device leaves both counters alone", asy
   await withSeededApp(ready(["a", "b"]), async (app) => {
     await play(app, "a");
     await addToQueue(app, "b");
-    // The other device reports the same completion a moment later, after this one advanced the
-    // queue. It names a Set that is no longer active, so nothing is counted twice.
     await complete(app, "a");
     await complete(app, "a");
 

@@ -16,7 +16,6 @@ export const waitFor = async (url) => {
   throw new Error(`${url} did not start`);
 };
 
-/** A key as the trust store's `devices.json` seeds it. */
 export const keyRecord = (id, label, personId, token, scope = "daily") => ({
   addedAt: new Date().toISOString(),
   id,
@@ -27,8 +26,6 @@ export const keyRecord = (id, label, personId, token, scope = "daily") => ({
   tokenHash: createHash("sha256").update(token).digest("hex"),
 });
 
-// Journeys that are not about signing in start with a key already in the
-// browser, stored where the sign-in page stores the key the API returns.
 export const signInWithKey = async (page, webUrl, key) => {
   await page.goto(`${webUrl}/sign-in`);
   await page.evaluate(
@@ -46,10 +43,6 @@ export const textOf = async (locator) => {
   return text.trim();
 };
 
-/**
- * Fills a form's fields by label, submits it, and returns the API's answer to
- * the POST it sends, so a step can compare the page with what the API said.
- */
 export const submitForm = async (form, pathname, fields) => {
   for (const [label, value] of Object.entries(fields)) {
     // eslint-disable-next-line no-await-in-loop

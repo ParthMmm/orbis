@@ -178,13 +178,11 @@ const sampleFor = (operationId: string) => {
       ],
     };
   }
-  // The Swift client has no filters screen yet, so this sample lives here.
   if (operationId === "people.socialFilters") {
     return {
       people: [{ appear: true, id: "b", see: false, username: "bob" }],
     };
   }
-  // The Swift client has no Devices screen yet, so these samples live here.
   const device = {
     addedAt: "2026-09-29T00:00:00.000Z",
     current: true,
@@ -238,7 +236,6 @@ test("the served OpenAPI document accepts the Swift response samples", async () 
         if (!["get", "post", "put", "patch", "delete"].includes(method)) {
           continue;
         }
-        // The Swift fixture holds no sign-in or admin samples.
         if (
           operation.operationId.startsWith("admin.") ||
           operation.operationId.startsWith("signIn.")

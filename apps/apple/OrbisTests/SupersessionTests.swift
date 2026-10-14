@@ -3,9 +3,6 @@ import XCTest
 
 @testable import Orbis
 
-/// A request that is answered after a newer one began must not publish over it. These tests
-/// hold a response back with a semaphore so the ordering the app has to survive is real
-/// rather than assumed.
 @MainActor
 final class SupersessionTests: XCTestCase {
   private func set(id: String, title: String, playlists: [String] = []) -> SavedSet {
@@ -35,8 +32,6 @@ final class SupersessionTests: XCTestCase {
     "{\"sets\":[" + OrbisClientTests.savedSet(title: title, tags: []) + "]}"
   }
 
-  /// Waits until the stub has received a request, so a held response is really held before
-  /// the test moves on.
   private func waitForARequest() async throws {
     var waited = 0
     while StubProtocol.lastRequest == nil, waited < 200 {
@@ -46,8 +41,6 @@ final class SupersessionTests: XCTestCase {
     _ = try XCTUnwrap(StubProtocol.lastRequest, "the held request must have started")
   }
 
-  /// The Library the person is leaving behind can still be in flight when they choose
-  /// another playlist. The late response must not replace the newer one.
   func testALibraryResponseThatArrivesAfterANewerOneStartedCannotPublish() async throws {
     let oldBody = libraryBody(title: "Old playlist")
     let newBody = libraryBody(title: "New playlist")
@@ -76,8 +69,6 @@ final class SupersessionTests: XCTestCase {
     }
     XCTAssertEqual(fresh.map(\.title), ["New playlist"])
 
-    // Finishing this task means the held response was delivered and had its chance to
-    // publish; the newer result must have survived it.
     _ = await superseded.value
     guard case .loaded(let after) = model.library else {
       return XCTFail("the library must stay loaded")
@@ -87,8 +78,6 @@ final class SupersessionTests: XCTestCase {
       "the older response must be discarded, not published late")
   }
 
-  /// The heading must name the query the results answer. Typing a second query without
-  /// submitting cannot relabel the results still on screen.
   func testTheSearchHeadingKeepsTheQueryTheResultsAnswer() async {
     let model = AppModel(
       client: OrbisClient(
@@ -107,8 +96,6 @@ final class SupersessionTests: XCTestCase {
       "typing without submitting does not change what the results answer to")
   }
 
-  /// Signing out ends every request the service could still answer, and leaves
-  /// nothing selected that belonged to it.
   func testSigningOutResetsEverythingThatBelongedToTheService() async {
     let filed = set(id: "1", title: "Night session")
     let model = AppModel(
@@ -141,9 +128,6 @@ final class SupersessionTests: XCTestCase {
     XCTAssertNil(model.revealFailure)
   }
 
-  /// Signing out ends the sidebar's read as well as the Library's. A Playlists answer that was
-  /// already out must not put the old service's Playlists back into a device that no longer
-  /// holds it.
   func testAPlaylistsResponseThatArrivesAfterSigningOutCannotPublish() async throws {
     let releasePlaylists = DispatchSemaphore(value: 0)
     let playlistsBody = #"{"playlists":[{"id":"p1","name":"Long drives","setCount":4}]}"#
@@ -171,9 +155,6 @@ final class SupersessionTests: XCTestCase {
       "the Playlists of a service this device forgot must not come back")
   }
 
-  /// A download that lands while the Library is being read must still show. The read in flight
-  /// was made before the service accepted the download, so the Library is read again rather than
-  /// the answer being dropped because there was no loaded list to swap into.
   func testADownloadThatLandsWhileTheLibraryIsLoadingIsNotDropped() async {
     let downloading = OrbisClientTests.savedSet(
       title: "Night session", tags: [], downloadState: "downloading")
@@ -186,7 +167,6 @@ final class SupersessionTests: XCTestCase {
           request.httpMethod == "POST" ? (200, downloading) : (200, library)
         }
       ), settings: MemoryClientSettings())
-    // The Library is mid-read: there is no loaded list for the accepted write to land in.
     model.library = .loading
 
     await model.downloadAudio("1")

@@ -24,7 +24,6 @@ const slowAudio = (setId, response) => {
     try {
       for (let offset = 0; offset < audio.length; offset += 4096) {
         if (offset >= audio.length / 2) {
-          // Each attempt holds at partial progress until the journey releases it.
           // oxlint-disable-next-line no-await-in-loop
           await completion.promise;
         }

@@ -50,7 +50,6 @@ const audioLayer = (
       const backends = yield* DownloadBackends;
       const media = yield* MediaStore;
       const worker = yield* DownloadWorker;
-      // Every backend serves every source, so any configured one is enough.
       const configured = backends.forSource("youtube").length > 0;
       yield* media.ensureDirectory();
       const requestDownload = Effect.fn("Audio.requestDownload")(

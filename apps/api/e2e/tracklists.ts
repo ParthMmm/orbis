@@ -6,8 +6,6 @@ import path from "node:path";
 import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 
-// Versos answers a Tracklist request in seconds, long after the Group has answered the retry
-// that started it. A run that only lives as long as that request never stores its Cues.
 const READY_AFTER_MS = 3000;
 // The Group's SQLite binds at most 100 values in one statement. A real Set returned 43 Cues,
 // 301 values in a single insert.
@@ -116,7 +114,6 @@ try {
   assert.equal(retried.status, 200, retried.text);
   const ready = await waitForReady("slow-set");
   assert.equal(ready.cues.length, CUES.length);
-  // A second Set started after the first run finished proves the Group still takes new runs.
   const second = await call("/sets/second-set/tracklist/retry", "POST");
   assert.equal(second.status, 200, second.text);
   await waitForReady("second-set");

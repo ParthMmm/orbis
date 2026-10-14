@@ -29,10 +29,6 @@ const isShortLink = (value: string) => {
   }
 };
 
-/**
- * The address a short link redirects to, or the value unchanged when it is not a short link.
- * The result still goes through the Source Link rule, so a redirect elsewhere is refused there.
- */
 export const expandShortLink = (
   value: string,
   request: RedirectFetch = defaultFetch

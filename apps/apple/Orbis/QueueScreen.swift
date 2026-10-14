@@ -1,11 +1,6 @@
 import OrbisDesign
 import SwiftUI
 
-/// The Listening Queue: what plays next, in order, with the Set playing now marked.
-///
-/// A sheet from the Library rather than a destination, because the queue is a fact about playback
-/// rather than a place in the library. A person opens it to see what is coming, and tapping an
-/// entry is what starts it.
 struct QueueScreen: View {
   @Bindable var model: AppModel
   @Environment(\.dismiss) private var dismiss
@@ -25,7 +20,6 @@ struct QueueScreen: View {
         }
     }
     .accessibilityIdentifier("queue-screen")
-    // Read again on open: the other device may be the one that changed it.
     .task { await model.loadQueue() }
   }
 
@@ -71,8 +65,6 @@ struct QueueScreen: View {
     .accessibilityIdentifier("queue-list")
   }
 
-  /// One queued Set. The Set playing now carries a mark as well as the tint, because a colour
-  /// alone says nothing to a person who cannot see it.
   private func entry(_ set: SavedSet, position: Int, isActive: Bool) -> some View {
     Button {
       Task { await model.playSet(set.id) }

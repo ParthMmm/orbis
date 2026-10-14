@@ -29,15 +29,12 @@ import {
   streamUrl,
 } from "@/lib/player";
 
-// Report the Playback Position this often while playing, plus on pause and seek.
 const REPORT_EVERY_MS = 15_000;
-// Renew the 30-second Presence lease this often while audio plays (ADR 0019).
 const RENEW_EVERY_MS = 15_000;
 
 type PresenceKind = "play" | "pause" | "stop" | "renew";
 type PresenceState = "idle" | "playing" | "paused" | "stopped";
 
-/** Which local states each action leaves, and the state it enters. */
 const PRESENCE_MOVES: Record<
   PresenceKind,
   { readonly from: readonly PresenceState[]; readonly to: PresenceState }
@@ -48,7 +45,6 @@ const PRESENCE_MOVES: Record<
   stop: { from: ["playing", "paused"], to: "stopped" },
 };
 
-/** One Presence session per Set the player makes active. */
 interface PresenceSession {
   readonly sessionId: string;
   readonly setId: string;
@@ -58,7 +54,6 @@ interface PresenceSession {
 }
 
 interface Playing {
-  /** Bumped for each new source, so the `<audio>` element starts fresh. */
   readonly attempt: number;
   readonly set: SavedSet;
   readonly src: string;
@@ -69,7 +64,6 @@ export interface Player {
   readonly elapsed: number;
   readonly playing: Playing | null;
   readonly playPlaylist: (playlistId: string) => Promise<ApiResult<unknown>>;
-  /** Makes `set` the active queue entry and plays it from its saved position. */
   readonly play: (set: SavedSet) => Promise<ApiResult<unknown>>;
   readonly playFrom: (
     set: SavedSet,
@@ -81,7 +75,6 @@ export interface Player {
   ) => Promise<ApiResult<unknown>>;
 }
 
-// Outside the signed-in shell there is no player; nothing plays.
 const unavailable = (): Promise<ApiResult<unknown>> =>
   Promise.resolve({ failure: "failed", ok: false, status: undefined });
 
@@ -96,10 +89,6 @@ const PlayerContext = createContext<Player>({
 
 export const usePlayer = (): Player => use(PlayerContext);
 
-/**
- * Plays one Set at a time from Vanta through stream grants and keeps the
- * Listening Queue moving: when a Set ends it completes it and plays the next.
- */
 export const PlayerProvider = ({
   children,
   credentials,
@@ -115,11 +104,9 @@ export const PlayerProvider = ({
   const playIntent = useRef(0);
   const presence = useRef<PresenceSession | null>(null);
   const presenceSent = useRef<Promise<void>>(Promise.resolve());
-  // An API without `/presence/actions` answers 404; Position reports still infer Presence.
   const presenceRoute = useRef(true);
   const lastRenew = useRef(0);
 
-  // Actions go out one at a time, so each carries the generation its play returned.
   const act = (kind: PresenceKind) => {
     const session = presence.current;
     const move = PRESENCE_MOVES[kind];
@@ -310,7 +297,6 @@ export const PlayerProvider = ({
         queue,
       }}
     >
-      {/* The page fills the shell, so the player bar rests at the bottom. */}
       <div className="flex flex-1 flex-col">{children}</div>
       {playing === null ? null : (
         <section

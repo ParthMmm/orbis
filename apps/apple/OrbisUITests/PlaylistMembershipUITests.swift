@@ -1,9 +1,6 @@
 import XCTest
 
-/// Adding a Set to a Playlist from its page, and the empty Playlists state.
 final class PlaylistMembershipUITests: PlaylistJourney {
-  /// The Set page's More menu is the other way into a playlist. Each tab keeps its own opened
-  /// Set, so the page opened here must not follow the person to Home.
   func testAddsASetToAPlaylistFromItsPage() throws {
     let service = try LaneService()
     let set = try service.saveSet(title: unique("Page"), url: youtubeURL())

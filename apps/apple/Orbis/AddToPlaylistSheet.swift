@@ -92,8 +92,6 @@ struct AddToPlaylistSheet: View {
     }
   }
 
-  // MARK: Rows
-
   private func row(_ playlist: Playlist, identifier: String) -> some View {
     let isMember = memberships.contains(playlist.id)
     return Button {
@@ -128,8 +126,6 @@ struct AddToPlaylistSheet: View {
     .accessibilityHint(isMember ? "Removes this Set" : "Adds this Set")
     .accessibilityIdentifier(identifier)
   }
-
-  // MARK: Data
 
   private var memberships: Set<String> {
     Set(model.savedSet(set.id)?.playlistIds ?? set.playlistIds)
@@ -167,8 +163,6 @@ struct AddToPlaylistSheet: View {
   static func remembering(_ id: String, in recent: [String], limit: Int = 12) -> [String] {
     Array(([id] + recent.filter { $0 != id }).prefix(limit))
   }
-
-  // MARK: Actions
 
   private func choose(_ playlist: Playlist, isMember: Bool) {
     Task {

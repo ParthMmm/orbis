@@ -10,10 +10,6 @@ const POLL_MS = 1500;
 const inFlight = (set: SavedSet) =>
   set.downloadState === "queued" || set.downloadState === "downloading";
 
-/**
- * Polls the Downloads still in flight and returns each one's fraction received.
- * When any of them settles, the page's loaders re-run so the list shows the result.
- */
 export const useDownloadProgress = (
   { apiUrl, key }: Credentials,
   sets: readonly SavedSet[]

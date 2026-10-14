@@ -1,7 +1,3 @@
-// The Host manages the Group from the admin page against a real Orbis API: the built
-// web client in `vite preview` calls a throwaway server whose Group holds the Host
-// and alice, each with one daily key. Fresh browsers join and sign in with what the
-// page shows.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
@@ -29,7 +25,6 @@ const hostKey = randomBytes(24).toString("base64url");
 const aliceKey = randomBytes(24).toString("base64url");
 const passcode = "river stone";
 
-// What the API itself says, outside the browser.
 const callApi = async (pathname, key) => {
   const response = await fetch(`${apiUrl}${pathname}`, {
     headers: { authorization: `Bearer ${key}` },
@@ -119,7 +114,6 @@ try {
       });
       return context;
     };
-    // A browser with no key, at the sign-in page.
     const freshBrowser = async () => {
       const context = await openContext();
       const page = await context.newPage();
@@ -299,7 +293,6 @@ try {
     await page.getByRole("button", { name: "Remove carol" }).click();
     const dialog = page.getByRole("alertdialog");
     await dialog.getByText("You cannot undo it.").waitFor();
-    // The dialog fades in; capture it once the fade ends.
     await page.waitForFunction(() => document.getAnimations().length === 0);
     await shot("remove-carol");
     await dialog.getByRole("button", { name: "Cancel" }).click();

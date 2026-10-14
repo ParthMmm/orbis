@@ -9,7 +9,6 @@
 # vendored client library, so it is a dependency swap rather than a code patch.
 FROM ghcr.io/imputnet/cobalt:11@sha256:df14a3b3fe4390d4e1c2d4761ed58981d34aa5fc82d0df2091bab890e7dfaa8b
 
-# The release that introduced the VISIONOS client. Bump only with new evidence.
 ARG YOUTUBEI_VERSION=18.0.0
 
 # /app belongs to node and the image runs as node, so the swap needs root.

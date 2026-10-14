@@ -12,18 +12,6 @@ import { emptyTrustStore } from "./identity.js";
 import { storedKey } from "./test-app.js";
 import { request } from "./test-http.js";
 
-// Ways the Devices routes can fail, written before the routes:
-// 1. The list shows another Person's keys.
-// 2. The list shows a node key, or hides a key stored as admin.
-// 3. The list shows a token hash.
-// 4. `current` marks the wrong key, or more than one key.
-// 5. A Person revokes another Person's key, or learns that the id exists (403).
-// 6. A Person revokes a node key through this route.
-// 7. A revoked key keeps working.
-// 8. Revoking the key making the request fails, or leaves it working.
-// 9. A request without a key, with a bad key, with a node key, or on the
-//    local listener reaches the routes and acts as the Host.
-
 const ADMIN_TOKEN = "devices-legacy-admin";
 const NODE_TOKEN = "devices-node";
 

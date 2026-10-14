@@ -7,10 +7,6 @@ import { LibraryError } from "./errors.js";
 
 export { youTubeVideoId } from "@orbis/contracts";
 
-/**
- * The canonical rule lives in @orbis/contracts so every client shares it. The library
- * reports a rejection as a LibraryError, which is what the HTTP layer already maps to 400.
- */
 export const normalizeSourceUrl = (value: string) => {
   try {
     return normalizeCanonicalSourceUrl(value);

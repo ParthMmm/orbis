@@ -1,6 +1,5 @@
 import SwiftUI
 
-/// A Tag on a row: colored dot plus the name. `active` marks the tag the view is filtered by.
 public struct TagChip: View {
   public let name: String
   public let category: OrbisColor.Category
@@ -29,7 +28,6 @@ public struct TagChip: View {
   }
 }
 
-/// A Tag as a filter control. Capsule, toggles on and off, tints in the tag's color when on.
 public struct TagPill: View {
   public let name: String
   public let category: OrbisColor.Category
@@ -79,7 +77,6 @@ public struct TagPill: View {
   .background(Color.orbis.paper)
 }
 
-/// Both chip shapes at the sizes the matrix covers, where a row that will not wrap shows itself.
 private struct ChipsAndPillsSample: View {
   @State private var techno = true
   @State private var house = false

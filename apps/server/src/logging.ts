@@ -13,20 +13,6 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http";
 import { createLogger, createRequestLogger, initLogger } from "evlog";
 import type { DrainContext, RequestLogger, WideEvent } from "evlog";
 
-/**
- * Server logging is one wide event per request, emitted once when the request
- * settles. The event carries a field set chosen here — request id, method, path
- * with the query string removed, status, outcome, and elapsed time — so an
- * authorization header, cookie, or request body is never recorded.
- *
- * Effect code may also log, and those messages and annotations are bounded and
- * redacted by key name before they are folded in. Redaction follows key names,
- * not value shapes, so a credential written as free text, or under a key that
- * does not name one, can still reach a log line: logging code must treat free
- * text as public.
- */
-
-/** A log field the server never records, so redaction only guards accidents. */
 const REDACTED_PATHS = [
   "**.authorization",
   "**.cookie",
@@ -35,22 +21,15 @@ const REDACTED_PATHS = [
   "**.token",
 ];
 
-/** The leaf names above, so `token` also covers `apiToken` and `access_token`. */
 const REDACTED_KEYS = REDACTED_PATHS.map((path) =>
   path.slice(path.lastIndexOf(".") + 1).toLowerCase()
 );
 
-/**
- * True for keys that name a credential at any position: `token`, `apiToken`, and
- * `access_token` all match. Over-redacting a harmless key costs a field; missing a
- * credential costs a secret, so this check is deliberately loose.
- */
 const isCredentialKey = (key: string): boolean => {
   const normalized = key.toLowerCase();
   return REDACTED_KEYS.some((word) => normalized.includes(word));
 };
 
-/** Bounds for logs an Effect program attaches to one request. */
 const MAX_LOGGED_LINES = 50;
 const MAX_MESSAGE_CHARACTERS = 500;
 const MAX_LOGGED_VALUE_CHARACTERS = 200;
@@ -62,20 +41,9 @@ const REDACTED_VALUE = "[redacted]";
 const DROPPED_VALUE = "[unlogged]";
 
 export interface LoggingOptions {
-  /** Recorded as the event `environment`. Defaults to `development`. */
   readonly environment?: string;
-  /**
-   * Called with every emitted event. The production entrypoint leaves this unset
-   * so evlog writes the event to standard output; tests use it to observe events
-   * without parsing console output.
-   */
   readonly onEvent?: (event: WideEvent) => void;
-  /**
-   * Pretty output for a person at a terminal, or one JSON object per line for the
-   * journal and the agents that read it. Defaults to whether stdout is a terminal.
-   */
   readonly pretty?: boolean;
-  /** Suppress evlog's own console output. Used by tests. */
   readonly silent?: boolean;
 }
 
@@ -86,7 +54,6 @@ export interface RequestCompletion {
   readonly status?: number;
 }
 
-/** Writes Effect logs that fall outside a wide event; `configureLogging` picks it. */
 let plainLogger: Logger.Logger<unknown, void> = Logger.defaultLogger;
 
 /** Absorbs events in silent mode: evlog warns when silent output has no drain. */
@@ -116,7 +83,6 @@ export const configureLogging = (options: LoggingOptions = {}): void => {
   initLogger({ env, pretty, redact });
 };
 
-/** The path only: a query string can carry a token or a source link. */
 export const safeRequestPath = (url: string): string => {
   try {
     return new URL(url, "http://orbis.local").pathname;
@@ -154,7 +120,6 @@ const levelFor = (completion: RequestCompletion): EventLevel => {
   return "info";
 };
 
-/** Seals the request logger and emits its one completion event. */
 export const finishRequestLog = (
   logger: RequestLogger,
   completion: RequestCompletion,
@@ -170,7 +135,6 @@ export const finishRequestLog = (
   }
 };
 
-/** The status the router would send: the response defect it turned the failure into. */
 const responseStatus = (cause: Cause.Cause<unknown>): number | undefined => {
   for (const reason of cause.reasons) {
     if (
@@ -199,13 +163,10 @@ const describeExit = (
   }
   const status = responseStatus(exit.cause);
   if (!Exit.hasFails(exit) && Exit.hasInterrupts(exit)) {
-    // A bare interruption carries no response of its own: report it as
-    // cancelled rather than inventing a status it never produced.
     return status === undefined
       ? { outcome: "cancelled" }
       : { outcome: "cancelled", status };
   }
-  // A real defect with no response is the 500 the router will send.
   const failureStatus = status ?? 500;
   return { outcome: outcomeForStatus(failureStatus), status: failureStatus };
 };
@@ -230,27 +191,16 @@ const levelOf = (logLevel: LogLevel.LogLevel): "info" | "warn" | "error" => {
   return logLevel === "Warn" ? "warn" : "info";
 };
 
-/** Remaining nodes one logged value may spend, so huge or branching input stays cheap. */
 interface SanitizeBudget {
   remaining: number;
 }
 
-/**
- * A logged message part, as Effect hands it over: a value with no declared type. It is
- * parsed here, once, into `LoggedValue`, and never reaches evlog unparsed.
- */
 type UnparsedMessagePart = Logger.Options<unknown>["message"];
 
-/** A record this module is willing to record, keyed by the name the logger used. */
 interface LoggedRecord {
   readonly [key: string]: LoggedValue;
 }
 
-/**
- * What survives sanitizing: strings, numbers, booleans, null, undefined, and arrays and
- * plain records of those. Class instances, functions, symbols, and cycles become a
- * placeholder, so the logged structure always formats and never grows past its bounds.
- */
 type LoggedValue =
   | string
   | number
@@ -265,14 +215,6 @@ const isNumber = Schema.is(Schema.Number);
 const isBoolean = Schema.is(Schema.Boolean);
 const isObject = Schema.is(Schema.ObjectKeyword);
 
-/**
- * Copies an arbitrary logged value into a plain, bounded structure whose
- * credential-named fields are replaced. The copy holds no reference to the
- * original objects, so cycles and oversized spans never reach evlog's redaction
- * walk or the formatter, and only primitives, records, and arrays survive. An
- * object with no readable entries, such as an `Error`, becomes an empty record
- * rather than leaking its non-enumerable fields.
- */
 const sanitizeLoggedValue = (
   value: UnparsedMessagePart,
   depth: number,
@@ -336,12 +278,6 @@ const sanitizedMessage = (
     ? value
     : Formatter.format(sanitizeLoggedValue(value, 0, budget));
 
-/**
- * Folds Effect application logs into the active request's wide event instead of
- * writing a second line to standard output. Effect log annotations, including the
- * request ones added by the middleware, ride along on each entry, and both the
- * message and the annotations are sanitized before they reach evlog.
- */
 export const effectLogBridge: Logger.Logger<unknown, void> = Logger.make(
   (options: Logger.Options<unknown>) => {
     const requestLog = options.fiber.getRef(CurrentWideEvent);
@@ -392,17 +328,8 @@ const requestLoggers: ReadonlySet<Logger.Logger<unknown, void>> = new Set([
   effectLogBridge,
 ]);
 
-/**
- * Installs the bridge for a whole program, so work outside any wide event, such as
- * startup and the download worker's own lines, logs in the format `configureLogging` chose.
- */
 export const loggingLayer = Logger.layer([effectLogBridge]);
 
-/**
- * Wraps the router so every routed request gets exactly one wide event. The
- * event carries the request id, method, path, status, and evlog's own elapsed
- * time, and settles on success, typed failure, defect, or interruption.
- */
 export const makeRequestLogMiddleware =
   (options: LoggingOptions = {}) =>
   <E, R>(
@@ -433,11 +360,6 @@ export const makeRequestLogMiddleware =
       );
     });
 
-/**
- * Wraps background work, such as one audio download, in one wide event the way the
- * middleware wraps a request: Effect logs inside fold into it, with the same bounds
- * and redaction, and it emits once when the work settles.
- */
 export const withWideEvent =
   (context: Readonly<Record<string, string>>, options: LoggingOptions = {}) =>
   <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
@@ -466,7 +388,6 @@ export const withWideEvent =
       );
     });
 
-/** The start of a tool's error output, where the identifying line usually is, within the value bound. */
 export const outputHead = (text: string): string => {
   const trimmed = text.trim();
   return trimmed.length > MAX_LOGGED_VALUE_CHARACTERS
@@ -474,7 +395,6 @@ export const outputHead = (text: string): string => {
     : trimmed;
 };
 
-/** The end of a tool's error output, where the cause usually is, within the value bound. */
 export const outputTail = (text: string): string => {
   const trimmed = text.trim();
   return trimmed.length > MAX_LOGGED_VALUE_CHARACTERS

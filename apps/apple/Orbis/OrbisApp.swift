@@ -27,17 +27,12 @@ struct OrbisApp: App {
 struct RootView: View {
   @Bindable var model: AppModel
 
-  /// How long the splash holds and how long it takes to leave.
   private let timing = SplashTiming()
 
-  /// Coming back to the app is when a device learns what the other one has been playing, and where
-  /// it left the Set it was playing.
   @Environment(\.scenePhase) private var scenePhase
 
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
-    /// The splash covers one launch and one load: a refresh, a Playlist, or a screen change is
-    /// not an opening, so nothing puts it back.
     @State private var splash: SplashPhase = .up
   #endif
 
@@ -47,10 +42,6 @@ struct RootView: View {
       #if os(iOS)
         if splash != .gone {
           SplashView()
-            // Faded by a value the animation watches rather than inserted and removed with a
-            // transition. A transition on a removal did not play here — the splash cut to the
-            // Library with the fade left unused — and an opacity the animation is told about
-            // does, on a dismissal that arrives from a task either way.
             .opacity(splash == .up ? 1 : 0)
             .animation(timing.fadeAnimation, value: splash)
         }
@@ -68,8 +59,6 @@ struct RootView: View {
     }
     .onChange(of: scenePhase) { _, phase in
       guard phase == .active, model.isConfigured else { return }
-      // Read quietly: a spinner over a list the person was already reading would be a flicker for
-      // a refresh they did not ask for.
       Task {
         await model.loadQueue()
         await model.refreshLibraryQuietly()
@@ -103,24 +92,15 @@ struct RootView: View {
   }
 
   #if os(iOS)
-    /// The splash's life: up, on its way out, or done with for this launch. The last case keeps
-    /// the screen-sized image out of the tree once it stops being drawn.
     private enum SplashPhase: Equatable {
       case up
       case leaving
       case gone
     }
 
-    /// Holds the splash until the first load has an answer, or until the hold's ceiling passes.
-    ///
-    /// The wait is a bounded loop rather than a signal from the model. The load is watched for
-    /// a change to `library`, and the ceiling has to interrupt that watch anyway, so one loop
-    /// keeps both exits in one place and leaves `AppModel` with nothing to know about a splash.
     private func uncoverWhenFirstLoadSettles() async {
       let start = ContinuousClock.now
       while true {
-        // With no service paired there is no first load to wait for: the floor alone decides,
-        // and the connection screen is ready the moment the splash lifts.
         if timing.shouldDismiss(
           after: start.duration(to: .now),
           firstLoadSettled: !model.isConfigured || model.library.isSettled
@@ -128,18 +108,12 @@ struct RootView: View {
           break
         }
         do {
-          // Faster than a handoff anyone can see, slow enough that watching a network answer
-          // costs nothing.
           try await Task.sleep(for: .milliseconds(50))
         } catch {
-          // The window went away mid-wait, so there is nothing left to reveal.
           return
         }
       }
       splash = .leaving
-      // A cross-fade is its own Reduce Motion form: nothing travels, so the accessibility
-      // setting has nothing to remove. The sleep is a floor and not a guess, so the image is
-      // released after it has finished drawing rather than while it still is.
       try? await Task.sleep(for: timing.fade)
       splash = .gone
     }
@@ -170,8 +144,6 @@ struct NowPlayingBar: View {
   }
 }
 
-/// A hero's artwork beside its words on a Mac, where the window is wide, and above them on a
-/// phone, the way the design draws each.
 enum HeroLayout {
   #if os(macOS)
     static let isBeside = true
@@ -190,8 +162,6 @@ enum HeroLayout {
   static var textAlignment: TextAlignment { isBeside ? .leading : .center }
 }
 
-/// The page's name over its content on a Mac, where the sidebar shell leaves the window toolbar
-/// untitled and keeps it for actions. An iPhone or iPad names the page in its navigation bar.
 struct MacPageTitle: View {
   let title: String
 
@@ -199,7 +169,6 @@ struct MacPageTitle: View {
     self.title = title
   }
 
-  /// The title for a page slot such as a list's hero: present on a Mac, absent elsewhere.
   static func slot(_ title: String) -> AnyView? {
     #if os(macOS)
       AnyView(MacPageTitle(title))
@@ -233,7 +202,6 @@ extension View {
     #endif
   }
 
-  /// A Mac sidebar already names the destination; keep the window toolbar for actions.
   func sidebarPageTitle(_ title: String) -> some View {
     #if os(macOS)
       navigationTitle("")
@@ -242,9 +210,6 @@ extension View {
     #endif
   }
 
-  /// Now Playing covers the whole screen where the platform can, the way a music app's player
-  /// does; a sheet at full height floats with rounded bottom corners. The zoom from the mini player
-  /// keeps it closable with a swipe.
   func nowPlayingCover<Content: View>(
     isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content
   ) -> some View {
@@ -255,7 +220,6 @@ extension View {
     #endif
   }
 
-  /// Zooms Now Playing out of the mini player's artwork, where the platform has the transition.
   @ViewBuilder func zoomsFromMiniPlayer(_ namespace: Namespace.ID) -> some View {
     #if os(iOS)
       navigationTransition(.zoom(sourceID: MiniPlayer.transitionID, in: namespace))
@@ -264,7 +228,6 @@ extension View {
     #endif
   }
 
-  /// `toolbarTitleDisplayMode(.large)` where the platform has a large title, and nothing on a Mac.
   @ViewBuilder func largeTitleOnIOS() -> some View {
     #if os(iOS)
       toolbarTitleDisplayMode(.large)
@@ -273,8 +236,6 @@ extension View {
     #endif
   }
 
-  /// Searches as the query is typed, once typing pauses for 300 ms. A new keystroke cancels the
-  /// wait, so only the query the person stopped on is sent.
   func searchesAsTyped(_ model: AppModel) -> some View {
     task(id: model.searchQuery) {
       let query = model.searchQuery.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -283,7 +244,6 @@ extension View {
         return
       }
       try? await Task.sleep(for: .milliseconds(300))
-      // A submit or a tapped suggestion may already have run this query.
       guard !Task.isCancelled, query != model.searchResultsFor else { return }
       await model.runSearch()
     }

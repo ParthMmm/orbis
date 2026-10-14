@@ -6,7 +6,6 @@ import { apiUrl } from "@/lib/api-url";
 
 import appCss from "../styles.css?url";
 
-// Only the Worker holds the API address, so the page asks it once per load.
 const getApiUrl = createServerFn({ method: "GET" }).handler(() => apiUrl());
 let knownApiUrl: string | undefined;
 const loadApiUrl = async (): Promise<string> => {

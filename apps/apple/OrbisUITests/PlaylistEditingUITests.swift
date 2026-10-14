@@ -1,6 +1,5 @@
 import XCTest
 
-/// Creating, reordering, and removing Playlist members.
 final class PlaylistEditingUITests: PlaylistJourney {
   func testCreatesAddsRemovesAndPreservesTheSet() throws {
     let app = try launch()
@@ -27,8 +26,6 @@ final class PlaylistEditingUITests: PlaylistJourney {
       "a new playlist must open for membership\n\(app.debugDescription)"
     )
     app.buttons["playlist-add-sets"].tap()
-    // playlist-add-sets is the toolbar button that opened this sheet. The row that adds one
-    // Set is playlist-add-<id>, and firstMatch would otherwise press the toolbar again.
     let add = app.buttons.matching(
       NSPredicate(
         format: "identifier BEGINSWITH %@ AND identifier != %@", "playlist-add-", "playlist-add-sets")
@@ -78,8 +75,6 @@ final class PlaylistEditingUITests: PlaylistJourney {
     )
   }
 
-  /// Reordering and removal both rewrite the whole member list, so a one-member playlist cannot
-  /// show a wrong order or a wrong Set removed. Three members can.
   func testReordersAndRemovesMembersOfAPlaylist() throws {
     let service = try LaneService()
     let sets = try ["First", "Second", "Third"].map {

@@ -32,7 +32,6 @@ const DETAILS: SourceDetails = {
   title: "A mix",
 };
 
-/// Three Sets: one without details, one that will fail, one that already has them.
 const seed = async (databasePath: string) => {
   const app = createApp({ databasePath });
   try {

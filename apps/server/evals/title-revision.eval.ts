@@ -6,8 +6,6 @@ import { evalite } from "evalite";
 
 import { TitleReviser } from "../src/title-reviser";
 
-// The eval runs the production reviser against the server's credential file, so
-// what the UI shows is what the live save request gets.
 const envPath = path.join(import.meta.dirname, "../.env.local");
 try {
   for (const line of readFileSync(envPath, "utf-8").split("\n")) {

@@ -1,10 +1,4 @@
 #!/usr/bin/env node
-// Writes ~/.orbis/config.json, which a Debug build of the Apple app reads for the service
-// address and a device token. The file lives outside the repository so no credential is
-// committed, and the app only reads it when nothing is stored.
-//
-//   node scripts/orbis-device-config.mjs --address https://host:8444 --token-file ~/.orbis/token
-//   ORBIS_SERVICE_ADDRESS=... ORBIS_DEVICE_TOKEN=... node scripts/orbis-device-config.mjs
 import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";

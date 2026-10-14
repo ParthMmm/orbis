@@ -2,15 +2,11 @@
   import OrbisDesign
   import SwiftUI
 
-  /// Now Playing for the room: the artwork, the track and the Set, the progress and the
-  /// transport on the left; the Tracklist like lyrics on the right. Always dark, on the artwork's
-  /// colour, the way `NowPlayingScreen` is on the phone.
   struct TVNowPlaying: View {
     @Bindable var model: AppModel
     @Binding var isShowingQueue: Bool
     @FocusState private var focus: Focus?
 
-    /// Wide enough for the six round buttons of the transport, which the artwork then matches.
     private static let columnWidth: CGFloat = 720
 
     private enum Focus {
@@ -115,8 +111,6 @@
     }
   }
 
-  /// The title block: the track playing inside the mix leads when the Tracklist knows it, with
-  /// the Set's own name under it; without one the Set leads.
   private struct TVTrackTitle: View {
     let player: AudioPlayer
     let set: SavedSet
@@ -150,8 +144,6 @@
     }
   }
 
-  /// The bar and the clock, in their own view because the player publishes elapsed time twice a
-  /// second and only this view should redraw with it.
   private struct TVPlaybackProgress: View {
     let player: AudioPlayer
     let fallbackDuration: TimeInterval?
@@ -201,9 +193,6 @@
     }
   }
 
-  /// The Tracklist the way Apple Music shows lyrics: one large line per track, the playing one
-  /// bright, the ones already heard dimmed, and the list scrolled to keep the playing one in sight
-  /// while nothing in it holds the focus. Pressing a line plays from it.
   private struct TVLyricsTracklist: View {
     @Bindable var model: AppModel
     let set: SavedSet
@@ -238,7 +227,6 @@
             }
           }
         }
-        // The margins keep a focused line out of the faded band.
         .contentMargins(.vertical, 100, for: .scrollContent)
         .scrollEdgeEffectStyle(.soft, for: .vertical)
         .scrollClipDisabled()
@@ -254,17 +242,12 @@
     }
   }
 
-  /// The label as it is, with no lift, platter, or tint of the system's: the line it wraps shows
-  /// the focus itself.
   private struct TVLyricButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
       configuration.label
     }
   }
 
-  /// One line of the Tracklist, the way lyrics are drawn: the playing one bright and large, the
-  /// ones already heard dimmed. The line under the remote sits on a translucent platter and
-  /// brightens, but never past the playing one.
   private struct TVLyricLine: View {
     let cue: Cue
     let isCurrent: Bool
@@ -295,8 +278,6 @@
     }
   }
 
-  /// The Listening Queue: what plays next, in order, with the Set playing now marked. Done is
-  /// there so the empty and failed states still have something to focus.
   struct TVQueue: View {
     @Bindable var model: AppModel
     @Environment(\.dismiss) private var dismiss
@@ -358,8 +339,6 @@
       }
     }
 
-    /// One queued Set. The Set playing now carries a mark as well as the tint, because a colour
-    /// alone says nothing to a person who cannot see it.
     private func entry(_ set: SavedSet, position: Int, isActive: Bool) -> some View {
       Button {
         Task { await model.playSet(set.id) }

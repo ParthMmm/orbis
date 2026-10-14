@@ -11,8 +11,6 @@ afterEach(async () => {
   server = undefined;
 });
 
-// The Worker reads VERSOS_API_KEY. The Bun runtime must read the same name, or a key set for
-// one runtime leaves the other unconfigured and every Tracklist stays pending.
 test("the config layer reads the same key name as the Worker", async () => {
   const authorizations: (string | null)[] = [];
   server = Bun.serve({

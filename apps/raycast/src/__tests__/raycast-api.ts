@@ -19,7 +19,6 @@ export interface RaycastPreferences {
 
 export interface RaycastState {
   clipboard: string | undefined;
-  /** The `<title>` of the active tab in the focused window, as `getContent` reads it. */
   focusedTitle: string | undefined;
   getTabsError: Error | null;
   preferences: RaycastPreferences;
@@ -41,10 +40,6 @@ export const raycast: RaycastState = {
   tabs: [],
 };
 
-/**
- * A stand-in for a Raycast Toast that records a snapshot on every property change, so a
- * test can see the progress state and the final state the user would have seen.
- */
 class RecordedToast {
   readonly #snapshots: ToastSnapshot[];
   #message: string | undefined;
@@ -98,10 +93,6 @@ class RecordedToast {
 const trackToast = (options: ToastSnapshot) =>
   new RecordedToast(raycast.snapshots, options);
 
-/**
- * Replaces the Raycast module with the smallest surface the commands use, recording every
- * toast state so a test can assert what the user would see. Call before importing a command.
- */
 export const installRaycastApi = () => {
   mock.module("@raycast/api", () => ({
     BrowserExtension: {

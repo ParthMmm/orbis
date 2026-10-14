@@ -2,14 +2,8 @@ import type { SignInCodeSchema } from "@orbis/contracts/http-api";
 
 import { callOrbisWithoutKey } from "@/lib/orbis";
 
-/**
- * The two ways a browser without a key signs in (ADR 0020): a Sign-in Code from a
- * device the Person already uses, or joining with the Group Passcode.
- */
-
 export type IssuedSignInCode = typeof SignInCodeSchema.Type;
 
-/** The key's label on the Devices list, such as "Safari on Mac". */
 const browserLabel = (userAgent: string): string => {
   const browser =
     [

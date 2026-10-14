@@ -2,9 +2,6 @@
   import OrbisDesign
   import SwiftUI
 
-  /// Settings on the TV: who is signed in, what the Library holds, a Sign-in Code for another
-  /// device, and Sign Out. The account itself is edited on a phone or Mac, where typing is easy;
-  /// the TV reads `SettingsModel` the same way those do.
   struct TVSettings: View {
     let model: AppModel
     @State private var settings: SettingsModel

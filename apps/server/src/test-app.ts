@@ -11,7 +11,6 @@ import path from "node:path";
 import { createApp } from "./app.js";
 import { hashToken } from "./identity.js";
 
-/** A key record as the trust store keeps it, for seeding a test's trust file. */
 export const storedKey = (
   id: string,
   personId: string,

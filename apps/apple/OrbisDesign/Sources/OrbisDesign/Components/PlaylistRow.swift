@@ -1,8 +1,5 @@
 import SwiftUI
 
-/// A Playlist in a sidebar or list: color swatch, name, count. Like a Reminders list.
-/// A selected row carries a mark as well as its container's tint, so selection does not rest on
-/// colour alone.
 public struct PlaylistRow: View {
   public let name: String
   public let count: Int
@@ -66,7 +63,6 @@ public struct PlaylistRow: View {
   AccessibilitySizeMatrix(width: AccessibilityPreview.phoneWidth) { PlaylistColumn() }
 }
 
-/// The sidebar list the accessibility previews draw at each size.
 private struct PlaylistColumn: View {
   var body: some View {
     List {

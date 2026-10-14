@@ -1,11 +1,3 @@
-// Starts a disposable Orbis service with a library worth looking at in the CarPlay simulator:
-// playable Sets with artwork and creators, two left part-way, one Set still downloading, a
-// Tracklist, and two Playlists. It prints the launch command for a simulator and keeps running
-// until interrupted.
-//
-//   bun scripts/carplay-fixture.mjs [--udid <simulator UUID>]
-//
-// Requires ffmpeg for the artwork images.
 import { Database } from "bun:sqlite";
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";

@@ -150,10 +150,6 @@ export const addKey = (
   );
 };
 
-/**
- * Joins the Group with the Group Passcode (ADR 0020). The passcode is checked
- * before the username, so a wrong guess learns nothing about taken names.
- */
 export const joinGroup = (
   path: string,
   input: {
@@ -199,7 +195,6 @@ const newSignInCode = () =>
 const liveSignInCodes = (store: TrustStore, now: number) =>
   (store.signInCodes ?? []).filter((code) => Date.parse(code.expiresAt) > now);
 
-/** Issues a Person's Sign-in Code (ADR 0020), replacing their earlier one. */
 export const issueSignInCode = (path: string, personId: string, now: number) =>
   mutateTrustStore(
     path,
@@ -224,11 +219,6 @@ export const issueSignInCode = (path: string, personId: string, now: number) =>
     }
   );
 
-/**
- * Spends a Sign-in Code and adds the new device's key in one mutation, so a
- * code is never spent without a key. Null for an unknown or expired code, or
- * one whose Person was removed.
- */
 export const redeemSignInCode = (
   path: string,
   input: { readonly code: string; readonly label: string },
@@ -268,10 +258,8 @@ export const readPasscode = (path: string) => ({
   passcode: read(path).passcode ?? null,
 });
 
-/** The passcode alone stands between the public API and open sign-up (ADR 0020). */
 export const PASSCODE_MIN_LENGTH = 8;
 
-/** A blank or null passcode closes joining. */
 export const setPasscode = (path: string, input: string | null) => {
   const passcode = input?.trim() || null;
   if (passcode !== null && passcode.length < PASSCODE_MIN_LENGTH) {
@@ -287,8 +275,6 @@ export const setPasscode = (path: string, input: string | null) => {
   );
 };
 
-// With `ownerId`, only that Person's device keys match, and every other key
-// answers the same 404 as a missing one.
 export const revokeKey = (path: string, id: string, ownerId?: string) =>
   mutateTrustStore(
     path,

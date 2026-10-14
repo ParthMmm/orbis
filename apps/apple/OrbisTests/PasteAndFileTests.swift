@@ -2,7 +2,6 @@ import XCTest
 
 @testable import Orbis
 
-/// Pasting is the shortcut, so what it refuses matters as much as what it files.
 @MainActor
 final class PasteAndFileTests: XCTestCase {
   private func model() -> AppModel {
@@ -13,7 +12,6 @@ final class PasteAndFileTests: XCTestCase {
         status: 201, body: OrbisClientTests.savedSet(title: "Night session", tags: []))
     )
     let model = AppModel(client: client, settings: MemoryClientSettings())
-    // A loaded library keeps a successful filing from reloading, so the last request stays the save.
     model.library = .loaded([])
     return model
   }
@@ -28,7 +26,6 @@ final class PasteAndFileTests: XCTestCase {
     XCTAssertEqual(source("https://m.soundcloud.com/a/b"), .soundcloud)
     XCTAssertNil(source("https://example.com/watch?v=abcdefghijk"))
     XCTAssertNil(source("https://spotify.com/track/x"))
-    // A host that merely ends in the name is not the service.
     XCTAssertNil(source("https://youtube.com.example.test/watch?v=a"))
   }
 
@@ -42,8 +39,6 @@ final class PasteAndFileTests: XCTestCase {
     XCTAssertEqual((sent as? [String: Any])?["url"] as? String, "https://youtu.be/tPEMP9oYxTo")
   }
 
-  /// A paste Orbis cannot take is refused before the round trip, and the field is left alone
-  /// because it holds what the person put there.
   func testAPasteThatIsNotALinkChangesNothing() async {
     let model = model()
     model.linkToFile = "typed by hand"

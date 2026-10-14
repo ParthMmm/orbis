@@ -1,7 +1,5 @@
 import SwiftUI
 
-/// A heading over a section of cards, the size Apple Music gives its own, with an optional line
-/// under it.
 public struct SectionHeading: View {
   let title: String
   let subtitle: String?
@@ -26,7 +24,6 @@ public struct SectionHeading: View {
   }
 }
 
-/// A short label over a title, in small capitals.
 public struct Eyebrow: View {
   let text: String
 
@@ -42,7 +39,6 @@ public struct Eyebrow: View {
   }
 }
 
-/// A Set as a card in a rail: the artwork, then its title and who made it.
 public struct SetCard: View {
   let title: String
   let detail: String?
@@ -94,8 +90,6 @@ public struct SetCard: View {
   }
 }
 
-/// Up to three pieces of a Playlist's artwork, fanned out like sleeves pulled from a folder.
-/// With no artwork, a tinted card stands in.
 public struct SleeveFan: View {
   let seed: String
   let artwork: [URL?]
@@ -110,7 +104,6 @@ public struct SleeveFan: View {
   }
 
   private static let angles: [Double] = [-8, 5, -2]
-  /// Offsets as fractions of the width, so a large fan keeps the small one's shape.
   private static let offsets: [CGSize] = [
     .init(width: -0.2, height: 0.05), .init(width: 0.18, height: 0.02), .init(width: 0, height: -0.05),
   ]
@@ -136,8 +129,6 @@ public struct SleeveFan: View {
   }
 }
 
-/// A Tag as a chip of tinted glass: its colour's dot, its name, and how many Sets carry it.
-/// Selected, the glass fills with the colour.
 public struct GlassTagChip: View {
   let name: String
   let count: Int?
@@ -180,15 +171,11 @@ public struct GlassTagChip: View {
   }
 }
 
-/// A Playlist as a folder with its Sets tucked inside: up to three pieces of artwork fan out
-/// above a pocket of tinted glass, and the glass bends the artwork behind it.
 public struct PlaylistSleeve: View {
   let name: String
   let count: Int
   let artwork: [URL?]
   let category: OrbisColor.Category
-  /// How wide each piece of artwork in the fan is drawn, and how tall the whole folder stands.
-  /// The defaults fit a phone's grid; a television passes larger ones.
   let fanWidth: CGFloat
   let height: CGFloat
 
@@ -229,8 +216,6 @@ public struct PlaylistSleeve: View {
     .accessibilityLabel("\(name), \(count == 1 ? "1 set" : "\(count) sets")")
   }
 
-  /// The pocket the Sets are tucked into. Tinted glass, except on a television, where the folder
-  /// sits inside a focus platter that is glass already and the pocket is a plain tinted surface.
   @ViewBuilder private var pocket: some View {
     #if os(tvOS)
       RoundedRectangle(cornerRadius: 20 * scale).fill(category.dot.opacity(0.3))

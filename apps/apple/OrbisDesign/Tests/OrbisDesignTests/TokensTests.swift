@@ -17,7 +17,6 @@ import Testing
         color.p3(dark: isDark, increasedContrast: false)
           != color.p3(dark: isDark, increasedContrast: true)
       }
-      // `field` in light appearance is already pure white, so one appearance may stand still.
       #expect(moves)
     }
   }
@@ -32,7 +31,6 @@ import Testing
       let surface = luma(
         GeneratedColor.paper.p3(dark: isDark, increasedContrast: true)
       )
-      // Dark text on a light surface must darken; light text on a dark surface must brighten.
       if isDark {
         #expect(increased > designed)
         #expect(increased > surface)
@@ -88,14 +86,12 @@ import Testing
         #expect((0...1).contains(value.green))
         #expect((0...1).contains(value.blue))
       }
-      // Light and dark never collapse into the same value, so the appearance still shows.
       #expect(values[0] != values[1])
       #expect(values[2] != values[3])
     }
   }
 }
 
-/// The generated text shade for a category, beside the enum that names it.
 private func textColor(_ category: OrbisColor.Category) -> DynamicColor {
   switch category {
   case .pink: GeneratedColor.categoryPinkText
@@ -111,8 +107,6 @@ private func textColor(_ category: OrbisColor.Category) -> DynamicColor {
   }
 }
 
-/// WCAG-style relative luminance of a linear Display P3 value: enough to say which of two
-/// colors sits closer to white, without pulling the whole color library into the test target.
 private func luma(_ p3: P3) -> Double {
   0.2126 * p3.red + 0.7152 * p3.green + 0.0722 * p3.blue
 }

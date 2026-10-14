@@ -26,8 +26,6 @@ const indexRange = (count: number) =>
 const seededVideoUrl = (index: number) =>
   `https://www.youtube.com/watch?v=${index.toString(36).padStart(11, "0")}`;
 
-// Bulk fixtures exceed what a test can post one request at a time, so the app creates its own
-// schema first and the rows are then written directly to that database file.
 const seedDatabase = async (
   databasePath: string,
   seed: (database: Database) => void
@@ -278,8 +276,6 @@ test("rejects a move into a full Playlist and keeps the source membership", asyn
     const [sourceId = "", fullId = "", roomId = ""] = playlistIds;
     const app = createApp({ databasePath });
     try {
-      // The Set states its whole membership, so naming a Playlist with room and a full one
-      // would leave the source Playlist if the rejected half were applied first.
       const rejected = await request(app, {
         method: "PUT",
         payload: { playlistIds: [roomId, fullId] },
@@ -326,7 +322,6 @@ test("keeps an oversized Playlist readable and lets it shrink", async () => {
       expect(readable.statusCode).toBe(200);
       expect(readable.json().sets).toHaveLength(oversized);
 
-      // Growth stays refused while the data is oversized.
       const grown = await request(app, {
         method: "PUT",
         payload: { playlistIds: [playlistId] },
@@ -335,7 +330,6 @@ test("keeps an oversized Playlist readable and lets it shrink", async () => {
       expect(grown.statusCode).toBe(400);
       expect(await membershipIds(app, extraSetId)).toEqual([]);
 
-      // A list above the cap cannot be stated, so resubmitting it is not a recovery path.
       const restated = await request(app, {
         method: "PUT",
         payload: { setIds: setIds.slice(0, oversized) },
@@ -358,7 +352,6 @@ test("keeps an oversized Playlist readable and lets it shrink", async () => {
       });
       expect(refused.statusCode).toBe(400);
 
-      // Nothing was trimmed on its own, and no Set was deleted.
       const library = await request(app, { method: "GET", url: "/sets" });
       expect(library.json().sets).toHaveLength(oversized + 1);
     } finally {
@@ -693,8 +686,6 @@ test("removes a Library Entry while keeping its playlist membership", async () =
       url: `/playlists/${playlist.id}/sets`,
     });
     const withMember = await request(app, { method: "GET", url: "/playlists" });
-    // The sidebar shows this number without asking once per playlist, so it has to track
-    // membership on its own.
     expect(withMember.json().playlists[0].setCount).toBe(1);
 
     const deleted = await request(app, {
@@ -895,8 +886,6 @@ test("states a Set's Playlists in one request and lets it leave them", async () 
     expect(joined.statusCode).toBe(200);
     expect(joined.json()).toEqual({ ...set, playlistIds: [even.id] });
 
-    // The caller states the membership it wants, so naming another Playlist is a move rather
-    // than a second membership, and the one it left does not keep a phantom row.
     const moved = await request(app, {
       method: "PUT",
       payload: { playlistIds: [late.id] },

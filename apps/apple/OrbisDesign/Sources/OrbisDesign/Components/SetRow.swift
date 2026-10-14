@@ -1,15 +1,5 @@
 import SwiftUI
 
-/// One Set in a listing: its artwork, its title, and one line of data under it.
-///
-/// The data line says who made it and how long it runs, or, once listening has started, where
-/// it resumes. Tags follow as `#words`. The row draws no separator of its own; the listing parts
-/// rows with hairlines.
-///
-/// The row has two targets and no mode. The artwork plays when there is Retained Audio to play,
-/// and the rest of the row opens the Set, the way a podcast app lays an episode out. A Set is
-/// long, and managing one is as common as hearing it, so neither action hides behind the other.
-/// The Set in the player is marked in the tint, with a pause glyph while it plays.
 public struct SetRow: View {
   public struct Tag: Identifiable, Hashable, Sendable {
     public let name: String
@@ -22,13 +12,10 @@ public struct SetRow: View {
   }
 
   public let title: String
-  /// Where the Set came from. Read out, not drawn: the artwork says it well enough.
   public let source: String
   public let artwork: URL?
   public let creator: String?
-  /// How long it runs, composed by the caller ("1h 18m").
   public let length: String?
-  /// When the Set was saved and, when known, when the source released it.
   public let dates: String?
   public let tags: [Tag]
   public let activeTag: String?
@@ -37,26 +24,18 @@ public struct SetRow: View {
   public let progress: Double?
   /// What the artwork's control does, or nothing when there is no Retained Audio to play.
   public let playback: Playback?
-  /// Starts, pauses, or resumes the Set, as `playback` says.
   public let togglePlayback: (() -> Void)?
   /// Opens the Set. Absent on a screen that only reads, where the row is not pressable.
   public let select: (() -> Void)?
 
-  /// What the control on the artwork does for this Set.
   public enum Playback: Hashable, Sendable {
-    /// Audio is kept and the player holds another Set, or none: the control starts a Listen.
     case ready
-    /// This is the Set playing: the control pauses it.
     case playing
-    /// This is the Set in the player, paused: the control resumes it.
     case paused
 
     public var symbol: String { self == .playing ? "pause.fill" : "play.fill" }
-    /// Named for the change the control makes, as a control should be.
     public var label: String { self == .playing ? "Pause" : "Play" }
-    /// The Set in the player, playing or paused, is the one the row marks.
     public var isCurrent: Bool { self != .ready }
-    /// What the row reads out about the player, after the title.
     public var announcement: String? {
       switch self {
       case .ready: nil
@@ -66,15 +45,9 @@ public struct SetRow: View {
     }
   }
 
-  /// Where listening would resume and what the Download is doing. Both are optional, so a row
-  /// with neither renders exactly as before. The design system carries plain values here, as it
-  /// does for `source`, so it stays free of the app's domain types.
   public struct State: Hashable, Sendable {
     public let resumeAt: Int?
-    /// What a Download in flight is doing ("Download queued"); nothing once it is done.
     public let download: String?
-    /// Audio is kept on the device. Drawn as a symbol, because it is a fact about the Set, not
-    /// news about it.
     public let kept: Bool
     public init(resumeAt: Int? = nil, download: String? = nil, kept: Bool = false) {
       self.resumeAt = resumeAt
@@ -82,11 +55,9 @@ public struct SetRow: View {
       self.kept = kept
     }
     public var isEmpty: Bool { resumeAt == nil && download == nil && !kept }
-    /// The symbol beside a Download in flight, and the one that stands for kept audio.
     public static let downloadSymbol = "arrow.down.circle"
     public static let keptSymbol = "arrow.down.circle.fill"
     public static let keptLabel = "Audio kept"
-    /// "Resume at 1:01:01 · Download queued · Audio kept"
     public var label: String {
       var parts: [String] = []
       if let resumeAt { parts.append("Resume at \(Self.clock(resumeAt))") }
@@ -128,9 +99,6 @@ public struct SetRow: View {
     self.select = select
   }
 
-  /// The data line's words. A resume position takes the creator's place, because once a person
-  /// has started a Set the question is where they were, not who made it. What the Download is
-  /// doing comes last, after the length; kept audio is a symbol, drawn beside the words.
   public static func dataLine(creator: String?, length: String?, state: State?) -> String {
     var parts: [String] = []
     if let resumeAt = state?.resumeAt {
@@ -147,11 +115,6 @@ public struct SetRow: View {
     return parts.joined(separator: " · ")
   }
 
-  /// At the largest text sizes the artwork and two lines of text cannot share a row, so the
-  /// artwork moves above the text. `.xxxLarge` is the last size of the standard range and the
-  /// first where the title loses the room it needs beside the artwork, which is why it is named
-  /// rather than left to the accessibility range. The width does not enter into it: a wide row
-  /// gains nothing from a title that runs the width of a Mac window beside a thumbnail.
   public static func stacks(dynamicTypeSize: DynamicTypeSize) -> Bool {
     dynamicTypeSize >= .xxxLarge
   }
@@ -178,8 +141,6 @@ public struct SetRow: View {
       }
     }
     .padding(.vertical, 12)
-    // One element, so a screen reader hears one Set and not two buttons that both name it.
-    // Opening is the default action; playing is the named one.
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(accessibilityLabel)
     .accessibilityAddTraits(select == nil ? [] : .isButton)
@@ -191,8 +152,6 @@ public struct SetRow: View {
     }
   }
 
-  /// The artwork plays when it can, and opens the Set when it cannot, so no part of the row
-  /// is dead. The glyph says which: it is only drawn when there is audio to play.
   private func artworkControl(size: Artwork.Size) -> some View {
     let art = Artwork(url: artwork, seed: title, size: size, progress: progress)
       .overlay {
@@ -257,8 +216,6 @@ public struct SetRow: View {
     .frame(maxWidth: .infinity, alignment: .leading)
   }
 
-  /// A Mac window lays the row out as a table: the title and who made it, then the Tags, the
-  /// length and the kept-audio symbol in columns, so lengths line up down the list.
   private var columns: some View {
     HStack(alignment: .center, spacing: 16) {
       VStack(alignment: .leading, spacing: 3) {
@@ -315,8 +272,6 @@ public struct SetRow: View {
   }
 }
 
-/// The control drawn on a row's artwork. Glass, because it sits on an image it must read
-/// against, and small enough to leave the artwork legible around it.
 private struct PlayGlyph: View {
   let playback: SetRow.Playback
 
