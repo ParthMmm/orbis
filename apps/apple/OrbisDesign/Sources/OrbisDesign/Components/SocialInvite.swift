@@ -66,20 +66,24 @@ public struct SocialInvite: View {
   /// Three pieces of artwork with three friends around them, drawn from fixed seeds so the picture
   /// never changes.
   private var fan: some View {
-    ZStack {
-      SleeveFan(seed: "people", artwork: [nil, nil, nil], category: .pink, width: 150)
-      PersonAvatar("maya", diameter: 44)
-        .overlay { Circle().strokeBorder(.white, lineWidth: 3) }
-        .offset(x: -150, y: 26)
-      PersonAvatar("jules", diameter: 44)
-        .overlay { Circle().strokeBorder(.white, lineWidth: 3) }
-        .offset(x: 148, y: 8)
-      PersonAvatar("sam", diameter: 36)
-        .overlay { Circle().strokeBorder(.white, lineWidth: 3) }
-        .offset(x: 70, y: 62)
-    }
-    .frame(height: 170)
-    .accessibilityHidden(true)
+    SleeveFan(seed: "people", artwork: [nil, nil, nil], category: .pink, width: 150)
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .overlay(alignment: .leading) {
+        friend("maya", diameter: 44).padding(.leading, 8).padding(.top, 52)
+      }
+      .overlay(alignment: .trailing) {
+        friend("jules", diameter: 44).padding(.trailing, 10).padding(.bottom, 16)
+      }
+      .overlay(alignment: .bottomTrailing) {
+        friend("sam", diameter: 36).padding(.trailing, 96).padding(.bottom, 4)
+      }
+      .frame(height: 170)
+      .accessibilityHidden(true)
+  }
+
+  private func friend(_ username: String, diameter: CGFloat) -> some View {
+    PersonAvatar(username, diameter: diameter)
+      .overlay { Circle().strokeBorder(.white, lineWidth: 3) }
   }
 
   private func point(_ symbol: String, _ text: String) -> some View {
