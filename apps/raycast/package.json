@@ -51,7 +51,7 @@
     {
       "name": "deviceToken",
       "title": "Device Token",
-      "description": "The token your Orbis server printed once when you paired this device.",
+      "description": "The key Orbis returned once when you redeemed a Sign-in Code for Raycast.",
       "type": "password",
       "required": true,
       "placeholder": "Paste the device token"

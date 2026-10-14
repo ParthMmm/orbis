@@ -2,10 +2,9 @@ import {
   normalizeSourceUrl,
   UnsupportedSourceUrlError,
 } from "@orbis/contracts";
-import type { SavedSet } from "@orbis/contracts";
 import { OrbisApi } from "@orbis/contracts/http-api";
 import { getPreferenceValues, showToast, Toast } from "@raycast/api";
-import { Effect } from "effect";
+import { Effect, Option, Schema } from "effect";
 import {
   FetchHttpClient,
   HttpClient,
@@ -64,6 +63,11 @@ export const extractSourceUrl = (text: string): string | null => {
   return null;
 };
 
+/** A declared error body, such as a 400 that names what the server refused. */
+const decodeErrorBody = Schema.decodeUnknownOption(
+  Schema.Struct({ message: Schema.String })
+);
+
 const baseUrl = (serviceUrl: string): string =>
   serviceUrl.trim().replace(/\/+$/u, "");
 
@@ -105,7 +109,7 @@ export const saveSourceUrl = async (
     { preconnect: fetch.preconnect }
   );
   try {
-    const saved: SavedSet = await Effect.runPromise(
+    await Effect.runPromise(
       Effect.gen(function* save() {
         const client = yield* HttpApiClient.make(OrbisApi, {
           baseUrl: service,
@@ -123,10 +127,12 @@ export const saveSourceUrl = async (
         Effect.provideService(FetchHttpClient.Fetch, fetchWithStatus)
       )
     );
-    return saved.id
-      ? { kind: "saved" }
-      : { kind: "failed", message: "Orbis returned a Set without an id." };
+    return { kind: "saved" };
   } catch (error) {
+    // A 201 means the Set is saved, even when this build cannot decode a newer response.
+    if (status === 201) {
+      return { kind: "saved" };
+    }
     if (
       timedOut ||
       (error instanceof Error &&
@@ -146,10 +152,19 @@ export const saveSourceUrl = async (
     if (status === 401 || status === 403) {
       return {
         kind: "failed",
-        message: "Orbis rejected the device token. Pair this device again.",
+        message: "Orbis rejected the device token. Redeem a new Sign-in Code.",
       };
     }
-    return { kind: "failed", message: `Orbis returned HTTP ${status}.` };
+    return {
+      kind: "failed",
+      message: Option.match(
+        error instanceof Error ? Option.none() : decodeErrorBody(error),
+        {
+          onNone: () => `Orbis returned HTTP ${status}.`,
+          onSome: (body) => body.message,
+        }
+      ),
+    };
   }
 };
 
