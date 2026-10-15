@@ -9,7 +9,7 @@ The [API Worker and Group](../api/README.md) own the application API and product
 The sign-in page offers two ways in ([ADR 0020](../../docs/adr/0020-sign-in-by-group-passcode-and-sign-in-code.md)):
 
 - **Sign in with a code.** On a device that is already signed in, open Devices and choose Sign in another device. Type the eight-character code on the new browser. The page accepts lower case, spaces, and the dash. A code works once and expires after 10 minutes.
-- **Join Orbis.** A new Person chooses a username and types the Group Passcode. The Host sets, changes, or clears the passcode on the Admin page. While no passcode is set, joining is closed.
+- **Join Orbis.** A new Person chooses a username and types the Group Passcode. On the Admin page the Host opens joining, which makes a random passcode, and can copy it, make a new one, or close joining. While joining is closed, there is no passcode.
 
 The API returns a daily key, which the browser keeps in `localStorage` and labels with the browser and system, such as "Chrome on Mac". The page shows the API's own message when it refuses a passcode, a username, or a code.
 
@@ -73,7 +73,7 @@ The four original journey groups keep their entrypoint names. Their assertions n
 | Original group | Runnable suite | Verified behavior | Artifact directory |
 | --- | --- | --- | --- |
 | `journey` | `e2e/journey.mjs`, `e2e/sign-in.mjs`, `e2e/playlists.mjs`, `e2e/live-queue.mjs` | Joining with the Group Passcode, a Sign-in Code, the API's refusals and rate limit, saved-key expiry, Library saves, search, Tags, Downloads, Auto Download in both directions, Collaborative Playlists, player grants and audio retry | `.cache/web-library`, `.cache/web-sign-in`, `.cache/web-playlists`, `.cache/web-player` |
-| `admin-journey` | `e2e/admin-journey.mjs` | Admin hidden from a friend, the Host's own key, Group Passcode set and closed, a Sign-in Code for a Person, key creation, copying, and revocation, and removal | `.cache/web-admin` |
+| `admin-journey` | `e2e/admin-journey.mjs` | Admin hidden from a friend, the Host's own key, Group Passcode opened, copied, replaced, and closed, a Sign-in Code for a Person, key creation, copying, and revocation, and removal | `.cache/web-admin` |
 | `live-queue` | `e2e/live-queue.mjs` | Remote Playlist enqueue, another Person's queue isolation, bearer-authenticated events, reconnect, Playback Position, and automatic advance | `.cache/web-player` |
 | `shared-audio` | `e2e/shared-audio.mjs` | Shared playback without saving, the caller's Playback Position, a save without the friend's title, and a shared Download that plays | `.cache/web-social` |
 | `presence` | `e2e/presence.mjs` | Presence actions from real audio events: a failed play sends none, play shows Presence to another Person, renew, pause clears it, and a Library change from a second browser appears without a reload ([#212](https://github.com/ParthMmm/orbis/issues/212)) | `.cache/web-presence` |

@@ -39,7 +39,7 @@ Use the approved Vanta update window. Preserve the installed unit and drop-ins.
 
 ## Enrol a device
 
-A new Person joins with their username and the Group Passcode, which the Host sets in Settings. A Person adds another device with a Sign-in Code shown on a device they already use. Each device receives its own daily key. If the Host has no signed-in device left, run `trust recover` on Vanta as the [API README](../../apps/api/README.md#recover-host-access) describes. See [Sign in with a Group Passcode or a Sign-in Code](../../docs/adr/0020-sign-in-by-group-passcode-and-sign-in-code.md).
+A new Person joins with their username and the Group Passcode, which Orbis makes when the Host turns on Allow Joining in Settings. A Person adds another device with a Sign-in Code shown on a device they already use. Each device receives its own daily key. If the Host has no signed-in device left, run `trust recover` on Vanta as the [API README](../../apps/api/README.md#recover-host-access) describes. See [Sign in with a Group Passcode or a Sign-in Code](../../docs/adr/0020-sign-in-by-group-passcode-and-sign-in-code.md).
 
 ## Check the API and forwarding
 
