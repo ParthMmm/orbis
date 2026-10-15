@@ -57,10 +57,14 @@ final class TagsUITests: LibraryJourney {
     let app = try launch()
     openLibrary(in: app)
 
+    let more = app.buttons["library-more"]
+    XCTAssertTrue(
+      more.waitForExistence(timeout: 60), "the Library must offer More\n\(app.debugDescription)")
+    XCTAssertTrue(row(first, in: app).waitForExistence(timeout: 30))
+    more.tap()
     let select = app.buttons["library-select"]
     XCTAssertTrue(
-      select.waitForExistence(timeout: 60), "the Library must offer Select\n\(app.debugDescription)")
-    XCTAssertTrue(row(first, in: app).waitForExistence(timeout: 30))
+      select.waitForExistence(timeout: 10), "More must offer Select\n\(app.debugDescription)")
     select.tap()
     let tag = app.buttons["library-bulk-tag"]
     XCTAssertTrue(tag.waitForExistence(timeout: 10), "selection mode must show its bar")
@@ -103,7 +107,7 @@ final class TagsUITests: LibraryJourney {
     app.buttons["bulk-tag-done"].tap()
     app.buttons["library-select-done"].tap()
     XCTAssertTrue(
-      select.waitForExistence(timeout: 10), "Done leaves selection mode\n\(app.debugDescription)")
+      more.waitForExistence(timeout: 10), "Done leaves selection mode\n\(app.debugDescription)")
   }
 
   func testTypingAPrefixOffersTheMatchingTagAndANewOne() throws {

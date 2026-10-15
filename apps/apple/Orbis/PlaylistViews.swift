@@ -428,7 +428,6 @@ struct PlaylistDetailView: View {
           artwork: presentation.artwork,
           creator: presentation.creator,
           length: presentation.length,
-          dates: SetPresentation.datesLine(set),
           tags: presentation.tags,
           state: presentation.state,
           progress: presentation.progress,

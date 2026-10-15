@@ -182,7 +182,7 @@ enum SetPresentation {
     // Kept audio is a fact the row draws as a symbol; the words are for a Download in flight.
     let kept = set.downloadState == "ready"
     let state = SetRow.State(
-      resumeAt: set.playbackPositionSeconds > 0 ? set.playbackPositionSeconds : nil,
+      remaining: timeLeft(set),
       download: kept ? nil : downloadLabel(set.downloadState),
       kept: kept
     )
@@ -262,16 +262,6 @@ enum SetPresentation {
   static func progress(_ set: SavedSet) -> Double? {
     guard let duration = set.durationSeconds, duration > 0 else { return nil }
     return min(max(Double(set.playbackPositionSeconds) / Double(duration), 0), 1)
-  }
-
-  /// When the Set was saved and, when the provider named it, when it was released.
-  @MainActor
-  static func datesLine(_ set: SavedSet) -> String {
-    var parts = ["Imported \(plainDate(set.createdAt))"]
-    if let releasedAt = set.releasedAt {
-      parts.append("Released \(plainDate(releasedAt))")
-    }
-    return parts.joined(separator: " · ")
   }
 
   /// The line under a Set's title: who made it and how long it runs. Only the parts the

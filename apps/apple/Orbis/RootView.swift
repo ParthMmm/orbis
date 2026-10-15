@@ -246,9 +246,6 @@ struct SidebarShell: View {
 struct DestinationView: View {
   @Bindable var model: AppModel
   let destination: Destination
-  /// The queue is read in a sheet, because it is a fact about playback rather than a place in the
-  /// library.
-  @State private var isShowingQueue = false
   /// Replacing the queue is worth a question only while something is playing.
   @State private var isConfirmingPlaylist = false
   /// The empty Library's action asks the paste field to take focus.
@@ -337,14 +334,7 @@ struct DestinationView: View {
       // tab's content state is; the Set page pins its inline counterpart the same way. A Mac
       // has no large title to pin.
       .largeTitleOnIOS()
-      .toolbar {
-        ToolbarItem {
-          Button("File a set", systemImage: "plus") { openFilingSheet() }
-            .tint(Color.orbis.tint)
-            .accessibilityIdentifier("library-file")
-        }
-        libraryToolbar
-      }
+      .toolbar { libraryToolbar }
       .sheet(isPresented: $isFilingSheetShown) { filingSheet }
       .onChange(of: model.reveal != nil) { _, hasReveal in
         if hasReveal { isFilingSheetShown = true }
@@ -359,9 +349,6 @@ struct DestinationView: View {
         TagSheet(tags: set.tags, suggestions: model.availableTags) { tags in
           Task { await model.replaceTags(set.id, with: tags) }
         }
-      }
-      .sheet(isPresented: $isShowingQueue) {
-        QueueScreen(model: model)
       }
       .confirmationDialog(
         "Play this playlist?", isPresented: $isConfirmingPlaylist, titleVisibility: .visible
@@ -591,51 +578,51 @@ struct DestinationView: View {
     FilingSheet(model: model, focusLink: $focusLink) { isFilingSheetShown = false }
   }
 
+  /// Selection mode shows only Done, so nothing else starts while Sets are picked.
   @ToolbarContentBuilder
   private var libraryToolbar: some ToolbarContent {
-    // Playing a Playlist is only offered while the Library is showing one: with Everything
-    // selected there is no Playlist to play.
-    if model.selectedPlaylistId != nil {
+    if selectedIds == nil {
       ToolbarItem {
-        Button("Play playlist", systemImage: "play.circle") {
-          if model.isPlayingNow {
-            isConfirmingPlaylist = true
-          } else {
-            playSelectedPlaylist()
-          }
-        }
-        .accessibilityIdentifier("library-play-playlist")
+        Button("File a set", systemImage: "plus") { openFilingSheet() }
+          .tint(Color.orbis.tint)
+          .accessibilityIdentifier("library-file")
       }
-    }
-    ToolbarItem {
-      if selectedIds == nil {
-        Button("Select") { selectedIds = [] }
-          .accessibilityIdentifier("library-select")
-      } else {
+      ToolbarItem {
+        Menu {
+          // Playing a Playlist is only offered while the Library is showing one: with
+          // Everything selected there is no Playlist to play.
+          if model.selectedPlaylistId != nil {
+            Button("Play playlist", systemImage: "play.circle") {
+              if model.isPlayingNow {
+                isConfirmingPlaylist = true
+              } else {
+                playSelectedPlaylist()
+              }
+            }
+            .accessibilityIdentifier("library-play-playlist")
+          }
+          Button("Select", systemImage: "checkmark.circle") { selectedIds = [] }
+            .accessibilityIdentifier("library-select")
+          Menu("Sort by", systemImage: "arrow.up.arrow.down") {
+            Picker("Sort by", selection: $model.librarySort) {
+              ForEach(LibrarySort.allCases) { sort in
+                Text(sort.rawValue).tag(sort)
+              }
+            }
+          }
+          .accessibilityIdentifier("library-sort")
+        } label: {
+          Label("More", systemImage: "ellipsis.circle")
+        }
+        .accessibilityIdentifier("library-more")
+      }
+    } else {
+      ToolbarItem {
         Button("Done") { selectedIds = nil }
           .fontWeight(.semibold)
           .accessibilityIdentifier("library-select-done")
       }
     }
-    ToolbarItem {
-      Menu {
-        Picker("Sort by", selection: $model.librarySort) {
-          ForEach(LibrarySort.allCases) { sort in
-            Text(sort.rawValue).tag(sort)
-          }
-        }
-      } label: {
-        Label("Sort", systemImage: "arrow.up.arrow.down")
-      }
-      .accessibilityIdentifier("library-sort")
-    }
-    ToolbarItem {
-      Button("Queue", systemImage: "list.bullet") { isShowingQueue = true }
-        .accessibilityIdentifier("library-queue")
-    }
-    #if os(iOS)
-      settingsButton
-    #endif
   }
 
   private func playSelectedPlaylist() {
