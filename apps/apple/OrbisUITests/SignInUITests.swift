@@ -36,7 +36,7 @@ final class SignInUITests: XCTestCase {
     XCTAssertTrue(usernameField.waitForExistence(timeout: 10))
     usernameField.tap()
     usernameField.typeText(username)
-    let passcodeField = app.textFields["signin-passcode"]
+    let passcodeField = app.secureTextFields["signin-passcode"]
     passcodeField.tap()
     passcodeField.typeText("not-the-passcode")
     app.buttons["signin-join"].tap()
