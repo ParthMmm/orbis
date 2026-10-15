@@ -54,6 +54,10 @@ struct SetList: View {
   var menuTags: [String] = []
   var toggleTag: ((SavedSet, String) -> Void)?
   var editTags: ((SavedSet) -> Void)?
+  /// The Sets picked while the list is in selection mode, or nil when it is not. A row then
+  /// toggles its Set instead of opening or playing it.
+  var selection: Set<String>?
+  var toggleSelection: ((SavedSet) -> Void)?
   /// What the page takes its light from: a Set's artwork, blurred behind the top of the list,
   /// plain paper, or nothing, when the list is one column of a page that draws the light itself.
   var backdrop: Backdrop = .paper
@@ -190,9 +194,48 @@ struct SetList: View {
     .accessibilityIdentifier(listIdentifier)
   }
 
+  @ViewBuilder private func row(_ set: SavedSet) -> some View {
+    if let selection, let toggleSelection {
+      selectableRow(set, isSelected: selection.contains(set.id)) { toggleSelection(set) }
+    } else {
+      openableRow(set)
+    }
+  }
+
+  /// The row in selection mode: one target, with nothing that plays or opens.
+  private func selectableRow(
+    _ set: SavedSet, isSelected: Bool, toggle: @escaping () -> Void
+  ) -> some View {
+    let model = SetPresentation.row(set)
+    return Button(action: toggle) {
+      HStack(spacing: 12) {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+          .font(.title2)
+          .foregroundStyle(isSelected ? Color.orbis.tint : Color.secondary)
+          .orbisSymbolReplace()
+        SetRow(
+          title: model.title,
+          source: model.source,
+          artwork: model.artwork,
+          creator: model.creator,
+          length: model.length,
+          dates: SetPresentation.datesLine(set),
+          tags: model.tags,
+          hiddenTags: hiddenTags,
+          state: model.state,
+          progress: model.progress
+        )
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityIdentifier("set-row-\(set.id)")
+  }
+
   /// One Set. The row owns both of its targets: the artwork plays and the rest opens. The
   /// long-press menu repeats both, and adds the Source Link, for anyone who reaches for it.
-  private func row(_ set: SavedSet) -> some View {
+  private func openableRow(_ set: SavedSet) -> some View {
     let model = SetPresentation.row(set)
     let playback = SetPresentation.playback(
       of: set, currentSetId: currentSetId, isPlaying: isPlaying)

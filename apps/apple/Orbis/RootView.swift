@@ -260,6 +260,9 @@ struct DestinationView: View {
   @State private var libraryQuery = ""
   /// The Set whose Tags are open for editing from its row's menu.
   @State private var taggingSet: SavedSet?
+  /// The Sets picked in the Library's selection mode, or nil when it is not selecting.
+  @State private var selectedIds: Set<String>?
+  @State private var isBulkTagging = false
 
   #if os(macOS)
     private var matchingLibrary: Loadable<[SavedSet]> {
@@ -318,6 +321,10 @@ struct DestinationView: View {
           Task { await model.setTag(tag, on: [set.id], to: !set.tags.contains(tag)) }
         },
         editTags: { taggingSet = $0 },
+        selection: selectedIds,
+        toggleSelection: { set in
+          selectedIds = selectedIds.map { $0.symmetricDifference([set.id]) }
+        },
         backdrop: .artwork(libraryLead.flatMap(SetPresentation.pageArtwork))
       )
       .refreshable { await model.refreshLibraryQuietly() }
@@ -341,6 +348,12 @@ struct DestinationView: View {
       .sheet(isPresented: $isFilingSheetShown) { filingSheet }
       .onChange(of: model.reveal != nil) { _, hasReveal in
         if hasReveal { isFilingSheetShown = true }
+      }
+      .safeAreaInset(edge: .bottom) {
+        if let selectedIds { selectionBar(count: selectedIds.count) }
+      }
+      .sheet(isPresented: $isBulkTagging) {
+        BulkTagSheet(model: model, ids: Array(selectedIds ?? []))
       }
       .sheet(item: $taggingSet) { set in
         TagSheet(tags: set.tags, suggestions: model.availableTags) { tags in
@@ -540,6 +553,28 @@ struct DestinationView: View {
     return parts.joined(separator: " ")
   }
 
+  private func selectionBar(count: Int) -> some View {
+    HStack {
+      Text("\(count) selected")
+        .font(.headline)
+        .monospacedDigit()
+        .contentTransition(.numericText())
+        .accessibilityIdentifier("library-selection-count")
+      Spacer()
+      Button("Tag", systemImage: "tag") { isBulkTagging = true }
+        .buttonStyle(.glassProminent)
+        .tint(Color.orbis.tint)
+        .disabled(count == 0)
+        .accessibilityIdentifier("library-bulk-tag")
+    }
+    .padding(.leading, 20)
+    .padding(.trailing, 8)
+    .padding(.vertical, 8)
+    .glassEffect(.regular, in: .capsule)
+    .padding(.horizontal)
+    .padding(.bottom, 8)
+  }
+
   private var clearFilters: AnyView? {
     guard model.isFilteringLibrary, !librarySearchIsActive else { return nil }
     return AnyView(
@@ -570,6 +605,16 @@ struct DestinationView: View {
           }
         }
         .accessibilityIdentifier("library-play-playlist")
+      }
+    }
+    ToolbarItem {
+      if selectedIds == nil {
+        Button("Select") { selectedIds = [] }
+          .accessibilityIdentifier("library-select")
+      } else {
+        Button("Done") { selectedIds = nil }
+          .fontWeight(.semibold)
+          .accessibilityIdentifier("library-select-done")
       }
     }
     ToolbarItem {

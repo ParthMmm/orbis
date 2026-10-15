@@ -212,6 +212,87 @@ struct TagSheet: View {
   }
 }
 
+/// One Tag at a time, put on or taken off every selected Set. A Tag shows whether all, some, or
+/// none of the Sets carry it, and a tap makes it all, unless all already carry it.
+struct BulkTagSheet: View {
+  @Bindable var model: AppModel
+  let ids: [String]
+  @State private var draft = ""
+  @Environment(\.dismiss) private var dismiss
+
+  private enum Coverage {
+    case all, some, none
+  }
+
+  private func coverage(of tag: String) -> Coverage {
+    let carrying = ids.count { model.savedSet($0)?.tags.contains(tag) == true }
+    return carrying == ids.count ? .all : carrying == 0 ? .none : .some
+  }
+
+  var body: some View {
+    NavigationStack {
+      Form {
+        Section {
+          TextField("New Tag", text: $draft)
+            .onSubmit(create)
+            .autocorrectionDisabled()
+            #if os(iOS)
+              .textInputAutocapitalization(.never)
+            #endif
+            .accessibilityIdentifier("bulk-tag-field")
+        }
+        if !model.availableTags.isEmpty {
+          Section("Tags") {
+            GlassEffectContainer(spacing: 8) {
+              ChipFlow(spacing: 8) {
+                ForEach(model.availableTags, id: \.self) { tag in
+                  chip(tag, coverage: coverage(of: tag))
+                }
+              }
+            }
+            .padding(.vertical, 4)
+            // One write at a time: each reads the Tags the last one left.
+            .disabled(model.isWorkingOnSet)
+          }
+        }
+      }
+      .formStyle(.grouped)
+      .navigationTitle(ids.count == 1 ? "Tag 1 Set" : "Tag \(ids.count) Sets")
+      .toolbarTitleDisplayMode(.inline)
+      .toolbar {
+        ToolbarItem(placement: .confirmationAction) {
+          Button("Done", systemImage: "checkmark", role: .confirm) { dismiss() }
+            .tint(Color.orbis.tint)
+            .accessibilityIdentifier("bulk-tag-done")
+        }
+      }
+      .setChangeStatus(model)
+    }
+    .presentationDetents([.medium, .large])
+  }
+
+  private func chip(_ tag: String, coverage: Coverage) -> some View {
+    Button {
+      Task { await model.setTag(tag, on: ids, to: coverage != .all) }
+    } label: {
+      GlassTagChip(
+        tag, category: SetPresentation.category(for: tag), selected: coverage == .all,
+        accessory: coverage == .all ? "checkmark" : coverage == .some ? "minus" : "plus")
+    }
+    .buttonStyle(.plain)
+    .accessibilityValue(
+      coverage == .all ? "On every set" : coverage == .some ? "On some sets" : "On no sets"
+    )
+    .accessibilityIdentifier("bulk-tag-\(tag)")
+  }
+
+  private func create() {
+    let tag = draft
+    draft = ""
+    Task { await model.setTag(tag, on: ids, to: true) }
+  }
+}
+
 /// What the last change from the management rows left behind, pinned to the bottom of the
 /// screen: the refusal, readable where the action was taken, or the wait, so the five writes
 /// a Set takes never leave the screen looking idle, which reads as a tap that did nothing.
