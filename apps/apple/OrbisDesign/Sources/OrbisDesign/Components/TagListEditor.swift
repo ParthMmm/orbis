@@ -40,7 +40,9 @@ public struct TagListEditor: View {
     Section {
       if !tags.isEmpty {
         chips(tags, verb: "Remove", accessory: "xmark", identifier: "tag-remove") { remove($0) }
-          .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+          #if !os(tvOS)
+            .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+          #endif
       }
       HStack {
         TextField("Add a Tag", text: $draft)
