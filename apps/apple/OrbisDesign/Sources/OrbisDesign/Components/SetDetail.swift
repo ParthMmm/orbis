@@ -243,18 +243,22 @@ public struct SetDetail: View {
 
 }
 
+/// A Set's Tags, each one tap from the Library filtered by it, and a "+" to change them.
 public struct SetManagement: View {
   public let tags: [String]
   public let category: @MainActor (String) -> OrbisColor.Category
+  public let showTag: (String) -> Void
   public let editTags: () -> Void
 
   public init(
     tags: [String] = [],
     category: @escaping @MainActor (String) -> OrbisColor.Category = OrbisColor.Category.forTag,
+    showTag: @escaping (String) -> Void = { _ in },
     editTags: @escaping () -> Void
   ) {
     self.tags = tags
     self.category = category
+    self.showTag = showTag
     self.editTags = editTags
   }
 
@@ -273,22 +277,46 @@ public struct SetManagement: View {
   }
 
   public var body: some View {
-    ChipFlow(spacing: 8, alignment: .center) {
-      ForEach(tags, id: \.self) { tag in
+    GlassEffectContainer(spacing: 8) {
+      ChipFlow(spacing: 8, alignment: .center) {
+        ForEach(tags, id: \.self) { tag in
+          Button {
+            showTag(tag)
+          } label: {
+            GlassTagChip(tag, category: category(tag))
+          }
+          .buttonStyle(.plain)
+          .accessibilityHint("Shows the Library filtered by \(tag)")
+          .accessibilityIdentifier("detail-tag-\(tag)")
+        }
         Button(action: editTags) {
-          TagWord(tag, category: category(tag))
+          Label(tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: tags.isEmpty ? "tag" : "plus")
+            .labelStyle(AddTagLabelStyle(showsTitle: tags.isEmpty))
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, tags.isEmpty ? 14 : 0)
+            .frame(minWidth: 40, minHeight: 40)
+            .glassEffect(.regular.interactive(), in: .capsule)
+            .contentShape(.capsule)
         }
         .buttonStyle(.plain)
-        .accessibilityHint("Edits Tags")
-      }
-      Button(tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag", action: editTags)
-        .buttonStyle(.bordered)
-        .buttonBorderShape(.capsule)
-        .controlSize(.small)
-        .tint(.secondary)
+        .accessibilityLabel(tags.isEmpty ? "Add Tags" : "Edit Tags")
         .accessibilityIdentifier("detail-tags-row")
+      }
     }
     .frame(maxWidth: .infinity)
+  }
+}
+
+/// With no Tags the button says what it does; beside Tags it is a "+".
+private struct AddTagLabelStyle: LabelStyle {
+  let showsTitle: Bool
+
+  func makeBody(configuration: Configuration) -> some View {
+    HStack(spacing: 6) {
+      configuration.icon
+      if showsTitle { configuration.title }
+    }
   }
 }
 

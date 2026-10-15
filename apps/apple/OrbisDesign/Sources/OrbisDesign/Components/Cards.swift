@@ -137,20 +137,24 @@ public struct SleeveFan: View {
 }
 
 /// A Tag as a chip of tinted glass: its colour's dot, its name, and how many Sets carry it.
-/// Selected, the glass fills with the colour.
+/// Selected, the glass fills with the colour. Every screen that shows a Tag as a control draws
+/// this chip; `accessory` names a trailing symbol for what a tap does, such as removing it.
 public struct GlassTagChip: View {
   let name: String
   let count: Int?
   let category: OrbisColor.Category
   let selected: Bool
+  let accessory: String?
 
   public init(
-    _ name: String, count: Int? = nil, category: OrbisColor.Category, selected: Bool = false
+    _ name: String, count: Int? = nil, category: OrbisColor.Category, selected: Bool = false,
+    accessory: String? = nil
   ) {
     self.name = name
     self.count = count
     self.category = category
     self.selected = selected
+    self.accessory = accessory
   }
 
   public var body: some View {
@@ -165,6 +169,12 @@ public struct GlassTagChip: View {
           .font(.caption.weight(.semibold))
           .monospacedDigit()
           .opacity(0.7)
+      }
+      if let accessory {
+        Image(systemName: accessory)
+          .font(.caption.weight(.bold))
+          .foregroundStyle(.secondary)
+          .accessibilityHidden(true)
       }
     }
     .foregroundStyle(selected ? Color.white : Color.primary)

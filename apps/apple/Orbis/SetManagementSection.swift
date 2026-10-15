@@ -54,6 +54,7 @@ struct SetManagementSection: View {
       SetManagement(
         tags: set.tags,
         category: SetPresentation.category(for:),
+        showTag: { model.showTag($0) },
         editTags: { isEditingTags = true }
       )
       .toolbar {
@@ -67,11 +68,10 @@ struct SetManagementSection: View {
 
   private var actions: some View {
     Menu {
-      if style == .inline {
-        Button(set.tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag") {
-          isEditingTags = true
-        }
+      Button(set.tags.isEmpty ? "Add Tags" : "Edit Tags", systemImage: "tag") {
+        isEditingTags = true
       }
+      .accessibilityIdentifier("detail-edit-tags")
       Button("Rename", systemImage: "pencil") { isRenaming = true }
         .accessibilityIdentifier("detail-rename-action")
       Button("Add to Playlist", systemImage: "text.badge.plus") { isAddingToPlaylist = true }

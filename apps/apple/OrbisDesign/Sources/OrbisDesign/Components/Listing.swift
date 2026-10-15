@@ -49,29 +49,23 @@ public struct ListingRule: View {
 public struct TagWord: View {
   public let name: String
   public let category: OrbisColor.Category
-  public let active: Bool
 
-  public init(_ name: String, category: OrbisColor.Category, active: Bool = false) {
+  public init(_ name: String, category: OrbisColor.Category) {
     self.name = name
     self.category = category
-    self.active = active
   }
 
   public var body: some View {
-    HStack(spacing: 3) {
-      if active {
-        Image(systemName: "checkmark")
-          .imageScale(.small)
-      }
+    HStack(spacing: 4) {
+      Circle()
+        .fill(category.dot)
+        .frame(width: 6, height: 6)
       Text(name)
     }
-    .font(.orbis.detail.weight(.semibold))
-    .foregroundStyle(category.text)
-    .padding(.horizontal, 8)
-    .padding(.vertical, 3)
-    .background(category.dot.opacity(active ? 0.34 : 0.18), in: .capsule)
+    .font(.orbis.detail)
+    .foregroundStyle(.secondary)
     .accessibilityElement(children: .ignore)
-    .accessibilityLabel(active ? "\(name), active filter" : name)
+    .accessibilityLabel(name)
   }
 }
 
@@ -194,7 +188,7 @@ extension ListingRow where Value == EmptyView {
     HStack {
       ListingLabel("8 sets · 11h 42m kept")
       Spacer()
-      TagWord("techno", category: .pink, active: true)
+      TagWord("techno", category: .pink)
       TagWord("house", category: .yellow)
     }
     .padding(.vertical, 12)

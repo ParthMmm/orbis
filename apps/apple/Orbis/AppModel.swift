@@ -274,6 +274,14 @@ final class AppModel {
     destination = .library
   }
 
+  /// Goes to the Library filtered by one Tag, from Home, Search, or a Set's page.
+  func showTag(_ tag: String) {
+    activeTag = tag
+    activeCreator = nil
+    openedSets[.library] = nil
+    destination = .library
+  }
+
   var isFilteringLibrary: Bool { activeTag != nil || activeCreator != nil }
 
   func clearLibraryFilters() {

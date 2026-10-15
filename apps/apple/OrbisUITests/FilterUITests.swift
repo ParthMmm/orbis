@@ -19,7 +19,7 @@ final class FilterUITests: LibraryJourney {
 
     tapAtCentre(of: tile, in: app)
     let hidden = app.descendants(matching: .any)
-      .matching(NSPredicate(format: "label CONTAINS %@", "outside this filter")).firstMatch
+      .matching(NSPredicate(format: "label CONTAINS %@", "tagged techno")).firstMatch
     XCTAssertTrue(
       hidden.waitForExistence(timeout: 20),
       "pressing the tile must turn the filter on\n\(app.debugDescription)")
