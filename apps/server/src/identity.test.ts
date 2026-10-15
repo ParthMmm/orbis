@@ -4,6 +4,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import { GroupPasscodeSchema } from "@orbis/contracts/http-api";
 import { Schema } from "effect";
 
 import { createApp } from "./app.js";
@@ -357,6 +358,7 @@ test("an existing trust database drops Invites and keeps the passcode across res
     database.close();
   }
   const host = { authorization: "Bearer pre-passcode-admin" };
+  let generated = "";
   // Without a file database, only the trust adapter upgrades the trust file.
   const first = createApp({ devicesPath });
   try {
@@ -366,13 +368,15 @@ test("an existing trust database drops Invites and keeps the passcode across res
       url: "/admin/people/friend",
     });
     expect(removed.statusCode).toBe(200);
-    const set = await request(first, {
+    const opened = await request(first, {
       headers: host,
-      method: "PUT",
-      payload: { passcode: "orbit-rings" },
+      method: "POST",
       url: "/admin/passcode",
     });
-    expect(set.statusCode).toBe(200);
+    expect(opened.statusCode).toBe(200);
+    generated =
+      Schema.decodeUnknownSync(GroupPasscodeSchema)(opened.json()).passcode ??
+      "";
   } finally {
     await first.dispose();
   }
@@ -383,7 +387,8 @@ test("an existing trust database drops Invites and keeps the passcode across res
       method: "GET",
       url: "/admin/passcode",
     });
-    expect(read.json()).toEqual({ passcode: "orbit-rings" });
+    expect(read.json()).toEqual({ passcode: generated });
+    expect(generated).not.toBe("");
     const upgraded = new Database(databasePath, { readonly: true });
     try {
       expect(

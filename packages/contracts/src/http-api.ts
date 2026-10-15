@@ -365,9 +365,6 @@ export const SignedInSchema = Schema.Struct({
 export const GroupPasscodeSchema = Schema.Struct({
   passcode: Schema.NullOr(Schema.String),
 });
-export const GroupPasscodePayload = Schema.Struct({
-  passcode: Schema.NullOr(Schema.String.check(Schema.isMaxLength(100))),
-});
 
 export const SetsApi = HttpApi.make("orbis").add(
   HttpApiGroup.make("sets")
@@ -677,9 +674,12 @@ export const OrbisApi = PlaylistApi.add(
           error: InternalError,
           success: GroupPasscodeSchema,
         }),
-        HttpApiEndpoint.put("setPasscode", "/admin/passcode", {
-          error: [BadRequest, InternalError],
-          payload: GroupPasscodePayload,
+        HttpApiEndpoint.post("newPasscode", "/admin/passcode", {
+          error: InternalError,
+          success: GroupPasscodeSchema,
+        }),
+        HttpApiEndpoint.delete("closeJoining", "/admin/passcode", {
+          error: InternalError,
           success: GroupPasscodeSchema,
         })
       )
