@@ -103,6 +103,23 @@ enum SetPresentation {
     }
   }
 
+  /// Every Tag the Sets carry, the ones this device used last first, then the rest by the
+  /// newest Set carrying each, so a Tag in use now is near the front wherever Tags are offered.
+  static func orderedTags(_ sets: [SavedSet], recent: [String]) -> [String] {
+    var newest: [String: String] = [:]
+    for set in sets {
+      for tag in set.tags where set.createdAt > newest[tag, default: ""] {
+        newest[tag] = set.createdAt
+      }
+    }
+    let leading = recent.filter { newest[$0] != nil }
+    let led = Set(leading)
+    let rest = newest.keys.filter { !led.contains($0) }.sorted { a, b in
+      newest[a]! == newest[b]! ? a < b : newest[a]! > newest[b]!
+    }
+    return leading + rest
+  }
+
   static func continueListening(_ sets: [SavedSet], limit: Int = 6) -> [SavedSet] {
     let started = sets.filter { set in
       guard set.playbackPositionSeconds > 0 else { return false }

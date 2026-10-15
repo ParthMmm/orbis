@@ -81,6 +81,25 @@ final class AppModel {
 
   private(set) var tagCounts: [String: Int] = [:]
 
+  /// The Tags this device last put on a Set, newest first, and the last Tag filters it applied.
+  /// Kept on the device, like recent searches: they are this person's habits here, not part of
+  /// the library.
+  private(set) var recentTags: [String] = [] {
+    didSet {
+      recentStore?.set(recentTags, forKey: Self.recentTagsKey)
+      refreshDerivedState()
+    }
+  }
+  private(set) var recentTagFilters: [[String]] = [] {
+    didSet { recentStore?.set(recentTagFilters, forKey: Self.recentTagFiltersKey) }
+  }
+  /// Nil outside the running app, so a test never reads or writes this device's habits.
+  private let recentStore: UserDefaults?
+  private static let recentTagsKey = "orbis.recentTags"
+  private static let recentTagFiltersKey = "orbis.recentTagFilters"
+  private static let recentTagLimit = 20
+  private static let recentTagFilterLimit = 4
+
   /// How the Library orders the Sets the filter admits. Held here rather than on the screen, so
   /// leaving the tab and coming back keeps the order a person chose.
   var librarySort: LibrarySort = .newest
@@ -99,7 +118,7 @@ final class AppModel {
       return
     }
     tagCounts = SetPresentation.tagCounts(sets)
-    availableTags = tagCounts.keys.sorted()
+    availableTags = SetPresentation.orderedTags(sets, recent: recentTags)
     visibleSets = .loaded(
       sets.filter { set in
         activeTags.allSatisfy(set.tags.contains) && (activeCreator?.admits(set) ?? true)
@@ -190,10 +209,14 @@ final class AppModel {
 
   init(
     settings: any ClientSettingsStore = ClientSettings.forCurrentProcess(),
-    session: URLSession = .shared
+    session: URLSession = .shared,
+    recentStore: UserDefaults? = nil
   ) {
     self.settings = settings
     self.session = session
+    self.recentStore = recentStore
+    recentTags = recentStore?.stringArray(forKey: Self.recentTagsKey) ?? []
+    recentTagFilters = recentStore?.array(forKey: Self.recentTagFiltersKey) as? [[String]] ?? []
     let arguments = ProcessInfo.processInfo.arguments
     Self.resetSettings(ifRequestedBy: arguments, in: settings)
     #if DEBUG
@@ -216,6 +239,7 @@ final class AppModel {
   /// path; this one exists so tests and previews can drive a change without either.
   init(client: OrbisClient, settings: any ClientSettingsStore) {
     self.settings = settings
+    recentStore = nil
     self.client = client
     session = client.session
     serviceAddress = client.address
@@ -269,7 +293,27 @@ final class AppModel {
       activeTags.removeAll { $0 == tag }
     } else {
       activeTags.append(tag)
+      rememberFilter(activeTags)
     }
+  }
+
+  /// Puts a filter at the front of the recent ones. A filter built one Tag at a time replaces
+  /// the narrower one it grew from, so building "techno and live" leaves one entry, not two.
+  private func rememberFilter(_ tags: [String]) {
+    guard !tags.isEmpty else { return }
+    var kept = recentTagFilters.filter { $0 != tags }
+    if let latest = kept.first, Set(latest).isStrictSubset(of: tags) {
+      kept.removeFirst()
+    }
+    recentTagFilters = Array(([tags] + kept).prefix(Self.recentTagFilterLimit))
+  }
+
+  /// Puts Tags just added to a Set at the front of the recent ones.
+  private func rememberTags(_ tags: [String]) {
+    guard !tags.isEmpty else { return }
+    let used = Array(tags.reversed())
+    recentTags = Array(
+      (used + recentTags.filter { !used.contains($0) }).prefix(Self.recentTagLimit))
   }
 
   /// Shows the Library filtered to one Set's creator, from wherever that Set's page was opened.
@@ -288,6 +332,7 @@ final class AppModel {
   /// Goes to the Library filtered by every one of these Tags, as a recent filter asks.
   func showTags(_ tags: [String]) {
     activeTags = tags
+    rememberFilter(tags)
     activeCreator = nil
     openedSets[.library] = nil
     destination = .library
@@ -504,6 +549,7 @@ final class AppModel {
         updated = try await client.updateTags(open.set.id, tags: open.tags)
         guard reveal?.set.id == open.set.id, !Task.isCancelled else { return }
         await publish(updated)
+        rememberTags(open.tags.filter { !open.set.tags.contains($0) })
       }
       closeReveal(with: updated)
     } catch OrbisError.cancelled {
@@ -1014,8 +1060,11 @@ final class AppModel {
   }
 
   func replaceTags(_ id: String, with tags: [String]) async {
-    guard tags != savedSet(id)?.tags else { return }
+    let before = savedSet(id)?.tags ?? []
+    guard tags != before else { return }
     await change(id) { try await $0.updateTags(id, tags: tags) }
+    guard setFailure == nil, !Task.isCancelled else { return }
+    rememberTags(tags.filter { !before.contains($0) })
   }
 
   /// Moves a Set to a Playlist, or out of every one. Orbis holds a Set in one Playlist, so
