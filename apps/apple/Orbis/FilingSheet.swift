@@ -174,6 +174,7 @@ struct FilingSheet: View {
         set: { model.reveal?.tags = $0 }
       ),
       suggestions: model.availableTags,
+      title: "Tags",
       category: SetPresentation.category(for:)
     )
 

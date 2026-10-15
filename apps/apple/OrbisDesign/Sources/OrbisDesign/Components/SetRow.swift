@@ -3,7 +3,7 @@ import SwiftUI
 /// One Set in a listing: its artwork, its title, and one line of data under it.
 ///
 /// The data line says who made it and how long it runs, or, once listening has started, where
-/// it resumes. Tags follow as `#words`. The row draws no separator of its own; the listing parts
+/// it resumes. Tags follow as colored dots with their names, except the one the list is filtered by. The row draws no separator of its own; the listing parts
 /// rows with hairlines.
 ///
 /// The row has two targets and no mode. The artwork plays when there is Retained Audio to play,
@@ -249,8 +249,8 @@ public struct SetRow: View {
             .foregroundStyle(.secondary)
             .accessibilityLabel(State.keptLabel)
         }
-        ForEach(tags) { tag in
-          TagWord(tag.name, category: tag.category, active: tag.name == activeTag)
+        ForEach(otherTags) { tag in
+          TagWord(tag.name, category: tag.category)
         }
       }
     }
@@ -278,8 +278,8 @@ public struct SetRow: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       ChipFlow {
-        ForEach(tags) { tag in
-          TagWord(tag.name, category: tag.category, active: tag.name == activeTag)
+        ForEach(otherTags) { tag in
+          TagWord(tag.name, category: tag.category)
         }
       }
       .frame(width: 220, alignment: .leading)
@@ -303,6 +303,11 @@ public struct SetRow: View {
     }
   }
 
+  /// The Tag the list is filtered by is true of every row, so a row leaves it out.
+  private var otherTags: [Tag] {
+    tags.filter { $0.name != activeTag }
+  }
+
   private var accessibilityLabel: String {
     var parts = [title, source]
     if let announcement = playback?.announcement { parts.append(announcement) }
@@ -310,7 +315,7 @@ public struct SetRow: View {
     if !line.isEmpty { parts.append(line) }
     if let dates, !dates.isEmpty { parts.append(dates) }
     if state?.kept == true { parts.append(State.keptLabel) }
-    if !tags.isEmpty { parts.append(tags.map(\.name).joined(separator: ", ")) }
+    if !otherTags.isEmpty { parts.append(otherTags.map(\.name).joined(separator: ", ")) }
     return parts.joined(separator: ", ")
   }
 }

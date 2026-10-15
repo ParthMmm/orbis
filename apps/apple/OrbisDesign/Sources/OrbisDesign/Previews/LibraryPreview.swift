@@ -3,8 +3,6 @@ import SwiftUI
 /// How the components assemble into the Library screen. Preview only; the app owns the real view.
 /// Glass comes from the system: the sidebar, toolbar and tab bar are Liquid Glass on their own.
 private struct LibraryPreview: View {
-  @State private var techno = true
-  @State private var house = false
   @State private var selection: String? = "Everything"
 
   private let sets: [(String, String, String, String, [SetRow.Tag], Double?)] = [
@@ -39,10 +37,9 @@ private struct LibraryPreview: View {
           Text("Library").font(.orbis.largeTitle)
           ListingRule().padding(.top, 12)
           HStack {
-            ListingLabel("3 of 8 · 5 sets outside this filter")
+            ListingLabel("3 sets tagged techno")
             Spacer()
-            TagWord("techno", category: .pink, active: techno)
-            TagWord("house", category: .yellow, active: house)
+            Button("Clear") {}
           }
           .padding(.vertical, 12)
           .overlay(alignment: .bottom) { Divider() }

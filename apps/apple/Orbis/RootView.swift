@@ -287,7 +287,7 @@ struct DestinationView: View {
         ),
         failureContext: "loading the library",
         activeTag: model.activeTag,
-        filters: nil,
+        filters: clearFilters,
         // Only a filter can hide every Set. Without one, an empty list is an empty collection
         // and keeps the empty collection's copy.
         noMatches: librarySearchIsActive
@@ -512,17 +512,28 @@ struct DestinationView: View {
     )
   }
 
-  /// The design's count says how much the filter is hiding, which is the number a person
-  /// wants when a list looks short.
+  /// The count, and while a filter is on, what the filter is, so a short list explains itself.
   private var libraryFooter: String {
-    let total = model.totalCount
     guard model.isFilteringLibrary else {
+      let total = model.totalCount
       return total == 1 ? "1 set" : "\(total) sets"
     }
-    let visible = model.visibleCount
-    let outside = total - visible
-    let outsideLabel = outside == 1 ? "1 set" : "\(outside) sets"
-    return "\(visible) of \(total) · \(outsideLabel) outside this filter"
+    var parts = [model.visibleCount == 1 ? "1 set" : "\(model.visibleCount) sets"]
+    if let tag = model.activeTag { parts.append("tagged \(tag)") }
+    if let creator = model.activeCreator { parts.append("by \(creator.name)") }
+    return parts.joined(separator: " ")
+  }
+
+  private var clearFilters: AnyView? {
+    guard model.isFilteringLibrary, !librarySearchIsActive else { return nil }
+    return AnyView(
+      Button("Clear") { model.clearLibraryFilters() }
+        .font(.orbis.label)
+        .foregroundStyle(Color.orbis.tint)
+        .buttonStyle(.plain)
+        .accessibilityLabel("Clear filters")
+        .accessibilityIdentifier("library-clear-filters")
+    )
   }
 
   private var filingSheet: some View {
@@ -686,9 +697,7 @@ struct HomeRails: View {
   private var tagChips: some View {
     ForEach(model.availableTags, id: \.self) { tag in
       Button {
-        model.setTagFilter(tag)
-        model.openedSets[.library] = nil
-        model.destination = .library
+        model.showTag(tag)
       } label: {
         GlassTagChip(
           tag, count: model.tagCounts[tag] ?? 0,
@@ -1128,9 +1137,7 @@ private struct SearchStart: View {
             ChipFlow {
               ForEach(model.availableTags, id: \.self) { tag in
                 Button {
-                  model.setTagFilter(tag)
-                  model.openedSets[.library] = nil
-                  model.destination = .library
+                  model.showTag(tag)
                 } label: {
                   GlassTagChip(
                     tag, count: model.tagCounts[tag] ?? 0,

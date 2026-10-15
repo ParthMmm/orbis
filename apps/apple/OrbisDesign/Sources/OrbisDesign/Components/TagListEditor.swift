@@ -1,19 +1,23 @@
 import SwiftUI
 
+/// A Set's Tags as chips, the field that adds one, and the Tags already in use to pick from.
+/// `title` heads the section when the editor shares a form with other fields.
 public struct TagListEditor: View {
   @Binding public var tags: [String]
   public let suggestions: [String]
+  public let title: String?
   public let category: @MainActor (String) -> OrbisColor.Category
 
   @State private var draft = ""
   @FocusState private var isAdding: Bool
 
   public init(
-    tags: Binding<[String]>, suggestions: [String] = [],
+    tags: Binding<[String]>, suggestions: [String] = [], title: String? = nil,
     category: @escaping @MainActor (String) -> OrbisColor.Category = OrbisColor.Category.forTag
   ) {
     _tags = tags
     self.suggestions = suggestions
+    self.title = title
     self.category = category
   }
 
@@ -33,28 +37,11 @@ public struct TagListEditor: View {
   }
 
   @ViewBuilder private var sections: some View {
-    if !tags.isEmpty {
-      Section("Tags") {
-        ForEach(tags, id: \.self) { tag in
-          HStack(spacing: 12) {
-            Circle()
-              .fill(category(tag).dot)
-              .frame(width: 10, height: 10)
-              .accessibilityHidden(true)
-            Text(tag)
-            Spacer()
-            Button("Remove \(tag)", systemImage: "minus.circle.fill") { remove(tag) }
-              .labelStyle(.iconOnly)
-              .foregroundStyle(.secondary)
-              .buttonStyle(.orbisIcon)
-              .accessibilityIdentifier("tag-remove-\(tag)")
-          }
-        }
-        .onDelete { offsets in tags.remove(atOffsets: offsets) }
-      }
-    }
-
     Section {
+      if !tags.isEmpty {
+        chips(tags, verb: "Remove", accessory: "xmark", identifier: "tag-remove") { remove($0) }
+          .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
+      }
       HStack {
         TextField("Add a Tag", text: $draft)
           .focused($isAdding)
@@ -66,46 +53,48 @@ public struct TagListEditor: View {
           #endif
           .disabled(isFull)
           .accessibilityIdentifier("tag-field")
-        Button("Add", systemImage: "plus.circle.fill") { add(draft, keepTyping: true) }
-          .labelStyle(.iconOnly)
-          .font(.title3)
-          .foregroundStyle(Color.orbis.tint)
-          .buttonStyle(.orbisIcon)
-          .disabled(TagInput.normalize(draft) == nil || isFull)
+        if TagInput.normalize(draft) != nil, !isFull {
+          Button("Add", systemImage: "plus.circle.fill") { add(draft, keepTyping: true) }
+            .labelStyle(.iconOnly)
+            .font(.title3)
+            .foregroundStyle(Color.orbis.tint)
+            .buttonStyle(.orbisIcon)
+        }
       }
+    } header: {
+      if let title { Text(title) }
     } footer: {
-      Text(
-        isFull
-          ? "A Set holds up to \(TagInput.serviceLimit) Tags."
-          : "Press Return to add a Tag."
-      )
+      if isFull { Text("A Set holds up to \(TagInput.serviceLimit) Tags.") }
     }
 
     if !offered.isEmpty, !isFull {
       Section("Your Tags") {
-        ForEach(offered, id: \.self) { tag in
-          Button {
-            add(tag, keepTyping: false)
-          } label: {
-            HStack(spacing: 12) {
-              Circle()
-                .fill(category(tag).dot)
-                .frame(width: 10, height: 10)
-                .accessibilityHidden(true)
-              Text(tag)
-                .foregroundStyle(.primary)
-              Spacer()
-              Image(systemName: "plus")
-                .foregroundStyle(Color.orbis.tint)
-                .accessibilityHidden(true)
-            }
-          }
-          .tint(.primary)
-          .accessibilityLabel("Add \(tag)")
-          .accessibilityIdentifier("tag-suggestion-\(tag)")
+        chips(offered, verb: "Add", accessory: "plus", identifier: "tag-suggestion") {
+          add($0, keepTyping: false)
         }
       }
     }
+  }
+
+  private func chips(
+    _ names: [String], verb: String, accessory: String, identifier: String,
+    action: @escaping (String) -> Void
+  ) -> some View {
+    GlassEffectContainer(spacing: 8) {
+      ChipFlow(spacing: 8) {
+        ForEach(names, id: \.self) { tag in
+          Button {
+            action(tag)
+          } label: {
+            GlassTagChip(tag, category: category(tag), accessory: accessory)
+          }
+          .buttonStyle(.plain)
+          .accessibilityLabel("\(verb) \(tag)")
+          .accessibilityIdentifier("\(identifier)-\(tag)")
+        }
+      }
+    }
+    .padding(.vertical, 4)
   }
 
   private func add(_ raw: String, keepTyping: Bool) {
