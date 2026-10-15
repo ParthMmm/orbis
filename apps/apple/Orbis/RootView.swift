@@ -1236,9 +1236,10 @@ private struct SearchStart: View {
     .map { $0 }
   }
 
-  /// The recent filters whose Tags the library still holds.
+  /// The recent combinations of Tags the library still holds. A single Tag already leads the
+  /// Tags row, which is ordered by recent use.
   private var recentFilters: [[String]] {
-    model.recentTagFilters.filter { $0.allSatisfy { model.tagCounts[$0] != nil } }
+    model.recentTagFilters.filter { $0.count > 1 && $0.allSatisfy { model.tagCounts[$0] != nil } }
   }
 
   var body: some View {
