@@ -188,10 +188,11 @@ struct LaneService {
     return answer.passcode
   }
 
-  /// Sets the Group Passcode. Host only; nil closes joining.
-  func setPasscode(_ passcode: String?) throws {
-    let value: Any = passcode.map { $0 as Any } ?? NSNull()
-    let _: Passcode = try send("PUT", "admin/passcode", ["passcode": value])
+  /// Opens joining with a new passcode the service makes, and returns it. Host only.
+  func newPasscode() throws -> String {
+    let answer: Passcode = try send("POST", "admin/passcode", nil)
+    guard let passcode = answer.passcode else { throw URLError(.badServerResponse) }
+    return passcode
   }
 
   /// Everyone in the Group. Host only.

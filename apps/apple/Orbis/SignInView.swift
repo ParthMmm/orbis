@@ -75,7 +75,10 @@ private struct JoinForm: View {
           .onSubmit { focus = .passcode }
           .accessibilityIdentifier("signin-username")
         TextField("Group Passcode", text: $passcode)
-          .plainEntry()
+          .autocorrectionDisabled()
+          #if os(iOS)
+            .textInputAutocapitalization(.characters)
+          #endif
           .focused($focus, equals: .passcode)
           .submitLabel(.join)
           .onSubmit(join)
@@ -178,7 +181,7 @@ private struct SignInFailureSection: View {
 }
 
 extension View {
-  /// Usernames, passcodes, and codes are typed as they are: no capitals, corrections, or
+  /// Usernames and codes are typed as they are: no capitals, corrections, or
   /// suggestions added.
   func plainEntry() -> some View {
     self

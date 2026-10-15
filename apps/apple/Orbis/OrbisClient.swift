@@ -228,14 +228,8 @@ private struct SignedIn: Decodable {
   let key: String
 }
 
-private struct GroupPasscode: Codable {
+private struct GroupPasscode: Decodable {
   let passcode: String?
-
-  // Synthesized encoding drops nil; the service needs an explicit null to close joining.
-  func encode(to encoder: any Encoder) throws {
-    var container = encoder.container(keyedBy: CodingKeys.self)
-    try container.encode(passcode, forKey: .passcode)
-  }
 }
 
 private struct GroupPeople: Decodable {
@@ -407,10 +401,16 @@ struct OrbisClient: Sendable {
     return try Self.decode(GroupPasscode.self, from: response).passcode
   }
 
-  /// Sets the Group Passcode. Nil closes joining.
-  func setPasscode(_ passcode: String?) async throws -> String? {
-    let body = try Self.encoder.encode(GroupPasscode(passcode: passcode))
-    let response = try await send(path: "admin/passcode", method: "PUT", body: body)
+  /// Opens joining with a new random Group Passcode, which the service makes. The one shared
+  /// before stops working.
+  func newPasscode() async throws -> String? {
+    let response = try await send(path: "admin/passcode", method: "POST", body: nil)
+    return try Self.decode(GroupPasscode.self, from: response).passcode
+  }
+
+  /// Closes joining.
+  func closeJoining() async throws -> String? {
+    let response = try await send(path: "admin/passcode", method: "DELETE", body: nil)
     return try Self.decode(GroupPasscode.self, from: response).passcode
   }
 

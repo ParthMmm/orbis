@@ -86,13 +86,15 @@ final class SettingsModel {
     code = await settingsRequest(app, { self.codeFailure = $0 }, { try await $0.signInCode() }) ?? code
   }
 
-  func setPasscode(_ next: String?) async {
-    guard !isSaving, next == nil || next?.isEmpty == false else { return }
+  /// Opens joining with a new random passcode, or closes it.
+  func changeJoining(open: Bool) async {
+    guard !isSaving else { return }
     isSaving = true
     defer { isSaving = false }
-    if let stored = await settingsRequest(app, { self.hostFailure = $0 }, { try await $0.setPasscode(next) }) {
-      passcode = stored
-    }
+    let stored = await settingsRequest(
+      app, { self.hostFailure = $0 },
+      { open ? try await $0.newPasscode() : try await $0.closeJoining() })
+    if let stored { passcode = stored }
   }
 }
 

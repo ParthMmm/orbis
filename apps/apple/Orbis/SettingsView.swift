@@ -38,9 +38,6 @@ struct SettingsView: View {
   let model: AppModel
   @Bindable var settings: SettingsModel
   @State private var isConfirmingSignOut = false
-  /// Set when the Host turns joining on, which needs a passcode first. Held here, because a
-  /// destination inside the form's lazy rows is ignored.
-  @State private var isEditingPasscode = false
 
   var body: some View {
     Group {
@@ -69,8 +66,7 @@ struct SettingsView: View {
         account(person)
         group(person)
         if person.host {
-          HostSections(
-            model: model, settings: settings, hostId: person.id, isEditingPasscode: $isEditingPasscode)
+          HostSections(model: model, settings: settings, hostId: person.id)
         }
         downloads(person)
       }
@@ -86,7 +82,6 @@ struct SettingsView: View {
       }
     }
     .settingsPage()
-    .navigationDestination(isPresented: $isEditingPasscode) { PasscodeEditor(settings: settings) }
     .confirmationDialog(
       "Sign out of Orbis?", isPresented: $isConfirmingSignOut, titleVisibility: .visible
     ) {
@@ -250,29 +245,56 @@ private struct HostSections: View {
   let model: AppModel
   @Bindable var settings: SettingsModel
   let hostId: String
-  @Binding var isEditingPasscode: Bool
+  @State private var isConfirmingNewPasscode = false
 
   var body: some View {
     Section {
       Toggle("Allow Joining", isOn: joining)
         .disabled(settings.isSaving)
         .accessibilityIdentifier("settings-joining")
-      // The passcode itself never shows: the Host chose it, and a screen anyone can glance at is
-      // no place for the one thing that opens the Group.
       if let passcode = settings.passcode {
-        CopyButton(
-          title: "Copy Group Passcode", text: passcode, identifier: "settings-passcode-copy",
-          row: "Group Passcode")
-        NavigationLink("Change Group Passcode") { PasscodeEditor(settings: settings) }
-          .accessibilityIdentifier("settings-passcode-row")
+        // Separate elements, not one LabeledContent, so VoiceOver and the journey reach the
+        // passcode and its Copy button each on their own.
+        HStack {
+          Text("Group Passcode")
+          Spacer()
+          Text(passcode)
+            .font(.orbis.body.monospaced())
+            .textSelection(.enabled)
+            .accessibilityIdentifier("settings-passcode-row")
+          CopyButton(
+            title: "Copy Group Passcode", text: passcode, identifier: "settings-passcode-copy")
+        }
+        .accessibilityElement(children: .contain)
+        ShareLink(item: Self.invitation(passcode)) {
+          Label("Share Passcode", systemImage: "square.and.arrow.up")
+        }
+        .accessibilityIdentifier("settings-passcode-share")
+        Button("New Passcode") { isConfirmingNewPasscode = true }
+          .disabled(settings.isSaving)
+          .accessibilityIdentifier("settings-passcode-new")
       }
       FailureRows(
         failure: settings.hostFailure, context: "managing the Group", identifier: "settings-host-error")
     } footer: {
-      if settings.passcode == nil {
-        Text("Joining is closed. Turn on Allow Joining and choose a Group Passcode so a friend can join.")
-          .accessibilityIdentifier("settings-passcode-state")
+      Group {
+        if settings.passcode == nil {
+          Text("Joining is closed. Turn on Allow Joining and Orbis makes a Group Passcode to share with friends.")
+        } else {
+          Text("Orbis made this passcode. A new passcode stops the old one working; people who joined stay signed in.")
+        }
       }
+      .accessibilityIdentifier("settings-passcode-state")
+    }
+    .confirmationDialog(
+      "Make a new Group Passcode?", isPresented: $isConfirmingNewPasscode, titleVisibility: .visible
+    ) {
+      Button("New Passcode", role: .destructive) {
+        Task { await settings.changeJoining(open: true) }
+      }
+      Button("Cancel", role: .cancel) {}
+    } message: {
+      Text("The passcode you shared stops working.")
     }
 
     Section("People") {
@@ -300,78 +322,17 @@ private struct HostSections: View {
     }
   }
 
-  /// On opens the passcode page, because joining needs a passcode; off closes joining at once.
+  /// On makes a new passcode; off closes joining at once.
   private var joining: Binding<Bool> {
     Binding(
       get: { settings.passcode != nil },
-      set: { open in
-        if open {
-          isEditingPasscode = true
-        } else {
-          Task { await settings.setPasscode(nil) }
-        }
-      })
-  }
-}
-
-/// The page for choosing a new Group Passcode. The fields stay hidden and start empty, and the
-/// passcode is typed twice, because a typo the Host cannot see would keep every friend out.
-private struct PasscodeEditor: View {
-  @Bindable var settings: SettingsModel
-  @State private var next = ""
-  @State private var confirmation = ""
-  @Environment(\.dismiss) private var dismiss
-
-  var body: some View {
-    Form {
-      Section {
-        SecureField("New Passcode", text: $next)
-          .plainEntry()
-          .accessibilityIdentifier("settings-passcode")
-        SecureField("Confirm Passcode", text: $confirmation)
-          .plainEntry()
-          .onSubmit(save)
-          .accessibilityIdentifier("settings-passcode-confirm")
-        if mismatched {
-          Text("The passcodes do not match.")
-            .foregroundStyle(OrbisColor.destructive)
-            .accessibilityIdentifier("settings-passcode-mismatch")
-        }
-        FailureRows(
-          failure: settings.hostFailure, context: "managing the Group", identifier: "settings-host-error")
-      } footer: {
-        Text("Use at least 8 characters. Orbis does not show it after you save, so tell it to friends yourself.")
-      }
-    }
-    .settingsPage()
-    .navigationTitle("Group Passcode")
-    .toolbar {
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Save", action: save)
-          .disabled(trimmed.isEmpty || trimmed != confirmation.trimmed || settings.isSaving)
-          .accessibilityIdentifier("settings-passcode-save")
-      }
-    }
+      set: { open in Task { await settings.changeJoining(open: open) } })
   }
 
-  private var trimmed: String { next.trimmed }
-
-  private var mismatched: Bool {
-    !confirmation.isEmpty && trimmed != confirmation.trimmed
+  /// The passcode sits on a line of its own, so a friend can select only it.
+  private static func invitation(_ passcode: String) -> String {
+    "Join my Orbis Group with this passcode:\n\n\(passcode)"
   }
-
-  private func save() {
-    guard !trimmed.isEmpty, trimmed == confirmation.trimmed else { return }
-    let passcode = trimmed
-    Task {
-      await settings.setPasscode(passcode)
-      if settings.passcode == passcode { dismiss() }
-    }
-  }
-}
-
-extension String {
-  fileprivate var trimmed: String { trimmingCharacters(in: .whitespacesAndNewlines) }
 }
 
 /// One other Person, as the Host sees them: a Sign-in Code for a new device, and removal.
