@@ -79,8 +79,14 @@ enum ClientSettings {
   /// macOS and the iOS simulator only, because the file is a path on the Mac. The simulator
   /// names the Mac's home directory in `SIMULATOR_HOST_HOME`, so an agent driving a simulator
   /// build sees live data without typing the pairing. A phone has no such directory.
+  ///
+  /// `ORBIS_DEVELOPMENT_CONFIG=off` turns it off for a journey that has to start, and stay,
+  /// signed out on a Mac that has the file.
   static var developmentConfiguration: (address: String, token: String)? {
     #if DEBUG && (os(macOS) || targetEnvironment(simulator))
+      guard ProcessInfo.processInfo.environment["ORBIS_DEVELOPMENT_CONFIG"] != "off" else {
+        return nil
+      }
       #if os(macOS)
         let home = FileManager.default.homeDirectoryForCurrentUser
       #else
