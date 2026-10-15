@@ -36,6 +36,8 @@ struct RootView: View {
   /// The phase the last refresh task saw, so the one that runs as the window opens is told apart
   /// from a return to the app.
   @State private var observedPhase: ScenePhase?
+  /// Set while the greeting after a join fades, so the fade has a value to watch.
+  @State private var isWelcomeLeaving = false
 
   #if os(iOS)
     @Environment(\.horizontalSizeClass) private var sizeClass
@@ -47,6 +49,12 @@ struct RootView: View {
   var body: some View {
     ZStack {
       content
+      if let username = model.welcomedUsername {
+        WelcomeView(username: username)
+          .opacity(isWelcomeLeaving ? 0 : 1)
+          .animation(timing.fadeAnimation, value: isWelcomeLeaving)
+          .task { await fadeWelcome() }
+      }
       #if os(iOS)
         if splash != .gone {
           SplashView()
@@ -88,6 +96,16 @@ struct RootView: View {
         SettingsScreen(model: model) { model.isShowingSettings = false }
       }
     #endif
+  }
+
+  /// Holds the greeting long enough to read, then fades it the way the splash fades.
+  /// A cancelled wait ends the greeting at once rather than leaving it over the library.
+  private func fadeWelcome() async {
+    try? await Task.sleep(for: timing.welcomeHold)
+    isWelcomeLeaving = true
+    try? await Task.sleep(for: timing.fade)
+    model.welcomedUsername = nil
+    isWelcomeLeaving = false
   }
 
   @ViewBuilder

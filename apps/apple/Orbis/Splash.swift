@@ -17,6 +17,8 @@ struct SplashTiming: Equatable {
   /// How long the orb takes to leave. The app arrives underneath it, so the exit is the app
   /// appearing rather than the orb sliding away.
   var fade: Duration = .milliseconds(350)
+  /// How long the greeting after a join holds before it fades the same way.
+  var welcomeHold: Duration = .milliseconds(1600)
 
   /// The exit as the animation it is, built from the duration above so the two cannot drift
   /// apart. Dividing by a second is how a `Duration` becomes the seconds this API counts in.
