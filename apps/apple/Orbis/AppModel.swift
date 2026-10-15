@@ -35,6 +35,9 @@ final class AppModel {
   var isSigningIn = false
   /// Why the last sign-in failed, said under the button.
   var signInFailure: OrbisFailure?
+  /// The name a new Person just joined with, greeted over the library while it loads. Cleared
+  /// once the greeting has faded.
+  var welcomedUsername: String?
 
   /// iOS presents Settings as a sheet from the gear on Home and Library. The Mac has a Settings
   /// scene instead.
@@ -296,12 +299,15 @@ final class AppModel {
     let signedOut = OrbisClient(address: serviceAddress, token: "", session: session)
     let label = String(Self.deviceLabel.prefix(100))
     let key: String
+    var joinedAs: String?
     do {
       switch request {
       case .join(let username, let passcode):
+        let username = username.trimmingCharacters(in: .whitespacesAndNewlines)
         key = try await signedOut.join(
-          username: username.trimmingCharacters(in: .whitespacesAndNewlines),
+          username: username,
           passcode: passcode.trimmingCharacters(in: .whitespacesAndNewlines), label: label)
+        joinedAs = username
       case .code(let typed):
         key = try await signedOut.redeem(code: SignInCode.normalized(typed), label: label)
       }
@@ -313,6 +319,7 @@ final class AppModel {
       signInFailure = OrbisError.storageRefused.failure(at: serviceAddress)
       return
     }
+    welcomedUsername = joinedAs
     client = OrbisClient(address: serviceAddress, token: key, session: session)
     await loadLibrary()
     await loadPlaylists()
