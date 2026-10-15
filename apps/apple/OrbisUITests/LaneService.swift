@@ -275,6 +275,10 @@ extension XCTestCase {
     }
     if keychain {
       app.launchArguments.append("-orbisResetSettings")
+      // With the keychain cleared, a Debug build signs in with the developer's own
+      // ~/.orbis/config.json. Turn that off, so the journey starts signed out on any Mac. It
+      // holds for every relaunch of this app.
+      app.launchEnvironment["ORBIS_DEVELOPMENT_CONFIG"] = "off"
     } else {
       app.launchEnvironment["ORBIS_TEST_SETTINGS"] = "memory"
     }
