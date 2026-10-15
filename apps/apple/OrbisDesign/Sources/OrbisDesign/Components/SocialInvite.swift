@@ -20,7 +20,7 @@ public struct SocialInvite: View {
             .font(.orbis.title)
             .multilineTextAlignment(.center)
           Text(
-            "Turn on Social to see the Sets, Playlists and listening of people in your Group, and to share yours with them."
+            "Share with your Group to see each other's Sets, Playlists, and listening."
           )
           .font(.orbis.body)
           .foregroundStyle(.secondary)
@@ -38,7 +38,7 @@ public struct SocialInvite: View {
         .glassEffect(.regular, in: .rect(cornerRadius: 22))
         VStack(spacing: 10) {
           Button(action: turnOn) {
-            Text("Turn On Social")
+            Text("Share with Group")
               .font(.orbis.body.weight(.semibold))
               .frame(maxWidth: .infinity)
           }
