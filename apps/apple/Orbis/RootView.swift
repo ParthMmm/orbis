@@ -258,6 +258,11 @@ struct DestinationView: View {
   @State private var isFilingSheetShown = false
 
   @State private var libraryQuery = ""
+  /// The Set whose Tags are open for editing from its row's menu.
+  @State private var taggingSet: SavedSet?
+  /// The Sets picked in the Library's selection mode, or nil when it is not selecting.
+  @State private var selectedIds: Set<String>?
+  @State private var isBulkTagging = false
 
   #if os(macOS)
     private var matchingLibrary: Loadable<[SavedSet]> {
@@ -286,7 +291,7 @@ struct DestinationView: View {
             .accessibilityIdentifier("library-empty")
         ),
         failureContext: "loading the library",
-        activeTag: model.activeTag,
+        hiddenTags: model.activeTags,
         filters: clearFilters,
         // Only a filter can hide every Set. Without one, an empty list is an empty collection
         // and keeps the empty collection's copy.
@@ -311,9 +316,20 @@ struct DestinationView: View {
         isPlaying: model.audioPlayer.state == .playing,
         togglePlayback: { set in model.togglePlayback(set.id) },
         groupsByDay: model.librarySort == .newest,
+        menuTags: model.availableTags,
+        toggleTag: { set, tag in
+          Task { await model.setTag(tag, on: [set.id], to: !set.tags.contains(tag)) }
+        },
+        editTags: { taggingSet = $0 },
+        selection: selectedIds,
+        toggleSelection: { set in
+          selectedIds = selectedIds.map { $0.symmetricDifference([set.id]) }
+        },
         backdrop: .artwork(libraryLead.flatMap(SetPresentation.pageArtwork))
       )
       .refreshable { await model.refreshLibraryQuietly() }
+      // A row's menu and the selection bar change Sets from here, so their refusals show here.
+      .setChangeStatus(model)
       .macPageSearch(text: $libraryQuery, prompt: "Find in Library")
       .macSearchToolbarBackground(isSearching: librarySearchIsActive)
       .sidebarPageTitle("Library")
@@ -332,6 +348,17 @@ struct DestinationView: View {
       .sheet(isPresented: $isFilingSheetShown) { filingSheet }
       .onChange(of: model.reveal != nil) { _, hasReveal in
         if hasReveal { isFilingSheetShown = true }
+      }
+      .safeAreaInset(edge: .bottom) {
+        if let selectedIds { selectionBar(count: selectedIds.count) }
+      }
+      .sheet(isPresented: $isBulkTagging) {
+        BulkTagSheet(model: model, ids: Array(selectedIds ?? []))
+      }
+      .sheet(item: $taggingSet) { set in
+        TagSheet(tags: set.tags, suggestions: model.availableTags) { tags in
+          Task { await model.replaceTags(set.id, with: tags) }
+        }
       }
       .sheet(isPresented: $isShowingQueue) {
         QueueScreen(model: model)
@@ -490,9 +517,9 @@ struct DestinationView: View {
           GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
               ForEach(model.availableTags, id: \.self) { tag in
-                let active = model.activeTag == tag
+                let active = model.activeTags.contains(tag)
                 Button {
-                  model.setTagFilter(active ? nil : tag)
+                  model.toggleTagFilter(tag)
                 } label: {
                   GlassTagChip(
                     tag, count: model.tagCounts[tag] ?? 0,
@@ -519,9 +546,33 @@ struct DestinationView: View {
       return total == 1 ? "1 set" : "\(total) sets"
     }
     var parts = [model.visibleCount == 1 ? "1 set" : "\(model.visibleCount) sets"]
-    if let tag = model.activeTag { parts.append("tagged \(tag)") }
+    if !model.activeTags.isEmpty {
+      parts.append("tagged \(model.activeTags.formatted(.list(type: .and)))")
+    }
     if let creator = model.activeCreator { parts.append("by \(creator.name)") }
     return parts.joined(separator: " ")
+  }
+
+  private func selectionBar(count: Int) -> some View {
+    HStack {
+      Text("\(count) selected")
+        .font(.headline)
+        .monospacedDigit()
+        .contentTransition(.numericText())
+        .accessibilityIdentifier("library-selection-count")
+      Spacer()
+      Button("Tag", systemImage: "tag") { isBulkTagging = true }
+        .buttonStyle(.glassProminent)
+        .tint(Color.orbis.tint)
+        .disabled(count == 0)
+        .accessibilityIdentifier("library-bulk-tag")
+    }
+    .padding(.leading, 20)
+    .padding(.trailing, 8)
+    .padding(.vertical, 8)
+    .glassEffect(.regular, in: .capsule)
+    .padding(.horizontal)
+    .padding(.bottom, 8)
   }
 
   private var clearFilters: AnyView? {
@@ -554,6 +605,16 @@ struct DestinationView: View {
           }
         }
         .accessibilityIdentifier("library-play-playlist")
+      }
+    }
+    ToolbarItem {
+      if selectedIds == nil {
+        Button("Select") { selectedIds = [] }
+          .accessibilityIdentifier("library-select")
+      } else {
+        Button("Done") { selectedIds = nil }
+          .fontWeight(.semibold)
+          .accessibilityIdentifier("library-select-done")
       }
     }
     ToolbarItem {
@@ -990,7 +1051,7 @@ struct SearchDestination: View {
   /// On a Mac the tracks found inside Tracklists take a column of their own beside the Sets,
   /// where a phone puts them under the Sets.
   @ViewBuilder private var results: some View {
-    let cues = model.cueMatches(for: model.searchResultsFor ?? "")
+    let cues = isTagQuery ? [] : model.cueMatches(for: model.searchResultsFor ?? "")
     #if os(macOS)
       HStack(alignment: .top, spacing: 0) {
         resultList(cuesBelow: [], foundCues: !cues.isEmpty, backdrop: .none)
@@ -1011,27 +1072,46 @@ struct SearchDestination: View {
     #endif
   }
 
+  private var isTagQuery: Bool { SetPresentation.isTagQuery(model.searchResultsFor ?? "") }
+
+  /// The Tags the query names, shown above the Sets so a Tag is one tap from its filter.
+  private var matchingTags: [String] {
+    SetPresentation.tagsMatching(model.searchResultsFor ?? "", in: model.availableTags)
+  }
+
   /// `foundCues` keeps the heading and the top result up when the only matches are in a
   /// Tracklist shown beside the list rather than in it.
   private func resultList(
     cuesBelow cues: [CueMatch], foundCues: Bool, backdrop: SetList.Backdrop
   ) -> some View {
     let top = topResult
+    let tags = matchingTags
     return SetList(
       state: remainingResults,
       heading: nil,
-      empty: AnyView(
-        NoResultsState(recoverLabel: "Clear search", recover: clear)
-          .accessibilityIdentifier("search-no-results")
-      ),
+      empty: isTagQuery
+        ? AnyView(
+          ContentUnavailableView {
+            Label("No Tags", systemImage: "tag")
+          } description: {
+            Text("No Tag matches \"\(model.searchResultsFor ?? "")\".")
+          } actions: {
+            Button("Clear search", action: clear)
+          }
+          .accessibilityIdentifier("search-no-tags")
+        )
+        : AnyView(
+          NoResultsState(recoverLabel: "Clear search", recover: clear)
+            .accessibilityIdentifier("search-no-results")
+        ),
       failureContext: "searching the library",
-      activeTag: nil,
       filters: nil,
       // A search that found nothing already shows the no-results state, so there is no
       // second one to reach.
       noMatches: nil,
       hero: nil,
-      aboveRows: top == nil && !foundCues ? nil : AnyView(aboveResults(top)),
+      aboveRows: top == nil && !foundCues && tags.isEmpty
+        ? nil : AnyView(aboveResults(top, tags: tags)),
       belowRows: cues.isEmpty ? nil : AnyView(TracklistMatches(model: model, matches: cues)),
       footer: searchFooter,
       retry: { await model.runSearch() },
@@ -1054,17 +1134,42 @@ struct SearchDestination: View {
     if case .loaded(let sets) = model.search { .loaded(Array(sets.dropFirst())) } else { model.search }
   }
 
-  private func aboveResults(_ top: SavedSet?) -> some View {
+  private func aboveResults(_ top: SavedSet?, tags: [String]) -> some View {
     VStack(alignment: .leading, spacing: 14) {
       MacPageTitle.slot("Search")
       heading
         .font(.orbis.sectionTitle)
         .accessibilityAddTraits(.isHeader)
+      if !tags.isEmpty {
+        tagRow(tags)
+      }
       if let top {
         TopResult(model: model, set: top)
       }
       matchingPlaylistRows
     }
+  }
+
+  private func tagRow(_ tags: [String]) -> some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      GlassEffectContainer(spacing: 8) {
+        HStack(spacing: 8) {
+          ForEach(tags, id: \.self) { tag in
+            Button {
+              model.showTag(tag)
+            } label: {
+              GlassTagChip(
+                tag, count: model.tagCounts[tag] ?? 0, category: SetPresentation.category(for: tag))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("search-result-tag-\(tag)")
+          }
+        }
+        .padding(.horizontal, 16)
+      }
+    }
+    .padding(.horizontal, -16)
+    .scrollClipDisabled()
   }
 
   private var matchingPlaylistRows: AnyView? {
@@ -1101,13 +1206,17 @@ struct SearchDestination: View {
   }
 
   private var searchFooter: String {
+    if isTagQuery {
+      let count = matchingTags.count
+      return count == 1 ? "1 tag" : "\(count) tags"
+    }
     guard case .loaded(let sets) = model.search else { return "" }
     return sets.count == 1 ? "1 set" : "\(sets.count) sets"
   }
 }
 
-/// Search before anything is asked: the Tags and creators to browse by, and the last queries,
-/// each one tap from a result.
+/// Search before anything is asked: the last Tag filters, the Tags and creators to browse by,
+/// and the last queries, each one tap from a result.
 private struct SearchStart: View {
   @Bindable var model: AppModel
   let prompt: String
@@ -1127,11 +1236,34 @@ private struct SearchStart: View {
     .map { $0 }
   }
 
+  /// The recent combinations of Tags the library still holds. A single Tag already leads the
+  /// Tags row, which is ordered by recent use.
+  private var recentFilters: [[String]] {
+    model.recentTagFilters.filter { $0.count > 1 && $0.allSatisfy { model.tagCounts[$0] != nil } }
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 28) {
         MacPageTitle.slot("Search")
         ListingLabel(prompt)
+        if !recentFilters.isEmpty {
+          section("Recent filters") {
+            ChipFlow {
+              ForEach(Array(recentFilters.enumerated()), id: \.offset) { index, tags in
+                Button {
+                  model.showTags(tags)
+                } label: {
+                  GlassTagChip(
+                    tags.joined(separator: " + "),
+                    category: SetPresentation.category(for: tags[0]))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("search-recent-filter-\(index)")
+              }
+            }
+          }
+        }
         if !model.availableTags.isEmpty {
           section("Tags") {
             ChipFlow {

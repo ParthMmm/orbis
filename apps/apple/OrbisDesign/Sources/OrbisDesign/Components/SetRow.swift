@@ -31,7 +31,7 @@ public struct SetRow: View {
   /// When the Set was saved and, when known, when the source released it.
   public let dates: String?
   public let tags: [Tag]
-  public let activeTag: String?
+  public let hiddenTags: [String]
   public let state: State?
   /// How far listening got, from 0 to 1, for the bar along the artwork.
   public let progress: Double?
@@ -108,7 +108,7 @@ public struct SetRow: View {
 
   public init(
     title: String, source: String, artwork: URL? = nil, creator: String? = nil,
-    length: String? = nil, dates: String? = nil, tags: [Tag] = [], activeTag: String? = nil,
+    length: String? = nil, dates: String? = nil, tags: [Tag] = [], hiddenTags: [String] = [],
     state: State? = nil,
     progress: Double? = nil, playback: Playback? = nil,
     togglePlayback: (() -> Void)? = nil, select: (() -> Void)? = nil
@@ -120,7 +120,7 @@ public struct SetRow: View {
     self.length = length
     self.dates = dates
     self.tags = tags
-    self.activeTag = activeTag
+    self.hiddenTags = hiddenTags
     self.state = state
     self.progress = progress
     self.playback = playback
@@ -303,9 +303,9 @@ public struct SetRow: View {
     }
   }
 
-  /// The Tag the list is filtered by is true of every row, so a row leaves it out.
+  /// The Tags the list is filtered by are true of every row, so a row leaves them out.
   private var otherTags: [Tag] {
-    tags.filter { $0.name != activeTag }
+    tags.filter { !hiddenTags.contains($0.name) }
   }
 
   private var accessibilityLabel: String {
@@ -350,13 +350,13 @@ private struct SetRowSample: View {
         title: "Ben UFO — Dekmantel Festival 2019", source: "YouTube", creator: "Dekmantel",
         length: "1h 58m",
         tags: [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)],
-        activeTag: "techno"
+        hiddenTags: ["techno"]
       )
       Divider()
       SetRow(
         title: "Objekt — Live at Freerotation", source: "SoundCloud", creator: "Objekt",
         length: "2h 33m", tags: [.init("techno", .pink), .init("live", .mint)],
-        activeTag: "techno", state: .init(resumeAt: 2462, kept: true), progress: 0.27,
+        hiddenTags: ["techno"], state: .init(resumeAt: 2462, kept: true), progress: 0.27,
         playback: .playing, togglePlayback: {}, select: {}
       )
       Divider()

@@ -48,7 +48,7 @@ private struct LibraryPreview: View {
             ForEach(Array(sets.enumerated()), id: \.offset) { index, set in
               SetRow(
                 title: set.1, source: set.0, creator: set.2, length: set.3, tags: set.4,
-                activeTag: "techno", progress: set.5
+                hiddenTags: ["techno"], progress: set.5
               )
               if index < sets.count - 1 {
                 Divider()

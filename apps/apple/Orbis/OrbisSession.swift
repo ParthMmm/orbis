@@ -2,5 +2,5 @@ import Foundation
 
 @MainActor
 enum OrbisSession {
-  static let model = AppModel()
+  static let model = AppModel(recentStore: .standard)
 }

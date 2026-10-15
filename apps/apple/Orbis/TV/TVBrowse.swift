@@ -227,10 +227,10 @@
         VStack(alignment: .leading, spacing: 32) {
           if !model.availableTags.isEmpty {
             TVTagChips(
-              tags: model.availableTags, counts: model.tagCounts, selected: model.activeTag,
+              tags: model.availableTags, counts: model.tagCounts, selected: model.activeTags.first,
               hint: "Filters the library"
             ) { tag in
-              model.setTagFilter(model.activeTag == tag ? nil : tag)
+              model.setTagFilter(model.activeTags == [tag] ? nil : tag)
             }
           }
           if let creator = model.activeCreator {

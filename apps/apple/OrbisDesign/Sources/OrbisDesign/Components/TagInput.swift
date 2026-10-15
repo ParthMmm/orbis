@@ -56,6 +56,15 @@ public struct TagInput: View {
     return offered
   }
 
+  /// The Tags that hold what is typed, ignoring case: the ones that start with it first, then
+  /// the ones that only contain it, each group in the order given.
+  public static func matching(_ draft: String, in tags: [String]) -> [String] {
+    guard let query = normalize(draft) else { return tags }
+    let holding = tags.filter { $0.lowercased().contains(query) }
+    return holding.filter { $0.lowercased().hasPrefix(query) }
+      + holding.filter { !$0.lowercased().hasPrefix(query) }
+  }
+
   private var open: [String] { Self.suggestions(from: suggestions, chosen: tags) }
 
   private var hint: String {

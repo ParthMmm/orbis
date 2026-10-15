@@ -13,8 +13,8 @@ struct SetList: View {
   let empty: AnyView
   /// What the app was doing when a failure happened, in the words the screen would use.
   var failureContext = "loading the library"
-  /// The tag the list is filtered by, so the row marks it as the active one.
-  let activeTag: String?
+  /// The Tags the list is filtered by, which every row carries and so leaves out.
+  var hiddenTags: [String] = []
   /// Filter controls shown beside the heading, absent on a screen that only reads.
   let filters: AnyView?
   /// The state a filter shows when it admits nothing. A screen that can narrow its list
@@ -49,6 +49,15 @@ struct SetList: View {
   /// False when the list is in an order other than the day each Set was filed, where grouping
   /// by day would scatter one day across the list.
   var groupsByDay = true
+  /// The Tags a row's long-press menu offers to put on or take off, and what that does. Absent
+  /// on a screen that only reads, such as Search.
+  var menuTags: [String] = []
+  var toggleTag: ((SavedSet, String) -> Void)?
+  var editTags: ((SavedSet) -> Void)?
+  /// The Sets picked while the list is in selection mode, or nil when it is not. A row then
+  /// toggles its Set instead of opening or playing it.
+  var selection: Set<String>?
+  var toggleSelection: ((SavedSet) -> Void)?
   /// What the page takes its light from: a Set's artwork, blurred behind the top of the list,
   /// plain paper, or nothing, when the list is one column of a page that draws the light itself.
   var backdrop: Backdrop = .paper
@@ -185,10 +194,49 @@ struct SetList: View {
     .accessibilityIdentifier(listIdentifier)
   }
 
+  @ViewBuilder private func row(_ set: SavedSet) -> some View {
+    if let selection, let toggleSelection {
+      selectableRow(set, isSelected: selection.contains(set.id)) { toggleSelection(set) }
+    } else {
+      openableRow(set)
+    }
+  }
+
+  /// The row in selection mode: one target, with nothing that plays or opens.
+  private func selectableRow(
+    _ set: SavedSet, isSelected: Bool, toggle: @escaping () -> Void
+  ) -> some View {
+    let model = SetPresentation.row(set)
+    return Button(action: toggle) {
+      HStack(spacing: 12) {
+        Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
+          .font(.title2)
+          .foregroundStyle(isSelected ? Color.orbis.tint : Color.secondary)
+          .orbisSymbolReplace()
+        SetRow(
+          title: model.title,
+          source: model.source,
+          artwork: model.artwork,
+          creator: model.creator,
+          length: model.length,
+          dates: SetPresentation.datesLine(set),
+          tags: model.tags,
+          hiddenTags: hiddenTags,
+          state: model.state,
+          progress: model.progress
+        )
+      }
+      .contentShape(.rect)
+    }
+    .buttonStyle(.plain)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
+    .accessibilityIdentifier("set-row-\(set.id)")
+  }
+
   /// One Set. The row owns both of its targets: the artwork plays and the rest opens. The
   /// long-press menu repeats both, and adds the Source Link, for anyone who reaches for it.
-  private func row(_ set: SavedSet) -> some View {
-    let model = SetPresentation.row(set, activeTag: activeTag)
+  private func openableRow(_ set: SavedSet) -> some View {
+    let model = SetPresentation.row(set)
     let playback = SetPresentation.playback(
       of: set, currentSetId: currentSetId, isPlaying: isPlaying)
     return SetRow(
@@ -199,7 +247,7 @@ struct SetList: View {
       length: model.length,
       dates: SetPresentation.datesLine(set),
       tags: model.tags,
-      activeTag: activeTag,
+      hiddenTags: hiddenTags,
       state: model.state,
       progress: model.progress,
       playback: playback,
@@ -215,9 +263,24 @@ struct SetList: View {
       if let select {
         Button("Details", systemImage: "info.circle") { select(set) }
       }
+      if let toggleTag {
+        Menu("Tags", systemImage: "tag") {
+          ForEach(menuTags.prefix(Self.menuTagLimit), id: \.self) { tag in
+            Toggle(
+              tag,
+              isOn: Binding(get: { set.tags.contains(tag) }, set: { _ in toggleTag(set, tag) }))
+          }
+          if let editTags {
+            Divider()
+            Button("Edit Tags…", systemImage: "pencil") { editTags(set) }
+          }
+        }
+      }
       Button("Open Source", systemImage: "safari") { open(set) }
     }
   }
+
+  private static let menuTagLimit = 8
 
   /// The Sets in the order given, grouped under the day each was filed.
   struct DayGroup {

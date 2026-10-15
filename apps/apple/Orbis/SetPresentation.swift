@@ -44,7 +44,7 @@ enum SetPresentation {
   /// The design package defaults its types to the main actor, so the mapper that builds them
   /// is main actor too.
   @MainActor
-  static func row(_ set: SavedSet, activeTag: String? = nil) -> SetRowModel {
+  static func row(_ set: SavedSet) -> SetRowModel {
     SetRowModel(
       title: set.title,
       source: set.source.label,
@@ -101,6 +101,38 @@ enum SetPresentation {
     sets.reduce(into: [:]) { counts, set in
       for tag in Set(set.tags) { counts[tag, default: 0] += 1 }
     }
+  }
+
+  /// Every Tag the Sets carry, the ones this device used last first, then the rest by the
+  /// newest Set carrying each, so a Tag in use now is near the front wherever Tags are offered.
+  static func orderedTags(_ sets: [SavedSet], recent: [String]) -> [String] {
+    var newest: [String: String] = [:]
+    for set in sets {
+      for tag in set.tags where set.createdAt > newest[tag, default: ""] {
+        newest[tag] = set.createdAt
+      }
+    }
+    let leading = recent.filter { newest[$0] != nil }
+    let led = Set(leading)
+    let rest = newest.keys.filter { !led.contains($0) }.sorted { a, b in
+      newest[a]! == newest[b]! ? a < b : newest[a]! > newest[b]!
+    }
+    return leading + rest
+  }
+
+  /// A search that starts with `#` asks for Tags only.
+  static func isTagQuery(_ query: String) -> Bool {
+    query.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#")
+  }
+
+  /// The Tags whose names hold the query, ignoring case and a leading `#`. A bare `#` asks for
+  /// every Tag.
+  static func tagsMatching(_ query: String, in tags: [String]) -> [String] {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+      .drop { $0 == "#" }
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !needle.isEmpty else { return isTagQuery(query) ? tags : [] }
+    return tags.filter { $0.localizedCaseInsensitiveContains(needle) }
   }
 
   static func continueListening(_ sets: [SavedSet], limit: Int = 6) -> [SavedSet] {

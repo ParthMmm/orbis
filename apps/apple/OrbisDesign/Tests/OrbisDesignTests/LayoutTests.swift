@@ -158,7 +158,7 @@ import Testing
       title: "Ben UFO — Dekmantel Festival 2019", source: "YouTube", creator: "Dekmantel",
       length: "1h 58m",
       tags: [.init("techno", .pink), .init("festival", .purple), .init("breaks", .green)],
-      activeTag: "techno", progress: 0.34
+      hiddenTags: ["techno"], progress: 0.34
     )
   }
 
