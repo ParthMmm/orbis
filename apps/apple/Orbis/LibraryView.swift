@@ -49,6 +49,11 @@ struct SetList: View {
   /// False when the list is in an order other than the day each Set was filed, where grouping
   /// by day would scatter one day across the list.
   var groupsByDay = true
+  /// The Tags a row's long-press menu offers to put on or take off, and what that does. Absent
+  /// on a screen that only reads, such as Search.
+  var menuTags: [String] = []
+  var toggleTag: ((SavedSet, String) -> Void)?
+  var editTags: ((SavedSet) -> Void)?
   /// What the page takes its light from: a Set's artwork, blurred behind the top of the list,
   /// plain paper, or nothing, when the list is one column of a page that draws the light itself.
   var backdrop: Backdrop = .paper
@@ -215,9 +220,24 @@ struct SetList: View {
       if let select {
         Button("Details", systemImage: "info.circle") { select(set) }
       }
+      if let toggleTag {
+        Menu("Tags", systemImage: "tag") {
+          ForEach(menuTags.prefix(Self.menuTagLimit), id: \.self) { tag in
+            Toggle(
+              tag,
+              isOn: Binding(get: { set.tags.contains(tag) }, set: { _ in toggleTag(set, tag) }))
+          }
+          if let editTags {
+            Divider()
+            Button("Edit Tags…", systemImage: "pencil") { editTags(set) }
+          }
+        }
+      }
       Button("Open Source", systemImage: "safari") { open(set) }
     }
   }
+
+  private static let menuTagLimit = 8
 
   /// The Sets in the order given, grouped under the day each was filed.
   struct DayGroup {

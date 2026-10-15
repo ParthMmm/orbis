@@ -172,7 +172,7 @@ private struct RenameSheet: View {
   }
 }
 
-private struct TagSheet: View {
+struct TagSheet: View {
   let suggestions: [String]
   let save: ([String]) -> Void
   @State private var draft: [String]

@@ -1067,6 +1067,21 @@ final class AppModel {
     rememberTags(tags.filter { !before.contains($0) })
   }
 
+  /// Puts one Tag on every one of these Sets, or takes it off. The service changes one Set's
+  /// Tags at a time, so each Set is its own write, and the first refusal stops the rest and
+  /// stays on screen the way a single change's does.
+  func setTag(_ tag: String, on ids: [String], to included: Bool) async {
+    guard let tag = TagInput.normalize(tag) else { return }
+    for id in ids {
+      guard let current = savedSet(id)?.tags else { continue }
+      let wanted = included ? TagInput.adding(tag, to: current) : current.filter { $0 != tag }
+      guard wanted != current else { continue }
+      await change(id) { try await $0.updateTags(id, tags: wanted) }
+      guard setFailure == nil, !Task.isCancelled else { return }
+    }
+    if included { rememberTags([tag]) }
+  }
+
   /// Moves a Set to a Playlist, or out of every one. Orbis holds a Set in one Playlist, so
   /// choosing another is a move rather than a second membership.
   func move(_ id: String, to playlistId: String?) async {

@@ -258,6 +258,8 @@ struct DestinationView: View {
   @State private var isFilingSheetShown = false
 
   @State private var libraryQuery = ""
+  /// The Set whose Tags are open for editing from its row's menu.
+  @State private var taggingSet: SavedSet?
 
   #if os(macOS)
     private var matchingLibrary: Loadable<[SavedSet]> {
@@ -311,9 +313,16 @@ struct DestinationView: View {
         isPlaying: model.audioPlayer.state == .playing,
         togglePlayback: { set in model.togglePlayback(set.id) },
         groupsByDay: model.librarySort == .newest,
+        menuTags: model.availableTags,
+        toggleTag: { set, tag in
+          Task { await model.setTag(tag, on: [set.id], to: !set.tags.contains(tag)) }
+        },
+        editTags: { taggingSet = $0 },
         backdrop: .artwork(libraryLead.flatMap(SetPresentation.pageArtwork))
       )
       .refreshable { await model.refreshLibraryQuietly() }
+      // A row's menu and the selection bar change Sets from here, so their refusals show here.
+      .setChangeStatus(model)
       .macPageSearch(text: $libraryQuery, prompt: "Find in Library")
       .macSearchToolbarBackground(isSearching: librarySearchIsActive)
       .sidebarPageTitle("Library")
@@ -332,6 +341,11 @@ struct DestinationView: View {
       .sheet(isPresented: $isFilingSheetShown) { filingSheet }
       .onChange(of: model.reveal != nil) { _, hasReveal in
         if hasReveal { isFilingSheetShown = true }
+      }
+      .sheet(item: $taggingSet) { set in
+        TagSheet(tags: set.tags, suggestions: model.availableTags) { tags in
+          Task { await model.replaceTags(set.id, with: tags) }
+        }
       }
       .sheet(isPresented: $isShowingQueue) {
         QueueScreen(model: model)
