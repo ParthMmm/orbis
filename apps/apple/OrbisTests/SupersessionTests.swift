@@ -120,7 +120,7 @@ final class SupersessionTests: XCTestCase {
     model.library = .loaded([filed])
     model.playlists = .loaded([Playlist(id: "p1", name: "Long drives", setCount: 4)])
     model.selectedPlaylistId = "p1"
-    model.activeTag = "techno"
+    model.activeTags = ["techno"]
     model.openedSetId = "1"
     model.reveal = AppModel.Reveal(set: filed, title: filed.title, tags: filed.tags)
     model.searchQuery = "night"
@@ -135,7 +135,7 @@ final class SupersessionTests: XCTestCase {
     XCTAssertNil(model.searchResultsFor)
     XCTAssertEqual(model.playlists, .idle)
     XCTAssertNil(model.selectedPlaylistId)
-    XCTAssertNil(model.activeTag)
+    XCTAssertEqual(model.activeTags, [])
     XCTAssertNil(model.openedSetId)
     XCTAssertNil(model.reveal)
     XCTAssertNil(model.revealFailure)

@@ -44,7 +44,7 @@ enum SetPresentation {
   /// The design package defaults its types to the main actor, so the mapper that builds them
   /// is main actor too.
   @MainActor
-  static func row(_ set: SavedSet, activeTag: String? = nil) -> SetRowModel {
+  static func row(_ set: SavedSet) -> SetRowModel {
     SetRowModel(
       title: set.title,
       source: set.source.label,

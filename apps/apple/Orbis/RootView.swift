@@ -286,7 +286,7 @@ struct DestinationView: View {
             .accessibilityIdentifier("library-empty")
         ),
         failureContext: "loading the library",
-        activeTag: model.activeTag,
+        hiddenTags: model.activeTags,
         filters: clearFilters,
         // Only a filter can hide every Set. Without one, an empty list is an empty collection
         // and keeps the empty collection's copy.
@@ -490,9 +490,9 @@ struct DestinationView: View {
           GlassEffectContainer(spacing: 8) {
             HStack(spacing: 8) {
               ForEach(model.availableTags, id: \.self) { tag in
-                let active = model.activeTag == tag
+                let active = model.activeTags.contains(tag)
                 Button {
-                  model.setTagFilter(active ? nil : tag)
+                  model.toggleTagFilter(tag)
                 } label: {
                   GlassTagChip(
                     tag, count: model.tagCounts[tag] ?? 0,
@@ -519,7 +519,9 @@ struct DestinationView: View {
       return total == 1 ? "1 set" : "\(total) sets"
     }
     var parts = [model.visibleCount == 1 ? "1 set" : "\(model.visibleCount) sets"]
-    if let tag = model.activeTag { parts.append("tagged \(tag)") }
+    if !model.activeTags.isEmpty {
+      parts.append("tagged \(model.activeTags.formatted(.list(type: .and)))")
+    }
     if let creator = model.activeCreator { parts.append("by \(creator.name)") }
     return parts.joined(separator: " ")
   }
@@ -1025,7 +1027,6 @@ struct SearchDestination: View {
           .accessibilityIdentifier("search-no-results")
       ),
       failureContext: "searching the library",
-      activeTag: nil,
       filters: nil,
       // A search that found nothing already shows the no-results state, so there is no
       // second one to reach.

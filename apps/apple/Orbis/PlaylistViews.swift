@@ -430,7 +430,6 @@ struct PlaylistDetailView: View {
           length: presentation.length,
           dates: SetPresentation.datesLine(set),
           tags: presentation.tags,
-          activeTag: nil,
           state: presentation.state,
           progress: presentation.progress,
           playback: SetPresentation.playback(

@@ -13,8 +13,8 @@ struct SetList: View {
   let empty: AnyView
   /// What the app was doing when a failure happened, in the words the screen would use.
   var failureContext = "loading the library"
-  /// The tag the list is filtered by, so the row marks it as the active one.
-  let activeTag: String?
+  /// The Tags the list is filtered by, which every row carries and so leaves out.
+  var hiddenTags: [String] = []
   /// Filter controls shown beside the heading, absent on a screen that only reads.
   let filters: AnyView?
   /// The state a filter shows when it admits nothing. A screen that can narrow its list
@@ -188,7 +188,7 @@ struct SetList: View {
   /// One Set. The row owns both of its targets: the artwork plays and the rest opens. The
   /// long-press menu repeats both, and adds the Source Link, for anyone who reaches for it.
   private func row(_ set: SavedSet) -> some View {
-    let model = SetPresentation.row(set, activeTag: activeTag)
+    let model = SetPresentation.row(set)
     let playback = SetPresentation.playback(
       of: set, currentSetId: currentSetId, isPlaying: isPlaying)
     return SetRow(
@@ -199,7 +199,7 @@ struct SetList: View {
       length: model.length,
       dates: SetPresentation.datesLine(set),
       tags: model.tags,
-      activeTag: activeTag,
+      hiddenTags: hiddenTags,
       state: model.state,
       progress: model.progress,
       playback: playback,

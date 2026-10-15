@@ -60,9 +60,9 @@ final class AppModel {
   /// but not submitted.
   private(set) var searchResultsFor: String?
 
-  /// The tag the Library is filtered by. One tag at a time, because the row marks the one
-  /// tag a view is filtered by and a Set carries several.
-  var activeTag: String? {
+  /// The Tags the Library is filtered by, in the order they were chosen. A Set must carry every
+  /// one of them, so each Tag added narrows the list.
+  var activeTags: [String] = [] {
     didSet { refreshDerivedState() }
   }
 
@@ -102,7 +102,7 @@ final class AppModel {
     availableTags = tagCounts.keys.sorted()
     visibleSets = .loaded(
       sets.filter { set in
-        (activeTag.map(set.tags.contains) ?? true) && (activeCreator?.admits(set) ?? true)
+        activeTags.allSatisfy(set.tags.contains) && (activeCreator?.admits(set) ?? true)
       })
   }
 
@@ -204,7 +204,7 @@ final class AppModel {
     if let flag = arguments.firstIndex(of: "-orbisStartTagFiltered"),
       arguments.indices.contains(flag + 1)
     {
-      activeTag = arguments[flag + 1]
+      activeTags = [arguments[flag + 1]]
     }
     serviceAddress = OrbisService.address(for: arguments)
     client = settings.configuredClient(address: serviceAddress, session: session)
@@ -260,7 +260,16 @@ final class AppModel {
   }
 
   func setTagFilter(_ tag: String?) {
-    activeTag = tag
+    activeTags = tag.map { [$0] } ?? []
+  }
+
+  /// Adds a Tag to the filter, or takes it out when the filter already holds it.
+  func toggleTagFilter(_ tag: String) {
+    if activeTags.contains(tag) {
+      activeTags.removeAll { $0 == tag }
+    } else {
+      activeTags.append(tag)
+    }
   }
 
   /// Shows the Library filtered to one Set's creator, from wherever that Set's page was opened.
@@ -273,16 +282,21 @@ final class AppModel {
 
   /// Goes to the Library filtered by one Tag, from Home, Search, or a Set's page.
   func showTag(_ tag: String) {
-    activeTag = tag
+    showTags([tag])
+  }
+
+  /// Goes to the Library filtered by every one of these Tags, as a recent filter asks.
+  func showTags(_ tags: [String]) {
+    activeTags = tags
     activeCreator = nil
     openedSets[.library] = nil
     destination = .library
   }
 
-  var isFilteringLibrary: Bool { activeTag != nil || activeCreator != nil }
+  var isFilteringLibrary: Bool { !activeTags.isEmpty || activeCreator != nil }
 
   func clearLibraryFilters() {
-    activeTag = nil
+    activeTags = []
     activeCreator = nil
   }
 
@@ -368,7 +382,7 @@ final class AppModel {
     openedPlaylistId = nil
     playlistMembers = .idle
     playlistFailure = nil
-    activeTag = nil
+    activeTags = []
     activeCreator = nil
     openedSets = [:]
     reveal = nil
