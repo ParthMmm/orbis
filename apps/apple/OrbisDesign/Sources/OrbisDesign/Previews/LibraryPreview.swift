@@ -35,24 +35,19 @@ private struct LibraryPreview: View {
       ScrollView {
         VStack(alignment: .leading) {
           Text("Library").font(.orbis.largeTitle)
-          ListingRule().padding(.top, 12)
           HStack {
             ListingLabel("3 sets tagged techno")
             Spacer()
             Button("Clear") {}
           }
           .padding(.vertical, 12)
-          .overlay(alignment: .bottom) { Divider() }
           ListingHeader("Thu 11 Sep")
-          VStack(spacing: 0) {
-            ForEach(Array(sets.enumerated()), id: \.offset) { index, set in
+          VStack(spacing: 8) {
+            ForEach(Array(sets.enumerated()), id: \.offset) { _, set in
               SetRow(
                 title: set.1, source: set.0, creator: set.2, length: set.3, tags: set.4,
                 hiddenTags: ["techno"], progress: set.5
               )
-              if index < sets.count - 1 {
-                Divider()
-              }
             }
           }
         }

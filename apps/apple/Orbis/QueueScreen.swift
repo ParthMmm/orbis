@@ -89,8 +89,7 @@ struct QueueScreen: View {
           creator: set.creator,
           length: set.durationSeconds.map(SetPresentation.length),
           tags: set.tags.map { SetRow.Tag($0, SetPresentation.category(for: $0)) },
-          state: SetRow.State(
-            resumeAt: set.playbackPositionSeconds > 0 ? set.playbackPositionSeconds : nil),
+          state: SetRow.State(remaining: SetPresentation.timeLeft(set)),
           progress: SetPresentation.progress(of: set)
         )
       }

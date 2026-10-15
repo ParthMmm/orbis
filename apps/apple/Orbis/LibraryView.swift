@@ -131,8 +131,8 @@ struct SetList: View {
     openURL(link)
   }
 
-  /// The heading, the rule under it, and the line that carries the count and the filters. The
-  /// rows and the no-matches state share it, because both are answers about the same list.
+  /// The heading and the line that carries the count and the filters. The rows and the
+  /// no-matches state share it, because both are answers about the same list.
   private var listHeader: some View {
     VStack(alignment: .leading, spacing: 0) {
       if let heading {
@@ -140,7 +140,6 @@ struct SetList: View {
           .font(.orbis.sectionTitle)
           .padding(.bottom, 12)
       }
-      ListingRule()
       HStack(alignment: .firstTextBaseline) {
         ListingLabel(footer)
         Spacer()
@@ -149,7 +148,6 @@ struct SetList: View {
         }
       }
       .padding(.vertical, 12)
-      .overlay(alignment: .bottom) { Divider() }
     }
   }
 
@@ -176,10 +174,8 @@ struct SetList: View {
               ListingHeader(group.day)
             }
             ForEach(Array(group.sets.enumerated()), id: \.element.id) { index, set in
-              if index > 0 {
-                Divider()
-              }
               row(set)
+                .padding(.top, index > 0 ? 8 : 0)
             }
           }
         }
@@ -219,7 +215,6 @@ struct SetList: View {
           artwork: model.artwork,
           creator: model.creator,
           length: model.length,
-          dates: SetPresentation.datesLine(set),
           tags: model.tags,
           hiddenTags: hiddenTags,
           state: model.state,
@@ -245,7 +240,6 @@ struct SetList: View {
       artwork: model.artwork,
       creator: model.creator,
       length: model.length,
-      dates: SetPresentation.datesLine(set),
       tags: model.tags,
       hiddenTags: hiddenTags,
       state: model.state,

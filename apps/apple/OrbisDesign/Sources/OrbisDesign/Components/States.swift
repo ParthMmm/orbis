@@ -178,8 +178,8 @@ public struct LoadingState: View {
 
   public var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 0) {
-        ForEach(0..<rows, id: \.self) { index in
+      VStack(alignment: .leading, spacing: 8) {
+        ForEach(0..<rows, id: \.self) { _ in
           SetRow(
             title: "A Set title the row will hold when it arrives",
             source: "Source",
@@ -187,9 +187,6 @@ public struct LoadingState: View {
             length: "1h 00m",
             tags: [.init("tag", .pink), .init("another", .teal)]
           )
-          if index < rows - 1 {
-            Divider()
-          }
         }
       }
       .padding()
