@@ -19,11 +19,12 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/native-select";
 import {
+  closeJoining,
   createKey,
   loadAdmin,
+  newPasscode,
   removePerson,
   revokeKey,
-  setPasscode,
   signInCodeFor,
 } from "@/lib/admin";
 import type { AdminData, AdminKey, AdminPerson } from "@/lib/admin";
@@ -55,6 +56,74 @@ const Section = ({
   </Card>
 );
 
+const useCopy = (text: string) => {
+  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
+  const copyText = async () => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopy("copied");
+    } catch {
+      setCopy("failed");
+    }
+  };
+  return { copy, copyText };
+};
+
+const OpenPasscode = ({
+  busy,
+  change,
+  passcode,
+  session,
+}: {
+  readonly busy: boolean;
+  readonly change: ReturnType<typeof useApiCall>["change"];
+  readonly passcode: string;
+  readonly session: Session;
+}) => {
+  const router = useRouter();
+  const { copy, copyText } = useCopy(passcode);
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-2">
+        <code
+          aria-label="Group Passcode"
+          className="bg-muted rounded-lg px-2 py-1 font-mono text-lg tracking-widest select-all"
+        >
+          {passcode}
+        </code>
+        <Button onClick={copyText} size="sm">
+          {copy === "copied" ? "Copied" : "Copy passcode"}
+        </Button>
+      </div>
+      {copy === "failed" ? (
+        <p className="text-destructive text-sm">
+          Could not copy the passcode. Select and copy it instead.
+        </p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        <ConfirmDialog
+          action="New passcode"
+          call={() => newPasscode(session)}
+          description="The passcode you shared stops working. People who joined stay signed in."
+          label="New passcode"
+          onDone={() => router.invalidate()}
+          pendingAction="Making…"
+          title="Make a new passcode?"
+          trigger="New passcode"
+        />
+        <Button
+          disabled={busy}
+          onClick={() => change(() => closeJoining(session))}
+          size="sm"
+          variant="outline"
+        >
+          Close joining
+        </Button>
+      </div>
+    </>
+  );
+};
+
 const Passcode = ({
   passcode,
   session,
@@ -62,59 +131,31 @@ const Passcode = ({
   readonly passcode: string | null;
   readonly session: Session;
 }) => {
-  const { busy, change, problem, refuse } = useApiCall();
-  const save = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const next = formField(new FormData(form), "passcode");
-    if (next === "") {
-      refuse("Enter a passcode, or choose Close joining.");
-      return;
-    }
-    if ((await change(() => setPasscode(session, next))) !== null) {
-      form.reset();
-    }
-  };
+  const { busy, change, problem } = useApiCall();
   return (
     <Section
-      description="Friends join with this passcode. Changing it does not sign anyone out."
+      description="Orbis makes a random passcode. Friends join with it. A new passcode does not sign anyone out."
       id="passcode-title"
       title="Group Passcode"
     >
       {passcode === null ? (
-        <p>Joining is closed.</p>
-      ) : (
-        <p>
-          Passcode:{" "}
-          <code className="bg-muted rounded-lg px-2 py-1 font-mono select-all">
-            {passcode}
-          </code>
-        </p>
-      )}
-      <form className="flex flex-col gap-2" onSubmit={save}>
-        <Label htmlFor="new-passcode">New passcode</Label>
-        <div className="flex gap-2">
-          <Input
-            autoComplete="off"
-            id="new-passcode"
-            maxLength={100}
-            name="passcode"
-            spellCheck={false}
-          />
-          <Button disabled={busy} type="submit">
-            Save
+        <>
+          <p>Joining is closed.</p>
+          <Button
+            className="self-start"
+            disabled={busy}
+            onClick={() => change(() => newPasscode(session))}
+          >
+            Open joining
           </Button>
-        </div>
-      </form>
-      {passcode === null ? null : (
-        <Button
-          className="self-start"
-          disabled={busy}
-          onClick={() => change(() => setPasscode(session, null))}
-          variant="outline"
-        >
-          Close joining
-        </Button>
+        </>
+      ) : (
+        <OpenPasscode
+          busy={busy}
+          change={change}
+          passcode={passcode}
+          session={session}
+        />
       )}
       <Problem message={problem} />
     </Section>
@@ -183,15 +224,7 @@ const CreatedKey = ({
   readonly onDone: () => void;
   readonly token: string;
 }) => {
-  const [copy, setCopy] = useState<"idle" | "copied" | "failed">("idle");
-  const copyKey = async () => {
-    try {
-      await navigator.clipboard.writeText(token);
-      setCopy("copied");
-    } catch {
-      setCopy("failed");
-    }
-  };
+  const { copy, copyText: copyKey } = useCopy(token);
   return (
     <div className="bg-muted flex flex-col gap-3 rounded-2xl p-4" role="status">
       <p className="text-sm">
