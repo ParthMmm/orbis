@@ -1215,8 +1215,8 @@ struct SearchDestination: View {
   }
 }
 
-/// Search before anything is asked: the Tags and creators to browse by, and the last queries,
-/// each one tap from a result.
+/// Search before anything is asked: the last Tag filters, the Tags and creators to browse by,
+/// and the last queries, each one tap from a result.
 private struct SearchStart: View {
   @Bindable var model: AppModel
   let prompt: String
@@ -1236,11 +1236,33 @@ private struct SearchStart: View {
     .map { $0 }
   }
 
+  /// The recent filters whose Tags the library still holds.
+  private var recentFilters: [[String]] {
+    model.recentTagFilters.filter { $0.allSatisfy { model.tagCounts[$0] != nil } }
+  }
+
   var body: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 28) {
         MacPageTitle.slot("Search")
         ListingLabel(prompt)
+        if !recentFilters.isEmpty {
+          section("Recent filters") {
+            ChipFlow {
+              ForEach(Array(recentFilters.enumerated()), id: \.offset) { index, tags in
+                Button {
+                  model.showTags(tags)
+                } label: {
+                  GlassTagChip(
+                    tags.joined(separator: " + "),
+                    category: SetPresentation.category(for: tags[0]))
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("search-recent-filter-\(index)")
+              }
+            }
+          }
+        }
         if !model.availableTags.isEmpty {
           section("Tags") {
             ChipFlow {
