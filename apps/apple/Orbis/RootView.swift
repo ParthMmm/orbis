@@ -1051,7 +1051,7 @@ struct SearchDestination: View {
   /// On a Mac the tracks found inside Tracklists take a column of their own beside the Sets,
   /// where a phone puts them under the Sets.
   @ViewBuilder private var results: some View {
-    let cues = model.cueMatches(for: model.searchResultsFor ?? "")
+    let cues = isTagQuery ? [] : model.cueMatches(for: model.searchResultsFor ?? "")
     #if os(macOS)
       HStack(alignment: .top, spacing: 0) {
         resultList(cuesBelow: [], foundCues: !cues.isEmpty, backdrop: .none)
@@ -1072,26 +1072,46 @@ struct SearchDestination: View {
     #endif
   }
 
+  private var isTagQuery: Bool { SetPresentation.isTagQuery(model.searchResultsFor ?? "") }
+
+  /// The Tags the query names, shown above the Sets so a Tag is one tap from its filter.
+  private var matchingTags: [String] {
+    SetPresentation.tagsMatching(model.searchResultsFor ?? "", in: model.availableTags)
+  }
+
   /// `foundCues` keeps the heading and the top result up when the only matches are in a
   /// Tracklist shown beside the list rather than in it.
   private func resultList(
     cuesBelow cues: [CueMatch], foundCues: Bool, backdrop: SetList.Backdrop
   ) -> some View {
     let top = topResult
+    let tags = matchingTags
     return SetList(
       state: remainingResults,
       heading: nil,
-      empty: AnyView(
-        NoResultsState(recoverLabel: "Clear search", recover: clear)
-          .accessibilityIdentifier("search-no-results")
-      ),
+      empty: isTagQuery
+        ? AnyView(
+          ContentUnavailableView {
+            Label("No Tags", systemImage: "tag")
+          } description: {
+            Text("No Tag matches \"\(model.searchResultsFor ?? "")\".")
+          } actions: {
+            Button("Clear search", action: clear)
+          }
+          .accessibilityIdentifier("search-no-tags")
+        )
+        : AnyView(
+          NoResultsState(recoverLabel: "Clear search", recover: clear)
+            .accessibilityIdentifier("search-no-results")
+        ),
       failureContext: "searching the library",
       filters: nil,
       // A search that found nothing already shows the no-results state, so there is no
       // second one to reach.
       noMatches: nil,
       hero: nil,
-      aboveRows: top == nil && !foundCues ? nil : AnyView(aboveResults(top)),
+      aboveRows: top == nil && !foundCues && tags.isEmpty
+        ? nil : AnyView(aboveResults(top, tags: tags)),
       belowRows: cues.isEmpty ? nil : AnyView(TracklistMatches(model: model, matches: cues)),
       footer: searchFooter,
       retry: { await model.runSearch() },
@@ -1114,17 +1134,42 @@ struct SearchDestination: View {
     if case .loaded(let sets) = model.search { .loaded(Array(sets.dropFirst())) } else { model.search }
   }
 
-  private func aboveResults(_ top: SavedSet?) -> some View {
+  private func aboveResults(_ top: SavedSet?, tags: [String]) -> some View {
     VStack(alignment: .leading, spacing: 14) {
       MacPageTitle.slot("Search")
       heading
         .font(.orbis.sectionTitle)
         .accessibilityAddTraits(.isHeader)
+      if !tags.isEmpty {
+        tagRow(tags)
+      }
       if let top {
         TopResult(model: model, set: top)
       }
       matchingPlaylistRows
     }
+  }
+
+  private func tagRow(_ tags: [String]) -> some View {
+    ScrollView(.horizontal, showsIndicators: false) {
+      GlassEffectContainer(spacing: 8) {
+        HStack(spacing: 8) {
+          ForEach(tags, id: \.self) { tag in
+            Button {
+              model.showTag(tag)
+            } label: {
+              GlassTagChip(
+                tag, count: model.tagCounts[tag] ?? 0, category: SetPresentation.category(for: tag))
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("search-result-tag-\(tag)")
+          }
+        }
+        .padding(.horizontal, 16)
+      }
+    }
+    .padding(.horizontal, -16)
+    .scrollClipDisabled()
   }
 
   private var matchingPlaylistRows: AnyView? {
@@ -1161,6 +1206,10 @@ struct SearchDestination: View {
   }
 
   private var searchFooter: String {
+    if isTagQuery {
+      let count = matchingTags.count
+      return count == 1 ? "1 tag" : "\(count) tags"
+    }
     guard case .loaded(let sets) = model.search else { return "" }
     return sets.count == 1 ? "1 set" : "\(sets.count) sets"
   }

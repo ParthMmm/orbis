@@ -1373,8 +1373,13 @@ final class AppModel {
     }
     searchGeneration += 1
     let generation = searchGeneration
-    search = .loading
     searchResultsFor = query
+    // The Tags come from the library already loaded, so a Tag search asks the service nothing.
+    guard !SetPresentation.isTagQuery(query) else {
+      search = .loaded([])
+      return
+    }
+    search = .loading
     do {
       let sets = try await client.library(query: query)
       guard generation == searchGeneration, !Task.isCancelled else { return }

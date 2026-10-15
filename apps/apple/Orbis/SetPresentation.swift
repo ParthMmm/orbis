@@ -120,6 +120,21 @@ enum SetPresentation {
     return leading + rest
   }
 
+  /// A search that starts with `#` asks for Tags only.
+  static func isTagQuery(_ query: String) -> Bool {
+    query.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("#")
+  }
+
+  /// The Tags whose names hold the query, ignoring case and a leading `#`. A bare `#` asks for
+  /// every Tag.
+  static func tagsMatching(_ query: String, in tags: [String]) -> [String] {
+    let needle = query.trimmingCharacters(in: .whitespacesAndNewlines)
+      .drop { $0 == "#" }
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !needle.isEmpty else { return isTagQuery(query) ? tags : [] }
+    return tags.filter { $0.localizedCaseInsensitiveContains(needle) }
+  }
+
   static func continueListening(_ sets: [SavedSet], limit: Int = 6) -> [SavedSet] {
     let started = sets.filter { set in
       guard set.playbackPositionSeconds > 0 else { return false }
