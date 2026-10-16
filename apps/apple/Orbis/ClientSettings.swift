@@ -19,7 +19,7 @@ protocol ClientSettingsStore: AnyObject {
 }
 
 extension ClientSettingsStore {
-  func configuredClient(address: URL, session: URLSession = .shared) -> OrbisClient? {
+  func configuredClient(address: URL, session: URLSession = .orbisAPI) -> OrbisClient? {
     guard let token = deviceToken, !token.isEmpty else { return nil }
     return OrbisClient(address: address, token: token, session: session)
   }

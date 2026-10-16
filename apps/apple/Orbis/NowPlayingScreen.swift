@@ -40,19 +40,14 @@ struct NowPlayingScreen: View {
     .environment(\.colorScheme, .dark)
     .setChangeStatus(model)
     .sheet(isPresented: $isShowingQueue) { QueueScreen(model: model) }
-    .overlay(alignment: .top) {
-      #if os(iOS)
-        Capsule()
-          .fill(.tertiary)
-          .frame(width: 36, height: 5)
-          .padding(.top, 8)
-          .accessibilityHidden(true)
-      #endif
-    }
-    #if os(macOS)
+    #if os(iOS)
+      // The swipe down is invisible and VoiceOver cannot make it, so the chevron where the
+      // grabber sat is the way out anyone can see.
+      .overlay(alignment: .top) { closeButton(systemImage: "chevron.down") }
+    #elseif os(macOS)
       // A Mac sheet has no grabber to pull down and no swipe, so Now Playing closes from a button
       // and from Escape.
-      .overlay(alignment: .topLeading) { closeButton }
+      .overlay(alignment: .topLeading) { closeButton(systemImage: "xmark").padding(12) }
     #endif
     .accessibilityAction(.escape) { dismiss() }
     .onChange(of: player.currentSetId) { _, id in
@@ -60,17 +55,17 @@ struct NowPlayingScreen: View {
     }
   }
 
-  #if os(macOS)
-    private var closeButton: some View {
-      Button("Close", systemImage: "xmark", action: dismiss.callAsFunction)
-        .labelStyle(.iconOnly)
-        .buttonStyle(.orbisIcon)
-        .font(.title3)
-        .keyboardShortcut(.cancelAction)
-        .padding(12)
-        .accessibilityIdentifier("now-playing-close")
-    }
-  #endif
+  /// The height the close button takes at the top, which the column starts below.
+  private static let closeClearance: CGFloat = 44
+
+  private func closeButton(systemImage: String) -> some View {
+    Button("Close", systemImage: systemImage, action: dismiss.callAsFunction)
+      .labelStyle(.iconOnly)
+      .buttonStyle(.orbisIcon)
+      .font(.title3)
+      .keyboardShortcut(.cancelAction)
+      .accessibilityIdentifier("now-playing-close")
+  }
 
   /// On a Mac the window is wide enough for the Tracklist to sit beside the player for the whole
   /// Set, where a phone swaps it in for the artwork.
@@ -120,10 +115,10 @@ struct NowPlayingScreen: View {
         }
         .buttonStyle(.plain)
         .accessibilityHint("Shows the artwork again")
-        .padding(.top, 36)
+        .padding(.top, Self.closeClearance)
         LyricsTracklist(model: model, set: set, cues: cues)
       } else {
-        Spacer(minLength: 28)
+        Spacer(minLength: Self.closeClearance)
         // The artwork sits back while the Set is paused and steps forward when it plays, the way
         // Apple Music's does: the state of the player, read from across the room.
         Artwork(url: SetPresentation.pageArtwork(set), seed: set.title, size: .header)

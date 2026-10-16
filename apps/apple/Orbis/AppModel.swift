@@ -44,7 +44,11 @@ final class AppModel {
   var isShowingSettings = false
 
   var library: Loadable<[SavedSet]> = .idle {
-    didSet { refreshDerivedState() }
+    didSet {
+      refreshDerivedState()
+      refreshPlaylistArtwork()
+      refreshCueMatches()
+    }
   }
   var playlists: Loadable<[Playlist]> = .idle
   /// The one Listening Queue. It is where the active Set and the Playback Position live, so the
@@ -52,7 +56,9 @@ final class AppModel {
   var queue: Loadable<ListeningQueue> = .idle
   /// What the last queue action did, said where the action was taken.
   var queueNotice: String?
-  private(set) var tracklists: [String: Tracklist] = [:]
+  private(set) var tracklists: [String: Tracklist] = [:] {
+    didSet { refreshCueMatches() }
+  }
   /// The playlist the Library is showing. Nil is everything the library holds.
   var selectedPlaylistId: String?
   var searchQuery = ""
@@ -61,7 +67,9 @@ final class AppModel {
   /// The query the loaded search results answer. Held beside the results rather than read
   /// back from the field, so the heading never names results with a query that was typed
   /// but not submitted.
-  private(set) var searchResultsFor: String?
+  private(set) var searchResultsFor: String? {
+    didSet { refreshCueMatches() }
+  }
 
   /// The Tags the Library is filtered by, in the order they were chosen. A Set must carry every
   /// one of them, so each Tag added narrows the list.
@@ -100,6 +108,9 @@ final class AppModel {
   private let recentStore: UserDefaults?
   private static let recentTagsKey = "orbis.recentTags"
   private static let recentTagFiltersKey = "orbis.recentTagFilters"
+  /// Where Search and the Add to Playlist sheet keep their recent entries.
+  static let recentSearchesKey = "orbis.recentSearches"
+  static let recentPlaylistIdsKey = "orbis.recentPlaylistIds"
   private static let recentTagLimit = 20
   private static let recentTagFilterLimit = 4
 
@@ -128,6 +139,28 @@ final class AppModel {
       })
   }
 
+  /// The artwork of the first three Sets in each Playlist, in Library order, keyed by Playlist.
+  /// Built once per library change, because every Playlist folder on screen reads it.
+  private(set) var playlistArtwork: [String: [URL?]] = [:]
+
+  private func refreshPlaylistArtwork() {
+    guard case .loaded(let sets) = library else {
+      playlistArtwork = [:]
+      return
+    }
+    var artwork: [String: [URL?]] = [:]
+    for set in sets {
+      for id in set.playlistIds where artwork[id, default: []].count < 3 {
+        artwork[id, default: []].append(set.artworkUrl.flatMap(URL.init(string:)))
+      }
+    }
+    playlistArtwork = artwork
+  }
+
+  func artwork(ofPlaylist id: String) -> [URL?] {
+    playlistArtwork[id] ?? []
+  }
+
   /// How many times a cancelled load has been restarted without a success in between.
   private var reloadsAfterCancellation = 0
 
@@ -138,6 +171,9 @@ final class AppModel {
   private var playlistGeneration = 0
   private var queueGeneration = 0
   private var tracklistGeneration = 0
+  /// Plays the queue starts: a Set, a Playlist, or the entry after one finishes. Kept apart from
+  /// `queueGeneration`, because a refresh of the queue must not drop a play the person asked for.
+  private var playGeneration = 0
 
   /// What the person has pasted but not filed yet, and what the last filing said.
   var linkToFile = ""
@@ -180,23 +216,32 @@ final class AppModel {
   var revealFailure: OrbisFailure?
 
   /// The latest download progress the service reported, by Set. Terminal states reload
-  /// the library instead, so this only ever holds a download that is still running.
+  /// the library instead, so this only holds a download that is still running, or
+  /// `AudioState.unwatched` for one whose watch gave up.
   var audioStates: [String: AudioState] = [:]
 
   /// The watches on downloads that are still running, by Set. Held by the model rather than by
   /// the page that asked for the download, because a person who starts one and leaves still needs
-  /// its result in the Library.
-  private var downloadWatchers: [String: Task<Void, Never>] = [:]
+  /// its result in the Library. Each watch has its own id, so a stopped watch that ends late
+  /// cannot remove the newer watch on the same Set.
+  private var downloadWatchers: [String: (watch: UUID, task: Task<Void, Never>)] = [:]
 
-  /// How many times one download is polled before a watch gives up: ten minutes at one second a
-  /// poll. Bounded, so a service that never reaches a terminal state cannot leave a task running
-  /// for the life of the app.
+  /// How many answers one download is polled for before a watch gives up: ten minutes at one
+  /// second a poll. Bounded, so a service that never reaches a terminal state cannot leave a task
+  /// running for the life of the app.
   private static let downloadWatchLimit = 600
+
+  /// How many polls in a row may fail before a watch gives up. Each failure doubles the wait, up
+  /// to 30 seconds, so a service that is down is asked eight times over about two minutes.
+  private static let downloadWatchFailureLimit = 8
 
   var destination: Destination = .home
   /// Counts taps on the Search tab while Search is already open. Each one focuses the field, the
   /// way a second tap on Search does in Apple Music.
   var searchFocusRequests = 0
+  /// Counts second taps on the People tab. People holds the open Person itself, so it closes the
+  /// page on each one.
+  var peopleRootRequests = 0
 
   /// Where this model keeps the key. Held per model, so a test hands a model a store of its
   /// own instead of writing the device's real one.
@@ -212,7 +257,7 @@ final class AppModel {
 
   init(
     settings: any ClientSettingsStore = ClientSettings.forCurrentProcess(),
-    session: URLSession = .shared,
+    session: URLSession = .orbisAPI,
     recentStore: UserDefaults? = nil
   ) {
     self.settings = settings
@@ -410,6 +455,7 @@ final class AppModel {
     searchGeneration += 1
     playlistGeneration += 1
     queueGeneration += 1
+    playGeneration += 1
     // Audio still playing comes from a key this device no longer holds, and a download the
     // service is running is the same: nothing here may keep asking about it.
     audioPlayer.stop()
@@ -439,6 +485,12 @@ final class AppModel {
     openedSets = [:]
     reveal = nil
     revealFailure = nil
+    // Recent Tags, filters, searches, and Playlists are the last Person's habits, not this
+    // device's.
+    recentTags = []
+    recentTagFilters = []
+    recentStore?.removeObject(forKey: Self.recentSearchesKey)
+    recentStore?.removeObject(forKey: Self.recentPlaylistIdsKey)
   }
 
   func loadLibrary() async {
@@ -627,12 +679,13 @@ final class AppModel {
     }
   }
 
-  /// Reads the service's download progress into the running map. A terminal state
-  /// reloads the library so the Set's own state is what the service holds; a poll
-  /// that fails says nothing, because the next poll or the next visit retries it.
-  func refreshAudioState(_ id: String) async {
-    guard let client else { return }
-    guard let state = try? await client.audioState(id) else { return }
+  /// Reads the service's download progress into the running map, and says whether the service
+  /// answered. A terminal state reloads the library so the Set's own state is what the service
+  /// holds.
+  @discardableResult
+  func refreshAudioState(_ id: String) async -> Bool {
+    guard let client else { return false }
+    guard let state = try? await client.audioState(id) else { return false }
     audioStates[id] = state
     if state.state == "ready" || state.state == "failed" {
       // Quietly: a reload through `.loading` emptied the library for a moment, and the open Set
@@ -640,6 +693,7 @@ final class AppModel {
       await refreshLibraryQuietly()
       audioStates[id] = nil
     }
+    return true
   }
 
   /// True while the service is still working on this Set's audio.
@@ -648,29 +702,45 @@ final class AppModel {
   }
 
   /// Watches a Set's download until the service reports a state that is no longer running. One
-  /// watch per Set, ended by the terminal state, by cancellation, or at the attempt limit.
+  /// watch per Set, ended by the terminal state, by cancellation, or at one of the limits.
   private func watchDownload(_ id: String) {
     guard downloadWatchers[id] == nil, isDownloading(id) else { return }
-    downloadWatchers[id] = Task { [weak self] in
-      defer { self?.downloadWatchers[id] = nil }
-      for _ in 0..<Self.downloadWatchLimit {
+    let watch = UUID()
+    let task = Task { [weak self] in
+      defer {
+        if self?.downloadWatchers[id]?.watch == watch { self?.downloadWatchers[id] = nil }
+      }
+      var answers = 0
+      var failures = 0
+      while answers < Self.downloadWatchLimit {
         guard !Task.isCancelled, let self else { return }
-        await self.refreshAudioState(id)
+        if await self.refreshAudioState(id) {
+          answers += 1
+          failures = 0
+        } else {
+          failures += 1
+          if failures == Self.downloadWatchFailureLimit { break }
+        }
         guard self.isDownloading(id) else { return }
         do {
-          try await Task.sleep(for: .seconds(1))
+          try await Task.sleep(for: .seconds(min(1 << failures, 30)))
         } catch {
           // Cancelled: the answer this watch was waiting for is no longer wanted.
           return
         }
       }
+      // The watch stopped before the service said the download ended, so the progress on screen
+      // no longer moves. The Set says so and offers the retry, which watches again.
+      guard !Task.isCancelled, let self else { return }
+      self.audioStates[id] = .unwatched
     }
+    downloadWatchers[id] = (watch, task)
   }
 
   /// Ends every watch, so nothing keeps asking a service this device has left.
   private func stopDownloadWatches() {
     for watcher in downloadWatchers.values {
-      watcher.cancel()
+      watcher.task.cancel()
     }
     downloadWatchers.removeAll()
   }
@@ -701,8 +771,13 @@ final class AppModel {
   func playSet(_ id: String, startAt: TimeInterval? = nil) async {
     guard let client else { return }
     queueNotice = nil
+    playGeneration += 1
+    let generation = playGeneration
     do {
       let loaded = try await client.playSet(id)
+      // A newer play, or signing out, owns the player now. Playing this answer would start audio
+      // with a key the device may no longer hold.
+      guard generation == playGeneration else { return }
       queue = .loaded(loaded)
       guard let playing = loaded.entries.first(where: { $0.id == id }) else { return }
       audioPlayer.play(
@@ -835,8 +910,11 @@ final class AppModel {
   func playPlaylist(_ id: String) async {
     guard let client else { return }
     queueNotice = nil
+    playGeneration += 1
+    let generation = playGeneration
     do {
       let loaded = try await client.playPlaylist(id)
+      guard generation == playGeneration else { return }
       queue = .loaded(loaded)
       playActiveEntry(of: loaded, from: client)
     } catch OrbisError.cancelled {
@@ -868,13 +946,17 @@ final class AppModel {
   func finishedPlaying(_ id: String) async {
     guard let client else { return }
     stopReportingPosition()
+    playGeneration += 1
+    let generation = playGeneration
     do {
       let loaded = try await client.reportCompletion(id)
+      guard generation == playGeneration else { return }
       queue = .loaded(loaded)
       // The finished Set left the queue and its position went back to the beginning, so the
       // Library is read again rather than patched. Read quietly, because a spinner where the list
       // was would be a flicker the person did not ask for.
       await refreshLibraryQuietly()
+      guard generation == playGeneration else { return }
       playActiveEntry(of: loaded, from: client)
     } catch OrbisError.cancelled {
       return
@@ -1063,6 +1145,17 @@ final class AppModel {
     openedSetId = nil
   }
 
+  /// Takes the destination on screen back to its first page: the Set, Playlist, or Person open in
+  /// it closes.
+  func returnToRoot() {
+    closeSet()
+    switch destination {
+    case .playlists: closePlaylist()
+    case .people: peopleRootRequests += 1
+    case .home, .library, .search: break
+    }
+  }
+
   /// Runs one change from the page. Every path reports through `setError`, so a refusal is
   /// readable where the action was taken and nothing disappears before it is understood.
   private func change(
@@ -1128,6 +1221,20 @@ final class AppModel {
     await change(id) { try await $0.updatePlaylists(id, playlistIds: wanted) }
     guard setFailure == nil else { return }
     await refreshPlaylistsQuietly()
+  }
+
+  /// Puts a Set in a Playlist, or takes it out when it is already there. Answers whether the Set
+  /// went in, which is when the Add to Playlist sheet remembers the Playlist and closes.
+  func choosePlaylist(_ playlistId: String, for setId: String, isMember: Bool) async -> Bool {
+    await setMembership(setId, in: playlistId, !isMember)
+    return setFailure == nil && !isMember
+  }
+
+  /// Makes a Playlist and puts the Set in it first. Answers the Playlist once the Set is in it.
+  func createPlaylist(named name: String, adding setId: String) async -> Playlist? {
+    guard let created = await createPlaylist(named: name, opening: false) else { return nil }
+    await setMembership(setId, in: created.id, true)
+    return setFailure == nil ? created : nil
   }
 
   func refreshPlaylistsQuietly() async {
@@ -1427,13 +1534,19 @@ final class AppModel {
     }
   }
 
-  /// Tracks inside the library's Tracklists whose title or artist holds the query, with the Set
-  /// each plays in. Only Tracklists this device has loaded are read, so `loadTracklistsForSearch`
-  /// runs first.
-  func cueMatches(for query: String) -> [CueMatch] {
-    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty, case .loaded(let sets) = library else { return [] }
-    return sets.flatMap { set in
+  /// Tracks inside the library's Tracklists whose title or artist holds the submitted query, with
+  /// the Set each plays in. Only Tracklists this device has loaded are read, so
+  /// `loadTracklistsForSearch` runs first. Held rather than derived on demand, because the scan
+  /// reads every cue and the results body renders on every change of the player.
+  private(set) var cueMatches: [CueMatch] = []
+
+  private func refreshCueMatches() {
+    let query = (searchResultsFor ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty, case .loaded(let sets) = library else {
+      if !cueMatches.isEmpty { cueMatches = [] }
+      return
+    }
+    cueMatches = sets.flatMap { set in
       (tracklists[set.id]?.cues ?? [])
         .filter {
           $0.title.localizedCaseInsensitiveContains(query)
@@ -1465,21 +1578,31 @@ final class AppModel {
 
   /// Plays a Playlist's playable members in a random order: the first starts now and the rest
   /// follow it in the queue.
+  ///
+  /// The service has no route that queues many Sets at once, and each one goes to the end, so the
+  /// requests run one after another to keep the shuffled order. The queue is published once, from
+  /// the last answer, rather than redrawn for every Set.
   func shufflePlaylist(_ id: String) async {
     guard let client, case .loaded(let members) = playlistMembers else { return }
     let order = members.filter { $0.downloadState == "ready" }.shuffled()
     guard let first = order.first else { return }
     await playSet(first.id)
+    let generation = playGeneration
+    var queued: ListeningQueue?
     do {
       for set in order.dropFirst() {
-        queue = .loaded(try await client.queueSet(set.id, placement: .end))
+        // Another play, or signing out, replaced this shuffle.
+        guard generation == playGeneration else { return }
+        queued = try await client.queueSet(set.id, placement: .end)
       }
     } catch OrbisError.cancelled {
-      return
     } catch let error as OrbisError {
       setFailure = error.failure(at: client.address)
     } catch {
       setFailure = OrbisError.unreachable.failure(at: client.address)
+    }
+    if let queued, generation == playGeneration {
+      queue = .loaded(queued)
     }
   }
 

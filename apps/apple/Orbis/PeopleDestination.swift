@@ -7,6 +7,7 @@ struct PeopleDestination: View {
   @Bindable var model: AppModel
   @State private var people: PeopleModel
   @State private var openedPerson: String?
+  @ScaledMetric(relativeTo: .title) private var emptyBadgeSide: CGFloat = 64
 
   init(model: AppModel) {
     self.model = model
@@ -25,6 +26,7 @@ struct PeopleDestination: View {
       .navigationDestination(item: $openedPerson) { id in
         PersonScreen(model: model, people: people, personId: id)
       }
+      .onChange(of: model.peopleRootRequests) { openedPerson = nil }
   }
 
   @ViewBuilder
@@ -143,9 +145,9 @@ struct PeopleDestination: View {
   private var emptyCard: some View {
     VStack(spacing: 12) {
       Image(systemName: "person.badge.plus")
-        .font(.system(size: 28))
+        .font(.title)
         .foregroundStyle(Color.orbis.tint)
-        .frame(width: 64, height: 64)
+        .frame(width: emptyBadgeSide, height: emptyBadgeSide)
         .background(Color.orbis.tint.opacity(0.12), in: .circle)
         .accessibilityHidden(true)
       Text("Nobody else is sharing yet")
@@ -159,7 +161,7 @@ struct PeopleDestination: View {
     .padding(.horizontal, 22)
     .padding(.vertical, 28)
     .frame(maxWidth: .infinity)
-    .glassEffect(.regular, in: .rect(cornerRadius: 22))
+    .orbisRaised(radius: Radius.hero)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("people-empty")
   }
@@ -171,6 +173,7 @@ private struct ListeningCard: View {
   @Bindable var model: AppModel
   let presence: Presence
   let open: () -> Void
+  @ScaledMetric(relativeTo: .subheadline) private var playSide: CGFloat = 26
 
   private var set: SavedSet { presence.set }
   private var artwork: URL? { SetPresentation.pageArtwork(set) }
@@ -238,8 +241,8 @@ private struct ListeningCard: View {
       model.togglePlayback(set.id)
     } label: {
       Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-        .font(.system(size: 15, weight: .bold))
-        .frame(width: 26, height: 26)
+        .font(.subheadline.weight(.bold))
+        .frame(width: playSide, height: playSide)
         .contentTransition(.symbolEffect(.replace))
     }
     .buttonStyle(.glassProminent)
@@ -342,6 +345,8 @@ struct PersonScreen: View {
   @State private var friend: FriendModel?
   @State private var openedPlaylist: FriendPlaylist?
   @State private var showsTitle = false
+  @ScaledMetric(relativeTo: .body) private var switchGlyphSize: CGFloat = 14
+  @ScaledMetric(relativeTo: .body) private var switchBadgeSide: CGFloat = 30
 
   private var person: PersonFilters? { people.people.first { $0.id == personId } }
 
@@ -635,9 +640,9 @@ struct PersonScreen: View {
     Toggle(isOn: isOn) {
       HStack(spacing: 12) {
         Image(systemName: symbol)
-          .font(.system(size: 14, weight: .semibold))
+          .font(.system(size: switchGlyphSize, weight: .semibold))
           .foregroundStyle(.white)
-          .frame(width: 30, height: 30)
+          .frame(width: switchBadgeSide, height: switchBadgeSide)
           .background(Color.orbis.tint.gradient, in: .rect(cornerRadius: 8))
           .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 2) {
@@ -773,9 +778,18 @@ private struct FriendPlaylistSheet: View {
 final class PeopleModel {
   private let app: AppModel
   var me: Loadable<Me> = .idle
-  var people: [PersonFilters] = []
+  var people: [PersonFilters] = [] {
+    didSet { seen = Set(people.filter(\.see).map(\.id)) }
+  }
+  /// The People this Person sees, kept with `people` so a Presence frame does not rebuild it.
+  @ObservationIgnored private var seen: Set<String> = []
   /// What visible People are playing now, as the event stream last said.
   var listening: [Presence] = []
+  /// How long to wait before the event stream reconnects. Doubles with each drop, and starts over
+  /// once a stream delivers a frame.
+  @ObservationIgnored private var reconnectDelay = PeopleModel.firstReconnectDelay
+  private static let firstReconnectDelay = Duration.seconds(2)
+  private static let longestReconnectDelay = Duration.seconds(60)
   var failure: OrbisFailure?
   var isSaving = false
   private var loadedToken: String?
@@ -837,34 +851,42 @@ final class PeopleModel {
     people[index].appear = saved.appear
   }
 
-  /// Follows the event stream while People is on screen, reconnecting after a drop. Only the
-  /// People this Person sees are kept, because See is decided here and the stream does not know it.
+  /// Follows the event stream while People is on screen, reconnecting after a drop, and waiting
+  /// longer after each drop in a row so a service that is down is not asked every two seconds. Only
+  /// the People this Person sees are kept, because See is decided here and the stream does not know
+  /// it.
   func watchPresence() async {
     guard isSocial else {
       listening = []
       return
     }
+    reconnectDelay = Self.firstReconnectDelay
     while !Task.isCancelled {
       guard let client = app.client else { return }
       do {
         try await client.watchPresence { [weak self] presence in
           guard let self else { return }
-          let seen = Set(self.people.filter(\.see).map(\.id))
-          self.listening = presence.filter { seen.contains($0.personId) }
+          self.reconnectDelay = Self.firstReconnectDelay
+          self.listening = presence.filter { self.seen.contains($0.personId) }
         }
       } catch OrbisError.notSignedIn {
+        return
+      } catch OrbisError.server(let status, _)
+        where (400..<500).contains(status) && status != 408 && status != 429
+      {
+        // A refusal says the same thing on every try.
         return
       } catch {
         if Task.isCancelled { return }
       }
-      try? await Task.sleep(for: .seconds(2))
+      try? await Task.sleep(for: reconnectDelay)
+      reconnectDelay = min(reconnectDelay * 2, Self.longestReconnectDelay)
     }
   }
 
   private func loadPeople() async {
     if let list = await settingsRequest(app, { self.failure = $0 }, { try await $0.socialFilters() }) {
       people = list
-      let seen = Set(list.filter(\.see).map(\.id))
       listening = listening.filter { seen.contains($0.personId) }
     }
   }

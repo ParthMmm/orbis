@@ -47,12 +47,24 @@ struct SetDetailScreen: View {
           if set.tracklistState != .none { await model.loadTracklist(setId) }
         }
       } else {
-        ContentUnavailableView {
-          Label("This set is gone", systemImage: "questionmark.folder")
-        } description: {
-          Text("It was removed from your library.")
+        // Only a library that has arrived without the Set can say it is gone.
+        switch model.library {
+        case .idle, .loading:
+          LoadingState()
+            .accessibilityIdentifier("detail-loading")
+        case .failed(let failure):
+          UnavailableState(failure: failure, context: "loading the library") {
+            Task { await model.loadLibrary() }
+          }
+          .accessibilityIdentifier("detail-load-error")
+        case .loaded:
+          ContentUnavailableView {
+            Label("This set is gone", systemImage: "questionmark.folder")
+          } description: {
+            Text("It was removed from your library.")
+          }
+          .accessibilityIdentifier("detail-missing")
         }
-        .accessibilityIdentifier("detail-missing")
       }
     }
     .setChangeStatus(model)

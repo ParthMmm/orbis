@@ -69,6 +69,9 @@ struct SetList: View {
   }
 
   @Environment(\.openURL) private var openURL
+  /// The rows under their headings, built when the Sets change rather than on every render,
+  /// because grouping parses each Set's date.
+  @State private var groups: [DayGroup] = []
 
   var body: some View {
     Group {
@@ -85,11 +88,13 @@ struct SetList: View {
         if sets.isEmpty, aboveRows == nil {
           emptyPresentation
         } else {
-          rows(sets)
+          rows
         }
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .onChange(of: state, initial: true) { regroup() }
+    .onChange(of: groupsByDay) { regroup() }
     .background {
       switch backdrop {
       case .paper: Color.orbis.paper.ignoresSafeArea()
@@ -151,7 +156,7 @@ struct SetList: View {
     }
   }
 
-  private func rows(_ sets: [SavedSet]) -> some View {
+  private var rows: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 0) {
         if let aboveRows {
@@ -168,10 +173,9 @@ struct SetList: View {
         // rather than all at once. Sets group under the day they were filed, so the date is
         // structure rather than a value on every row.
         LazyVStack(alignment: .leading, spacing: 0) {
-          ForEach(groupsByDay ? Self.days(of: sets) : [DayGroup(day: "", sets: sets)], id: \.day) {
-            group in
-            if !group.day.isEmpty {
-              ListingHeader(group.day)
+          ForEach(groups) { group in
+            if let label = group.label {
+              ListingHeader(label)
             }
             ForEach(Array(group.sets.enumerated()), id: \.element.id) { index, set in
               row(set)
@@ -276,20 +280,33 @@ struct SetList: View {
 
   private static let menuTagLimit = 8
 
+  private func regroup() {
+    guard case .loaded(let sets) = state else {
+      groups = []
+      return
+    }
+    groups = groupsByDay ? Self.days(of: sets) : [DayGroup(id: .distantPast, label: nil, sets: sets)]
+  }
+
   /// The Sets in the order given, grouped under the day each was filed.
-  struct DayGroup {
-    let day: String
-    let sets: [SavedSet]
+  struct DayGroup: Identifiable {
+    /// The start of the day. The label leaves out the year, so the same date in two years would
+    /// share it; the day itself does not.
+    let id: Date
+    /// The heading, absent when the list is not grouped.
+    let label: String?
+    var sets: [SavedSet]
   }
 
   static func days(of sets: [SavedSet]) -> [DayGroup] {
+    let calendar = Calendar.current
     var groups: [DayGroup] = []
     for set in sets {
-      let day = SetPresentation.day(set.createdAt)
-      if groups.last?.day == day {
-        groups[groups.count - 1] = DayGroup(day: day, sets: groups[groups.count - 1].sets + [set])
+      let day = calendar.startOfDay(for: SetPresentation.date(from: set.createdAt))
+      if groups.last?.id == day {
+        groups[groups.count - 1].sets.append(set)
       } else {
-        groups.append(DayGroup(day: day, sets: [set]))
+        groups.append(DayGroup(id: day, label: SetPresentation.day(day), sets: [set]))
       }
     }
     return groups

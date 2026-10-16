@@ -79,8 +79,7 @@
               PlaylistSleeve(
                 name: playlist.name,
                 count: playlist.setCount,
-                artwork: librarySets.filter { $0.playlistIds.contains(playlist.id) }
-                  .prefix(3).map { SetPresentation.row($0).artwork },
+                artwork: model.artwork(ofPlaylist: playlist.id),
                 category: SetPresentation.category(for: playlist.name),
                 fanWidth: 260, height: 330
               )

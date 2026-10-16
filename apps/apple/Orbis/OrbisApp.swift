@@ -16,6 +16,15 @@ struct OrbisApp: App {
         SettingsScreen(model: model)
           .frame(width: 480, height: 620)
       }
+    #elseif os(iOS)
+      // An iPad or a mirrored iPhone window can shrink below the narrowest phone the layouts are
+      // drawn for. The floor is the shortest side of the smallest iPhone, so a phone in either
+      // orientation never meets it.
+      WindowGroup {
+        RootView(model: model)
+          .frame(minWidth: 320, minHeight: 320)
+      }
+      .windowResizability(.contentMinSize)
     #else
       WindowGroup {
         RootView(model: model)
@@ -195,24 +204,28 @@ struct NowPlayingBar: View {
   }
 }
 
-/// A hero's artwork beside its words on a Mac, where the window is wide, and above them on a
-/// phone, the way the design draws each.
-enum HeroLayout {
-  #if os(macOS)
-    static let isBeside = true
-  #else
-    static let isBeside = false
-  #endif
+/// A hero's artwork beside its words where the window is wide, a Mac or an iPad at regular width,
+/// and above them where it is narrow, the way the design draws each.
+struct HeroLayout {
+  let isBeside: Bool
 
-  static func stack(spacing: CGFloat) -> AnyLayout {
+  init(_ sizeClass: UserInterfaceSizeClass?) {
+    #if os(macOS)
+      isBeside = true
+    #else
+      isBeside = sizeClass == .regular
+    #endif
+  }
+
+  func stack(spacing: CGFloat) -> AnyLayout {
     isBeside
       ? AnyLayout(HStackLayout(alignment: .center, spacing: 36))
       : AnyLayout(VStackLayout(spacing: spacing))
   }
 
-  static var alignment: HorizontalAlignment { isBeside ? .leading : .center }
-  static var frameAlignment: Alignment { isBeside ? .leading : .center }
-  static var textAlignment: TextAlignment { isBeside ? .leading : .center }
+  var alignment: HorizontalAlignment { isBeside ? .leading : .center }
+  var frameAlignment: Alignment { isBeside ? .leading : .center }
+  var textAlignment: TextAlignment { isBeside ? .leading : .center }
 }
 
 /// The page's name over its content on a Mac, where the sidebar shell leaves the window toolbar

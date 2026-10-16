@@ -231,7 +231,7 @@ final class OrbisClientTests: XCTestCase {
 /// server. Static rather than injected because `URLProtocol` is instantiated by the loading
 /// system, so tests run one at a time.
 final class StubProtocol: URLProtocol {
-  /// Guards the request observations. `startLoading` runs on the loading system's own thread
+  /// Guards the stub and the request observations. `startLoading` runs on the loading system's own thread
   /// and the tests read from the main actor, so both sides take the lock rather than one of
   /// them relying on when the other happens to run.
   private static let observationLock = NSLock()
@@ -258,28 +258,33 @@ final class StubProtocol: URLProtocol {
     }
   }
 
-  nonisolated(unsafe) static var status = 200
-  nonisolated(unsafe) static var body = ""
-  nonisolated(unsafe) static var failure: URLError?
+  /// How the next requests are answered. Written by the tests and read by `startLoading`, so it
+  /// sits behind the same lock as the observations.
+  private struct Stub {
+    var status = 200
+    var body = ""
+    var failure: URLError?
+    /// Answers each request from its own path, so one model run can walk health, library, and
+    /// playlists in a single test. Sendable so it always runs on the loading system's thread;
+    /// a blocked responder here must never hold the main actor.
+    var responder: (@Sendable (URLRequest) -> (Int, String))?
+    /// Seconds to hold a matching response back before delivering it. For tests that must
+    /// prove a newer request wins over an older one: the session drives its requests from one
+    /// queue, so holding a response by blocking `startLoading` would stall every other request
+    /// on the session instead of overlapping with one.
+    var holdResponse: (@Sendable (URLRequest) -> TimeInterval)?
+  }
 
-  /// Answers each request from its own path, so one model run can walk health, library, and
-  /// playlists in a single test. Sendable so it always runs on the loading system's thread;
-  /// a blocked responder here must never hold the main actor. Set only through
-  /// `session(responder:)`; the static shorthands clear it.
-  nonisolated(unsafe) static var responder: (@Sendable (URLRequest) -> (Int, String))?
+  nonisolated(unsafe) private static var stub = Stub()
 
-  /// Seconds to hold a matching response back before delivering it. For tests that must
-  /// prove a newer request wins over an older one: the session drives its requests from one
-  /// queue, so holding a response by blocking `startLoading` would stall every other request
-  /// on the session instead of overlapping with one.
-  nonisolated(unsafe) static var holdResponse: (@Sendable (URLRequest) -> TimeInterval)?
+  /// Set through `session(responder:)`, or replaced on its own; the static shorthands clear it.
+  static var responder: (@Sendable (URLRequest) -> (Int, String))? {
+    get { observationLock.withLock { stub.responder } }
+    set { observationLock.withLock { stub.responder = newValue } }
+  }
 
   static func session(status: Int, body: String) -> URLSession {
-    Self.status = status
-    Self.body = body
-    Self.failure = nil
-    Self.responder = nil
-    Self.holdResponse = nil
+    observationLock.withLock { stub = Stub(status: status, body: body) }
     Self.lastRequest = nil
     Self.lastBody = nil
     return makeSession()
@@ -289,18 +294,14 @@ final class StubProtocol: URLProtocol {
     responder: @Sendable @escaping (URLRequest) -> (Int, String),
     holding: @Sendable @escaping (URLRequest) -> TimeInterval = { _ in 0 }
   ) -> URLSession {
-    Self.responder = responder
-    Self.holdResponse = holding
-    Self.failure = nil
+    observationLock.withLock { stub = Stub(responder: responder, holdResponse: holding) }
     Self.lastRequest = nil
     Self.lastBody = nil
     return makeSession()
   }
 
   static func session(failure: URLError) -> URLSession {
-    Self.failure = failure
-    Self.responder = nil
-    Self.holdResponse = nil
+    observationLock.withLock { stub = Stub(failure: failure) }
     Self.lastRequest = nil
     Self.lastBody = nil
     return makeSession()
@@ -318,17 +319,18 @@ final class StubProtocol: URLProtocol {
 
   override func startLoading() {
     StubProtocol.observe(request)
-    if let failure = StubProtocol.failure {
+    let stub = StubProtocol.observationLock.withLock { StubProtocol.stub }
+    if let failure = stub.failure {
       client?.urlProtocol(self, didFailWithError: failure)
       return
     }
     let status: Int
     let body: String
-    if let responder = StubProtocol.responder {
+    if let responder = stub.responder {
       (status, body) = responder(request)
     } else {
-      status = StubProtocol.status
-      body = StubProtocol.body
+      status = stub.status
+      body = stub.body
     }
     let response = HTTPURLResponse(
       url: request.url!,
@@ -337,7 +339,7 @@ final class StubProtocol: URLProtocol {
       headerFields: nil
     )!
     let data = Data(body.utf8)
-    let hold = StubProtocol.holdResponse?(request) ?? 0
+    let hold = stub.holdResponse?(request) ?? 0
     if hold > 0 {
       // The session drives its requests from one queue, so a response that is held must be
       // delivered later from its own thread rather than by blocking here.

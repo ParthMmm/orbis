@@ -163,6 +163,10 @@ struct AudioState: Decodable, Equatable {
   let bytesReceived: Int
   let bytesTotal: Int?
   let format: String?
+
+  /// A download the app stopped watching before the service said it ended. The service never
+  /// sends this state.
+  static let unwatched = AudioState(state: "unwatched", bytesReceived: 0, bytesTotal: nil, format: nil)
 }
 
 /// Mirrors the server contract. The count comes from the server so a sidebar does not ask once

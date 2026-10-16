@@ -405,7 +405,11 @@ final class AudioPlayer {
       return
     }
     artworkFetch = Task { [weak self] in
-      guard let (data, _) = try? await URLSession.shared.data(from: url) else { return }
+      guard
+        let (data, response) = try? await URLSession.shared.data(
+          for: URLRequest(url: url, timeoutInterval: 15)),
+        let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+      else { return }
       let artwork = await Self.artwork(from: data)
       guard let self, self.playbackGeneration == generation, let artwork else { return }
       self.currentArtwork = artwork

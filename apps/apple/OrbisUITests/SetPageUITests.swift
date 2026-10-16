@@ -94,8 +94,11 @@ final class SetPageUITests: LibraryJourney {
     field.typeText("Renamed by the journey")
     app.buttons["rename-save"].tap()
 
+    let renamed = app.staticTexts.matching(
+      NSPredicate(format: "label BEGINSWITH %@", "Renamed by the journey")
+    ).firstMatch
     XCTAssertTrue(
-      app.staticTexts["Renamed by the journey"].waitForExistence(timeout: 30),
+      renamed.waitForExistence(timeout: 30),
       "the page must show the name the service accepted\n\(app.debugDescription)"
     )
     capture("11-set-renamed")

@@ -64,13 +64,6 @@ struct PlaylistsDestination: View {
     }
   }
 
-  /// The artwork of a Playlist's Sets, in Library order, for its folder.
-  private func artwork(of playlist: Playlist) -> [URL?] {
-    guard case .loaded(let sets) = model.library else { return [] }
-    return sets.filter { $0.playlistIds.contains(playlist.id) }
-      .prefix(3).map { SetPresentation.row($0).artwork }
-  }
-
   private var playlistList: some View {
     Group {
       switch model.playlists {
@@ -99,7 +92,8 @@ struct PlaylistsDestination: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .background {
-      ArtworkGlow(url: model.playlistItems.first.flatMap { artwork(of: $0).first ?? nil }, reach: 0.55)
+      ArtworkGlow(
+        url: model.playlistItems.first.flatMap { model.artwork(ofPlaylist: $0.id).first ?? nil }, reach: 0.55)
     }
     .largeTitleOnIOS()
     .macPageSearch(text: $playlistQuery, prompt: "Find in Playlists")
@@ -124,7 +118,7 @@ struct PlaylistsDestination: View {
               PlaylistSleeve(
                 name: playlist.name,
                 count: playlist.setCount,
-                artwork: artwork(of: playlist),
+                artwork: model.artwork(ofPlaylist: playlist.id),
                 category: SetPresentation.category(for: playlist.name)
               )
             }
@@ -186,6 +180,14 @@ struct PlaylistsDestination: View {
       Form {
         TextField("Name", text: $draftName)
           .accessibilityIdentifier("playlist-name")
+        // The sheet covers the screen's own status, so a refused Create is said here.
+        if model.playlistFailure != nil {
+          Section {
+            FailureRows(
+              failure: model.playlistFailure, context: "creating a playlist",
+              identifier: "playlist-create-error")
+          }
+        }
       }
       .navigationTitle("New playlist")
       .toolbarTitleDisplayMode(.inline)
@@ -202,7 +204,9 @@ struct PlaylistsDestination: View {
               }
             }
           }
-          .disabled(model.isWorkingOnPlaylist)
+          .disabled(
+            model.isWorkingOnPlaylist || draftName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+          )
           .accessibilityIdentifier("playlist-create-save")
         }
       }
@@ -237,6 +241,9 @@ struct PlaylistDetailView: View {
   @State private var isConfirmingDelete = false
   /// The play a person asked for while something else was playing, held until they confirm.
   @State private var pendingPlay: PlayOrder?
+  @Environment(\.horizontalSizeClass) private var sizeClass
+
+  private var heroLayout: HeroLayout { HeroLayout(sizeClass) }
 
   private enum PlayOrder {
     case inOrder
@@ -364,22 +371,22 @@ struct PlaylistDetailView: View {
   private func hero(_ sets: [SavedSet]) -> some View {
     let seconds = sets.compactMap(\.durationSeconds).reduce(0, +)
     let count = sets.count == 1 ? "1 set" : "\(sets.count) sets"
-    // On a Mac the fan sits beside the name and the buttons, as Home's hero does.
-    let layout = HeroLayout.stack(spacing: 14)
+    // In a wide window the fan sits beside the name and the buttons, as Home's hero does.
+    let layout = heroLayout.stack(spacing: 14)
     return layout {
       SleeveFan(
         seed: playlist.name,
         artwork: sets.prefix(3).map { SetPresentation.row($0).artwork },
         category: SetPresentation.category(for: playlist.name),
-        width: HeroLayout.isBeside ? 220 : 200
+        width: heroLayout.isBeside ? 220 : 200
       )
-      .frame(height: HeroLayout.isBeside ? 170 : 150)
-      VStack(alignment: HeroLayout.alignment, spacing: 14) {
-        VStack(alignment: HeroLayout.alignment, spacing: 5) {
+      .frame(height: heroLayout.isBeside ? 170 : 150)
+      VStack(alignment: heroLayout.alignment, spacing: 14) {
+        VStack(alignment: heroLayout.alignment, spacing: 5) {
           Eyebrow("Playlist")
           Text(playlist.name)
-            .font(HeroLayout.isBeside ? Font.orbis.largeTitle : Font.orbis.title)
-            .multilineTextAlignment(HeroLayout.textAlignment)
+            .font(heroLayout.isBeside ? Font.orbis.largeTitle : Font.orbis.title)
+            .multilineTextAlignment(heroLayout.textAlignment)
             .accessibilityAddTraits(.isHeader)
           Text(seconds > 0 ? "\(count) · \(SetPresentation.length(seconds))" : count)
             .font(.subheadline)
@@ -387,9 +394,9 @@ struct PlaylistDetailView: View {
         }
         playButtons
       }
-      .frame(maxWidth: HeroLayout.isBeside ? CGFloat.infinity : nil, alignment: .leading)
+      .frame(maxWidth: heroLayout.isBeside ? CGFloat.infinity : nil, alignment: .leading)
     }
-    .frame(maxWidth: .infinity, alignment: HeroLayout.frameAlignment)
+    .frame(maxWidth: .infinity, alignment: heroLayout.frameAlignment)
     .padding(.vertical, 8)
   }
 
@@ -467,25 +474,41 @@ struct AddSetsToPlaylistSheet: View {
   let playlistId: String
   @Environment(\.dismiss) private var dismiss
 
-  private var choices: [SavedSet] {
-    guard case .loaded(let members) = model.playlistMembers,
-      case .loaded(let library) = model.library
-    else { return [] }
+  /// The Library's Sets that are not in the Playlist yet, once both have arrived. A failure of
+  /// either is said with a retry for it, rather than as a library with nothing to add.
+  private var choices: Loadable<[SavedSet]> {
+    guard case .loaded(let library) = model.library else { return model.library }
+    guard case .loaded(let members) = model.playlistMembers else { return model.playlistMembers }
     let memberIds = Set(members.map(\.id))
-    return library.filter { !memberIds.contains($0.id) }
+    return .loaded(library.filter { !memberIds.contains($0.id) })
+  }
+
+  private func retry() async {
+    if case .failed = model.library { await model.loadLibrary() }
+    if case .failed = model.playlistMembers { await model.loadPlaylistMembers(playlistId) }
   }
 
   var body: some View {
     NavigationStack {
       Group {
-        if choices.isEmpty {
+        switch choices {
+        case .idle, .loading:
+          LoadingState()
+            .accessibilityIdentifier("add-sets-loading")
+        case .failed(let failure):
+          UnavailableState(failure: failure, context: "loading Sets to add") {
+            Task { await retry() }
+          }
+          .accessibilityIdentifier("add-sets-error")
+        case .loaded(let sets) where sets.isEmpty:
           NoResultsState(recoverLabel: "Done", recover: { dismiss() })
-        } else {
-          List(choices) { set in
+        case .loaded(let sets):
+          List(sets) { set in
             Button {
               Task {
                 await model.addSetToPlaylist(playlistId, setId: set.id)
-                dismiss()
+                // A refused add stays open, with the refusal shown, so it can be tried again.
+                if model.playlistFailure == nil { dismiss() }
               }
             } label: {
               Text(set.title)
@@ -495,6 +518,7 @@ struct AddSetsToPlaylistSheet: View {
           }
         }
       }
+      .playlistChangeStatus(model)
       .navigationTitle("Add Sets")
       .toolbarTitleDisplayMode(.inline)
       .toolbar {
@@ -546,7 +570,7 @@ struct PlaylistChangeStatus: ViewModifier {
 }
 
 extension View {
-  fileprivate func playlistChangeStatus(_ model: AppModel) -> some View {
+  func playlistChangeStatus(_ model: AppModel) -> some View {
     modifier(PlaylistChangeStatus(model: model))
   }
 }

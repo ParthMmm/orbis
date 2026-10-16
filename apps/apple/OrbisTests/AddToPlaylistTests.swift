@@ -11,13 +11,13 @@ final class AddToPlaylistTests: XCTestCase {
   ]
 
   func testNameSortsTheWayFinderDoes() {
-    XCTAssertEqual(AddToPlaylistSheet.sorted(playlists, by: .name).map(\.id), ["a", "b", "s"])
+    XCTAssertEqual(PlaylistChoices.sorted(playlists, by: .name).map(\.id), ["a", "b", "s"])
   }
 
   func testTheLastPlaylistAddedToLeadsTheRecentsOnce() {
-    XCTAssertEqual(AddToPlaylistSheet.remembering("s", in: ["a", "s", "b"]), ["s", "a", "b"])
-    XCTAssertEqual(AddToPlaylistSheet.remembering("n", in: []), ["n"])
+    XCTAssertEqual(PlaylistChoices.remembering("s", in: ["a", "s", "b"]), ["s", "a", "b"])
+    XCTAssertEqual(PlaylistChoices.remembering("n", in: []), ["n"])
     XCTAssertEqual(
-      AddToPlaylistSheet.remembering("n", in: ["a", "b", "c"], limit: 2), ["n", "a"])
+      PlaylistChoices.remembering("n", in: ["a", "b", "c"], limit: 2), ["n", "a"])
   }
 }

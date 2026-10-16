@@ -80,9 +80,7 @@ final class PlaybackUITests: LibraryJourney {
     XCTAssertFalse(app.buttons["Download"].exists)
     play.tap()
     let seek = app.sliders["detail-seek"]
-    let advanced = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value != %@", "0:00"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 6), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [elapsed(on: seek) { $0 > 0 }], timeout: 6), .completed)
     XCTAssertEqual(app.buttons["detail-play-toggle"].label, "Pause")
     capture("16-ready-audio-playing")
   }
@@ -112,19 +110,15 @@ final class PlaybackUITests: LibraryJourney {
     fromBeginning.tap()
     let seek = app.sliders["detail-seek"]
     XCTAssertTrue(seek.waitForExistence(timeout: 15))
-    let atStart = NSPredicate(format: "value BEGINSWITH %@", "0:0")
     XCTAssertEqual(
-      XCTWaiter.wait(
-        for: [XCTNSPredicateExpectation(predicate: atStart, object: seek)], timeout: 8),
+      XCTWaiter.wait(for: [elapsed(on: seek) { $0 < 10 }], timeout: 8),
       .completed, "A saved position must not be resumed")
     XCTAssertEqual(toggle.label, "Pause")
     capture("play-from-beginning-from-saved-position")
     let restarted = try service.position(of: seeded.id) { $0 < 10 }
     XCTAssertLessThan(restarted, 10, "The saved position must move back to the start")
 
-    let pastTen = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value BEGINSWITH %@", "0:1"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [pastTen], timeout: 20), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [elapsed(on: seek) { (10..<20).contains($0) }], timeout: 20), .completed)
     toggle.tap()
     XCTAssertEqual(toggle.label, "Play")
     let paused = try service.position(of: seeded.id, becomesAtLeast: 10)
@@ -134,8 +128,7 @@ final class PlaybackUITests: LibraryJourney {
 
     fromBeginning.tap()
     XCTAssertEqual(
-      XCTWaiter.wait(
-        for: [XCTNSPredicateExpectation(predicate: atStart, object: seek)], timeout: 5),
+      XCTWaiter.wait(for: [elapsed(on: seek) { $0 < 10 }], timeout: 5),
       .completed, "The Set in the player must move back to the start")
     XCTAssertEqual(toggle.label, "Pause")
     capture("play-from-beginning-current-restarted")
@@ -182,9 +175,7 @@ final class PlaybackUITests: LibraryJourney {
     second.tap()
     let seek = app.sliders["detail-seek"]
     XCTAssertTrue(seek.waitForExistence(timeout: 15))
-    let startedAtCue = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value BEGINSWITH %@", "0:1"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [startedAtCue], timeout: 8), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [elapsed(on: seek) { (10..<20).contains($0) }], timeout: 8), .completed)
     XCTAssertTrue(second.isSelected)
     capture("tracklist-second-cue-playing")
 
@@ -199,9 +190,7 @@ final class PlaybackUITests: LibraryJourney {
       predicate: NSPredicate(format: "enabled == true"), object: seek)
     XCTAssertEqual(XCTWaiter.wait(for: [canSeek], timeout: 8), .completed)
     first.tap()
-    let returnedToFirst = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value BEGINSWITH %@", "0:0"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [returnedToFirst], timeout: 5), .completed)
+    XCTAssertEqual(XCTWaiter.wait(for: [elapsed(on: seek) { $0 < 10 }], timeout: 5), .completed)
     XCTAssertTrue(first.isSelected)
     capture("tracklist-first-cue-playing")
 
@@ -253,11 +242,12 @@ final class PlaybackUITests: LibraryJourney {
     XCTAssertTrue(title.waitForExistence(timeout: 10))
     XCTAssertEqual(title.label, seeded.title)
     let seek = app.sliders["now-playing-seek"]
-    let advanced = XCTNSPredicateExpectation(
-      predicate: NSPredicate(format: "value != %@", "0:00"), object: seek)
-    XCTAssertEqual(XCTWaiter.wait(for: [advanced], timeout: 4), .completed)
-    sleep(2)
+    XCTAssertEqual(XCTWaiter.wait(for: [elapsed(on: seek) { $0 > 0 }], timeout: 4), .completed)
     let beforePause = try service.set(id: seeded.id)?.playbackPositionSeconds ?? 0
+    // The pause must report a later position than the one stored, so the Set plays on past it.
+    XCTAssertEqual(
+      XCTWaiter.wait(for: [elapsed(on: seek) { $0 >= beforePause + 2 }], timeout: 10), .completed,
+      "playback must move on from the stored position")
     let pause = app.buttons.matching(
       NSPredicate(format: "identifier == %@ AND label == %@", "now-playing-play-toggle", "Pause")
     ).firstMatch
@@ -286,5 +276,31 @@ final class PlaybackUITests: LibraryJourney {
           "positionSeconds": stored,
         ],
       ])
+  }
+
+  /// Waits for the seek bar's elapsed time to satisfy `matches`. The bar speaks its position, as
+  /// "1 minute, 12 seconds of 2 minutes", so the elapsed part is read back into seconds.
+  private func elapsed(on seek: XCUIElement, _ matches: @escaping (Int) -> Bool)
+    -> XCTNSPredicateExpectation
+  {
+    XCTNSPredicateExpectation(
+      predicate: NSPredicate { _, _ in Self.elapsedSeconds(seek.value as? String).map(matches) ?? false },
+      object: nil)
+  }
+
+  private static func elapsedSeconds(_ value: String?) -> Int? {
+    guard let elapsed = value?.components(separatedBy: " of ").first else { return nil }
+    var seconds = 0
+    for part in elapsed.components(separatedBy: ", ") {
+      let words = part.split(separator: " ")
+      guard words.count == 2, let count = Int(words[0]) else { return nil }
+      switch words[1] {
+      case "hour", "hours": seconds += count * 3600
+      case "minute", "minutes": seconds += count * 60
+      case "second", "seconds": seconds += count
+      default: return nil
+      }
+    }
+    return seconds
   }
 }

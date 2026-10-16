@@ -1,7 +1,8 @@
 import ImageIO
 import SwiftUI
 
-public struct ArtworkField: Equatable, Sendable {
+/// `nonisolated` so an image is read off the main actor.
+nonisolated public struct ArtworkField: Equatable, Sendable {
   public let hue: Double
   public let chroma: Double
 
@@ -67,7 +68,7 @@ public struct ArtworkField: Equatable, Sendable {
   }
 }
 
-extension ArtworkField {
+nonisolated extension ArtworkField {
   public static func from(cgImage image: CGImage) -> ArtworkField {
     let width = 16
     let height = 9
@@ -95,15 +96,22 @@ extension ArtworkField {
     return from(pixels: pixels)
   }
 
+  /// Reads a small thumbnail rather than the whole image, because the field is drawn from 16 by 9
+  /// pixels.
   public static func from(imageData data: Data) -> ArtworkField? {
+    let options: [CFString: Any] = [
+      kCGImageSourceCreateThumbnailFromImageAlways: true,
+      kCGImageSourceThumbnailMaxPixelSize: 64,
+      kCGImageSourceShouldCacheImmediately: true,
+    ]
     guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-      let image = CGImageSourceCreateImageAtIndex(source, 0, nil)
+      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     else { return nil }
     return from(cgImage: image)
   }
 }
 
-enum OKLab {
+nonisolated enum OKLab {
   static func from(srgb: (r: Double, g: Double, b: Double)) -> (l: Double, a: Double, b: Double) {
     let r = linear(srgb.r)
     let g = linear(srgb.g)
@@ -143,15 +151,36 @@ enum OKLab {
 final class ArtworkFieldCache {
   static let shared = ArtworkFieldCache()
   private var fields: [URL: ArtworkField] = [:]
+  /// One read per image, shared by every view that asks while it runs. Not cancelled when one of
+  /// them goes away, because another may still be waiting on it.
+  private var reads: [URL: Task<ArtworkField?, Never>] = [:]
 
   func field(for url: URL) -> ArtworkField? { fields[url] }
 
-  func load(_ url: URL) async -> ArtworkField {
+  /// The image's field, or nil when it could not be read. Only a field is kept, so an image that
+  /// failed to arrive is tried again by the next view that shows it.
+  func load(_ url: URL) async -> ArtworkField? {
     if let known = fields[url] { return known }
-    let data = try? await URLSession.shared.data(from: url).0
-    let field = data.flatMap(ArtworkField.from(imageData:)) ?? .brand
-    fields[url] = field
-    return field
+    let read =
+      reads[url]
+      ?? Task {
+        let field = await Self.read(url)
+        reads[url] = nil
+        if let field { fields[url] = field }
+        return field
+      }
+    reads[url] = read
+    return await read.value
+  }
+
+  @concurrent
+  private static func read(_ url: URL) async -> ArtworkField? {
+    guard
+      let (data, response) = try? await URLSession.shared.data(
+        for: URLRequest(url: url, timeoutInterval: 15)),
+      let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode)
+    else { return nil }
+    return ArtworkField.from(imageData: data)
   }
 }
 
@@ -181,7 +210,7 @@ public struct ArtworkBackdrop: View {
           field = .brand
           return
         }
-        field = await ArtworkFieldCache.shared.load(url)
+        field = await ArtworkFieldCache.shared.load(url) ?? .brand
       }
       .accessibilityHidden(true)
   }

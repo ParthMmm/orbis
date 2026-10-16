@@ -25,15 +25,26 @@ nonisolated public struct OrbisFailure: Equatable, Sendable {
   /// Where the caller was looking when this happened, which is the first thing worth checking
   /// and the first thing a person forgets to mention.
   public var address: String?
+  /// When the failure happened, which is not when its details are copied.
+  public let occurredAt: Date
 
   public init(
-    title: String, message: String, symbol: String, isRetryable: Bool, address: String? = nil
+    title: String, message: String, symbol: String, isRetryable: Bool, address: String? = nil,
+    occurredAt: Date = Date()
   ) {
     self.title = title
     self.message = message
     self.symbol = symbol
     self.isRetryable = isRetryable
     self.address = address
+    self.occurredAt = occurredAt
+  }
+
+  /// The same failure happening again is the same failure, so the time is left out. A screen that
+  /// shows it does not change, and a test compares what it says.
+  public static func == (lhs: OrbisFailure, rhs: OrbisFailure) -> Bool {
+    lhs.title == rhs.title && lhs.message == rhs.message && lhs.symbol == rhs.symbol
+      && lhs.isRetryable == rhs.isRetryable && lhs.address == rhs.address
   }
 }
 
@@ -64,7 +75,7 @@ nonisolated public struct FailureReport: Equatable, Sendable {
     }
     lines.append("Doing: \(context)")
     lines.append("Detail: \(failure.message)")
-    lines.append("When: \(Self.timestamp)")
+    lines.append("When: \(failure.occurredAt.formatted(.iso8601))")
     return lines.joined(separator: "\n")
   }
 
@@ -81,10 +92,6 @@ nonisolated public struct FailureReport: Equatable, Sendable {
     #else
       "macOS \(ProcessInfo.processInfo.operatingSystemVersionString)"
     #endif
-  }
-
-  static var timestamp: String {
-    ISO8601DateFormatter().string(from: Date())
   }
 }
 

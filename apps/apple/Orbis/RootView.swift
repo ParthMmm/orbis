@@ -9,12 +9,16 @@ import SwiftUI
   struct CompactShell: View {
     @Bindable var model: AppModel
 
-    /// A tap on the Search tab while Search is open asks for the field, rather than doing nothing.
+    /// A tap on the tab already open takes it back to its first page, and on Search asks for the
+    /// field too, as a second tap does in Apple Music.
     private var tabSelection: Binding<Destination> {
       Binding(
         get: { model.destination },
         set: { next in
-          if next == .search, model.destination == .search { model.searchFocusRequests += 1 }
+          if next == model.destination {
+            model.returnToRoot()
+            if next == .search { model.searchFocusRequests += 1 }
+          }
           model.destination = next
         })
     }
@@ -150,6 +154,7 @@ struct SidebarShell: View {
         List {
           ForEach(Destination.shellCases) { destination in
             Button {
+              if model.destination == destination { model.returnToRoot() }
               model.destination = destination
             } label: {
               HStack(spacing: 8) {
@@ -187,10 +192,13 @@ struct SidebarShell: View {
         .accessibilityIdentifier("sidebar")
       #endif
     } detail: {
+      // One stack serves every destination here, where a phone has one per tab. A new identity
+      // per destination keeps a page pushed in one, and the page's own state, out of the next.
       NavigationStack {
         DestinationView(model: model, destination: model.destination)
       }
-      .safeAreaInset(edge: .bottom) {
+      .id(model.destination)
+      .safeAreaBar(edge: .bottom) {
         if model.showsMiniPlayer {
           NowPlayingBar(model: model, surface: .floating, transition: nowPlaying) {
             isNowPlayingShown = true
@@ -348,7 +356,7 @@ struct DestinationView: View {
       .onChange(of: model.reveal != nil) { _, hasReveal in
         if hasReveal { isFilingSheetShown = true }
       }
-      .safeAreaInset(edge: .bottom) {
+      .safeAreaBar(edge: .bottom) {
         if let selectedIds { selectionBar(count: selectedIds.count) }
       }
       .sheet(isPresented: $isBulkTagging) {
@@ -427,7 +435,9 @@ struct DestinationView: View {
     return ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         MacPageTitle.slot("Home")
-        rails
+        if case .loaded = model.library {
+          rails
+        }
       }
       .padding(.horizontal)
       .padding(.top, 8)
@@ -438,11 +448,28 @@ struct DestinationView: View {
     }
     .scrollEdgeEffectStyle(.soft, for: .top)
     .scrollEdgeEffectStyle(.soft, for: .bottom)
+    .refreshable {
+      await model.refreshLibraryQuietly()
+      await model.refreshPlaylistsQuietly()
+    }
     .overlay {
-      // Before the first Set, Home has no rails to show; it says so and offers the first filing.
-      if case .loaded(let sets) = model.library, sets.isEmpty {
-        EmptyLibraryState(recover: { openFilingSheet() })
-          .accessibilityIdentifier("home-empty")
+      // The rails are built from the library, so until it arrives Home says what it is waiting
+      // on, as the Library tab does, rather than showing a blank page.
+      switch model.library {
+      case .idle, .loading:
+        LoadingState()
+          .accessibilityIdentifier("home-loading")
+      case .failed(let failure):
+        UnavailableState(failure: failure, context: "loading the library") {
+          Task { await model.loadLibrary() }
+        }
+        .accessibilityIdentifier("home-error")
+      case .loaded(let sets):
+        // Before the first Set, Home has no rails to show; it says so and offers the first filing.
+        if sets.isEmpty {
+          EmptyLibraryState(recover: { openFilingSheet() })
+            .accessibilityIdentifier("home-empty")
+        }
       }
     }
     .sidebarPageTitle("Home")
@@ -557,8 +584,10 @@ struct DestinationView: View {
         .contentTransition(.numericText())
         .accessibilityIdentifier("library-selection-count")
       Spacer()
+      // The bar is the glass; a glass button on it would be glass on glass.
       Button("Tag", systemImage: "tag") { isBulkTagging = true }
-        .buttonStyle(.glassProminent)
+        .buttonStyle(.borderedProminent)
+        .buttonBorderShape(.capsule)
         .tint(Color.orbis.tint)
         .disabled(count == 0)
         .accessibilityIdentifier("library-bulk-tag")
@@ -778,8 +807,7 @@ struct HomeRails: View {
             PlaylistSleeve(
               name: playlist.name,
               count: playlist.setCount,
-              artwork: librarySets.filter { $0.playlistIds.contains(playlist.id) }
-                .prefix(3).map { SetPresentation.row($0).artwork },
+              artwork: model.artwork(ofPlaylist: playlist.id),
               category: SetPresentation.category(for: playlist.name)
             )
           }
@@ -816,9 +844,11 @@ private struct HomeHero: View {
   let set: SavedSet
   /// The Set was left part-way, so the button resumes and says how long is left.
   let isResume: Bool
+  @Environment(\.horizontalSizeClass) private var sizeClass
 
-  /// The artwork spans a phone's width; beside the words on a Mac it is a cover's size.
-  private static let maxArtworkWidth: CGFloat = HeroLayout.isBeside ? 440 : 560
+  private var hero: HeroLayout { HeroLayout(sizeClass) }
+  /// The artwork spans a phone's width; beside the words in a wide window it is a cover's size.
+  private var maxArtworkWidth: CGFloat { hero.isBeside ? 440 : 560 }
 
   private var isCurrent: Bool { model.audioPlayer.currentSetId == set.id }
   private var isPlaying: Bool { isCurrent && model.audioPlayer.state == .playing }
@@ -831,7 +861,7 @@ private struct HomeHero: View {
   }
 
   var body: some View {
-    let layout = HeroLayout.stack(spacing: 16)
+    let layout = hero.stack(spacing: 16)
     layout {
       Button {
         model.openSet(set.id)
@@ -841,17 +871,17 @@ private struct HomeHero: View {
           progress: SetPresentation.progress(of: set)
         )
         .shadow(color: .black.opacity(0.45), radius: 28, y: 16)
-        .frame(maxWidth: Self.maxArtworkWidth)
+        .frame(maxWidth: maxArtworkWidth)
       }
       .buttonStyle(.orbisPressable)
       .accessibilityLabel("Open \(set.title)")
       .accessibilityIdentifier("home-hero-\(set.id)")
-      VStack(alignment: HeroLayout.alignment, spacing: 16) {
-        VStack(alignment: HeroLayout.alignment, spacing: 6) {
+      VStack(alignment: hero.alignment, spacing: 16) {
+        VStack(alignment: hero.alignment, spacing: 6) {
           Eyebrow(isResume ? "Continue listening" : "Fresh in your library")
           Text(set.title)
-            .font(HeroLayout.isBeside ? Font.orbis.largeTitle : Font.orbis.title)
-            .multilineTextAlignment(HeroLayout.textAlignment)
+            .font(hero.isBeside ? Font.orbis.largeTitle : Font.orbis.title)
+            .multilineTextAlignment(hero.textAlignment)
             .lineLimit(3)
           if let creator = set.creator, !creator.isEmpty {
             Text(creator)
@@ -859,7 +889,7 @@ private struct HomeHero: View {
               .foregroundStyle(.secondary)
           }
         }
-        .frame(maxWidth: .infinity, alignment: HeroLayout.frameAlignment)
+        .frame(maxWidth: .infinity, alignment: hero.frameAlignment)
         actions
       }
     }
@@ -959,7 +989,7 @@ struct SearchDestination: View {
   @Bindable var model: AppModel
   /// The last queries that found something, newest first, one per line. Kept on the device: they
   /// are a convenience for this person here, not part of the library.
-  @AppStorage("orbis.recentSearches") private var recentSearches = ""
+  @AppStorage(AppModel.recentSearchesKey) private var recentSearches = ""
   private static let recentLimit = 6
   /// The field is resigned before the query is cleared. SwiftUI does not push a programmatic
   /// change to a search field that is still first responder, so a clear that only set the
@@ -1059,7 +1089,7 @@ struct SearchDestination: View {
   /// On a Mac the tracks found inside Tracklists take a column of their own beside the Sets,
   /// where a phone puts them under the Sets.
   @ViewBuilder private var results: some View {
-    let cues = isTagQuery ? [] : model.cueMatches(for: model.searchResultsFor ?? "")
+    let cues = isTagQuery ? [] : model.cueMatches
     #if os(macOS)
       HStack(alignment: .top, spacing: 0) {
         resultList(cuesBelow: [], foundCues: !cues.isEmpty, backdrop: .none)
@@ -1258,7 +1288,7 @@ private struct SearchStart: View {
         if !recentFilters.isEmpty {
           section("Recent filters") {
             ChipFlow {
-              ForEach(Array(recentFilters.enumerated()), id: \.offset) { index, tags in
+              ForEach(Array(recentFilters.enumerated()), id: \.element) { index, tags in
                 Button {
                   model.showTags(tags)
                 } label: {
@@ -1417,7 +1447,7 @@ private struct TopResult: View {
       }
     }
     .padding(14)
-    .glassEffect(.regular, in: .rect(cornerRadius: 22))
+    .orbisRaised(radius: Radius.hero)
   }
 }
 

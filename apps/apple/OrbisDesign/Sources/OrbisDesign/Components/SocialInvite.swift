@@ -35,7 +35,7 @@ public struct SocialInvite: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 4)
-        .glassEffect(.regular, in: .rect(cornerRadius: 22))
+        .orbisRaised(radius: Radius.hero)
         VStack(spacing: 10) {
           Button(action: turnOn) {
             Text("Share with Group")

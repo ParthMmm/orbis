@@ -53,7 +53,7 @@ final class TVJourney: XCTestCase {
     XCTAssertTrue(
       app.buttons["search-tag-techno"].waitForExistence(timeout: 15),
       "Search must show the lane's Tag under the keyboard\n\(app.debugDescription)")
-    sleep(1)
+    XCTAssertTrue(waitUntilSettled(app.buttons["search-tag-techno"]), "Search must come to rest")
     capture("tv-search")
 
     // Focus is in the system keyboard now, so the way back to the Library is up to the bar and
@@ -65,11 +65,12 @@ final class TVJourney: XCTestCase {
     let chip = app.buttons["tv-tag-techno"]
     XCTAssertTrue(moveFocus(to: chip, pressing: .down, limit: 2), "The Tag chip must take focus")
     remote.press(.select)
-    sleep(1)
+    XCTAssertTrue(waitUntil { chip.isSelected }, "The Tag must filter the Library")
+    XCTAssertTrue(waitUntilSettled(chip), "The filtered Library must come to rest")
     XCTAssertTrue(chip.hasFocus, "Focus must stay on the Tag after it filters the Library")
-    XCTAssertTrue(chip.isSelected)
     remote.press(.select)
-    sleep(1)
+    XCTAssertTrue(waitUntil { !chip.isSelected }, "The Tag must clear the filter")
+    XCTAssertTrue(waitUntilSettled(chip), "The whole Library must come to rest")
     XCTAssertTrue(chip.hasFocus, "Focus must stay on the Tag after the filter clears")
     XCTAssertTrue(tile.waitForExistence(timeout: 10))
     XCTAssertTrue(moveFocus(to: tile, pressing: .down, limit: 3), "The seeded tile must take focus")
@@ -134,7 +135,7 @@ final class TVJourney: XCTestCase {
     XCTAssertTrue(pressUntil(.right, limit: 6) { settingsTab.hasFocus }, "The bar must reach Settings")
     XCTAssertTrue(app.descendants(matching: .any)["tv-settings"].waitForExistence(timeout: 15))
     XCTAssertTrue(app.staticTexts["settings-version"].waitForExistence(timeout: 15))
-    sleep(1)
+    XCTAssertTrue(waitUntilSettled(app.staticTexts["settings-version"]), "Settings must come to rest")
     capture("tv-settings")
 
     // The silent Set is a minute long: resumed, it ends, the queue empties, and the Now Playing
@@ -169,6 +170,22 @@ final class TVJourney: XCTestCase {
       usleep(600_000)
     }
     return reached()
+  }
+
+  private func waitUntil(timeout: TimeInterval = 10, _ condition: @escaping () -> Bool) -> Bool {
+    let met = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in condition() }, object: nil)
+    return XCTWaiter.wait(for: [met], timeout: timeout) == .completed
+  }
+
+  /// Waits until the element is in the same place on two reads in a row, so a capture shows the
+  /// screen at rest and not partway through a transition.
+  private func waitUntilSettled(_ element: XCUIElement) -> Bool {
+    var last = CGRect.null
+    return waitUntil {
+      let frame = element.frame
+      defer { last = frame }
+      return !frame.isEmpty && frame == last
+    }
   }
 
   private func labelled(_ element: XCUIElement, _ label: String) -> XCTNSPredicateExpectation {

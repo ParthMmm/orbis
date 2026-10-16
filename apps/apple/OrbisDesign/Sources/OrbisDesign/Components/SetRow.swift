@@ -335,6 +335,11 @@ public struct SetRow: View {
 /// against, and small enough to leave the artwork legible around it.
 private struct PlayGlyph: View {
   let playback: SetRow.Playback
+  @ScaledMetric(relativeTo: .footnote) private var scaledSide: CGFloat = 32
+
+  /// Grows with the text size up to half the row's 88-point artwork, so the artwork stays legible
+  /// around it.
+  private var side: CGFloat { min(scaledSide, 44) }
 
   var body: some View {
     Group {
@@ -343,12 +348,12 @@ private struct PlayGlyph: View {
           .frame(height: 12)
       } else {
         Image(systemName: playback.symbol)
-          .font(.system(size: 13, weight: .bold))
+          .font(.system(size: side * 13 / 32, weight: .bold))
           .foregroundStyle(.white)
       }
     }
-    .frame(width: 32, height: 32)
-    .orbisGlass(radius: 16, interactive: true)
+    .frame(width: side, height: side)
+    .orbisGlass(radius: side / 2, interactive: true)
     .accessibilityHidden(true)
   }
 }
