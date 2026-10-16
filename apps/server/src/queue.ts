@@ -6,24 +6,14 @@ import { Context, Effect, Layer } from "effect";
 import { insertBatches } from "./db/batches.js";
 import { playlistSets, playlists, queueEntries } from "./db/schema.js";
 import { Database } from "./db/service.js";
-import { LibraryError } from "./errors.js";
+import { asLibraryError, LibraryError } from "./errors.js";
 import { LibraryPerson } from "./library-person.js";
 import { Library } from "./library.js";
 import { Presence } from "./presence.js";
 import { QueueSignals } from "./queue-signals.js";
 import { Stats } from "./stats.js";
 
-const databaseError = () =>
-  new LibraryError({
-    message: "Could not complete the library request.",
-    statusCode: 500,
-  });
-
-const toLibraryError = <E>(error: E) =>
-  error instanceof LibraryError ? error : databaseError();
-
-const execute = <A, E>(operation: Effect.Effect<A, E>) =>
-  operation.pipe(Effect.mapError(toLibraryError));
+const execute = asLibraryError("Could not complete the library request.");
 
 const notPlayable = () =>
   new LibraryError({
@@ -297,7 +287,7 @@ export class Queue extends Context.Service<
         })
       );
 
-      return {
+      return Queue.of({
         changes: signals.subscribe(personId),
         complete,
         insert,
@@ -305,7 +295,7 @@ export class Queue extends Context.Service<
         play,
         read,
         replaceWithPlaylist,
-      };
+      });
     })
   );
 

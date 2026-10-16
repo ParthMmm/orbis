@@ -76,7 +76,7 @@ import {
   sets as setRows,
 } from "./db/schema.js";
 import { Database } from "./db/service.js";
-import { LibraryError } from "./errors.js";
+import { asLibraryError, LibraryError } from "./errors.js";
 import type {
   AccessDecision,
   AccessMode,
@@ -121,7 +121,7 @@ import {
   readTracklist,
   runClaimedTracklist,
 } from "./tracklists.js";
-import { retryTrustOperation } from "./trust-storage.js";
+import { trustOperation } from "./trust-storage.js";
 import { Versos } from "./versos.js";
 import {
   listFilterablePeople,
@@ -281,6 +281,12 @@ const failureResponse = <E>(error: E) => {
   );
 };
 
+const trustUnavailable = () =>
+  new LibraryError({
+    message: "The trust store is unavailable.",
+    statusCode: 500,
+  });
+
 const missingPlaylist = () =>
   new LibraryError({ message: "Playlist not found.", statusCode: 404 });
 
@@ -402,7 +408,7 @@ export const createPortableApp = (options: {
           yield* announce(topic, reaches(caller.person.id));
         });
       const runningTracklists = new Set<string>();
-      const startTracklist = Effect.fn("startSavedSetTracklist")(
+      const startTracklist = Effect.fn("SaveSet.startTracklist")(
         (id: string, retry = false) =>
           Effect.gen(function* startSavedSetTracklist() {
             if (runningTracklists.has(id)) {
@@ -442,7 +448,7 @@ export const createPortableApp = (options: {
             );
           })
       );
-      const reviseTitle = Effect.fn("reviseSavedSetTitle")((
+      const reviseTitle = Effect.fn("SaveSet.reviseTitle")((
         set: SavedSet,
         enriched: EnrichedMetadata
       ) => {
@@ -466,7 +472,7 @@ export const createPortableApp = (options: {
       });
       // The slow yt-dlp read runs after the response, tied to the app so `dispose` stops it. A
       // failure is logged and marks the Set's details failed; the save itself is unaffected.
-      const fillDetails = Effect.fn("fillSavedSetDetails")((set: SavedSet) =>
+      const fillDetails = Effect.fn("SaveSet.fillDetails")((set: SavedSet) =>
         metadata.details({ source: set.source, url: set.url }).pipe(
           Effect.flatMap((details) => library.recordDetails(set.id, details)),
           Effect.tap(() => startTracklist(set.id)),
@@ -477,7 +483,12 @@ export const createPortableApp = (options: {
                 ? Effect.void
                 : logDetailsFailure(set, error.reason).pipe(
                     Effect.andThen(
-                      library.recordDetailsFailure(set.id).pipe(Effect.ignore)
+                      library.recordDetailsFailure(set.id).pipe(
+                        Effect.ignore({
+                          log: "Warn",
+                          message: "set details failure not recorded",
+                        })
+                      )
                     )
                   ),
           }),
@@ -488,7 +499,7 @@ export const createPortableApp = (options: {
       );
       // Enrichment failure is swallowed so the save still succeeds, so it is the
       // one outcome a client cannot see. The log records which set and which reason.
-      const enrichSavedSet = Effect.fn("enrichSavedSet")((
+      const enrichSavedSet = Effect.fn("SaveSet.enrich")((
         set: SavedSet,
         personal: typeof Library.Service
       ) => {
@@ -1320,11 +1331,9 @@ export const createPortableApp = (options: {
                 const caller = yield* SetCaller;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(UpdateMePayload);
-                const result = yield* Effect.promise(() =>
-                  retryTrustOperation(() =>
-                    updatePerson(trustPath, caller.person.id, input)
-                  )
-                );
+                const result = yield* trustOperation(() =>
+                  updatePerson(trustPath, caller.person.id, input)
+                ).pipe(Effect.mapError(trustUnavailable));
                 if (result.kind === "updated") {
                   return HttpServerResponse.jsonUnsafe(meBody(result.person));
                 }
@@ -1380,16 +1389,14 @@ export const createPortableApp = (options: {
                 const caller = yield* SetCaller;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(SocialFiltersPayload);
-                const result = yield* Effect.promise(() =>
-                  retryTrustOperation(() =>
-                    updatePersonFilters(
-                      trustPath,
-                      caller.person.id,
-                      params.id,
-                      input
-                    )
+                const result = yield* trustOperation(() =>
+                  updatePersonFilters(
+                    trustPath,
+                    caller.person.id,
+                    params.id,
+                    input
                   )
-                );
+                ).pipe(Effect.mapError(trustUnavailable));
                 if (result.kind === "updated") {
                   return { appear: result.appear, see: result.see };
                 }
@@ -1496,23 +1503,24 @@ export const createPortableApp = (options: {
         }
       });
       const trustCall = <A>(action: (storePath: string) => A) =>
-        Effect.tryPromise({
-          catch: (error) =>
-            new LibraryError({
-              message:
-                error instanceof AdminError
-                  ? error.message
-                  : "The trust store is unavailable.",
-              statusCode: error instanceof AdminError ? error.statusCode : 500,
-            }),
-          try: () =>
-            retryTrustOperation(() => {
-              if (!trustPath) {
-                throw new AdminError(500, "The trust store is unavailable.");
-              }
-              return action(trustPath);
-            }),
-        });
+        trustOperation(() => {
+          if (!trustPath) {
+            throw new AdminError(500, "The trust store is unavailable.");
+          }
+          return action(trustPath);
+        }).pipe(
+          Effect.mapError(
+            ({ cause }) =>
+              new LibraryError({
+                message:
+                  cause instanceof AdminError
+                    ? cause.message
+                    : "The trust store is unavailable.",
+                statusCode:
+                  cause instanceof AdminError ? cause.statusCode : 500,
+              })
+          )
+        );
       const adminCall = <A>(action: (storePath: string) => A) =>
         Effect.andThen(requireHost, trustCall(action));
       const issueCodeFor = (personId: string) =>
@@ -1609,7 +1617,7 @@ export const createPortableApp = (options: {
                   UNION SELECT set_id AS id FROM queue_entries WHERE person_id = ${params.id}
                   UNION SELECT set_id AS id FROM playlist_sets INNER JOIN playlists ON playlists.id = playlist_sets.playlist_id WHERE creator_id = ${params.id}
                 `)
-                  .pipe(Effect.orDie);
+                  .pipe(asLibraryError("Could not remove the Person's data."));
                 yield* db
                   .transaction((tx) =>
                     Effect.gen(function* deleteAdminPersonRows() {
@@ -1968,14 +1976,14 @@ export const createPortableApp = (options: {
     // SAFETY: the sign-in handlers read no caller-bound service.
     return app.handler(
       request,
-      Context.empty() as Context.Context<Library | Queue | SetCaller>
+      Context.empty() as Context.Context<Library | Queue>
     );
   };
   const initialize = () =>
     // SAFETY: The health route reads no caller-bound service.
     app.handler(
       new Request("http://orbis.internal/health"),
-      Context.empty() as Context.Context<Library | Queue | SetCaller>
+      Context.empty() as Context.Context<Library | Queue>
     );
   // oxlint-disable-next-line eslint/sort-keys -- Lifecycle methods precede the request boundary.
   return {
@@ -2061,9 +2069,11 @@ export const createPortableApp = (options: {
         );
       }
       if (options.recordKeyUse !== false) {
-        await retryTrustOperation(() =>
-          markKeyUsed(trustPath, decision.keyId)
-        ).catch(() => null);
+        await Effect.runPromise(
+          trustOperation(() => markKeyUsed(trustPath, decision.keyId)).pipe(
+            Effect.ignore
+          )
+        );
       }
       // SAFETY: SetAccess provides the caller-bound Library and Queue before handlers read them.
       const response = await app.handler(

@@ -108,8 +108,8 @@ export class Ytdlp extends Context.Service<
           });
         }
         // A broken extractor is identifiable from the version alone.
-        yield* Effect.tryPromise(() =>
-          run([bin, "--version"], new AbortController().signal)
+        yield* Effect.tryPromise((signal) =>
+          run([bin, "--version"], signal)
         ).pipe(
           Effect.matchEffect({
             onFailure: () => Effect.logWarning("yt-dlp version unreadable"),
@@ -119,7 +119,7 @@ export class Ytdlp extends Context.Service<
               ),
           })
         );
-        const attempt = (
+        const attempt = Effect.fn("Ytdlp.attempt")((
           sourceUrl: string,
           destination: string,
           onProgress: (received: number, total: number | null) => void,
@@ -136,7 +136,7 @@ export class Ytdlp extends Context.Service<
                   ? "The download was canceled."
                   : "yt-dlp could not run."
               ),
-            try: async () => {
+            try: async (interrupted) => {
               const timer = setInterval(() => {
                 const { size } = Bun.file(output);
                 if (size > 0) {
@@ -146,7 +146,7 @@ export class Ytdlp extends Context.Service<
               try {
                 return await run(
                   ytdlpArgs(bin, output, sourceUrl, cookies, playerClient),
-                  signal
+                  AbortSignal.any([signal, interrupted])
                 );
               } finally {
                 clearInterval(timer);
@@ -155,7 +155,11 @@ export class Ytdlp extends Context.Service<
           }).pipe(
             Effect.flatMap((ran) =>
               ran.code === 0 && Bun.file(output).size > 0
-                ? Effect.promise(() => rename(output, destination))
+                ? Effect.tryPromise({
+                    catch: () =>
+                      downloadFailed("yt-dlp could not fetch this audio."),
+                    try: () => rename(output, destination),
+                  })
                 : Effect.logWarning("yt-dlp run failed").pipe(
                     Effect.annotateLogs({
                       bytes: Bun.file(output).size,
@@ -173,7 +177,7 @@ export class Ytdlp extends Context.Service<
                   )
             )
           );
-        };
+        });
         return Ytdlp.of({
           download: Effect.fn("Ytdlp.download")(function* download(
             sourceUrl: string,

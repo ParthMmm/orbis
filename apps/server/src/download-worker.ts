@@ -22,6 +22,9 @@ export interface DownloadProgress {
   readonly total: number | null;
 }
 
+const removePartial = (tmpPath: string) =>
+  Effect.tryPromise(() => rm(tmpPath, { force: true })).pipe(Effect.ignore);
+
 // A backend failure is retryable on the next backend. A cancel is terminal.
 const fetchWithFallback = (
   names: readonly BackendName[],
@@ -51,7 +54,7 @@ const fetchWithFallback = (
           Effect.andThen(
             rest.length === 0 || signal.aborted
               ? Effect.fail(error)
-              : Effect.promise(() => rm(tmpPath, { force: true })).pipe(
+              : removePartial(tmpPath).pipe(
                   Effect.andThen(
                     fetchWithFallback(rest, fetchWith, tmpPath, signal)
                   )
@@ -137,11 +140,7 @@ export class DownloadWorker extends Context.Service<
                 );
                 return finished;
               }),
-              Effect.gen(function* cleanupDownload() {
-                yield* Effect.ignore(
-                  Effect.promise(() => rm(tmpPath, { force: true }))
-                );
-              })
+              removePartial(tmpPath)
             );
           }
         );
@@ -151,8 +150,7 @@ export class DownloadWorker extends Context.Service<
               onFailure: (error) =>
                 Effect.logWarning("audio worker claim failed").pipe(
                   Effect.annotateLogs({
-                    reason:
-                      error instanceof LibraryError ? error.message : "unknown",
+                    reason: error.message,
                   }),
                   Effect.andThen(Effect.succeed(null))
                 ),
@@ -197,8 +195,7 @@ export class DownloadWorker extends Context.Service<
               onFailure: (error) =>
                 Effect.logWarning("audio worker round failed").pipe(
                   Effect.annotateLogs({
-                    reason:
-                      error instanceof LibraryError ? error.message : "unknown",
+                    reason: error.message,
                   }),
                   Effect.andThen(Effect.succeed(false))
                 ),
@@ -226,12 +223,12 @@ export class DownloadWorker extends Context.Service<
           progress.delete(id);
         };
         const progressFor = (id: string) => progress.get(id);
-        return {
+        return DownloadWorker.of({
           abort,
           processNext,
           progressFor,
           wake,
-        };
+        });
       })
     );
   }

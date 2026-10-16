@@ -49,11 +49,15 @@ const CUES = [
   },
 ];
 
-const start = async (versos: ReturnType<typeof Versos.layerOf>) => {
+const start = async (
+  versos: ReturnType<typeof Versos.layerOf>,
+  onEvent?: (event: WideEvent) => void
+) => {
   const directory = await mkdtemp(path.join(tmpdir(), "orbis-tracklists-"));
   const databasePath = path.join(directory, "library.sqlite");
   const app = createApp({
     databasePath,
+    logging: { onEvent: (event) => onEvent?.(event), silent: true },
     metadata: Metadata.layerOf({
       details: () => Effect.succeed(DETAILS),
       enrich: () => Effect.die("title supplied by caller"),
@@ -749,25 +753,35 @@ test("backfill skips a live HTTP run and an expired run cannot replace newer Cue
 
 test("a Set removed during a Versos run gets no Cues, and hidden Sets deny Tracklist reads", async () => {
   const blocked = Promise.withResolvers<null>();
+  const requested = Promise.withResolvers<null>();
+  const settled = Promise.withResolvers<null>();
   const server = await start(
     Versos.layerOf({
       poll: () => Effect.succeed({ cues: CUES, state: "ready" }),
-      request: () =>
-        Effect.promise(() => blocked.promise).pipe(
+      request: () => {
+        requested.resolve(null);
+        return Effect.promise(() => blocked.promise).pipe(
           Effect.as({ requestId: "job-4" })
-        ),
-    })
+        );
+      },
+    }),
+    (event) => {
+      if (event.job === "tracklist") {
+        settled.resolve(null);
+      }
+    }
   );
   try {
     const saved = await save(server.app);
     const id = String(saved.json().id);
+    await requested.promise;
     const removed = await request(server.app, {
       method: "DELETE",
       url: `/sets/${id}`,
     });
     expect(removed.statusCode).toBe(200);
     blocked.resolve(null);
-    await Bun.sleep(50);
+    await settled.promise;
     const hidden = await read(server.app, id);
     expect(hidden.statusCode).toBe(404);
     const db = new Sqlite(server.databasePath);

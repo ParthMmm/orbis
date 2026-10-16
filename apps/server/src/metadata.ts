@@ -324,16 +324,20 @@ export class Metadata extends Context.Service<Metadata, MetadataService>()(
       providers.youtube = youTubeProvider(options.youTubeApiKey, request);
     }
     const { ytDlp } = options;
-    return Layer.succeed(Metadata, {
-      details: (input) =>
-        ytDlp ? ytDlp.read(input.url) : noProviders.details(input),
-      enrich: (input) => {
-        const provider =
-          providers[input.source]?.enrich(input.url) ??
-          noProviders.enrich(input);
-        return ytDlp ? orYtDlp(provider, ytDlp, input.url) : provider;
-      },
-    });
+    return Layer.succeed(
+      Metadata,
+      Metadata.of({
+        details: Effect.fn("Metadata.details")((input: EnrichInput) =>
+          ytDlp ? ytDlp.read(input.url) : noProviders.details(input)
+        ),
+        enrich: Effect.fn("Metadata.enrich")((input: EnrichInput) => {
+          const provider =
+            providers[input.source]?.enrich(input.url) ??
+            noProviders.enrich(input);
+          return ytDlp ? orYtDlp(provider, ytDlp, input.url) : provider;
+        }),
+      })
+    );
   }
 
   /**
@@ -348,9 +352,9 @@ export class Metadata extends Context.Service<Metadata, MetadataService>()(
     metadata: Pick<MetadataService, "enrich"> &
       Partial<Pick<MetadataService, "details">>
   ): Layer.Layer<Metadata> {
-    return Layer.succeed(Metadata, {
-      details: noProviders.details,
-      ...metadata,
-    });
+    return Layer.succeed(
+      Metadata,
+      Metadata.of({ details: noProviders.details, ...metadata })
+    );
   }
 }

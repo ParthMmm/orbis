@@ -81,12 +81,12 @@ const notFound = () =>
   new LibraryError({ message: "Set not found.", statusCode: 404 });
 
 /** Resolves a Set through an owned reference or another visible Person's Library. */
-export const resolveVisibleSet = (input: {
-  readonly id: string;
-  readonly personId: string;
-  readonly people: readonly PersonRecord[];
-}) =>
-  Effect.gen(function* resolveSet() {
+export const resolveVisibleSet = Effect.fn("Visibility.resolveSet")(
+  function* resolveSet(input: {
+    readonly id: string;
+    readonly personId: string;
+    readonly people: readonly PersonRecord[];
+  }) {
     const db = yield* Database;
     const [row] = yield* db.select().from(sets).where(eq(sets.id, input.id));
     if (!row) {
@@ -123,4 +123,5 @@ export const resolveVisibleSet = (input: {
       }
     }
     return yield* Effect.fail(notFound());
-  });
+  }
+);

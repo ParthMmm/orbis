@@ -35,6 +35,8 @@ const ProbeFormat = Schema.Struct({
   }),
 });
 
+const ProbeOutput = Schema.fromJsonString(ProbeFormat);
+
 const contentTypeFor = (format: string): string | undefined => {
   if (format === "mp3") {
     return "audio/mpeg";
@@ -106,9 +108,11 @@ export class MediaStore extends Context.Service<
       command: string,
       args: readonly string[]
     ) {
-      const ran = yield* Effect.promise(() =>
-        (async () => {
+      const ran = yield* Effect.tryPromise({
+        catch: (cause) => cause,
+        try: async (signal) => {
           const proc = Bun.spawn([command, ...args], {
+            signal,
             stderr: "pipe",
             stdout: "pipe",
           });
@@ -118,7 +122,19 @@ export class MediaStore extends Context.Service<
             proc.exited,
           ]);
           return { code, output, stderr };
-        })()
+        },
+      }).pipe(
+        Effect.tapError((cause) =>
+          Effect.logWarning("media command did not start").pipe(
+            Effect.annotateLogs({
+              command: path.basename(command),
+              reason: cause instanceof Error ? cause.message : String(cause),
+            })
+          )
+        ),
+        Effect.mapError(() =>
+          downloadFailed("The downloaded audio could not be read.")
+        )
       );
       if (ran.code !== 0) {
         yield* Effect.logWarning("media command failed").pipe(
@@ -146,8 +162,8 @@ export class MediaStore extends Context.Service<
         "json",
         filePath,
       ]);
-      const probed = yield* Schema.decodeUnknownEffect(ProbeFormat)(
-        JSON.parse(output)
+      const probed = yield* Schema.decodeUnknownEffect(ProbeOutput)(
+        output
       ).pipe(
         Effect.tapError(() =>
           Effect.logWarning("ffprobe output did not parse").pipe(
@@ -219,13 +235,17 @@ export class MediaStore extends Context.Service<
             onProgress(next, Number.isFinite(total) ? total : null);
             return yield* drain(reader, next);
           });
-        try {
-          yield* drain(response.body.getReader(), 0);
-        } finally {
-          writer.end();
-        }
+        yield* drain(response.body.getReader(), 0).pipe(
+          Effect.ensuring(Effect.sync(() => writer.end()))
+        );
       }
     );
+    const storeStep = <A>(step: () => Promise<A>) =>
+      Effect.tryPromise({
+        catch: () =>
+          downloadFailed("The downloaded audio could not be stored."),
+        try: step,
+      });
     const storeDownloaded = Effect.fn("MediaStore.storeDownloaded")(
       function* storeDownloaded(setId: string, tmpPath: string) {
         if (Bun.file(tmpPath).size === 0) {
@@ -250,7 +270,7 @@ export class MediaStore extends Context.Service<
               downloadFailed("The downloaded audio could not be stored.")
             )
           );
-          yield* Effect.promise(() => rm(tmpPath, { force: true }));
+          yield* storeStep(() => rm(tmpPath, { force: true }));
           return {
             bytes: Bun.file(finalPath).size,
             durationSeconds,
@@ -259,7 +279,7 @@ export class MediaStore extends Context.Service<
         }
         if (container === "mp3" || container === "ogg") {
           const format = container;
-          yield* Effect.promise(() => rename(tmpPath, fileFor(setId, format)));
+          yield* storeStep(() => rename(tmpPath, fileFor(setId, format)));
           return {
             bytes: Bun.file(fileFor(setId, format)).size,
             durationSeconds,
@@ -268,7 +288,7 @@ export class MediaStore extends Context.Service<
         }
         // The stored format follows the source codec; m4a is kept as delivered.
         if (/mp4|m4a/u.test(container)) {
-          yield* Effect.promise(() => rename(tmpPath, fileFor(setId, "m4a")));
+          yield* storeStep(() => rename(tmpPath, fileFor(setId, "m4a")));
           return {
             bytes: Bun.file(fileFor(setId, "m4a")).size,
             durationSeconds,

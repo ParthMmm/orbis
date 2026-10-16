@@ -1,4 +1,4 @@
-import { setTimeout } from "node:timers/promises";
+import { Effect, Schedule, Schema } from "effect";
 
 import type { decodeTrust, TrustStore } from "./identity.js";
 
@@ -36,20 +36,26 @@ export const trustStorage = (): TrustStorage => {
 export const isTrustBusy = (error: Error): boolean =>
   "code" in error && error.code === "SQLITE_BUSY";
 
-export const retryTrustOperation = async <T>(
-  action: () => T,
-  deadline = Date.now() + 5000
-): Promise<T> => {
-  try {
-    return action();
-  } catch (error) {
-    if (
-      !(error instanceof Error && isTrustBusy(error)) ||
-      Date.now() >= deadline
-    ) {
-      throw error;
-    }
-    await setTimeout(10);
-    return retryTrustOperation(action, deadline);
-  }
-};
+// TaggedError is a curried schema factory, not an Error constructor.
+const { TaggedError: taggedFailure } = Schema;
+
+export class TrustStoreFailure extends taggedFailure<TrustStoreFailure>()(
+  "TrustStoreFailure",
+  { cause: Schema.Defect() }
+) {}
+
+const isBusyFailure = (failure: TrustStoreFailure) =>
+  failure.cause instanceof Error && isTrustBusy(failure.cause);
+
+export const trustOperation = <T>(action: () => T) =>
+  Effect.try({
+    catch: (cause) => new TrustStoreFailure({ cause }),
+    try: action,
+  }).pipe(
+    Effect.retry({
+      schedule: Schedule.spaced("10 millis").pipe(
+        Schedule.upTo({ duration: "5 seconds" })
+      ),
+      while: isBusyFailure,
+    })
+  );

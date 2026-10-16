@@ -120,19 +120,19 @@ const audioLayer = (
           return canceled;
         }
       );
-      return {
+      return AudioService.of({
         audioFile,
         audioState,
         cancelDownload,
         isConfigured: configured,
         processNext: worker.processNext,
         requestDownload,
-      };
+      });
     })
   ).pipe(
     Layer.provide(workerLayer),
-    Layer.provideMerge(backendsLayer),
-    Layer.provideMerge(mediaLayer)
+    Layer.provide(backendsLayer),
+    Layer.provide(mediaLayer)
   );
 };
 

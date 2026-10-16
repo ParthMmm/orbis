@@ -3,24 +3,17 @@ import { Effect } from "effect";
 
 import { downloadJobs, setCues, sets } from "./db/schema.js";
 import { Database } from "./db/service.js";
-import { LibraryError } from "./errors.js";
+import { asLibraryError } from "./errors.js";
+import type { LibraryError } from "./errors.js";
 
-const releaseError = <E>(error: E) =>
-  error instanceof LibraryError
-    ? error
-    : new LibraryError({
-        message: "Could not release audio.",
-        statusCode: 500,
-      });
-
-export const releaseAudio = (
-  id: string,
-  removeFiles: (id: string) => Effect.Effect<void, LibraryError> = () =>
-    Effect.void,
-  afterRelease: (id: string) => Effect.Effect<void, LibraryError> = () =>
-    Effect.void
-) =>
-  Effect.gen(function* releaseStoredAudio() {
+export const releaseAudio = Effect.fn("AudioRelease.release")(
+  function* releaseStoredAudio(
+    id: string,
+    removeFiles: (id: string) => Effect.Effect<void, LibraryError> = () =>
+      Effect.void,
+    afterRelease: (id: string) => Effect.Effect<void, LibraryError> = () =>
+      Effect.void
+  ) {
     const db = yield* Database;
     const released = yield* db.transaction((tx) =>
       Effect.gen(function* releaseUnreferencedAudio() {
@@ -33,7 +26,6 @@ export const releaseAudio = (
         if (reference) {
           return;
         }
-        yield* removeFiles(id);
         yield* tx
           .update(sets)
           .set({
@@ -51,6 +43,9 @@ export const releaseAudio = (
       })
     );
     if (released) {
+      yield* removeFiles(id);
       yield* afterRelease(id);
     }
-  }).pipe(Effect.mapError(releaseError));
+  },
+  asLibraryError("Could not release audio.")
+);
