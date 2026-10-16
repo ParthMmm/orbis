@@ -31,6 +31,10 @@ struct Transport: View {
   /// is visible before it is heard.
   var cueStarts: [TimeInterval] = []
 
+  /// The track skips and the plain Play glyph grow with the text size from these default sizes.
+  @ScaledMetric(relativeTo: .title) private var cueSkipSize: CGFloat = 30
+  @ScaledMetric(relativeTo: .largeTitle) private var plainPlaySize: CGFloat = 48
+
   private var isPlaying: Bool {
     guard isCurrent else { return false }
     switch player.state {
@@ -55,14 +59,14 @@ struct Transport: View {
             backButton
             Spacer()
             Button("Previous track", systemImage: "backward.fill") { player.skipToPreviousCue() }
-              .font(.system(size: 30))
+              .font(.system(size: cueSkipSize))
               .disabled(!isCurrent || !player.canSkipCues)
               .accessibilityIdentifier("\(identifierPrefix)-previous-cue")
             Spacer()
             playButton
             Spacer()
             Button("Next track", systemImage: "forward.fill") { player.skipToNextCue() }
-              .font(.system(size: 30))
+              .font(.system(size: cueSkipSize))
               .disabled(!isCurrent || player.nextCue == nil)
               .accessibilityIdentifier("\(identifierPrefix)-next-cue")
             Spacer()
@@ -118,7 +122,7 @@ struct Transport: View {
       }
     }
     .orbisSymbolReplace()
-    .playStyle(prominent: prominentPlay)
+    .playStyle(prominent: prominentPlay, plainSize: plainPlaySize)
     .sensoryFeedback(.impact(weight: .medium), trigger: isPlaying)
     .accessibilityIdentifier("\(identifierPrefix)-play-toggle")
   }
@@ -177,7 +181,11 @@ private struct PlaybackProgress: View {
       .labelsHidden()
       .disabled(!isCurrent || duration == nil)
       .accessibilityIdentifier("\(identifierPrefix)-seek")
-      .accessibilityValue(SetPresentation.timestamp(shown))
+      // Spoken words, as the TV's bar says it: a timestamp is read out as a string of digits.
+      .accessibilityValue(
+        duration.map { "\(SetPresentation.spoken(shown)) of \(SetPresentation.spoken($0))" }
+          ?? SetPresentation.spoken(shown)
+      )
       HStack {
         Text(SetPresentation.timestamp(shown))
         Spacer()
@@ -198,14 +206,14 @@ private struct PlaybackProgress: View {
 }
 
 extension View {
-  @ViewBuilder fileprivate func playStyle(prominent: Bool) -> some View {
+  @ViewBuilder fileprivate func playStyle(prominent: Bool, plainSize: CGFloat) -> some View {
     if prominent {
       buttonStyle(.glassProminent)
         .tint(Color.orbis.tint)
         .controlSize(.extraLarge)
     } else {
-      font(.system(size: 48))
-        .frame(width: 76, height: 76)
+      font(.system(size: plainSize))
+        .frame(width: plainSize + 28, height: plainSize + 28)
         .contentShape(.circle)
     }
   }

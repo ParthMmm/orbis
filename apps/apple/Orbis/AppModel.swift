@@ -239,6 +239,9 @@ final class AppModel {
   /// Counts taps on the Search tab while Search is already open. Each one focuses the field, the
   /// way a second tap on Search does in Apple Music.
   var searchFocusRequests = 0
+  /// Counts second taps on the People tab. People holds the open Person itself, so it closes the
+  /// page on each one.
+  var peopleRootRequests = 0
 
   /// Where this model keeps the key. Held per model, so a test hands a model a store of its
   /// own instead of writing the device's real one.
@@ -1140,6 +1143,17 @@ final class AppModel {
   func closeSet() {
     setFailure = nil
     openedSetId = nil
+  }
+
+  /// Takes the destination on screen back to its first page: the Set, Playlist, or Person open in
+  /// it closes.
+  func returnToRoot() {
+    closeSet()
+    switch destination {
+    case .playlists: closePlaylist()
+    case .people: peopleRootRequests += 1
+    case .home, .library, .search: break
+    }
   }
 
   /// Runs one change from the page. Every path reports through `setError`, so a refusal is

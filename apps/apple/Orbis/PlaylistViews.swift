@@ -241,6 +241,9 @@ struct PlaylistDetailView: View {
   @State private var isConfirmingDelete = false
   /// The play a person asked for while something else was playing, held until they confirm.
   @State private var pendingPlay: PlayOrder?
+  @Environment(\.horizontalSizeClass) private var sizeClass
+
+  private var heroLayout: HeroLayout { HeroLayout(sizeClass) }
 
   private enum PlayOrder {
     case inOrder
@@ -368,22 +371,22 @@ struct PlaylistDetailView: View {
   private func hero(_ sets: [SavedSet]) -> some View {
     let seconds = sets.compactMap(\.durationSeconds).reduce(0, +)
     let count = sets.count == 1 ? "1 set" : "\(sets.count) sets"
-    // On a Mac the fan sits beside the name and the buttons, as Home's hero does.
-    let layout = HeroLayout.stack(spacing: 14)
+    // In a wide window the fan sits beside the name and the buttons, as Home's hero does.
+    let layout = heroLayout.stack(spacing: 14)
     return layout {
       SleeveFan(
         seed: playlist.name,
         artwork: sets.prefix(3).map { SetPresentation.row($0).artwork },
         category: SetPresentation.category(for: playlist.name),
-        width: HeroLayout.isBeside ? 220 : 200
+        width: heroLayout.isBeside ? 220 : 200
       )
-      .frame(height: HeroLayout.isBeside ? 170 : 150)
-      VStack(alignment: HeroLayout.alignment, spacing: 14) {
-        VStack(alignment: HeroLayout.alignment, spacing: 5) {
+      .frame(height: heroLayout.isBeside ? 170 : 150)
+      VStack(alignment: heroLayout.alignment, spacing: 14) {
+        VStack(alignment: heroLayout.alignment, spacing: 5) {
           Eyebrow("Playlist")
           Text(playlist.name)
-            .font(HeroLayout.isBeside ? Font.orbis.largeTitle : Font.orbis.title)
-            .multilineTextAlignment(HeroLayout.textAlignment)
+            .font(heroLayout.isBeside ? Font.orbis.largeTitle : Font.orbis.title)
+            .multilineTextAlignment(heroLayout.textAlignment)
             .accessibilityAddTraits(.isHeader)
           Text(seconds > 0 ? "\(count) · \(SetPresentation.length(seconds))" : count)
             .font(.subheadline)
@@ -391,9 +394,9 @@ struct PlaylistDetailView: View {
         }
         playButtons
       }
-      .frame(maxWidth: HeroLayout.isBeside ? CGFloat.infinity : nil, alignment: .leading)
+      .frame(maxWidth: heroLayout.isBeside ? CGFloat.infinity : nil, alignment: .leading)
     }
-    .frame(maxWidth: .infinity, alignment: HeroLayout.frameAlignment)
+    .frame(maxWidth: .infinity, alignment: heroLayout.frameAlignment)
     .padding(.vertical, 8)
   }
 

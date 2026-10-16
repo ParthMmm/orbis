@@ -7,6 +7,7 @@ struct PeopleDestination: View {
   @Bindable var model: AppModel
   @State private var people: PeopleModel
   @State private var openedPerson: String?
+  @ScaledMetric(relativeTo: .title) private var emptyBadgeSide: CGFloat = 64
 
   init(model: AppModel) {
     self.model = model
@@ -25,6 +26,7 @@ struct PeopleDestination: View {
       .navigationDestination(item: $openedPerson) { id in
         PersonScreen(model: model, people: people, personId: id)
       }
+      .onChange(of: model.peopleRootRequests) { openedPerson = nil }
   }
 
   @ViewBuilder
@@ -143,9 +145,9 @@ struct PeopleDestination: View {
   private var emptyCard: some View {
     VStack(spacing: 12) {
       Image(systemName: "person.badge.plus")
-        .font(.system(size: 28))
+        .font(.title)
         .foregroundStyle(Color.orbis.tint)
-        .frame(width: 64, height: 64)
+        .frame(width: emptyBadgeSide, height: emptyBadgeSide)
         .background(Color.orbis.tint.opacity(0.12), in: .circle)
         .accessibilityHidden(true)
       Text("Nobody else is sharing yet")
@@ -159,7 +161,7 @@ struct PeopleDestination: View {
     .padding(.horizontal, 22)
     .padding(.vertical, 28)
     .frame(maxWidth: .infinity)
-    .glassEffect(.regular, in: .rect(cornerRadius: 22))
+    .orbisRaised(radius: Radius.hero)
     .accessibilityElement(children: .combine)
     .accessibilityIdentifier("people-empty")
   }
@@ -171,6 +173,7 @@ private struct ListeningCard: View {
   @Bindable var model: AppModel
   let presence: Presence
   let open: () -> Void
+  @ScaledMetric(relativeTo: .subheadline) private var playSide: CGFloat = 26
 
   private var set: SavedSet { presence.set }
   private var artwork: URL? { SetPresentation.pageArtwork(set) }
@@ -238,8 +241,8 @@ private struct ListeningCard: View {
       model.togglePlayback(set.id)
     } label: {
       Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-        .font(.system(size: 15, weight: .bold))
-        .frame(width: 26, height: 26)
+        .font(.subheadline.weight(.bold))
+        .frame(width: playSide, height: playSide)
         .contentTransition(.symbolEffect(.replace))
     }
     .buttonStyle(.glassProminent)
@@ -342,6 +345,8 @@ struct PersonScreen: View {
   @State private var friend: FriendModel?
   @State private var openedPlaylist: FriendPlaylist?
   @State private var showsTitle = false
+  @ScaledMetric(relativeTo: .body) private var switchGlyphSize: CGFloat = 14
+  @ScaledMetric(relativeTo: .body) private var switchBadgeSide: CGFloat = 30
 
   private var person: PersonFilters? { people.people.first { $0.id == personId } }
 
@@ -635,9 +640,9 @@ struct PersonScreen: View {
     Toggle(isOn: isOn) {
       HStack(spacing: 12) {
         Image(systemName: symbol)
-          .font(.system(size: 14, weight: .semibold))
+          .font(.system(size: switchGlyphSize, weight: .semibold))
           .foregroundStyle(.white)
-          .frame(width: 30, height: 30)
+          .frame(width: switchBadgeSide, height: switchBadgeSide)
           .background(Color.orbis.tint.gradient, in: .rect(cornerRadius: 8))
           .accessibilityHidden(true)
         VStack(alignment: .leading, spacing: 2) {
