@@ -13,7 +13,7 @@ export class QueueSignals extends Context.Service<
       string,
       { hub: PubSub.PubSub<boolean>; count: number }
     >();
-    return {
+    return QueueSignals.of({
       publish: (personId) =>
         Effect.gen(function* publishQueueChange() {
           const entry = listeners.get(personId);
@@ -53,6 +53,6 @@ export class QueueSignals extends Context.Service<
             );
           })
         ),
-    };
+    });
   });
 }

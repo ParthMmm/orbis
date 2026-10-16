@@ -29,7 +29,8 @@ export class PresenceJournal extends Context.Service<
     ) => Effect.Effect<void, unknown>;
   }
 >()("@orbis/PresenceJournal") {
-  static readonly unrecorded = Layer.succeed(PresenceJournal, {
-    record: () => Effect.void,
-  });
+  static readonly unrecorded = Layer.succeed(
+    PresenceJournal,
+    PresenceJournal.of({ record: () => Effect.void })
+  );
 }

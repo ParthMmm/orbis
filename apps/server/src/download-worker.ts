@@ -223,12 +223,12 @@ export class DownloadWorker extends Context.Service<
           progress.delete(id);
         };
         const progressFor = (id: string) => progress.get(id);
-        return {
+        return DownloadWorker.of({
           abort,
           processNext,
           progressFor,
           wake,
-        };
+        });
       })
     );
   }

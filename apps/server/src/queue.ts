@@ -297,7 +297,7 @@ export class Queue extends Context.Service<
         })
       );
 
-      return {
+      return Queue.of({
         changes: signals.subscribe(personId),
         complete,
         insert,
@@ -305,7 +305,7 @@ export class Queue extends Context.Service<
         play,
         read,
         replaceWithPlaylist,
-      };
+      });
     })
   );
 

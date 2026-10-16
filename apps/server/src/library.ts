@@ -1386,7 +1386,7 @@ export class Library extends Context.Service<
         )
       );
 
-      return {
+      return Library.of({
         byIds,
         cancelDownload,
         claimDownload,
@@ -1413,7 +1413,7 @@ export class Library extends Context.Service<
         tags,
         updateTags,
         updateTitle,
-      };
+      });
     })
   );
 

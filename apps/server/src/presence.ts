@@ -938,7 +938,7 @@ export class Presence extends Context.Service<
 
         yield* schedule();
 
-        return {
+        return Presence.of({
           act,
           afterCommit,
           changes: Stream.unwrap(
@@ -951,7 +951,7 @@ export class Presence extends Context.Service<
           removePerson,
           revokeKey,
           schedule,
-        };
+        });
       })
     );
   }

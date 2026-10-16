@@ -107,7 +107,7 @@ export class TitleReviser extends Context.Service<
             }
             return title;
           });
-        return { revise };
+        return TitleReviser.of({ revise });
       })
     ).pipe(Layer.provide(model));
   }
@@ -196,14 +196,17 @@ export class TitleReviser extends Context.Service<
    * tests offline by construction.
    */
   static unconfigured(): Layer.Layer<TitleReviser> {
-    return Layer.succeed(TitleReviser, {
-      revise: (input) =>
-        Effect.fail(
-          notConfigured(
-            `${input.source} title revision is not configured on this server.`
-          )
-        ),
-    });
+    return Layer.succeed(
+      TitleReviser,
+      TitleReviser.of({
+        revise: (input) =>
+          Effect.fail(
+            notConfigured(
+              `${input.source} title revision is not configured on this server.`
+            )
+          ),
+      })
+    );
   }
 
   static layerOf(reviser: TitleReviserService): Layer.Layer<TitleReviser> {

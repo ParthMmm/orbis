@@ -65,7 +65,7 @@ export class Stats extends Context.Service<
           })
         )
       );
-      return { recordFinish, recordListen };
+      return Stats.of({ recordFinish, recordListen });
     })
   );
 
