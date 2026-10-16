@@ -105,7 +105,10 @@ final class ShareCaptureTests: XCTestCase {
       settings: settings,
       client: client
     )
-    XCTAssertEqual(outcome, .saved(title: "Night"))
+    guard case .saved(let set) = outcome else {
+      return XCTFail("expected saved, got \(outcome)")
+    }
+    XCTAssertEqual(set.title, "Night")
   }
 
   func testNotConfiguredWhenPairingMissing() async {

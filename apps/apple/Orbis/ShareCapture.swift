@@ -10,7 +10,7 @@ import OrbisDesign
 
 /// Outcomes of a share-extension save attempt. Tests assert these without hosting an extension.
 enum ShareSaveOutcome: Equatable {
-  case saved(title: String)
+  case saved(SavedSet)
   case duplicate
   case unreachable(message: String)
   case notConfigured
@@ -58,7 +58,7 @@ enum ShareCapture {
       if downloadAfterSaving {
         _ = try await client.requestAudioDownload(saved.id)
       }
-      return .saved(title: saved.title)
+      return .saved(saved)
     } catch let error as OrbisError {
       switch error {
       case .duplicate:
