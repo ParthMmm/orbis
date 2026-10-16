@@ -1,4 +1,4 @@
-import { Context, Effect, Layer, PubSub, Stream } from "effect";
+import { Context, Effect, Layer, Option, PubSub, RcMap, Stream } from "effect";
 
 /** Routes invalidations between request-scoped Queues belonging to the same Person. */
 export class QueueSignals extends Context.Service<
@@ -8,52 +8,34 @@ export class QueueSignals extends Context.Service<
     readonly subscribe: (personId: string) => Stream.Stream<boolean>;
   }
 >()("@orbis/QueueSignals") {
-  static readonly layer = Layer.sync(QueueSignals, () => {
-    const listeners = new Map<
-      string,
-      { hub: PubSub.PubSub<boolean>; count: number }
-    >();
-    return QueueSignals.of({
-      publish: Effect.fn("QueueSignals.publish")(function* publishQueueChange(
-        personId: string
-      ) {
-        const entry = listeners.get(personId);
-        if (entry) {
-          yield* PubSub.publish(entry.hub, true);
-        }
-      }),
-      subscribe: (personId) =>
-        Stream.unwrap(
-          Effect.gen(function* subscribeQueueChanges() {
-            const entry = yield* Effect.acquireRelease(
-              Effect.gen(function* acquireQueueSignals() {
-                let existing = listeners.get(personId);
-                if (!existing) {
-                  existing = {
-                    count: 0,
-                    hub: yield* PubSub.sliding<boolean>(1),
-                  };
-                  listeners.set(personId, existing);
-                }
-                existing.count += 1;
-                return existing;
-              }),
-              (current) =>
-                Effect.gen(function* releaseQueueSignals() {
-                  current.count -= 1;
-                  if (current.count === 0) {
-                    listeners.delete(personId);
-                    yield* PubSub.shutdown(current.hub);
-                  }
-                })
-            );
-            const subscription = yield* PubSub.subscribe(entry.hub);
-            return Stream.concat(
-              Stream.succeed(true),
-              Stream.fromSubscription(subscription)
-            );
-          })
-        ),
-    });
-  });
+  static readonly layer = Layer.effect(
+    QueueSignals,
+    Effect.gen(function* buildQueueSignals() {
+      const hubs = yield* RcMap.make({
+        lookup: (_personId: string) =>
+          Effect.acquireRelease(PubSub.sliding<boolean>(1), PubSub.shutdown),
+      });
+      return QueueSignals.of({
+        publish: Effect.fn("QueueSignals.publish")(function* publishQueueChange(
+          personId: string
+        ) {
+          const hub = yield* RcMap.getOption(hubs, personId);
+          if (Option.isSome(hub)) {
+            yield* PubSub.publish(hub.value, true);
+          }
+        }, Effect.scoped),
+        subscribe: (personId) =>
+          Stream.unwrap(
+            Effect.gen(function* subscribeQueueChanges() {
+              const hub = yield* RcMap.get(hubs, personId);
+              const subscription = yield* PubSub.subscribe(hub);
+              return Stream.concat(
+                Stream.succeed(true),
+                Stream.fromSubscription(subscription)
+              );
+            })
+          ),
+      });
+    })
+  );
 }
