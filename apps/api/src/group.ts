@@ -28,6 +28,10 @@ export class Group extends DurableObject<Environment> {
       throw new Error("STREAM_GRANT_SECRET must encode 32 bytes as hex.");
     }
     const streamSecret = Buffer.from(env.STREAM_GRANT_SECRET, "hex");
+    const audioNode = URL.parse(env.AUDIO_NODE_URL);
+    if (audioNode?.protocol !== "https:" && audioNode?.protocol !== "http:") {
+      throw new Error("AUDIO_NODE_URL must be an absolute http(s) URL.");
+    }
     const database = databaseLayer(ctx.storage);
     const release = (id: string) =>
       releaseAudio(id, undefined, (releasedId) =>
@@ -44,7 +48,7 @@ export class Group extends DurableObject<Environment> {
       audioResponse: (_file, _range, setId, personId, grant) => {
         const url = new URL(
           `/api/sets/${encodeURIComponent(setId)}/audio`,
-          env.AUDIO_NODE_URL
+          audioNode
         );
         url.searchParams.set(
           "grant",

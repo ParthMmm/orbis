@@ -183,7 +183,7 @@ const responseStatus = (cause: Cause.Cause<unknown>): number | undefined => {
   return undefined;
 };
 
-const outcomeForStatus = (status: number): RequestOutcome => {
+export const outcomeForStatus = (status: number): RequestOutcome => {
   if (status >= 500) {
     return "failure";
   }
@@ -215,11 +215,15 @@ const CurrentWideEvent = Context.Reference<RequestLogger | null>(
   { defaultValue: () => null }
 );
 
-export const annotateForwardedRequest = (keyLabel: string | null) =>
-  Effect.gen(function* forwardedRequestAnnotation() {
+/** Adds fields to the active request's wide event; outside one it does nothing. */
+export const annotateWideEvent = (fields: LoggedRecord) =>
+  Effect.gen(function* wideEventAnnotation() {
     const logger = yield* CurrentWideEvent;
-    logger?.set({ ingress: "funnel-forward", keyLabel });
+    logger?.set(fields);
   });
+
+export const annotateForwardedRequest = (keyLabel: string | null) =>
+  annotateWideEvent({ ingress: "funnel-forward", keyLabel });
 
 const lineCounts = new WeakMap<RequestLogger, number>();
 
@@ -242,7 +246,7 @@ interface SanitizeBudget {
 type UnparsedMessagePart = Logger.Options<unknown>["message"];
 
 /** A record this module is willing to record, keyed by the name the logger used. */
-interface LoggedRecord {
+export interface LoggedRecord {
   readonly [key: string]: LoggedValue;
 }
 
@@ -388,6 +392,68 @@ export const effectLogBridge: Logger.Logger<unknown, void> = Logger.make(
   }
 );
 
+/** Why a request died, as its event records it: a name and a cleaned message, never a stack. */
+export interface LoggedCause {
+  readonly name: string;
+  readonly message: string;
+}
+
+const QUERY_STRING = /\?[^\s"'<>]*/gu;
+const BEARER_CREDENTIAL = /\bbearer\s+\S+/giu;
+const CREDENTIAL_PAIR =
+  /\b(?<key>[\w-]*(?:authorization|cookie|grant|password|secret|token)[\w-]*)\s*[:=]\s*[^\s,;&]+/giu;
+
+/**
+ * Error text is free text, so key-name redaction cannot reach it. This removes the
+ * shapes a credential takes inside a message: a URL query string, which carries
+ * stream grants, a bearer token, and a credential-named `key=value` pair.
+ */
+const cleanErrorText = (text: string): string => {
+  const cleaned = text
+    .replace(QUERY_STRING, "?[redacted]")
+    .replace(BEARER_CREDENTIAL, "Bearer [redacted]")
+    .replace(CREDENTIAL_PAIR, "$<key>=[redacted]");
+  return cleaned.length > MAX_LOGGED_VALUE_CHARACTERS
+    ? `${cleaned.slice(0, MAX_LOGGED_VALUE_CHARACTERS)}…`
+    : cleaned;
+};
+
+/** A thrown or failed value, unparsed until `describeCause` reads it. */
+type UnparsedFailure = Cause.Die["defect"];
+
+export const describeCause = (value: UnparsedFailure): LoggedCause => {
+  if (isObject(value) && "_tag" in value && isText(value._tag)) {
+    return {
+      message: value instanceof Error ? cleanErrorText(value.message) : "",
+      name: value._tag,
+    };
+  }
+  if (value instanceof Error) {
+    return { message: cleanErrorText(value.message), name: value.name };
+  }
+  return { message: "", name: "unknown" };
+};
+
+/**
+ * The failure behind a dead request, skipping the response the router turned a typed
+ * failure into. A typed failure keeps only its name: a request-decoding failure's
+ * message can quote the request body.
+ */
+const deathCause = (cause: Cause.Cause<unknown>): LoggedCause | undefined => {
+  for (const reason of cause.reasons) {
+    if (Cause.isFailReason(reason)) {
+      return { message: "", name: describeCause(reason.error).name };
+    }
+    if (
+      Cause.isDieReason(reason) &&
+      !HttpServerResponse.isHttpServerResponse(reason.defect)
+    ) {
+      return describeCause(reason.defect);
+    }
+  }
+  return undefined;
+};
+
 const requestLoggers: ReadonlySet<Logger.Logger<unknown, void>> = new Set([
   effectLogBridge,
 ]);
@@ -426,9 +492,15 @@ export const makeRequestLogMiddleware =
         Effect.provideService(References.CurrentLoggers, requestLoggers),
         Effect.annotateLogs({ method: request.method, path, requestId }),
         Effect.onExit((exit) =>
-          Effect.sync(() =>
-            finishRequestLog(logger, describeExit(exit), options)
-          )
+          Effect.sync(() => {
+            const cause = Exit.isFailure(exit)
+              ? deathCause(exit.cause)
+              : undefined;
+            if (cause !== undefined) {
+              logger.set({ cause });
+            }
+            finishRequestLog(logger, describeExit(exit), options);
+          })
         )
       );
     });

@@ -96,6 +96,20 @@ journalctl --user -u orbis-canary --since today -o cat |
 
 A download's wide event (`job: audio-download`) lists every backend attempt in `logs`: bytes received, yt-dlp's exit code with the start and end of its error output, Cobalt's tunnel status and content length, and ffprobe's error output. The `stderrHead` annotation names yt-dlp's identifying error; `stderr` keeps the end, where its hint is. The canary's event (`job: download-canary`) holds the same evidence for each check. The startup line `youtube downloads use cobalt only` means `ORBIS_YTDLP_BIN` is missing; see [Check the yt-dlp configuration](#check-the-yt-dlp-configuration).
 
+## Where to look when a Set does not play
+
+Playback crosses two hosts. The Group on Cloudflare answers `GET /api/sets/<id>/audio` with a redirect to this node, and the node serves the file. Each side writes one wide event per request, with an `audio` record. Neither records the grant.
+
+```sh
+# What did the node do with the Set's audio requests?
+journalctl --user -u orbis-server --since today -o cat |
+  jq -cR 'fromjson? | select(.ingress == "funnel-audio" and .audio.set == "<id>") | {timestamp, status, audio}'
+```
+
+On the node, `audio.grant` is `valid`, `missing`, `malformed`, `bad-signature`, `expired`, or `future-expiry`. `bad-signature` on every request means the node's grant secret differs from the Group's `STREAM_GRANT_SECRET`; `expired` or `future-expiry` on a fresh grant means the two clocks disagree. `audio.file: missing` means the node has no file for the Set. A served request records `range`, `size`, and `bytes`, the body length sent.
+
+On Cloudflare, the Api worker keeps Workers Logs. Filter on `audio.set` in the dashboard's Observability view. `audio.result` is `redirected` (with the `node` origin), `served`, or `refused`, and a refusal's `audio.reason` is `grant-refused` (with `audio.grant`), `set-not-found`, or `no-audio` (with `downloadState`). A request that died records `cause` with the error name and a cleaned message.
+
 ## Check the yt-dlp configuration
 
 YouTube downloads try yt-dlp first and fall back to Cobalt. Without `ORBIS_YTDLP_BIN`, every YouTube download goes to Cobalt, whose tunnel returned zero bytes for long videos on 2026-09-29. yt-dlp needs Deno, and the service's default PATH does not include `~/.local/bin`, where `uv tool install` puts both.

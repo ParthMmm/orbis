@@ -1,10 +1,120 @@
-import { expect, test } from "bun:test";
+import { expect, setSystemTime, test } from "bun:test";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 
+import type { WideEvent } from "evlog";
+
 import { makeNodeAudioHandler } from "./node-audio-http.js";
 import { grantSecret, issueStreamGrant } from "./stream-grant.js";
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** A grant signed with the right secret but issued at another time. */
+const grantIssuedAt = (secret: Buffer, setId: string, at: number) => {
+  setSystemTime(new Date(at));
+  try {
+    return issueStreamGrant(secret, setId, "host");
+  } finally {
+    setSystemTime();
+  }
+};
+
+test("the audio node records one wide event per request, with the grant verdict and never the grant", async () => {
+  const audioDir = await mkdtemp(path.join(tmpdir(), "orbis-node-events-"));
+  const fixture = path.resolve(
+    import.meta.dir,
+    "../../../scripts/fixtures/ready-set.m4a"
+  );
+  await copyFile(fixture, path.join(audioDir, "fixture.m4a"));
+  const { size } = Bun.file(fixture);
+  const streamSecret = grantSecret(path.join(audioDir, "stream-grant.key"));
+  const grant = issueStreamGrant(streamSecret, "fixture", "host");
+  const expired = grantIssuedAt(
+    streamSecret,
+    "fixture",
+    Date.now() - 2 * DAY_MS
+  );
+  const ahead = grantIssuedAt(streamSecret, "fixture", Date.now() + DAY_MS);
+  const events: WideEvent[] = [];
+  const audio = makeNodeAudioHandler({
+    audioDir,
+    logging: { onEvent: (event) => events.push(event), silent: true },
+    streamSecret,
+  });
+  const send = async (target: string, init?: RequestInit) => {
+    const response = await audio(new Request(`http://node${target}`, init));
+    await response.arrayBuffer();
+    return response.status;
+  };
+  try {
+    const statuses = [
+      await send(`/api/sets/fixture/audio?grant=${grant}`),
+      await send(`/api/sets/fixture/audio?grant=${grant}`, {
+        headers: { range: "bytes=7-22" },
+      }),
+      await send(`/sets/fixture/audio?grant=${grant}`, {
+        headers: { range: `bytes=${size}-` },
+      }),
+      await send(
+        `/sets/absent/audio?grant=${issueStreamGrant(streamSecret, "absent", "host")}`
+      ),
+      await send("/sets/fixture/audio"),
+      await send("/sets/fixture/audio?grant=altered"),
+      await send(`/sets/another/audio?grant=${grant}`),
+      await send(`/sets/fixture/audio?grant=${expired}`),
+      await send(`/sets/fixture/audio?grant=${ahead}`),
+    ];
+    expect(statuses).toEqual([200, 206, 416, 404, 401, 401, 401, 401, 401]);
+    expect(events.map((event) => event.ingress)).toEqual(
+      statuses.map(() => "funnel-audio")
+    );
+    expect(events.map((event) => event.status)).toEqual(statuses);
+    expect(events.map((event) => event.audio)).toEqual([
+      {
+        bytes: size,
+        file: "found",
+        format: "m4a",
+        grant: "valid",
+        person: "host",
+        set: "fixture",
+        size,
+      },
+      {
+        bytes: 16,
+        file: "found",
+        format: "m4a",
+        grant: "valid",
+        person: "host",
+        range: "bytes=7-22",
+        set: "fixture",
+        size,
+      },
+      {
+        file: "found",
+        format: "m4a",
+        grant: "valid",
+        person: "host",
+        range: `bytes=${size}-`,
+        set: "fixture",
+        size,
+      },
+      { file: "missing", grant: "valid", person: "host", set: "absent" },
+      { grant: "missing", set: "fixture" },
+      { grant: "malformed", set: "fixture" },
+      { grant: "bad-signature", set: "another" },
+      { grant: "expired", set: "fixture" },
+      { grant: "future-expiry", set: "fixture" },
+    ]);
+    expect(events.every((event) => event.duration !== undefined)).toBe(true);
+    const logged = JSON.stringify(events);
+    for (const secret of [grant, expired, ahead, "altered"]) {
+      expect(logged).not.toContain(secret);
+    }
+  } finally {
+    await rm(audioDir, { force: true, recursive: true });
+  }
+});
 
 test("the audio node checks grants before keys and serves full, ranged, and HEAD audio", async () => {
   const audioDir = await mkdtemp(path.join(tmpdir(), "orbis-node-audio-"));

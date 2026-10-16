@@ -36,7 +36,9 @@ bun run dev
 
 The server writes one structured event per request when the request settles: request id, method, path with the query string removed, status, outcome, and elapsed time. An `Effect.log*` call made while handling a request is folded into that event instead of a second line.
 
-Authorization headers, cookies, request bodies, source links, and raw error stacks are never recorded, and credential-shaped values are redacted before output. Redaction follows key names, so a credential written as free text can still reach a line: treat logged free text as public.
+A request that dies records `cause`: the error name and its message with query strings, bearer tokens, and credential-named pairs removed. A typed failure records its name only. Audio requests add an `audio` record; [the operation guide](../deploy/orbis-server/README.md#where-to-look-when-a-set-does-not-play) lists its fields.
+
+Authorization headers, cookies, request bodies, source links, stream grants, and raw error stacks are never recorded, and credential-shaped values are redacted before output. Redaction follows key names, so a credential written as free text can still reach a line: treat logged free text as public.
 
 `NODE_ENV` sets the event `environment`, which defaults to `development`. In production each event is one JSON line, where `info` goes to standard output and `warn` and `error` go to standard error; development prints readable lines. The wiring lives in `apps/server/src/logging.ts`. `createApp({ logging })` overrides the environment, quiets output (`silent`), or receives every event (`onEvent`), which the tests use.
 

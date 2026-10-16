@@ -52,6 +52,12 @@ export default Alchemy.Stack(
         ...secrets,
       },
       main: "../api/src/index.ts",
+      // The Group writes one wide event per request to the console; persisted
+      // Workers Logs keep them queryable after live tail ends.
+      observability: {
+        enabled: true,
+        logs: { enabled: true, invocationLogs: true, persist: true },
+      },
       routes: [{ pattern: "orbis.p11a.xyz/api/*", zoneName: "p11a.xyz" }],
     });
     // An unset secret keeps the value already on Cloudflare, so a deploy needs

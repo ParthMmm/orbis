@@ -20,29 +20,55 @@ export const issueStreamGrant = (
   return `${expiry}.${personId}.${signature(secret, setId, personId, expiry)}`;
 };
 
-export const verifyStreamGrant = (
+/**
+ * Why a grant was accepted or refused. The refusal kinds point at different faults:
+ * `bad-signature` is a forged grant or a secret that differs between the Group and the
+ * audio node, while `expired` and `future-expiry` on a well-signed grant point at an old
+ * URL or clocks that disagree.
+ */
+export type StreamGrantVerdict =
+  | { readonly kind: "valid"; readonly personId: string }
+  | {
+      readonly kind:
+        | "missing"
+        | "malformed"
+        | "bad-signature"
+        | "expired"
+        | "future-expiry";
+    };
+
+export const checkStreamGrant = (
   secret: Buffer,
   setId: string,
-  grant: string
-): string | null => {
+  grant: string | null
+): StreamGrantVerdict => {
+  if (grant === null || grant === "") {
+    return { kind: "missing" };
+  }
   const match =
     /^(?<expiry>\d{13})\.(?<personId>[a-zA-Z0-9_-]+)\.(?<mac>[a-f0-9]{64})$/u.exec(
       grant
     );
   if (!match?.groups) {
-    return null;
+    return { kind: "malformed" };
   }
   const { expiry: expiryText, personId, mac } = match.groups;
   if (!expiryText || !personId || !mac) {
-    return null;
+    return { kind: "malformed" };
   }
   const expiry = Number(expiryText);
-  if (expiry <= Date.now() || expiry > Date.now() + DAY_MS) {
-    return null;
-  }
   const expected = Buffer.from(
     signature(secret, setId, personId, expiry),
     "hex"
   );
-  return timingSafeEqual(expected, Buffer.from(mac, "hex")) ? personId : null;
+  if (!timingSafeEqual(expected, Buffer.from(mac, "hex"))) {
+    return { kind: "bad-signature" };
+  }
+  if (expiry <= Date.now()) {
+    return { kind: "expired" };
+  }
+  if (expiry > Date.now() + DAY_MS) {
+    return { kind: "future-expiry" };
+  }
+  return { kind: "valid", personId };
 };
