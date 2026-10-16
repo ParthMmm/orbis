@@ -42,6 +42,12 @@ struct SignInView: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       // Still while a form covers it: the page underneath is kept, and its timeline with it.
       .background { SignInField(moves: choice == nil) }
+      #if os(macOS)
+        // The field runs to the window's top edge, as it runs under a phone's status bar, and
+        // the orb already names the app, so the title bar carries neither a band nor a title.
+        .navigationTitle("")
+        .toolbarBackgroundVisibility(.hidden, for: .windowToolbar)
+      #endif
       .navigationDestination(item: $choice) { choice in
         switch choice {
         case .join: JoinForm(model: model)
