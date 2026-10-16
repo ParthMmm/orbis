@@ -150,13 +150,25 @@ struct LaneService {
   }
 
   func position(of id: String, becomesAtLeast minimum: Int) throws -> Int {
+    try position(of: id) { $0 >= minimum }
+  }
+
+  /// The stored Playback Position once it satisfies `expected`, or the last one read after ten
+  /// seconds.
+  func position(of id: String, until expected: (Int) -> Bool) throws -> Int {
     let deadline = Date().addingTimeInterval(10)
     repeat {
       let stored = try set(id: id)?.playbackPositionSeconds ?? 0
-      if stored >= minimum { return stored }
+      if expected(stored) { return stored }
       usleep(250_000)
     } while Date() < deadline
     return try set(id: id)?.playbackPositionSeconds ?? 0
+  }
+
+  /// Stores a Playback Position, as another device that stopped part-way would.
+  func setPosition(of id: String, to seconds: Int) throws {
+    let code = try status("PUT", "sets/\(id)/position", ["seconds": seconds])
+    guard (200..<300).contains(code) else { throw URLError(.badServerResponse) }
   }
 
   struct Device: Decodable {

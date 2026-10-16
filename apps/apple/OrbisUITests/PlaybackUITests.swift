@@ -87,6 +87,72 @@ final class PlaybackUITests: LibraryJourney {
     capture("16-ready-audio-playing")
   }
 
+  func testPlaysFromBeginningInsteadOfResuming() throws {
+    let service = try LaneService()
+    let seeded = try service.saveReadySet(
+      title: "Start over journey", url: "https://www.youtube.com/watch?v=startover01")
+    try service.setPosition(of: seeded.id, to: 20)
+    let app = try launch()
+    XCTAssertTrue(
+      app.buttons["home-hero-play-from-beginning"].waitForExistence(timeout: 30),
+      "Home's part-played lead must offer to start over")
+    capture("play-from-beginning-home-hero")
+    openLibrary(in: app)
+    let row = app.descendants(matching: .any)["set-row-\(seeded.id)"]
+    XCTAssertTrue(row.waitForExistence(timeout: 60))
+    tapAtCentre(of: row, in: app)
+
+    let toggle = app.buttons["detail-play-toggle"]
+    XCTAssertTrue(toggle.waitForExistence(timeout: 30))
+    XCTAssertEqual(toggle.label, "Resume")
+    let fromBeginning = app.buttons["detail-play-from-beginning"]
+    XCTAssertTrue(fromBeginning.exists, "A part-played Set must offer to start over")
+    capture("play-from-beginning-offered")
+
+    fromBeginning.tap()
+    let seek = app.sliders["detail-seek"]
+    XCTAssertTrue(seek.waitForExistence(timeout: 15))
+    let atStart = NSPredicate(format: "value BEGINSWITH %@", "0:0")
+    XCTAssertEqual(
+      XCTWaiter.wait(
+        for: [XCTNSPredicateExpectation(predicate: atStart, object: seek)], timeout: 8),
+      .completed, "A saved position must not be resumed")
+    XCTAssertEqual(toggle.label, "Pause")
+    capture("play-from-beginning-from-saved-position")
+    let restarted = try service.position(of: seeded.id) { $0 < 10 }
+    XCTAssertLessThan(restarted, 10, "The saved position must move back to the start")
+
+    let pastTen = XCTNSPredicateExpectation(
+      predicate: NSPredicate(format: "value BEGINSWITH %@", "0:1"), object: seek)
+    XCTAssertEqual(XCTWaiter.wait(for: [pastTen], timeout: 20), .completed)
+    toggle.tap()
+    XCTAssertEqual(toggle.label, "Play")
+    let paused = try service.position(of: seeded.id, becomesAtLeast: 10)
+    XCTAssertGreaterThanOrEqual(paused, 10)
+    XCTAssertTrue(fromBeginning.exists, "The paused Set in the player must offer to start over")
+    capture("play-from-beginning-current-paused")
+
+    fromBeginning.tap()
+    XCTAssertEqual(
+      XCTWaiter.wait(
+        for: [XCTNSPredicateExpectation(predicate: atStart, object: seek)], timeout: 5),
+      .completed, "The Set in the player must move back to the start")
+    XCTAssertEqual(toggle.label, "Pause")
+    capture("play-from-beginning-current-restarted")
+    toggle.tap()
+    let stored = try service.position(of: seeded.id) { $0 < 10 }
+    XCTAssertLessThan(stored, 10)
+    try record(
+      "play-from-beginning",
+      [
+        "setId": seeded.id,
+        "savedPositionSeconds": 20,
+        "afterSavedRestartSeconds": restarted,
+        "pausedInPlayerSeconds": paused,
+        "afterPlayerRestartSeconds": stored,
+      ])
+  }
+
   func testPlaysAndSeeksFromTracklistCues() throws {
     let service = try LaneService()
     let seeded = try service.saveReadySet(

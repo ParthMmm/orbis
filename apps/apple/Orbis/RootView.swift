@@ -882,6 +882,18 @@ private struct HomeHero: View {
         .controlSize(.large)
         .sensoryFeedback(.impact(weight: .medium), trigger: isPlaying)
         .accessibilityIdentifier("home-hero-play")
+        if model.canPlayFromBeginning(set) {
+          Button {
+            Task { await model.playFromBeginning(set.id) }
+          } label: {
+            Label("Play from Beginning", systemImage: "backward.end.fill")
+              .font(.headline)
+              .labelStyle(.iconOnly)
+          }
+          .buttonStyle(.glass)
+          .controlSize(.large)
+          .accessibilityIdentifier("home-hero-play-from-beginning")
+        }
       }
       Button {
         model.openSet(set.id)
