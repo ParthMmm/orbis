@@ -10,7 +10,7 @@ struct AddToPlaylistSheet: View {
   @State private var order: PlaylistChoices.Order = .recentlyAdded
   @State private var isCreating = false
   @State private var newName = ""
-  @AppStorage("orbis.recentPlaylistIds") private var recentStore = ""
+  @AppStorage(AppModel.recentPlaylistIdsKey) private var recentStore = ""
 
   static var newPlacement: ToolbarItemPlacement {
     #if os(iOS)

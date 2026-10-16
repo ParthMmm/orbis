@@ -88,7 +88,9 @@ enum SetPresentation {
     case "downloading":
       guard let live, let total = live.bytesTotal, total > 0 else { return .downloading(nil) }
       return .downloading(Double(live.bytesReceived) / Double(total))
-    case "failed", "canceled":
+    // A watch that gave up offers the retry: asking again is safe while the service still runs
+    // the download, and it starts a new watch.
+    case "failed", "canceled", AudioState.unwatched.state:
       return .failed
     case "ready":
       return live == nil ? .available : .downloading(1)
@@ -300,13 +302,8 @@ enum SetPresentation {
   /// Truncates rather than rounds, so the thumb never claims a second it has not reached.
   static func timestamp(_ seconds: TimeInterval) -> String {
     let total = max(Int(seconds), 0)
-    let hours = total / 3600
-    let minutes = (total % 3600) / 60
-    let rest = total % 60
-    if hours > 0 {
-      return String(format: "%d:%02d:%02d", hours, minutes, rest)
-    }
-    return String(format: "%d:%02d", minutes, rest)
+    return Duration.seconds(total).formatted(
+      .time(pattern: total >= 3600 ? .hourMinuteSecond : .minuteSecond))
   }
 
   /// "26:14 · 1:15:25", or the elapsed time alone until the length is known.

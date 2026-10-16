@@ -8,9 +8,9 @@
 	<array/>
 	<key>NSPrivacyCollectedDataTypes</key>
 	<array/>
-	<!-- The only required-reason API in use. The service address is read and written through
-	     UserDefaults, which is the app reading its own settings. The device token is not here:
-	     it is a credential and lives in the keychain. -->
+	<!-- The only required-reason API in use. UserDefaults holds the recent Tags, Tag filters,
+	     searches, and Playlist ids, which is the app reading its own data. The device token is not
+	     here: it is a credential and lives in the keychain. -->
 	<key>NSPrivacyAccessedAPITypes</key>
 	<array>
 		<dict>

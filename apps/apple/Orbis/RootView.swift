@@ -977,7 +977,7 @@ struct SearchDestination: View {
   @Bindable var model: AppModel
   /// The last queries that found something, newest first, one per line. Kept on the device: they
   /// are a convenience for this person here, not part of the library.
-  @AppStorage("orbis.recentSearches") private var recentSearches = ""
+  @AppStorage(AppModel.recentSearchesKey) private var recentSearches = ""
   private static let recentLimit = 6
   /// The field is resigned before the query is cleared. SwiftUI does not push a programmatic
   /// change to a search field that is still first responder, so a clear that only set the

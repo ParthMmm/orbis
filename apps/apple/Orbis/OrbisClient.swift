@@ -1,5 +1,10 @@
 import Foundation
 import OrbisDesign
+import os
+
+/// What the client could not read, by type and field. Never a value: the values are the library's
+/// own titles and links.
+private let logger = Logger(subsystem: "app.orbis", category: "client")
 
 /// A failure the user can act on. Each case carries the sentence the app shows, so the
 /// recovery action is decided in one place rather than in every view.
@@ -261,10 +266,15 @@ struct OrbisClient: Sendable {
   let token: String
   let session: URLSession
 
-  init(address: URL, token: String, session: URLSession = .shared) {
+  init(address: URL, token: String, session: URLSession = .orbisAPI) {
     self.address = address
     self.token = token
     self.session = session
+  }
+
+  /// The event stream's session. A session handed in, as a test does, carries the stream too.
+  private var eventSession: URLSession {
+    session === URLSession.orbisAPI ? .orbisEvents : session
   }
 
   /// An address is accepted only when it would carry the key safely: TLS, or the
@@ -339,7 +349,7 @@ struct OrbisClient: Sendable {
     let bytes: URLSession.AsyncBytes
     let response: URLResponse
     do {
-      (bytes, response) = try await session.bytes(for: request)
+      (bytes, response) = try await eventSession.bytes(for: request)
     } catch let error as URLError where error.code == .cancelled {
       throw OrbisError.cancelled
     } catch {
@@ -353,9 +363,15 @@ struct OrbisClient: Sendable {
     for try await line in bytes.lines {
       guard line.hasPrefix("data:") else { continue }
       let json = Data(line.dropFirst(5).trimmingCharacters(in: .whitespaces).utf8)
-      guard let frame = try? Self.decoder.decode(EventFrame.self, from: json),
-        frame.kind == "presence", let presence = frame.presence
-      else { continue }
+      let frame: EventFrame
+      do {
+        frame = try Self.decoder.decode(EventFrame.self, from: json)
+      } catch {
+        // Heartbeats and queue frames decode, so only a frame this build cannot read lands here.
+        Self.logUnreadable(EventFrame.self, error)
+        continue
+      }
+      guard frame.kind == "presence", let presence = frame.presence else { continue }
       await receive(presence)
     }
   }
@@ -593,20 +609,22 @@ struct OrbisClient: Sendable {
   }
 
   /// Decodes a body, reporting a shape this build cannot read as the one error the screens explain.
-  /// The failing key path reaches the debug log and the values do not: a version skew is worth
-  /// knowing by field, and the fields hold the library's own titles and links.
   private static func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
     do {
       return try decoder.decode(type, from: data)
     } catch {
-      #if DEBUG
-        if let decoding = error as? DecodingError {
-          let line = "Orbis could not read \(T.self) at \(path(of: decoding))\n"
-          FileHandle.standardError.write(Data(line.utf8))
-        }
-      #endif
+      logUnreadable(T.self, error)
       throw OrbisError.malformed
     }
+  }
+
+  /// Logs the type and the failing key path, in every build, and never the values: a version skew
+  /// is worth knowing by field, and the fields hold the library's own titles and links.
+  private static func logUnreadable(_ type: Any.Type, _ error: any Error) {
+    guard let decoding = error as? DecodingError else { return }
+    logger.error(
+      "Could not read \(String(describing: type), privacy: .public) at \(path(of: decoding), privacy: .public)"
+    )
   }
 
   /// Where a decode failed, as the fields leading to it. No value is named.
@@ -712,4 +730,20 @@ struct OrbisClient: Sendable {
 
 private struct ServerMessage: Decodable {
   let message: String
+}
+
+extension URLSession {
+  /// Requests to the service. One made while the device has no connection waits for one rather
+  /// than failing at once, and gives up after a minute in all.
+  static let orbisAPI: URLSession = {
+    let configuration = URLSessionConfiguration.default
+    configuration.waitsForConnectivity = true
+    configuration.timeoutIntervalForResource = 60
+    return URLSession(configuration: configuration)
+  }()
+
+  /// The event stream, which stays open while People is on screen, so it has no limit on its
+  /// whole length beyond the default seven days. A stream whose heartbeat stops still times out
+  /// on its request's own interval.
+  static let orbisEvents = URLSession(configuration: .default)
 }

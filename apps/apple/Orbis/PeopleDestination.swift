@@ -773,9 +773,18 @@ private struct FriendPlaylistSheet: View {
 final class PeopleModel {
   private let app: AppModel
   var me: Loadable<Me> = .idle
-  var people: [PersonFilters] = []
+  var people: [PersonFilters] = [] {
+    didSet { seen = Set(people.filter(\.see).map(\.id)) }
+  }
+  /// The People this Person sees, kept with `people` so a Presence frame does not rebuild it.
+  @ObservationIgnored private var seen: Set<String> = []
   /// What visible People are playing now, as the event stream last said.
   var listening: [Presence] = []
+  /// How long to wait before the event stream reconnects. Doubles with each drop, and starts over
+  /// once a stream delivers a frame.
+  @ObservationIgnored private var reconnectDelay = PeopleModel.firstReconnectDelay
+  private static let firstReconnectDelay = Duration.seconds(2)
+  private static let longestReconnectDelay = Duration.seconds(60)
   var failure: OrbisFailure?
   var isSaving = false
   private var loadedToken: String?
@@ -837,34 +846,42 @@ final class PeopleModel {
     people[index].appear = saved.appear
   }
 
-  /// Follows the event stream while People is on screen, reconnecting after a drop. Only the
-  /// People this Person sees are kept, because See is decided here and the stream does not know it.
+  /// Follows the event stream while People is on screen, reconnecting after a drop, and waiting
+  /// longer after each drop in a row so a service that is down is not asked every two seconds. Only
+  /// the People this Person sees are kept, because See is decided here and the stream does not know
+  /// it.
   func watchPresence() async {
     guard isSocial else {
       listening = []
       return
     }
+    reconnectDelay = Self.firstReconnectDelay
     while !Task.isCancelled {
       guard let client = app.client else { return }
       do {
         try await client.watchPresence { [weak self] presence in
           guard let self else { return }
-          let seen = Set(self.people.filter(\.see).map(\.id))
-          self.listening = presence.filter { seen.contains($0.personId) }
+          self.reconnectDelay = Self.firstReconnectDelay
+          self.listening = presence.filter { self.seen.contains($0.personId) }
         }
       } catch OrbisError.notSignedIn {
+        return
+      } catch OrbisError.server(let status, _)
+        where (400..<500).contains(status) && status != 408 && status != 429
+      {
+        // A refusal says the same thing on every try.
         return
       } catch {
         if Task.isCancelled { return }
       }
-      try? await Task.sleep(for: .seconds(2))
+      try? await Task.sleep(for: reconnectDelay)
+      reconnectDelay = min(reconnectDelay * 2, Self.longestReconnectDelay)
     }
   }
 
   private func loadPeople() async {
     if let list = await settingsRequest(app, { self.failure = $0 }, { try await $0.socialFilters() }) {
       people = list
-      let seen = Set(list.filter(\.see).map(\.id))
       listening = listening.filter { seen.contains($0.personId) }
     }
   }
