@@ -110,8 +110,9 @@ export class MediaStore extends Context.Service<
     ) {
       const ran = yield* Effect.tryPromise({
         catch: (cause) => cause,
-        try: async () => {
+        try: async (signal) => {
           const proc = Bun.spawn([command, ...args], {
+            signal,
             stderr: "pipe",
             stdout: "pipe",
           });

@@ -108,8 +108,8 @@ export class Ytdlp extends Context.Service<
           });
         }
         // A broken extractor is identifiable from the version alone.
-        yield* Effect.tryPromise(() =>
-          run([bin, "--version"], new AbortController().signal)
+        yield* Effect.tryPromise((signal) =>
+          run([bin, "--version"], signal)
         ).pipe(
           Effect.matchEffect({
             onFailure: () => Effect.logWarning("yt-dlp version unreadable"),
@@ -136,7 +136,7 @@ export class Ytdlp extends Context.Service<
                   ? "The download was canceled."
                   : "yt-dlp could not run."
               ),
-            try: async () => {
+            try: async (interrupted) => {
               const timer = setInterval(() => {
                 const { size } = Bun.file(output);
                 if (size > 0) {
@@ -146,7 +146,7 @@ export class Ytdlp extends Context.Service<
               try {
                 return await run(
                   ytdlpArgs(bin, output, sourceUrl, cookies, playerClient),
-                  signal
+                  AbortSignal.any([signal, interrupted])
                 );
               } finally {
                 clearInterval(timer);
