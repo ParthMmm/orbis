@@ -247,7 +247,8 @@ final class SignInUITests: XCTestCase {
     step("the Host removes a Person after confirming")
 
     let joining = app.switches["settings-joining"]
-    reveal(joining, in: app)
+    // Revealing the leaving row can scroll the Host's switch off the top when the Group is long.
+    reveal(joining, in: app, towardTop: true)
     joining.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
     XCTAssertTrue(
       try waitUntil(timeout: 15) { try host.passcode() == nil }, "closing joining clears it")
@@ -344,12 +345,12 @@ final class SignInUITests: XCTestCase {
       "a friend must not see People")
   }
 
-  /// Scrolls the Settings sheet until `element` is on screen. A grouped form only builds the
-  /// rows it shows.
-  private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+  /// Scrolls the Settings sheet until `element` is on screen, down the form or, with `towardTop`,
+  /// back up it. A grouped form only builds the rows it shows.
+  private func reveal(_ element: XCUIElement, in app: XCUIApplication, towardTop: Bool = false) {
     var swipes = 0
     while !(element.exists && element.isHittable), swipes < 6 {
-      app.swipeUp()
+      if towardTop { app.swipeDown() } else { app.swipeUp() }
       swipes += 1
     }
   }
