@@ -18,7 +18,7 @@ const Forbidden = ErrorBody.pipe(HttpApiSchema.status(403));
 
 export class SetAccess extends HttpApiMiddleware.Service<
   SetAccess,
-  { provides: typeof SetCaller }
+  { provides: SetCaller }
 >()("Orbis/SetAccess", {
   error: [Unauthorized, Forbidden],
   security: { bearer: HttpApiSecurity.bearer },

@@ -1976,14 +1976,14 @@ export const createPortableApp = (options: {
     // SAFETY: the sign-in handlers read no caller-bound service.
     return app.handler(
       request,
-      Context.empty() as Context.Context<Library | Queue | SetCaller>
+      Context.empty() as Context.Context<Library | Queue>
     );
   };
   const initialize = () =>
     // SAFETY: The health route reads no caller-bound service.
     app.handler(
       new Request("http://orbis.internal/health"),
-      Context.empty() as Context.Context<Library | Queue | SetCaller>
+      Context.empty() as Context.Context<Library | Queue>
     );
   // oxlint-disable-next-line eslint/sort-keys -- Lifecycle methods precede the request boundary.
   return {
