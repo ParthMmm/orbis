@@ -121,7 +121,7 @@ import {
   readTracklist,
   runClaimedTracklist,
 } from "./tracklists.js";
-import { retryTrustOperation } from "./trust-storage.js";
+import { trustOperation } from "./trust-storage.js";
 import { Versos } from "./versos.js";
 import {
   listFilterablePeople,
@@ -280,6 +280,12 @@ const failureResponse = <E>(error: E) => {
     { status: 400 }
   );
 };
+
+const trustUnavailable = () =>
+  new LibraryError({
+    message: "The trust store is unavailable.",
+    statusCode: 500,
+  });
 
 const missingPlaylist = () =>
   new LibraryError({ message: "Playlist not found.", statusCode: 404 });
@@ -1325,11 +1331,9 @@ export const createPortableApp = (options: {
                 const caller = yield* SetCaller;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(UpdateMePayload);
-                const result = yield* Effect.promise(() =>
-                  retryTrustOperation(() =>
-                    updatePerson(trustPath, caller.person.id, input)
-                  )
-                );
+                const result = yield* trustOperation(() =>
+                  updatePerson(trustPath, caller.person.id, input)
+                ).pipe(Effect.mapError(trustUnavailable));
                 if (result.kind === "updated") {
                   return HttpServerResponse.jsonUnsafe(meBody(result.person));
                 }
@@ -1385,16 +1389,14 @@ export const createPortableApp = (options: {
                 const caller = yield* SetCaller;
                 const input =
                   yield* HttpServerRequest.schemaBodyJson(SocialFiltersPayload);
-                const result = yield* Effect.promise(() =>
-                  retryTrustOperation(() =>
-                    updatePersonFilters(
-                      trustPath,
-                      caller.person.id,
-                      params.id,
-                      input
-                    )
+                const result = yield* trustOperation(() =>
+                  updatePersonFilters(
+                    trustPath,
+                    caller.person.id,
+                    params.id,
+                    input
                   )
-                );
+                ).pipe(Effect.mapError(trustUnavailable));
                 if (result.kind === "updated") {
                   return { appear: result.appear, see: result.see };
                 }
@@ -1501,23 +1503,24 @@ export const createPortableApp = (options: {
         }
       });
       const trustCall = <A>(action: (storePath: string) => A) =>
-        Effect.tryPromise({
-          catch: (error) =>
-            new LibraryError({
-              message:
-                error instanceof AdminError
-                  ? error.message
-                  : "The trust store is unavailable.",
-              statusCode: error instanceof AdminError ? error.statusCode : 500,
-            }),
-          try: () =>
-            retryTrustOperation(() => {
-              if (!trustPath) {
-                throw new AdminError(500, "The trust store is unavailable.");
-              }
-              return action(trustPath);
-            }),
-        });
+        trustOperation(() => {
+          if (!trustPath) {
+            throw new AdminError(500, "The trust store is unavailable.");
+          }
+          return action(trustPath);
+        }).pipe(
+          Effect.mapError(
+            ({ cause }) =>
+              new LibraryError({
+                message:
+                  cause instanceof AdminError
+                    ? cause.message
+                    : "The trust store is unavailable.",
+                statusCode:
+                  cause instanceof AdminError ? cause.statusCode : 500,
+              })
+          )
+        );
       const adminCall = <A>(action: (storePath: string) => A) =>
         Effect.andThen(requireHost, trustCall(action));
       const issueCodeFor = (personId: string) =>
@@ -2066,9 +2069,11 @@ export const createPortableApp = (options: {
         );
       }
       if (options.recordKeyUse !== false) {
-        await retryTrustOperation(() =>
-          markKeyUsed(trustPath, decision.keyId)
-        ).catch(() => null);
+        await Effect.runPromise(
+          trustOperation(() => markKeyUsed(trustPath, decision.keyId)).pipe(
+            Effect.ignore
+          )
+        );
       }
       // SAFETY: SetAccess provides the caller-bound Library and Queue before handlers read them.
       const response = await app.handler(
