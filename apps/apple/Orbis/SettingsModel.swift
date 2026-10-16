@@ -132,16 +132,15 @@ final class SettingsModel {
     }
   }
 
-  /// Removes a Person from the Group and answers whether the service did.
+  /// Removes a Person from the Group and answers whether the service did. The People list is left
+  /// for the caller to reload once their page has closed: a row that vanished under the open page
+  /// would pop it, and the page's own dismiss would then close Settings.
   func remove(_ personId: String) async -> Bool {
     guard
       await settingsRequest(
         app, { self.personFailures[personId] = $0 }, { try await $0.removePerson(personId) }) != nil
     else { return false }
     personCodes[personId] = nil
-    if case .loaded(let list) = people {
-      people = .loaded(list.filter { $0.id != personId })
-    }
     return true
   }
 }

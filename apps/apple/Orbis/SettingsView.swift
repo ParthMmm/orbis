@@ -371,7 +371,9 @@ private struct PersonView: View {
     ) {
       Button("Remove", role: .destructive) {
         Task {
-          if await settings.remove(person.id) { dismiss() }
+          guard await settings.remove(person.id) else { return }
+          dismiss()
+          await settings.loadPeople()
         }
       }
       Button("Cancel", role: .cancel) {}
