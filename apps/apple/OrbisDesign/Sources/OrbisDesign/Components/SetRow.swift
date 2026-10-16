@@ -155,7 +155,15 @@ public struct SetRow: View {
         #if os(macOS)
           HStack(alignment: .center, spacing: 16) {
             artworkControl(size: .row)
-            control(select) { columns.contentShape(.rect) }
+            // A narrow column, such as Search's list beside its Tracklist matches, has no room
+            // for the table, so the row falls back to the phone's two lines.
+            control(select) {
+              ViewThatFits(in: .horizontal) {
+                columns
+                text
+              }
+              .contentShape(.rect)
+            }
           }
         #else
           HStack(alignment: .top, spacing: 12) {
@@ -260,13 +268,22 @@ public struct SetRow: View {
           .foregroundStyle(playback?.isCurrent == true ? Color.orbis.tint : Color.primary)
         let line = Self.dataLine(creator: creator, length: nil, state: state)
         if !line.isEmpty {
-          Text(line)
-            .font(.orbis.detail)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
+          HStack(spacing: 6) {
+            if state?.remaining != nil {
+              Image(systemName: "play.circle")
+            }
+            Text(line)
+          }
+          .font(.orbis.detail)
+          .foregroundStyle(.secondary)
+          .lineLimit(1)
         }
       }
-      .frame(maxWidth: .infinity, alignment: .leading)
+      // The title truncates first, but never below a readable width: under it, the row is too
+      // narrow for the table and takes the two-line layout instead.
+      .frame(
+        minWidth: Self.minimumTitleWidth, idealWidth: Self.minimumTitleWidth, maxWidth: .infinity,
+        alignment: .leading)
       ChipFlow {
         ForEach(otherTags) { tag in
           TagWord(tag.name, category: tag.category)
@@ -278,7 +295,9 @@ public struct SetRow: View {
         .foregroundStyle(.secondary)
         .monospacedDigit()
         .frame(width: 90, alignment: .trailing)
-      Group {
+      // A ZStack, not a Group: an empty Group takes no frame, so a row with neither symbol
+      // would lose the column and its Tags and length would fall out of line.
+      ZStack {
         if state?.kept == true {
           Image(systemName: State.keptSymbol)
             .accessibilityLabel(State.keptLabel)
@@ -292,6 +311,8 @@ public struct SetRow: View {
       .frame(width: 18)
     }
   }
+
+  private static let minimumTitleWidth: CGFloat = 200
 
   /// The Tags the list is filtered by are true of every row, so a row leaves them out.
   private var otherTags: [Tag] {
