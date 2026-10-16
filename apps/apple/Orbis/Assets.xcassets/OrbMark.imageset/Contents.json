@@ -2,8 +2,7 @@
   "images" : [
     {
       "filename" : "orb-mark.png",
-      "idiom" : "universal",
-      "scale" : "3x"
+      "idiom" : "universal"
     }
   ],
   "info" : {

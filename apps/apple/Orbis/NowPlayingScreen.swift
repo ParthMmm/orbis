@@ -49,11 +49,28 @@ struct NowPlayingScreen: View {
           .accessibilityHidden(true)
       #endif
     }
+    #if os(macOS)
+      // A Mac sheet has no grabber to pull down and no swipe, so Now Playing closes from a button
+      // and from Escape.
+      .overlay(alignment: .topLeading) { closeButton }
+    #endif
     .accessibilityAction(.escape) { dismiss() }
     .onChange(of: player.currentSetId) { _, id in
       if id == nil { dismiss() }
     }
   }
+
+  #if os(macOS)
+    private var closeButton: some View {
+      Button("Close", systemImage: "xmark", action: dismiss.callAsFunction)
+        .labelStyle(.iconOnly)
+        .buttonStyle(.orbisIcon)
+        .font(.title3)
+        .keyboardShortcut(.cancelAction)
+        .padding(12)
+        .accessibilityIdentifier("now-playing-close")
+    }
+  #endif
 
   /// On a Mac the window is wide enough for the Tracklist to sit beside the player for the whole
   /// Set, where a phone swaps it in for the artwork.

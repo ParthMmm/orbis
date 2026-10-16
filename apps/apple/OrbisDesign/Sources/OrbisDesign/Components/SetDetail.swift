@@ -141,20 +141,43 @@ public struct SetDetail: View {
   public var body: some View {
     ScrollView {
       VStack(spacing: 0) {
-        Artwork(url: artwork, seed: title, size: .header)
-          .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
-          .padding(.horizontal, 30)
+        #if os(macOS)
+          // A Mac window is wide, so the artwork sits beside the words and the controls, as
+          // Home's hero and a Playlist's do, and the Tracklist runs under both.
+          HStack(alignment: .center, spacing: 36) {
+            cover
+              .frame(maxWidth: 420)
+            VStack(alignment: .leading, spacing: 20) {
+              header
+              transport
+              management
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+          }
+          .padding(.horizontal)
           .padding(.top, 8)
-        VStack(spacing: 20) {
-          header
-          transport
-          management
-          tracklist
-          footer
-        }
-        .padding(.horizontal)
-        .padding(.top, 18)
-        .padding(.bottom, 32)
+          VStack(spacing: 20) {
+            tracklist
+            footer
+          }
+          .padding(.horizontal)
+          .padding(.top, 28)
+          .padding(.bottom, 32)
+        #else
+          cover
+            .padding(.horizontal, 30)
+            .padding(.top, 8)
+          VStack(spacing: 20) {
+            header
+            transport
+            management
+            tracklist
+            footer
+          }
+          .padding(.horizontal)
+          .padding(.top, 18)
+          .padding(.bottom, 32)
+        #endif
       }
       .coordinateSpace(.named(Self.content))
       // The glow belongs to the header, so it scrolls away with it rather than staying behind the
@@ -194,11 +217,16 @@ public struct SetDetail: View {
     }
   }
 
+  private var cover: some View {
+    Artwork(url: artwork, seed: title, size: .header)
+      .shadow(color: .black.opacity(0.18), radius: 18, y: 10)
+  }
+
   private var header: some View {
-    VStack(spacing: 2) {
+    VStack(alignment: HeaderAlignment.horizontal, spacing: 2) {
       Text(title)
         .font(.orbis.title)
-        .multilineTextAlignment(.center)
+        .multilineTextAlignment(HeaderAlignment.text)
         .accessibilityLabel(Self.headerLabel(title: title, source: source))
         .accessibilityAddTraits(.isHeader)
         .accessibilityIdentifier("detail-title")
@@ -211,7 +239,7 @@ public struct SetDetail: View {
         let name = Text(creator)
           .font(.title3)
           .foregroundStyle(Color.orbis.tint)
-          .multilineTextAlignment(.center)
+          .multilineTextAlignment(HeaderAlignment.text)
         if let showCreator {
           Button(action: showCreator) { name }
             .buttonStyle(.plain)
@@ -238,9 +266,23 @@ public struct SetDetail: View {
         .padding(.top, 4)
       }
     }
-    .frame(maxWidth: .infinity)
+    .frame(maxWidth: .infinity, alignment: HeaderAlignment.frame)
   }
 
+}
+
+/// The header and its Tags sit centred under the artwork on a phone, and beside it on a Mac, where
+/// they read from the leading edge.
+private enum HeaderAlignment {
+  #if os(macOS)
+    static let horizontal = HorizontalAlignment.leading
+    static let text = TextAlignment.leading
+    static let frame = Alignment.leading
+  #else
+    static let horizontal = HorizontalAlignment.center
+    static let text = TextAlignment.center
+    static let frame = Alignment.center
+  #endif
 }
 
 /// A Set's Tags, each one tap from the Library filtered by it, and a "+" to change them.
@@ -278,7 +320,7 @@ public struct SetManagement: View {
 
   public var body: some View {
     GlassEffectContainer(spacing: 8) {
-      ChipFlow(spacing: 8, alignment: .center) {
+      ChipFlow(spacing: 8, alignment: HeaderAlignment.horizontal) {
         ForEach(tags, id: \.self) { tag in
           Button {
             showTag(tag)
@@ -304,7 +346,7 @@ public struct SetManagement: View {
         .accessibilityIdentifier("detail-tags-row")
       }
     }
-    .frame(maxWidth: .infinity)
+    .frame(maxWidth: .infinity, alignment: HeaderAlignment.frame)
   }
 }
 

@@ -173,6 +173,8 @@ private struct PlaybackProgress: View {
           }
         }
       )
+      // The label is for VoiceOver; a Mac draws it beside the bar, which neither player wants.
+      .labelsHidden()
       .disabled(!isCurrent || duration == nil)
       .accessibilityIdentifier("\(identifierPrefix)-seek")
       .accessibilityValue(SetPresentation.timestamp(shown))

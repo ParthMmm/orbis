@@ -57,6 +57,7 @@ struct PeopleDestination: View {
   private var page: some View {
     ScrollView {
       VStack(alignment: .leading, spacing: 32) {
+        MacPageTitle.slot("People")
         if people.people.isEmpty {
           emptyCard
         } else {
@@ -569,10 +570,9 @@ struct PersonScreen: View {
       if !content.playlists.isEmpty {
         VStack(alignment: .leading, spacing: 14) {
           SectionHeading("Playlists")
-          LazyVGrid(
-            columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)],
-            spacing: 18
-          ) {
+          // Two folders across a phone, as on Home; a Mac window fits more rather than stretching
+          // two.
+          LazyVGrid(columns: [GridItem(.adaptive(minimum: 160), spacing: 14)], spacing: 18) {
             ForEach(content.playlists) { playlist in
               Button {
                 openedPlaylist = playlist
