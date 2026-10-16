@@ -33,7 +33,6 @@ export const releaseAudio = (
         if (reference) {
           return;
         }
-        yield* removeFiles(id);
         yield* tx
           .update(sets)
           .set({
@@ -51,6 +50,7 @@ export const releaseAudio = (
       })
     );
     if (released) {
+      yield* removeFiles(id);
       yield* afterRelease(id);
     }
   }).pipe(Effect.mapError(releaseError));
