@@ -13,6 +13,8 @@ import { NodeCommandSchema } from "@orbis/contracts/node";
 import { Schema } from "effect";
 import { Miniflare } from "miniflare";
 
+import { issueStreamGrant } from "../../server/src/stream-grant-core.js";
+
 const artifact = path.resolve(
   import.meta.dir,
   "../../../.cache/audio-node",
@@ -27,15 +29,22 @@ const bundle = await Bun.build({
 assert.equal(bundle.success, true, String(bundle.logs));
 const [output] = bundle.outputs;
 assert.ok(output);
+const probe = Bun.serve({ fetch: () => new Response(), port: 0 });
+const nodePort = probe.port;
+await probe.stop(true);
+const groupLog: string[] = [];
 const runtimeOptions = {
   bindings: {
-    AUDIO_NODE_URL: "https://audio.example",
+    AUDIO_NODE_URL: `http://127.0.0.1:${nodePort}`,
     STREAM_GRANT_SECRET: "11".repeat(32),
   },
   compatibilityDate: "2026-07-30",
   compatibilityFlags: ["nodejs_compat"],
   durableObjects: { GROUP: { className: "Group", useSQLite: true } },
   durableObjectsPersist: path.join(artifact, "storage"),
+  handleStructuredLogs: ({ message }: { message: string }) => {
+    groupLog.push(message);
+  },
   modules: true,
   script: await output.text(),
 };
@@ -55,6 +64,17 @@ const request = (
     },
     method,
   });
+const AudioEvent = Schema.Struct({
+  audio: Schema.Record(Schema.String, Schema.Unknown),
+  ingress: Schema.optional(Schema.String),
+  status: Schema.Number,
+});
+/** The wide events, from captured process output, that record an audio request. */
+const audioEvents = (lines: readonly string[]) =>
+  lines
+    .flatMap((text) => text.split("\n"))
+    .filter((line) => line.includes('"audio":'))
+    .map((line) => Schema.decodeUnknownSync(AudioEvent)(JSON.parse(line)));
 const until = async <T>(
   read: () => Promise<T> | T,
   matches: (value: T) => boolean
@@ -369,7 +389,7 @@ try {
           ORBIS_AUDIO_DIR: audioDir,
           ORBIS_GROUP_URL: new URL("/api", api).toString(),
           ORBIS_NODE_KEY: "node-token",
-          ORBIS_NODE_PORT: "0",
+          ORBIS_NODE_PORT: String(nodePort),
           ORBIS_STREAM_SECRET_FILE: secret,
           ORBIS_YTDLP_BIN: runner,
         },
@@ -417,6 +437,32 @@ try {
       [beforeJob]
     );
     assert.ok((await readdir(audioDir)).includes(`${realSet.id}.mp3`));
+    const play = (setId: string) =>
+      runtime.dispatchFetch(`http://orbis/api/sets/${setId}/audio`, {
+        headers: { authorization: "Bearer client-token" },
+        redirect: "manual",
+      });
+    const redirect = await play(realSet.id);
+    assert.equal(redirect.status, 302);
+    await redirect.arrayBuffer();
+    const location = new URL(redirect.headers.get("location") ?? "");
+    assert.equal(location.origin, `http://127.0.0.1:${nodePort}`);
+    const ranged = await fetch(location, { headers: { range: "bytes=0-99" } });
+    assert.equal(ranged.status, 206);
+    assert.equal((await ranged.arrayBuffer()).byteLength, 100);
+    const forged = new URL(location);
+    forged.searchParams.set("grant", "forged");
+    const refusedGrant = await fetch(forged);
+    assert.equal(refusedGrant.status, 401);
+    await refusedGrant.text();
+    const absent = await play("absent");
+    assert.equal(absent.status, 404);
+    await absent.text();
+    const missingFile = await fetch(
+      `http://127.0.0.1:${nodePort}/api/sets/absent/audio?grant=${issueStreamGrant(Buffer.alloc(32, 17), "absent", "client")}`
+    );
+    assert.equal(missingFile.status, 404);
+    await missingFile.text();
     await request(`/sets/${realSet.id}`, "DELETE");
     await until(
       () => readdir(audioDir),
@@ -459,7 +505,60 @@ try {
   } finally {
     await stop();
     await writeFile(path.join(artifact, "node.log"), nodeLog.join(""));
+    await writeFile(path.join(artifact, "group.log"), groupLog.join("\n"));
   }
+  const nodeAudio = audioEvents(nodeLog);
+  assert.deepEqual(
+    nodeAudio.map((event) => [
+      event.ingress,
+      event.status,
+      event.audio.grant,
+      event.audio.file,
+    ]),
+    [
+      ["funnel-audio", 206, "valid", "found"],
+      ["funnel-audio", 401, "malformed", undefined],
+      ["funnel-audio", 404, "valid", "missing"],
+    ]
+  );
+  assert.equal(nodeAudio[0]?.audio.bytes, 100);
+  const groupAudio = audioEvents(groupLog);
+  assert.deepEqual(
+    groupAudio.map((event) => [
+      event.status,
+      event.audio.result,
+      event.audio.reason,
+      event.audio.node,
+    ]),
+    [
+      [302, "redirected", undefined, `http://127.0.0.1:${nodePort}`],
+      [404, "refused", "set-not-found", undefined],
+    ]
+  );
+  assert.equal(
+    [...nodeLog, ...groupLog].some((line) => line.includes("grant=")),
+    false
+  );
+  transcript.push({ groupAudio, nodeAudio });
+  const misconfigured = new Miniflare({
+    ...runtimeOptions,
+    bindings: { ...runtimeOptions.bindings, AUDIO_NODE_URL: "vanta:10000" },
+    durableObjectsPersist: path.join(artifact, "misconfigured"),
+  });
+  try {
+    const refused = await misconfigured.dispatchFetch(
+      "http://orbis/api/health"
+    );
+    assert.equal(refused.status, 500);
+    assert.match(
+      await refused.text(),
+      /AUDIO_NODE_URL must be an absolute http\(s\) URL\./u,
+      "a bad AUDIO_NODE_URL fails Group construction, before any audio request"
+    );
+  } finally {
+    await misconfigured.dispose();
+  }
+  await writeFile(path.join(artifact, "group.log"), groupLog.join("\n"));
   await writeFile(
     path.join(artifact, "result.json"),
     JSON.stringify({ passed: true, transcript }, null, 2)

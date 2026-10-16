@@ -94,14 +94,18 @@ test("redacts credential-shaped values before they reach a listener", () => {
   expect(serialized).not.toContain("sk-live-abcdefghijklmnop");
 });
 
-test("emits an error event when a route dies, without leaking the error", async () => {
+test("records why a route died, without its credentials or stack", async () => {
   const { events, logging } = collect();
   const routes = Layer.mergeAll(
     HttpRouter.add(
       "GET",
       "/boom",
       Effect.gen(function* boom() {
-        yield* Effect.die(new Error("secret internal failure text"));
+        yield* Effect.die(
+          new TypeError(
+            "Invalid URL: https://node.example/sets/a/audio?grant=1.host.abc token=tok-123 Bearer bearer-456"
+          )
+        );
         return HttpServerResponse.jsonUnsafe({ ok: true });
       })
     )
@@ -118,7 +122,15 @@ test("emits an error event when a route dies, without leaking the error", async 
     expect(event.outcome).toBe("failure");
     expect(event.status).toBe(500);
     expect(event.level).toBe("error");
-    expect(JSON.stringify(event)).not.toContain("secret internal failure text");
+    expect(event.cause).toEqual({
+      message:
+        "Invalid URL: https://node.example/sets/a/audio?[redacted] token=[redacted] Bearer [redacted]",
+      name: "TypeError",
+    });
+    const serialized = JSON.stringify(event);
+    for (const secret of ["1.host.abc", "tok-123", "bearer-456", "    at "]) {
+      expect(serialized).not.toContain(secret);
+    }
   } finally {
     await dispose();
   }

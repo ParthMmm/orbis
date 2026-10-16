@@ -92,9 +92,10 @@ import {
   updatePersonFilters,
 } from "./identity.js";
 import { Library } from "./library.js";
-import type { LoggingOptions } from "./logging.js";
+import type { LoggedRecord, LoggingOptions } from "./logging.js";
 import {
   annotateForwardedRequest,
+  annotateWideEvent,
   configureLogging,
   finishRequestLog,
   loggingLayer,
@@ -113,7 +114,8 @@ import { QueueSignals } from "./queue-signals.js";
 import { Queue } from "./queue.js";
 import { expandShortLink } from "./short-link.js";
 import { Stats } from "./stats.js";
-import { issueStreamGrant, verifyStreamGrant } from "./stream-grant-core.js";
+import { checkStreamGrant, issueStreamGrant } from "./stream-grant-core.js";
+import type { StreamGrantVerdict } from "./stream-grant-core.js";
 import type { TitleReviserError } from "./title-reviser-error.js";
 import { TitleReviser } from "./title-reviser.js";
 import {
@@ -142,40 +144,69 @@ class AcceptedAccess extends Context.Service<
   Exclude<AccessDecision, { readonly kind: "rejected" }>
 >()("Orbis/AcceptedAccess") {}
 
+/** A request that presents a stream grant, and what checking it decided. */
+interface StreamAccess {
+  readonly set: string;
+  readonly grant: StreamGrantVerdict["kind"] | "unknown-person";
+  readonly decision: AccessDecision;
+}
+
 const grantAccess = (
   request: Request,
   mode: AccessMode,
   store: TrustStore,
   secret: Buffer
-): AccessDecision | null => {
+): StreamAccess | null => {
   if (mode !== "device" || request.method !== "GET") {
     return null;
   }
   const url = new URL(request.url);
   const match = /^\/sets\/(?<id>[^/]+)\/audio$/u.exec(url.pathname);
-  const grant = url.searchParams.get("grant");
-  if (!match?.groups?.id || !grant) {
+  if (!match?.groups?.id || !url.searchParams.has("grant")) {
     return null;
   }
-  const personId = verifyStreamGrant(
-    secret,
-    decodeURIComponent(match.groups.id),
-    grant
-  );
-  const person = store.people.find(
-    (candidate) => candidate.id === personId && !candidate.removed
-  );
-  return person
-    ? { keyId: null, kind: "accepted", person }
-    : { kind: "rejected", message: "Invalid stream grant.", statusCode: 401 };
+  const set = decodeURIComponent(match.groups.id);
+  const verdict = checkStreamGrant(secret, set, url.searchParams.get("grant"));
+  const person =
+    verdict.kind === "valid"
+      ? store.people.find(
+          (candidate) => candidate.id === verdict.personId && !candidate.removed
+        )
+      : undefined;
+  if (person) {
+    return {
+      decision: { keyId: null, kind: "accepted", person },
+      grant: verdict.kind,
+      set,
+    };
+  }
+  return {
+    decision: {
+      kind: "rejected",
+      message: "Invalid stream grant.",
+      statusCode: 401,
+    },
+    grant: verdict.kind === "valid" ? "unknown-person" : verdict.kind,
+    set,
+  };
 };
 
-const rejectedStreamGrant = (
-  request: Request,
-  decision: AccessDecision | null
-) =>
+const rejectedStreamGrant = (request: Request, access: StreamAccess | null) =>
   new URL(request.url).searchParams.has("grant") &&
-  decision?.kind !== "accepted";
+  access?.decision.kind !== "accepted";
+
+const annotateAudio = (fields: LoggedRecord) =>
+  annotateWideEvent({ audio: fields });
+
+/** How the audio route answered, for the request's wide event. */
+const audioDelivery = (response: HttpServerResponse.HttpServerResponse) => {
+  if (response.status !== 302) {
+    return { result: "served" };
+  }
+  const location = response.headers.location ?? "";
+  // The origin alone: the redirect's query string carries the grant.
+  return { node: URL.parse(location)?.origin ?? null, result: "redirected" };
+};
 
 const forwardedResponse = (
   request: Request,
@@ -607,11 +638,29 @@ export const createPortableApp = (options: {
           .handleRaw("audio", ({ params, request }) =>
             Effect.gen(function* serveAudio() {
               const caller = yield* SetCaller;
+              yield* annotateAudio({
+                person: caller.person.id,
+                set: params.id,
+              });
               return yield* Effect.match(
                 Effect.gen(function* personalAudioFile() {
                   const personal = yield* Library;
-                  yield* personal.find(params.id);
-                  return yield* audio.audioFile(params.id);
+                  const set = yield* personal.find(params.id).pipe(
+                    Effect.tapError(() =>
+                      annotateAudio({
+                        reason: "set-not-found",
+                        result: "refused",
+                      })
+                    )
+                  );
+                  yield* annotateAudio({ downloadState: set.downloadState });
+                  return yield* audio
+                    .audioFile(params.id)
+                    .pipe(
+                      Effect.tapError(() =>
+                        annotateAudio({ reason: "no-audio", result: "refused" })
+                      )
+                    );
                 }).pipe(
                   Effect.map((file) =>
                     options.audioResponse(
@@ -625,6 +674,9 @@ export const createPortableApp = (options: {
                         "grant"
                       )
                     )
+                  ),
+                  Effect.tap((response) =>
+                    annotateAudio(audioDelivery(response))
                   ),
                   Effect.tapError(logLibraryFailure)
                 ),
@@ -2016,19 +2068,40 @@ export const createPortableApp = (options: {
         return openRoute(request, clientAddress);
       }
       const registry = readTrustRegistry(trustPath);
-      const streamDecision = grantAccess(
+      const logRefusal = (status: number, fields: LoggedRecord) => {
+        const logger = startRequestLog({
+          method: request.method,
+          path: safeRequestPath(request.url),
+          requestId: crypto.randomUUID(),
+        });
+        logger.set(fields);
+        finishRequestLog(
+          logger,
+          { outcome: "rejected", status },
+          options.logging
+        );
+      };
+      const streamAccess = grantAccess(
         request,
         mode,
         registry.store,
         streamSecret
       );
-      if (rejectedStreamGrant(request, streamDecision)) {
+      if (rejectedStreamGrant(request, streamAccess)) {
+        logRefusal(401, {
+          audio: {
+            grant: streamAccess?.grant ?? "unchecked",
+            reason: "grant-refused",
+            result: "refused",
+            set: streamAccess?.set ?? null,
+          },
+        });
         return withOrigin(
           Response.json({ message: "Invalid stream grant." }, { status: 401 })
         );
       }
       const decision =
-        streamDecision ??
+        streamAccess?.decision ??
         decideAccess({
           authorization,
           hasOrigin: false,
@@ -2046,21 +2119,12 @@ export const createPortableApp = (options: {
         return withOrigin(tooManyAttempts());
       }
       if (decision.kind === "rejected") {
-        const logger = startRequestLog({
-          method: request.method,
-          path: safeRequestPath(request.url),
-          requestId: crypto.randomUUID(),
+        // A damaged trust store refuses every device. Without `trustStore` the
+        // only visible symptom is a sudden run of 401 responses.
+        logRefusal(decision.statusCode, {
+          reason: decision.message,
+          trustStore: registry.storeError,
         });
-        if (registry.storeError !== undefined) {
-          // A damaged trust store refuses every device. Without this field the
-          // only visible symptom is a sudden run of 401 responses.
-          logger.set({ trustStore: registry.storeError });
-        }
-        finishRequestLog(
-          logger,
-          { outcome: "rejected", status: decision.statusCode },
-          options.logging
-        );
         return withOrigin(
           Response.json(
             { message: decision.message },

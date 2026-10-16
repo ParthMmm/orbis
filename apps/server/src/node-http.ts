@@ -1,6 +1,7 @@
 import type { LoggingOptions } from "./logging.js";
 import {
   finishRequestLog,
+  outcomeForStatus,
   safeRequestPath,
   startRequestLog,
 } from "./logging.js";
@@ -72,13 +73,11 @@ const forwardApiRequest = async (
       logger.set({ keyLabel: decodeURIComponent(keyLabel) });
     }
     response.headers.delete("x-orbis-key-label");
-    let outcome: "failure" | "rejected" | "success" = "success";
-    if (response.status >= 500) {
-      outcome = "failure";
-    } else if (response.status >= 400) {
-      outcome = "rejected";
-    }
-    finishRequestLog(logger, { outcome, status: response.status }, logging);
+    finishRequestLog(
+      logger,
+      { outcome: outcomeForStatus(response.status), status: response.status },
+      logging
+    );
     return response;
   } catch {
     finishRequestLog(logger, { outcome: "failure", status: 502 }, logging);

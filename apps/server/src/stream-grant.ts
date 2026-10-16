@@ -1,7 +1,8 @@
 import { randomBytes } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 
-export { issueStreamGrant, verifyStreamGrant } from "./stream-grant-core.js";
+export { checkStreamGrant, issueStreamGrant } from "./stream-grant-core.js";
+export type { StreamGrantVerdict } from "./stream-grant-core.js";
 export const grantSecret = (file: string | undefined): Buffer => {
   if (!file) {
     return randomBytes(32);
