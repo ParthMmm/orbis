@@ -94,6 +94,7 @@ targets:
           - ClientSettings.swift
           - OrbisClient.swift
           - Models.swift
+          - SetPresentation.swift
           - ShareCapture.swift
     dependencies:
       - package: OrbisDesign

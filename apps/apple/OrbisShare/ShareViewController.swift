@@ -1,3 +1,4 @@
+import OrbisDesign
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -25,7 +26,12 @@ import UniformTypeIdentifiers
       host.didMove(toParent: self)
     }
 
+    private var finished = false
+
+    /// Done and the saved screen's own timeout can both arrive, and the request completes once.
     private func finish() {
+      guard !finished else { return }
+      finished = true
       extensionContext?.completeRequest(returningItems: nil)
     }
 
@@ -41,12 +47,12 @@ import UniformTypeIdentifiers
     private var hosting: NSHostingController<ShareConfirmationView>?
 
     override func loadView() {
-      view = NSView(frame: NSRect(x: 0, y: 0, width: 360, height: 420))
+      view = NSView(frame: NSRect(x: 0, y: 0, width: 400, height: 560))
     }
 
     override func viewDidLoad() {
       super.viewDidLoad()
-      preferredContentSize = NSSize(width: 360, height: 420)
+      preferredContentSize = NSSize(width: 400, height: 560)
       let root = ShareConfirmationView(
         payloads: { [weak self] in await self?.loadPayloads() ?? [] },
         dismiss: { [weak self] in self?.finish() }
@@ -59,7 +65,12 @@ import UniformTypeIdentifiers
       view.addSubview(host.view)
     }
 
+    private var finished = false
+
+    /// Done and the saved screen's own timeout can both arrive, and the request completes once.
     private func finish() {
+      guard !finished else { return }
+      finished = true
       extensionContext?.completeRequest(returningItems: nil)
     }
 
@@ -122,93 +133,215 @@ enum ShareExtensionPayloads {
   }
 }
 
+/// Where the share sheet is. A refusal and a saved Set each take the whole sheet; a failed save
+/// keeps the form, so the person can change something and try again.
+enum ShareStage: Equatable {
+  case reading
+  case unsupported
+  case signedOut
+  case editing(URL)
+  case saved(SavedSet)
+}
+
 @MainActor
 struct ShareConfirmationView: View {
   let payloads: () async -> [String]
   let dismiss: () -> Void
 
-  @State private var link: URL?
-  @State private var tagsText = ""
+  @State private var stage = ShareStage.reading
+  @State private var tags: [String] = []
+  @State private var suggestions: [String] = []
   @State private var playlists: [Playlist] = []
   @State private var playlistId: String?
   @State private var downloadAfterSaving = false
-  @State private var status: String?
-  @State private var busy = false
+  @State private var isSaving = false
+  @State private var failure: String?
+  /// Rises on every refusal, so the symbol shakes again for a second one.
+  @State private var refusals = 0
   @State private var settings = ClientSettings.forCurrentProcess()
 
   var body: some View {
     NavigationStack {
-      Form {
-        if let link {
-          Section("Source Link") {
+      content
+        .navigationTitle(isSaved ? "Saved" : "Save to Orbis")
+        .toolbarTitleDisplayMode(.inline)
+        .toolbar { toolbar }
+    }
+    .orbisAnimation(.filingSucceeded, value: stage)
+    .sensoryFeedback(.success, trigger: isSaved) { _, saved in saved }
+    .sensoryFeedback(.error, trigger: refusals)
+    .task { await prepare() }
+  }
+
+  private var isSaved: Bool {
+    if case .saved = stage { return true }
+    return false
+  }
+
+  @ViewBuilder private var content: some View {
+    switch stage {
+    case .reading:
+      VStack(spacing: 12) {
+        Image(systemName: "waveform")
+          .font(.largeTitle.weight(.semibold))
+          .foregroundStyle(Color.orbis.tint)
+          .orbisWorking(true)
+          .accessibilityHidden(true)
+        Text("Reading the link…")
+          .foregroundStyle(.secondary)
+      }
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .background { TintGlow() }
+    case .unsupported:
+      refusal(
+        "No YouTube or SoundCloud link", symbol: "link",
+        message: "Share a link from YouTube or SoundCloud to save it.")
+    case .signedOut:
+      refusal(
+        "Sign in to Orbis", symbol: "person.crop.circle.badge.exclamationmark",
+        message: "Open Orbis and sign in, then share the link again.")
+    case .editing(let link):
+      form(link)
+    case .saved(let set):
+      saved(set)
+    }
+  }
+
+  @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+    if isSaved {
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Done", systemImage: "checkmark", role: .confirm, action: dismiss)
+          .tint(Color.orbis.tint)
+      }
+    } else {
+      ToolbarItem(placement: .cancellationAction) {
+        Button("Cancel", systemImage: "xmark", role: .close, action: dismiss)
+      }
+      if case .editing = stage {
+        ToolbarItem(placement: .confirmationAction) {
+          if isSaving {
+            ProgressView()
+              .accessibilityLabel("Saving")
+          } else {
+            Button("Save", systemImage: "checkmark", role: .confirm) {
+              Task { await save() }
+            }
+            .tint(Color.orbis.tint)
+            .keyboardShortcut(.defaultAction)
+          }
+        }
+      }
+    }
+  }
+
+  private func refusal(_ title: String, symbol: String, message: String) -> some View {
+    ContentUnavailableView {
+      Label(title, systemImage: symbol)
+    } description: {
+      Text(message)
+    }
+    .background { TintGlow() }
+  }
+
+  private func form(_ link: URL) -> some View {
+    Form {
+      Section {
+        HStack(spacing: 12) {
+          Artwork(url: nil, seed: link.absoluteString, size: .row)
+          VStack(alignment: .leading, spacing: 6) {
+            if let source = SetSource.named(by: link) {
+              SourceStamp(source.label)
+            }
             Text(link.absoluteString)
-              .font(.footnote)
+              .font(.orbis.detail)
+              .foregroundStyle(.secondary)
+              .lineLimit(2)
+              .truncationMode(.middle)
               .textSelection(.enabled)
           }
-          Section("Organize") {
-            TextField("Tags (comma separated)", text: $tagsText)
-            Picker("Playlist", selection: $playlistId) {
-              Text("None").tag(String?.none)
-              ForEach(playlists) { playlist in
-                Text(playlist.name).tag(Optional(playlist.id))
-              }
-            }
-            Toggle("Download after saving", isOn: $downloadAfterSaving)
-          }
-        } else if let status {
-          Section {
-            Text(status)
-          }
-        } else {
-          Section {
-            ProgressView("Reading link…")
-          }
         }
-        if let status, link != nil {
-          Section {
-            Text(status)
+        .accessibilityElement(children: .combine)
+      } footer: {
+        Text("Orbis reads the title, artist and artwork when it saves.")
+      }
+
+      if let failure {
+        Section {
+          Label {
+            Text(failure)
+          } icon: {
+            Image(systemName: "exclamationmark.triangle.fill")
+              .foregroundStyle(.secondary)
+              .orbisSymbolEffect(.filingFailed, trigger: refusals)
           }
         }
       }
-      .navigationTitle("Save to Orbis")
-      .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Cancel", action: dismiss)
-        }
-        ToolbarItem(placement: .confirmationAction) {
-          Button("Save") {
-            Task { await save() }
-          }
-          .disabled(link == nil || busy)
-        }
+
+      TagListEditor(
+        tags: $tags, suggestions: suggestions, title: "Tags",
+        category: SetPresentation.category(for:))
+
+      Section("Playlist") {
+        PlaylistPicker(
+          selection: $playlistId,
+          choices: playlists.map {
+            .init(id: $0.id, name: $0.name, category: SetPresentation.category(for: $0.name))
+          })
+        Toggle("Download after saving", isOn: $downloadAfterSaving)
       }
-      .task { await prepare() }
     }
+    .formStyle(.grouped)
+    .scrollContentBackground(.hidden)
+    .background { TintGlow() }
+    .disabled(isSaving)
+  }
+
+  private func saved(_ set: SavedSet) -> some View {
+    let artwork = SetPresentation.row(set).artwork
+    return VStack(spacing: 14) {
+      Artwork(url: artwork, seed: set.title, size: .header)
+        .frame(maxWidth: 300)
+        .padding(.bottom, 6)
+      Label("Added to your Library", systemImage: "checkmark.circle.fill")
+        .font(.orbis.label)
+        .foregroundStyle(Color.orbis.tint)
+      Text(set.title)
+        .font(.orbis.title)
+        .multilineTextAlignment(.center)
+        .lineLimit(3)
+      Text(
+        SetDetail.stampLine(source: set.source.label, subtitle: SetPresentation.subtitle(set))
+      )
+      .font(.orbis.detail)
+      .foregroundStyle(.secondary)
+    }
+    .padding(24)
+    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .background { ArtworkBackdrop(url: artwork) }
+    .accessibilityElement(children: .combine)
   }
 
   private func prepare() async {
-    let found = ShareCapture.sourceLink(from: await payloads())
-    guard let found else {
-      status = "Orbis only accepts YouTube and SoundCloud links."
+    guard let link = ShareCapture.sourceLink(from: await payloads()) else {
+      stage = .unsupported
       return
     }
-    link = found
     guard let client = settings.configuredClient(address: ShareCapture.serviceAddress) else {
-      status = "Open Orbis and sign in first."
+      stage = .signedOut
       return
     }
-    playlists = (try? await client.playlists()) ?? []
+    stage = .editing(link)
+    // The Sets, not /tags, because /tags is alphabetical and the editor offers the newest first.
+    async let library = try? client.library()
+    async let lists = try? client.playlists()
+    suggestions = SetPresentation.orderedTags(await library ?? [], recent: [])
+    playlists = await lists ?? []
   }
 
   private func save() async {
-    guard let link else { return }
-    busy = true
-    defer { busy = false }
-    let tags =
-      tagsText
-      .split(separator: ",")
-      .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-      .filter { !$0.isEmpty }
+    guard case .editing(let link) = stage else { return }
+    isSaving = true
+    defer { isSaving = false }
     let outcome = await ShareCapture.save(
       url: link,
       tags: tags,
@@ -217,16 +350,22 @@ struct ShareConfirmationView: View {
       settings: settings
     )
     switch outcome {
-    case .saved(let title):
-      status = "Saved \(title)."
-      try? await Task.sleep(for: .milliseconds(600))
+    case .saved(let set):
+      failure = nil
+      stage = .saved(set)
+      try? await Task.sleep(for: .seconds(1.6))
       dismiss()
     case .duplicate:
-      status = OrbisError.duplicate.message
+      refuse(OrbisError.duplicate.message)
     case .unreachable(let message), .failure(let message):
-      status = "\(message) The link is on your clipboard."
+      refuse("\(message) The link is on your clipboard.")
     case .notConfigured:
-      status = "Open Orbis and sign in first."
+      stage = .signedOut
     }
+  }
+
+  private func refuse(_ message: String) {
+    failure = message
+    refusals += 1
   }
 }
