@@ -155,7 +155,11 @@ export class Ytdlp extends Context.Service<
           }).pipe(
             Effect.flatMap((ran) =>
               ran.code === 0 && Bun.file(output).size > 0
-                ? Effect.promise(() => rename(output, destination))
+                ? Effect.tryPromise({
+                    catch: () =>
+                      downloadFailed("yt-dlp could not fetch this audio."),
+                    try: () => rename(output, destination),
+                  })
                 : Effect.logWarning("yt-dlp run failed").pipe(
                     Effect.annotateLogs({
                       bytes: Bun.file(output).size,
