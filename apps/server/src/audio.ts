@@ -131,8 +131,8 @@ const audioLayer = (
     })
   ).pipe(
     Layer.provide(workerLayer),
-    Layer.provideMerge(backendsLayer),
-    Layer.provideMerge(mediaLayer)
+    Layer.provide(backendsLayer),
+    Layer.provide(mediaLayer)
   );
 };
 
