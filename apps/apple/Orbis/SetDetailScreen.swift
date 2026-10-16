@@ -203,6 +203,9 @@ extension View {
   fileprivate func albumButton() -> some View {
     font(.body.weight(.semibold))
       .foregroundStyle(Color.orbis.tint)
+      // Inset, so a label that only just fits gives way to its shorter form rather than
+      // running to the button's edges.
+      .padding(.horizontal, 12)
       .frame(maxWidth: .infinity, minHeight: 48)
       .background(Color.orbis.paperRaised, in: .rect(cornerRadius: Radius.row))
       .contentShape(.rect(cornerRadius: Radius.row))
