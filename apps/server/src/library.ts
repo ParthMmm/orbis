@@ -206,10 +206,11 @@ export class Library extends Context.Service<
           people: options.people?.() ?? [],
           personId,
         }).pipe(Effect.provideService(Database, db));
-      const release = (id: string) =>
+      const release = Effect.fn("Library.release")((id: string) =>
         (options.releaseAudio ?? releaseAudio)(id).pipe(
           Effect.provideService(Database, db)
-        );
+        )
+      );
 
       const entryFor = (setId: string) =>
         db

@@ -81,32 +81,33 @@ export class TitleReviser extends Context.Service<
       TitleReviser,
       Effect.gen(function* layer() {
         const languageModel = yield* LanguageModel.LanguageModel;
-        const revise = (input: ReviseTitleInput) =>
-          Effect.gen(function* reviseTitle() {
-            const response = yield* languageModel
-              .generateObject({
-                objectName: "revised_title",
-                prompt: revisePrompt(input),
-                schema: RevisedTitle,
-              })
-              .pipe(
-                Effect.timeoutOrElse({
-                  duration: REVISE_TIMEOUT,
-                  orElse: () =>
-                    unavailable("The title model did not answer in time."),
-                }),
-                Effect.catchTag("AiError", () =>
-                  unavailable("The title model did not answer.")
-                )
-              );
-            const title = response.value.title.trim();
-            if (!title) {
-              return yield* Effect.fail(
-                unexpected("The title model returned an empty title.")
-              );
-            }
-            return title;
-          });
+        const revise = Effect.fn("TitleReviser.revise")(function* reviseTitle(
+          input: ReviseTitleInput
+        ) {
+          const response = yield* languageModel
+            .generateObject({
+              objectName: "revised_title",
+              prompt: revisePrompt(input),
+              schema: RevisedTitle,
+            })
+            .pipe(
+              Effect.timeoutOrElse({
+                duration: REVISE_TIMEOUT,
+                orElse: () =>
+                  unavailable("The title model did not answer in time."),
+              }),
+              Effect.catchTag("AiError", () =>
+                unavailable("The title model did not answer.")
+              )
+            );
+          const title = response.value.title.trim();
+          if (!title) {
+            return yield* Effect.fail(
+              unexpected("The title model returned an empty title.")
+            );
+          }
+          return title;
+        });
         return TitleReviser.of({ revise });
       })
     ).pipe(Layer.provide(model));

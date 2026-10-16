@@ -327,14 +327,15 @@ export class Metadata extends Context.Service<Metadata, MetadataService>()(
     return Layer.succeed(
       Metadata,
       Metadata.of({
-        details: (input) =>
-          ytDlp ? ytDlp.read(input.url) : noProviders.details(input),
-        enrich: (input) => {
+        details: Effect.fn("Metadata.details")((input: EnrichInput) =>
+          ytDlp ? ytDlp.read(input.url) : noProviders.details(input)
+        ),
+        enrich: Effect.fn("Metadata.enrich")((input: EnrichInput) => {
           const provider =
             providers[input.source]?.enrich(input.url) ??
             noProviders.enrich(input);
           return ytDlp ? orYtDlp(provider, ytDlp, input.url) : provider;
-        },
+        }),
       })
     );
   }

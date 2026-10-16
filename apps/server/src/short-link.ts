@@ -33,14 +33,14 @@ const isShortLink = (value: string) => {
  * The address a short link redirects to, or the value unchanged when it is not a short link.
  * The result still goes through the Source Link rule, so a redirect elsewhere is refused there.
  */
-export const expandShortLink = (
-  value: string,
-  request: RedirectFetch = defaultFetch
-): Effect.Effect<string, LibraryError> => {
-  if (!isShortLink(value.trim())) {
-    return Effect.succeed(value);
-  }
-  return Effect.gen(function* expandShortLinkEffect() {
+export const expandShortLink = Effect.fn("ShortLink.expand")(
+  function* expandShortLinkEffect(
+    value: string,
+    request: RedirectFetch = defaultFetch
+  ) {
+    if (!isShortLink(value.trim())) {
+      return value;
+    }
     const response = yield* Effect.tryPromise({
       catch: unresolved,
       try: (signal) => request(value.trim(), signal),
@@ -50,10 +50,9 @@ export const expandShortLink = (
       return yield* Effect.fail(unresolved());
     }
     return new URL(location, value.trim()).toString();
-  }).pipe(
-    Effect.timeoutOrElse({
-      duration: SHORT_LINK_TIMEOUT,
-      orElse: () => Effect.fail(unresolved()),
-    })
-  );
-};
+  },
+  Effect.timeoutOrElse({
+    duration: SHORT_LINK_TIMEOUT,
+    orElse: () => Effect.fail(unresolved()),
+  })
+);

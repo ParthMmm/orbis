@@ -402,7 +402,7 @@ export const createPortableApp = (options: {
           yield* announce(topic, reaches(caller.person.id));
         });
       const runningTracklists = new Set<string>();
-      const startTracklist = Effect.fn("startSavedSetTracklist")(
+      const startTracklist = Effect.fn("SaveSet.startTracklist")(
         (id: string, retry = false) =>
           Effect.gen(function* startSavedSetTracklist() {
             if (runningTracklists.has(id)) {
@@ -442,7 +442,7 @@ export const createPortableApp = (options: {
             );
           })
       );
-      const reviseTitle = Effect.fn("reviseSavedSetTitle")((
+      const reviseTitle = Effect.fn("SaveSet.reviseTitle")((
         set: SavedSet,
         enriched: EnrichedMetadata
       ) => {
@@ -466,7 +466,7 @@ export const createPortableApp = (options: {
       });
       // The slow yt-dlp read runs after the response, tied to the app so `dispose` stops it. A
       // failure is logged and marks the Set's details failed; the save itself is unaffected.
-      const fillDetails = Effect.fn("fillSavedSetDetails")((set: SavedSet) =>
+      const fillDetails = Effect.fn("SaveSet.fillDetails")((set: SavedSet) =>
         metadata.details({ source: set.source, url: set.url }).pipe(
           Effect.flatMap((details) => library.recordDetails(set.id, details)),
           Effect.tap(() => startTracklist(set.id)),
@@ -488,7 +488,7 @@ export const createPortableApp = (options: {
       );
       // Enrichment failure is swallowed so the save still succeeds, so it is the
       // one outcome a client cannot see. The log records which set and which reason.
-      const enrichSavedSet = Effect.fn("enrichSavedSet")((
+      const enrichSavedSet = Effect.fn("SaveSet.enrich")((
         set: SavedSet,
         personal: typeof Library.Service
       ) => {

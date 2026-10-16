@@ -119,7 +119,7 @@ export class Ytdlp extends Context.Service<
               ),
           })
         );
-        const attempt = (
+        const attempt = Effect.fn("Ytdlp.attempt")((
           sourceUrl: string,
           destination: string,
           onProgress: (received: number, total: number | null) => void,
@@ -177,7 +177,7 @@ export class Ytdlp extends Context.Service<
                   )
             )
           );
-        };
+        });
         return Ytdlp.of({
           download: Effect.fn("Ytdlp.download")(function* download(
             sourceUrl: string,

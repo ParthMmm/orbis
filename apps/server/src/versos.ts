@@ -109,18 +109,20 @@ export class Versos extends Context.Service<Versos, VersosService>()(
       "content-type": "application/json",
     };
     return Versos.layerOf({
-      poll: (requestId) =>
+      poll: Effect.fn("Versos.poll")((requestId: string) =>
         read(
           new URL(`/orbis/tracklists/${encodeURIComponent(requestId)}`, base),
           PollResponse,
           { headers, method: "GET" }
-        ),
-      request: (input) =>
+        )
+      ),
+      request: Effect.fn("Versos.request")((input: TracklistRequest) =>
         read(new URL("/orbis/tracklists", base), RequestResponse, {
           body: JSON.stringify(input),
           headers,
           method: "POST",
-        }),
+        })
+      ),
     });
   }
 

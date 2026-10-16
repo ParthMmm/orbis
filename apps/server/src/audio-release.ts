@@ -13,14 +13,14 @@ const releaseError = <E>(error: E) =>
         statusCode: 500,
       });
 
-export const releaseAudio = (
-  id: string,
-  removeFiles: (id: string) => Effect.Effect<void, LibraryError> = () =>
-    Effect.void,
-  afterRelease: (id: string) => Effect.Effect<void, LibraryError> = () =>
-    Effect.void
-) =>
-  Effect.gen(function* releaseStoredAudio() {
+export const releaseAudio = Effect.fn("AudioRelease.release")(
+  function* releaseStoredAudio(
+    id: string,
+    removeFiles: (id: string) => Effect.Effect<void, LibraryError> = () =>
+      Effect.void,
+    afterRelease: (id: string) => Effect.Effect<void, LibraryError> = () =>
+      Effect.void
+  ) {
     const db = yield* Database;
     const released = yield* db.transaction((tx) =>
       Effect.gen(function* releaseUnreferencedAudio() {
@@ -53,4 +53,6 @@ export const releaseAudio = (
       yield* removeFiles(id);
       yield* afterRelease(id);
     }
-  }).pipe(Effect.mapError(releaseError));
+  },
+  Effect.mapError(releaseError)
+);

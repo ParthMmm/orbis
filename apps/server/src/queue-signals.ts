@@ -14,13 +14,14 @@ export class QueueSignals extends Context.Service<
       { hub: PubSub.PubSub<boolean>; count: number }
     >();
     return QueueSignals.of({
-      publish: (personId) =>
-        Effect.gen(function* publishQueueChange() {
-          const entry = listeners.get(personId);
-          if (entry) {
-            yield* PubSub.publish(entry.hub, true);
-          }
-        }),
+      publish: Effect.fn("QueueSignals.publish")(function* publishQueueChange(
+        personId: string
+      ) {
+        const entry = listeners.get(personId);
+        if (entry) {
+          yield* PubSub.publish(entry.hub, true);
+        }
+      }),
       subscribe: (personId) =>
         Stream.unwrap(
           Effect.gen(function* subscribeQueueChanges() {
