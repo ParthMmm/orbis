@@ -49,7 +49,10 @@ export const expandShortLink = Effect.fn("ShortLink.expand")(
     if (response.status < 300 || response.status >= 400 || !location) {
       return yield* Effect.fail(unresolved());
     }
-    return new URL(location, value.trim()).toString();
+    return yield* Effect.try({
+      catch: unresolved,
+      try: () => new URL(location, value.trim()).toString(),
+    });
   },
   Effect.timeoutOrElse({
     duration: SHORT_LINK_TIMEOUT,

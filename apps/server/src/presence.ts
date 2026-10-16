@@ -225,7 +225,7 @@ const retryKey = (action: PresenceAction) =>
     "setId",
   ]);
 
-const decodeResult = Schema.decodeUnknownSync(
+const decodeResult = Schema.decodeUnknownEffect(
   Schema.fromJsonString(PresenceActionResultSchema)
 );
 
@@ -654,7 +654,7 @@ export class Presence extends Context.Service<
                       return yield* conflict("action-reused");
                     }
                     return {
-                      ...decodeResult(saved.result),
+                      ...(yield* decodeResult(saved.result)),
                       outcome: "duplicate" as const,
                     };
                   }

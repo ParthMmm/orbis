@@ -76,7 +76,7 @@ import {
   sets as setRows,
 } from "./db/schema.js";
 import { Database } from "./db/service.js";
-import { LibraryError } from "./errors.js";
+import { asLibraryError, LibraryError } from "./errors.js";
 import type {
   AccessDecision,
   AccessMode,
@@ -1617,7 +1617,7 @@ export const createPortableApp = (options: {
                   UNION SELECT set_id AS id FROM queue_entries WHERE person_id = ${params.id}
                   UNION SELECT set_id AS id FROM playlist_sets INNER JOIN playlists ON playlists.id = playlist_sets.playlist_id WHERE creator_id = ${params.id}
                 `)
-                  .pipe(Effect.orDie);
+                  .pipe(asLibraryError("Could not remove the Person's data."));
                 yield* db
                   .transaction((tx) =>
                     Effect.gen(function* deleteAdminPersonRows() {
