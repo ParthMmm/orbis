@@ -299,15 +299,6 @@
   struct TVPlaylists: View {
     @Bindable var model: AppModel
 
-    private var librarySets: [SavedSet] {
-      if case .loaded(let sets) = model.library { sets } else { [] }
-    }
-
-    private func artwork(of playlist: Playlist) -> [URL?] {
-      librarySets.filter { $0.playlistIds.contains(playlist.id) }
-        .prefix(3).map { SetPresentation.row($0).artwork }
-    }
-
     /// Popping the page with Menu closes the Playlist the way the phone's back button does, so
     /// its members and any failure do not wait for the next one.
     private var openedPlaylist: Binding<String?> {
@@ -326,7 +317,7 @@
       .scrollClipDisabled()
       .background {
         ArtworkGlow(
-          url: model.playlistItems.first.flatMap { artwork(of: $0).first ?? nil }, reach: 0.55)
+          url: model.playlistItems.first.flatMap { model.artwork(ofPlaylist: $0.id).first ?? nil }, reach: 0.55)
       }
       .navigationDestination(item: openedPlaylist) { id in
         TVPlaylistPage(model: model, playlistId: id).id(id)
@@ -366,7 +357,7 @@
                 PlaylistSleeve(
                   name: playlist.name,
                   count: playlist.setCount,
-                  artwork: artwork(of: playlist),
+                  artwork: model.artwork(ofPlaylist: playlist.id),
                   category: SetPresentation.category(for: playlist.name),
                   fanWidth: 260, height: 330
                 )
@@ -642,7 +633,7 @@
 
     @ViewBuilder private var results: some View {
       let query = model.searchResultsFor ?? ""
-      let cues = model.cueMatches(for: query)
+      let cues = model.cueMatches
       VStack(alignment: .leading, spacing: 32) {
         Text(query.isEmpty ? "Search" : "Results for \"\(query)\"")
           .font(.orbis.sectionTitle)

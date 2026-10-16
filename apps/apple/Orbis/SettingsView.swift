@@ -66,7 +66,7 @@ struct SettingsView: View {
         account(person)
         group(person)
         if person.host {
-          HostSections(model: model, settings: settings, hostId: person.id)
+          HostSections(settings: settings, hostId: person.id)
         }
         downloads(person)
       }
@@ -234,15 +234,15 @@ private struct NameEditor: View {
     guard !trimmed.isEmpty, trimmed != person.username else { return }
     let username = trimmed
     Task {
-      await settings.save(MeUpdate(username: username), failure: \.accountFailure)
-      if settings.accountFailure == nil { dismiss() }
+      // Return can arrive while another change is saving, which sends nothing; only a name the
+      // service took closes the page.
+      if await settings.save(MeUpdate(username: username), failure: \.accountFailure) { dismiss() }
     }
   }
 }
 
 /// The Host's rows: whether friends can join, with what passcode, and the People in the Group.
 private struct HostSections: View {
-  let model: AppModel
   @Bindable var settings: SettingsModel
   let hostId: String
   @State private var isConfirmingNewPasscode = false
@@ -307,9 +307,7 @@ private struct HostSections: View {
       case .loaded(let people):
         ForEach(people.filter { $0.id != hostId }) { person in
           NavigationLink {
-            PersonView(model: model, person: person) {
-              Task { await settings.loadPeople() }
-            }
+            PersonView(settings: settings, person: person)
           } label: {
             HStack(spacing: 12) {
               PersonAvatar(person.username, diameter: 32)
@@ -325,7 +323,7 @@ private struct HostSections: View {
   /// On makes a new passcode; off closes joining at once.
   private var joining: Binding<Bool> {
     Binding(
-      get: { settings.passcode != nil },
+      get: { settings.isJoiningOpen },
       set: { open in Task { await settings.changeJoining(open: open) } })
   }
 
@@ -337,23 +335,25 @@ private struct HostSections: View {
 
 /// One other Person, as the Host sees them: a Sign-in Code for a new device, and removal.
 private struct PersonView: View {
-  let model: AppModel
+  let settings: SettingsModel
   let person: GroupPerson
-  let removed: () -> Void
-  @State private var code: SignInCode?
-  @State private var failure: OrbisFailure?
   @State private var isConfirmingRemoval = false
   @Environment(\.dismiss) private var dismiss
 
   var body: some View {
+    let code = settings.personCodes[person.id]
     Form {
       Section {
         if let code {
           SignInCodeView(code: code, identifier: "person-sign-in-code")
         }
-        Button(code == nil ? "Show Sign-in Code" : "New Code") { Task { await makeCode() } }
-          .accessibilityIdentifier("person-show-code")
-        FailureRows(failure: failure, context: "managing a Person", identifier: "person-error")
+        Button(code == nil ? "Show Sign-in Code" : "New Code") {
+          Task { await settings.makeCode(for: person.id) }
+        }
+        .accessibilityIdentifier("person-show-code")
+        FailureRows(
+          failure: settings.personFailures[person.id], context: "managing a Person",
+          identifier: "person-error")
       } footer: {
         Text("On their new device, choose I Have a Code and type this.")
       }
@@ -369,24 +369,15 @@ private struct PersonView: View {
     .confirmationDialog(
       "Remove \(person.username)?", isPresented: $isConfirmingRemoval, titleVisibility: .visible
     ) {
-      Button("Remove", role: .destructive) { Task { await remove() } }
+      Button("Remove", role: .destructive) {
+        Task {
+          if await settings.remove(person.id) { dismiss() }
+        }
+      }
       Button("Cancel", role: .cancel) {}
     } message: {
       Text("They leave the Group and are signed out on every device.")
     }
-  }
-
-  private func makeCode() async {
-    let id = person.id
-    code = await settingsRequest(model, { failure = $0 }, { try await $0.signInCode(for: id) }) ?? code
-  }
-
-  private func remove() async {
-    let id = person.id
-    guard await settingsRequest(model, { failure = $0 }, { try await $0.removePerson(id) }) != nil
-    else { return }
-    removed()
-    dismiss()
   }
 }
 

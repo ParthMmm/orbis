@@ -1,5 +1,6 @@
+import Foundation
+import Observation
 import OrbisDesign
-import SwiftUI
 
 /// What Settings shows and the requests that change it (ADR 0020).
 @MainActor
@@ -19,7 +20,13 @@ final class SettingsModel {
   var downloadsFailure: OrbisFailure?
   var codeFailure: OrbisFailure?
   var hostFailure: OrbisFailure?
+  /// The Sign-in Code made on another Person's page and what last failed there, by Person, so
+  /// one Person's page never shows another's.
+  private(set) var personCodes: [String: SignInCode] = [:]
+  private(set) var personFailures: [String: OrbisFailure] = [:]
   var isSaving = false
+  /// Where Allow Joining was switched to while the service has not answered yet.
+  private var joiningRequested: Bool?
   private var loadedToken: String?
 
   init(app: AppModel) {
@@ -56,6 +63,8 @@ final class SettingsModel {
     downloadsFailure = nil
     codeFailure = nil
     hostFailure = nil
+    personCodes = [:]
+    personFailures = [:]
   }
 
   func loadPasscode() async {
@@ -71,30 +80,77 @@ final class SettingsModel {
     if let list { people = .loaded(list) }
   }
 
-  /// Sends a change to `/me`; a failure is said in the section the change came from.
-  func save(_ update: MeUpdate, failure: ReferenceWritableKeyPath<SettingsModel, OrbisFailure?>) async {
-    guard !isSaving else { return }
+  /// Sends a change to `/me` and answers whether the service took it. The change shows at once,
+  /// so a switch moves when it is pressed; a refusal puts the stored value back and is said in
+  /// the section the change came from.
+  @discardableResult
+  func save(_ update: MeUpdate, failure: ReferenceWritableKeyPath<SettingsModel, OrbisFailure?>) async -> Bool {
+    guard !isSaving, case .loaded(let stored) = me else { return false }
     isSaving = true
     defer { isSaving = false }
-    if let person = await settingsRequest(app, { self[keyPath: failure] = $0 }, { try await $0.updateMe(update) }) {
-      me = .loaded(person)
-      username = person.username
+    let shown = stored.applying(update)
+    me = .loaded(shown)
+    guard
+      let person = await settingsRequest(app, { self[keyPath: failure] = $0 }, { try await $0.updateMe(update) })
+    else {
+      if me == .loaded(shown) { me = .loaded(stored) }
+      return false
     }
+    me = .loaded(person)
+    username = person.username
+    return true
   }
 
   func makeCode() async {
     code = await settingsRequest(app, { self.codeFailure = $0 }, { try await $0.signInCode() }) ?? code
   }
 
+  /// Whether Allow Joining shows as on: where it was switched to while the service answers, and
+  /// whether the Group has a passcode otherwise, so a refusal puts the switch back.
+  var isJoiningOpen: Bool { joiningRequested ?? (passcode != nil) }
+
   /// Opens joining with a new random passcode, or closes it.
   func changeJoining(open: Bool) async {
     guard !isSaving else { return }
     isSaving = true
-    defer { isSaving = false }
+    joiningRequested = open
+    defer {
+      isSaving = false
+      joiningRequested = nil
+    }
     let stored = await settingsRequest(
       app, { self.hostFailure = $0 },
       { open ? try await $0.newPasscode() : try await $0.closeJoining() })
     if let stored { passcode = stored }
+  }
+
+  func makeCode(for personId: String) async {
+    if let code = await settingsRequest(
+      app, { self.personFailures[personId] = $0 }, { try await $0.signInCode(for: personId) })
+    {
+      personCodes[personId] = code
+    }
+  }
+
+  /// Removes a Person from the Group and answers whether the service did.
+  func remove(_ personId: String) async -> Bool {
+    guard
+      await settingsRequest(
+        app, { self.personFailures[personId] = $0 }, { try await $0.removePerson(personId) }) != nil
+    else { return false }
+    personCodes[personId] = nil
+    if case .loaded(let list) = people {
+      people = .loaded(list.filter { $0.id != personId })
+    }
+    return true
+  }
+}
+
+extension Me {
+  fileprivate func applying(_ update: MeUpdate) -> Me {
+    Me(
+      autoDownload: update.autoDownload ?? autoDownload, host: host, id: id,
+      social: update.social ?? social, username: update.username ?? username)
   }
 }
 
@@ -113,101 +169,5 @@ func settingsRequest<T>(
   } catch {
     report(.explaining(error, at: client.address))
     return nil
-  }
-}
-
-/// A failure's sentence and the way to copy its details, as rows of the section that failed.
-struct FailureRows: View {
-  let failure: OrbisFailure?
-  let context: String
-  let identifier: String
-
-  var body: some View {
-    if let failure {
-      Text(failure.message)
-        .foregroundStyle(OrbisColor.destructive)
-        .accessibilityIdentifier(identifier)
-      CopyFailureButton(report: FailureReport(failure: failure, context: context))
-    }
-  }
-}
-
-/// A Sign-in Code, large enough to read across a room, with when it stops working.
-struct SignInCodeView: View {
-  let code: SignInCode
-  let identifier: String
-
-  var body: some View {
-    VStack(spacing: 6) {
-      HStack(spacing: 12) {
-        Text(code.formatted)
-          .font(.system(.largeTitle, design: .monospaced).weight(.semibold))
-          #if !os(tvOS)
-            .textSelection(.enabled)
-          #endif
-          .accessibilityIdentifier(identifier)
-        #if !os(tvOS)
-          CopyButton(title: "Copy Code", text: code.code, identifier: "\(identifier)-copy")
-            .font(.title3)
-        #endif
-      }
-      Text("Works once, until \(SetPresentation.date(from: code.expiresAt), style: .time).")
-        .font(.orbis.detail)
-        .foregroundStyle(OrbisColor.muted)
-    }
-    .frame(maxWidth: .infinity)
-    .padding(.vertical, 8)
-  }
-}
-
-/// A copy symbol that puts `text` on the clipboard and turns into a checkmark for a moment. The
-/// title is what VoiceOver reads; the text itself never shows. With a `row` name, the whole row
-/// is the button, so tapping the name copies too.
-struct CopyButton: View {
-  let title: String
-  let text: String
-  let identifier: String
-  var row: String?
-  @State private var copied = false
-
-  var body: some View {
-    Button {
-      copyToPasteboard(text)
-      copied = true
-    } label: {
-      if let row {
-        LabeledContent {
-          symbol
-        } label: {
-          Text(row).foregroundStyle(Color.primary)
-        }
-      } else {
-        // The symbol alone is smaller than a finger, so its tap area is the 44-point minimum.
-        symbol
-          .frame(minWidth: 44, minHeight: 44)
-          .contentShape(.rect)
-      }
-    }
-    .buttonStyle(.borderless)
-    .accessibilityLabel(copied ? "Copied" : title)
-    .sensoryFeedback(.success, trigger: copied) { _, now in now }
-    .task(id: copied) {
-      guard copied else { return }
-      try? await Task.sleep(for: .seconds(2))
-      copied = false
-    }
-    .accessibilityIdentifier(identifier)
-  }
-
-  /// Sized by the copy symbol, the wider of the two, so the checkmark does not move what sits
-  /// beside it.
-  private var symbol: some View {
-    Image(systemName: "doc.on.doc")
-      .hidden()
-      .overlay {
-        Image(systemName: copied ? "checkmark" : "doc.on.doc")
-          .foregroundStyle(Color.orbis.tint)
-          .contentTransition(.symbolEffect(.replace))
-      }
   }
 }

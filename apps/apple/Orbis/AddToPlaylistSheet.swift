@@ -7,17 +7,10 @@ struct AddToPlaylistSheet: View {
 
   @Environment(\.dismiss) private var dismiss
   @State private var query = ""
-  @State private var order: Order = .recentlyAdded
+  @State private var order: PlaylistChoices.Order = .recentlyAdded
   @State private var isCreating = false
   @State private var newName = ""
   @AppStorage("orbis.recentPlaylistIds") private var recentStore = ""
-
-  enum Order: String, CaseIterable, Identifiable {
-    case recentlyAdded = "Recently Added"
-    case name = "Name"
-    case size = "Most Sets"
-    var id: Self { self }
-  }
 
   static var newPlacement: ToolbarItemPlacement {
     #if os(iOS)
@@ -26,8 +19,6 @@ struct AddToPlaylistSheet: View {
       .automatic
     #endif
   }
-
-  static let recentLimit = 3
 
   var body: some View {
     NavigationStack {
@@ -45,16 +36,31 @@ struct AddToPlaylistSheet: View {
       }
       .listStyle(.plain)
       .overlay {
-        if model.playlistItems.isEmpty {
+        switch model.playlists {
+        case .idle, .loading:
+          LoadingState()
+            .accessibilityIdentifier("add-to-playlist-loading")
+        case .failed(let failure):
+          UnavailableState(failure: failure, context: "loading playlists") {
+            Task { await model.loadPlaylists() }
+          }
+          .accessibilityIdentifier("add-to-playlist-error")
+        case .loaded(let items) where items.isEmpty:
           ContentUnavailableView {
             Label("No Playlists", systemImage: "music.note.list")
           } description: {
             Text("Make one with the + button, and this Set goes in first.")
           }
-        } else if matching.isEmpty {
-          ContentUnavailableView.search(text: query)
+        case .loaded:
+          if matching.isEmpty {
+            ContentUnavailableView.search(text: query)
+          }
         }
       }
+      // The sheet covers the screen it came from, so what a choice or a new Playlist refused is
+      // said here.
+      .setChangeStatus(model)
+      .playlistChangeStatus(model)
       .playlistSearch(text: $query)
       .navigationTitle("Add to Playlist")
       .toolbarTitleDisplayMode(.inline)
@@ -65,7 +71,7 @@ struct AddToPlaylistSheet: View {
         ToolbarItem(placement: .primaryAction) {
           Menu("Sort", systemImage: "arrow.up.arrow.down") {
             Picker("Sort", selection: $order) {
-              ForEach(Order.allCases) { Text($0.rawValue).tag($0) }
+              ForEach(PlaylistChoices.Order.allCases) { Text($0.rawValue).tag($0) }
             }
             .pickerStyle(.inline)
           }
@@ -135,59 +141,36 @@ struct AddToPlaylistSheet: View {
     Set(model.savedSet(set.id)?.playlistIds ?? set.playlistIds)
   }
 
-  private var recentIds: [String] {
-    recentStore.split(separator: ",").map(String.init)
+  private var choices: PlaylistChoices {
+    PlaylistChoices(
+      playlists: model.playlistItems, recentIds: recentStore.split(separator: ",").map(String.init))
   }
 
-  private var recents: [Playlist] {
-    let byId = Dictionary(uniqueKeysWithValues: model.playlistItems.map { ($0.id, $0) })
-    return Array(recentIds.compactMap { byId[$0] }.prefix(Self.recentLimit))
-  }
+  private var recents: [Playlist] { choices.recents }
 
-  private var matching: [Playlist] {
-    let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    let found =
-      trimmed.isEmpty
-      ? model.playlistItems
-      : model.playlistItems.filter { $0.name.localizedCaseInsensitiveContains(trimmed) }
-    return Self.sorted(found, by: order)
-  }
-
-  static func sorted(_ playlists: [Playlist], by order: Order) -> [Playlist] {
-    switch order {
-    case .recentlyAdded:
-      playlists
-    case .name:
-      playlists.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-    case .size:
-      playlists.sorted { $0.setCount > $1.setCount }
-    }
-  }
-
-  static func remembering(_ id: String, in recent: [String], limit: Int = 12) -> [String] {
-    Array(([id] + recent.filter { $0 != id }).prefix(limit))
-  }
+  private var matching: [Playlist] { choices.matching(query, in: order) }
 
   // MARK: Actions
 
   private func choose(_ playlist: Playlist, isMember: Bool) {
     Task {
-      await model.setMembership(set.id, in: playlist.id, !isMember)
-      guard model.setFailure == nil, !isMember else { return }
-      recentStore = Self.remembering(playlist.id, in: recentIds).joined(separator: ",")
-      dismiss()
+      guard await model.choosePlaylist(playlist.id, for: set.id, isMember: isMember) else { return }
+      remember(playlist.id)
     }
   }
 
   private func createAndAdd() {
     let name = newName
     Task {
-      guard let created = await model.createPlaylist(named: name, opening: false) else { return }
-      await model.setMembership(set.id, in: created.id, true)
-      guard model.setFailure == nil else { return }
-      recentStore = Self.remembering(created.id, in: recentIds).joined(separator: ",")
-      dismiss()
+      guard let created = await model.createPlaylist(named: name, adding: set.id) else { return }
+      remember(created.id)
     }
+  }
+
+  /// Puts the Playlist the Set went into at the front of the recents, and closes the sheet.
+  private func remember(_ playlistId: String) {
+    recentStore = PlaylistChoices.remembering(playlistId, in: choices.recentIds).joined(separator: ",")
+    dismiss()
   }
 }
 

@@ -153,6 +153,8 @@ struct ShareConfirmationView: View {
   @State private var suggestions: [String] = []
   @State private var playlists: [Playlist] = []
   @State private var playlistId: String?
+  /// The Playlists did not load, which is not the same as having none.
+  @State private var playlistsFailed = false
   @State private var downloadAfterSaving = false
   @State private var isSaving = false
   @State private var failure: String?
@@ -287,6 +289,14 @@ struct ShareConfirmationView: View {
           choices: playlists.map {
             .init(id: $0.id, name: $0.name, category: SetPresentation.category(for: $0.name))
           })
+        if playlistsFailed {
+          HStack {
+            Text("Playlists did not load.")
+              .foregroundStyle(.secondary)
+            Spacer()
+            Button("Try Again") { Task { await loadPlaylists() } }
+          }
+        }
         Toggle("Download after saving", isOn: $downloadAfterSaving)
       }
     }
@@ -333,9 +343,18 @@ struct ShareConfirmationView: View {
     stage = .editing(link)
     // The Sets, not /tags, because /tags is alphabetical and the editor offers the newest first.
     async let library = try? client.library()
-    async let lists = try? client.playlists()
+    await loadPlaylists()
     suggestions = SetPresentation.orderedTags(await library ?? [], recent: [])
-    playlists = await lists ?? []
+  }
+
+  private func loadPlaylists() async {
+    guard let client = settings.configuredClient(address: ShareCapture.serviceAddress) else { return }
+    do {
+      playlists = try await client.playlists()
+      playlistsFailed = false
+    } catch {
+      playlistsFailed = true
+    }
   }
 
   private func save() async {

@@ -427,7 +427,9 @@ struct DestinationView: View {
     return ScrollView {
       VStack(alignment: .leading, spacing: 20) {
         MacPageTitle.slot("Home")
-        rails
+        if case .loaded = model.library {
+          rails
+        }
       }
       .padding(.horizontal)
       .padding(.top, 8)
@@ -438,11 +440,28 @@ struct DestinationView: View {
     }
     .scrollEdgeEffectStyle(.soft, for: .top)
     .scrollEdgeEffectStyle(.soft, for: .bottom)
+    .refreshable {
+      await model.refreshLibraryQuietly()
+      await model.refreshPlaylistsQuietly()
+    }
     .overlay {
-      // Before the first Set, Home has no rails to show; it says so and offers the first filing.
-      if case .loaded(let sets) = model.library, sets.isEmpty {
-        EmptyLibraryState(recover: { openFilingSheet() })
-          .accessibilityIdentifier("home-empty")
+      // The rails are built from the library, so until it arrives Home says what it is waiting
+      // on, as the Library tab does, rather than showing a blank page.
+      switch model.library {
+      case .idle, .loading:
+        LoadingState()
+          .accessibilityIdentifier("home-loading")
+      case .failed(let failure):
+        UnavailableState(failure: failure, context: "loading the library") {
+          Task { await model.loadLibrary() }
+        }
+        .accessibilityIdentifier("home-error")
+      case .loaded(let sets):
+        // Before the first Set, Home has no rails to show; it says so and offers the first filing.
+        if sets.isEmpty {
+          EmptyLibraryState(recover: { openFilingSheet() })
+            .accessibilityIdentifier("home-empty")
+        }
       }
     }
     .sidebarPageTitle("Home")
@@ -778,8 +797,7 @@ struct HomeRails: View {
             PlaylistSleeve(
               name: playlist.name,
               count: playlist.setCount,
-              artwork: librarySets.filter { $0.playlistIds.contains(playlist.id) }
-                .prefix(3).map { SetPresentation.row($0).artwork },
+              artwork: model.artwork(ofPlaylist: playlist.id),
               category: SetPresentation.category(for: playlist.name)
             )
           }
@@ -1059,7 +1077,7 @@ struct SearchDestination: View {
   /// On a Mac the tracks found inside Tracklists take a column of their own beside the Sets,
   /// where a phone puts them under the Sets.
   @ViewBuilder private var results: some View {
-    let cues = isTagQuery ? [] : model.cueMatches(for: model.searchResultsFor ?? "")
+    let cues = isTagQuery ? [] : model.cueMatches
     #if os(macOS)
       HStack(alignment: .top, spacing: 0) {
         resultList(cuesBelow: [], foundCues: !cues.isEmpty, backdrop: .none)
@@ -1258,7 +1276,7 @@ private struct SearchStart: View {
         if !recentFilters.isEmpty {
           section("Recent filters") {
             ChipFlow {
-              ForEach(Array(recentFilters.enumerated()), id: \.offset) { index, tags in
+              ForEach(Array(recentFilters.enumerated()), id: \.element) { index, tags in
                 Button {
                   model.showTags(tags)
                 } label: {

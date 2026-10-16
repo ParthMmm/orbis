@@ -240,7 +240,11 @@ enum SetPresentation {
   /// The day a Set was filed, as a listing heads its group: "Thu 11 Sep".
   @MainActor
   static func day(_ timestamp: String) -> String {
-    date(from: timestamp).formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
+    day(date(from: timestamp))
+  }
+
+  static func day(_ date: Date) -> String {
+    date.formatted(.dateTime.weekday(.abbreviated).day().month(.abbreviated))
   }
 
   /// A plain date a person can read: "11 Sep 2026".

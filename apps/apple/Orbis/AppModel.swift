@@ -44,7 +44,11 @@ final class AppModel {
   var isShowingSettings = false
 
   var library: Loadable<[SavedSet]> = .idle {
-    didSet { refreshDerivedState() }
+    didSet {
+      refreshDerivedState()
+      refreshPlaylistArtwork()
+      refreshCueMatches()
+    }
   }
   var playlists: Loadable<[Playlist]> = .idle
   /// The one Listening Queue. It is where the active Set and the Playback Position live, so the
@@ -52,7 +56,9 @@ final class AppModel {
   var queue: Loadable<ListeningQueue> = .idle
   /// What the last queue action did, said where the action was taken.
   var queueNotice: String?
-  private(set) var tracklists: [String: Tracklist] = [:]
+  private(set) var tracklists: [String: Tracklist] = [:] {
+    didSet { refreshCueMatches() }
+  }
   /// The playlist the Library is showing. Nil is everything the library holds.
   var selectedPlaylistId: String?
   var searchQuery = ""
@@ -61,7 +67,9 @@ final class AppModel {
   /// The query the loaded search results answer. Held beside the results rather than read
   /// back from the field, so the heading never names results with a query that was typed
   /// but not submitted.
-  private(set) var searchResultsFor: String?
+  private(set) var searchResultsFor: String? {
+    didSet { refreshCueMatches() }
+  }
 
   /// The Tags the Library is filtered by, in the order they were chosen. A Set must carry every
   /// one of them, so each Tag added narrows the list.
@@ -126,6 +134,28 @@ final class AppModel {
       sets.filter { set in
         activeTags.allSatisfy(set.tags.contains) && (activeCreator?.admits(set) ?? true)
       })
+  }
+
+  /// The artwork of the first three Sets in each Playlist, in Library order, keyed by Playlist.
+  /// Built once per library change, because every Playlist folder on screen reads it.
+  private(set) var playlistArtwork: [String: [URL?]] = [:]
+
+  private func refreshPlaylistArtwork() {
+    guard case .loaded(let sets) = library else {
+      playlistArtwork = [:]
+      return
+    }
+    var artwork: [String: [URL?]] = [:]
+    for set in sets {
+      for id in set.playlistIds where artwork[id, default: []].count < 3 {
+        artwork[id, default: []].append(set.artworkUrl.flatMap(URL.init(string:)))
+      }
+    }
+    playlistArtwork = artwork
+  }
+
+  func artwork(ofPlaylist id: String) -> [URL?] {
+    playlistArtwork[id] ?? []
   }
 
   /// How many times a cancelled load has been restarted without a success in between.
@@ -1130,6 +1160,20 @@ final class AppModel {
     await refreshPlaylistsQuietly()
   }
 
+  /// Puts a Set in a Playlist, or takes it out when it is already there. Answers whether the Set
+  /// went in, which is when the Add to Playlist sheet remembers the Playlist and closes.
+  func choosePlaylist(_ playlistId: String, for setId: String, isMember: Bool) async -> Bool {
+    await setMembership(setId, in: playlistId, !isMember)
+    return setFailure == nil && !isMember
+  }
+
+  /// Makes a Playlist and puts the Set in it first. Answers the Playlist once the Set is in it.
+  func createPlaylist(named name: String, adding setId: String) async -> Playlist? {
+    guard let created = await createPlaylist(named: name, opening: false) else { return nil }
+    await setMembership(setId, in: created.id, true)
+    return setFailure == nil ? created : nil
+  }
+
   func refreshPlaylistsQuietly() async {
     guard let client else { return }
     playlistGeneration += 1
@@ -1427,13 +1471,19 @@ final class AppModel {
     }
   }
 
-  /// Tracks inside the library's Tracklists whose title or artist holds the query, with the Set
-  /// each plays in. Only Tracklists this device has loaded are read, so `loadTracklistsForSearch`
-  /// runs first.
-  func cueMatches(for query: String) -> [CueMatch] {
-    let query = query.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !query.isEmpty, case .loaded(let sets) = library else { return [] }
-    return sets.flatMap { set in
+  /// Tracks inside the library's Tracklists whose title or artist holds the submitted query, with
+  /// the Set each plays in. Only Tracklists this device has loaded are read, so
+  /// `loadTracklistsForSearch` runs first. Held rather than derived on demand, because the scan
+  /// reads every cue and the results body renders on every change of the player.
+  private(set) var cueMatches: [CueMatch] = []
+
+  private func refreshCueMatches() {
+    let query = (searchResultsFor ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !query.isEmpty, case .loaded(let sets) = library else {
+      if !cueMatches.isEmpty { cueMatches = [] }
+      return
+    }
+    cueMatches = sets.flatMap { set in
       (tracklists[set.id]?.cues ?? [])
         .filter {
           $0.title.localizedCaseInsensitiveContains(query)
