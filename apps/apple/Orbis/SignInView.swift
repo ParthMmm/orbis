@@ -146,7 +146,14 @@ private struct JoinForm: View {
             .accessibilityIdentifier("signin-username")
         }
         LabeledContent("Passcode") {
-          SecureField("Group Passcode", text: $passcode, prompt: Text("Required"))
+          // A generated code the Host shares, so it is shown as typed or pasted, like a
+          // Sign-in Code, rather than hidden like a password.
+          TextField("Group Passcode", text: $passcode, prompt: Text("Required"))
+            .autocorrectionDisabled()
+            #if os(iOS)
+              .textInputAutocapitalization(.characters)
+            #endif
+            .font(.body.monospaced())
             .focused($focus, equals: .passcode)
             .submitLabel(.join)
             .onSubmit(join)
@@ -277,7 +284,7 @@ struct WelcomeView: View {
 }
 
 extension View {
-  /// Usernames, passcodes, and codes are typed as they are: no capitals, corrections, or
+  /// Usernames and codes are typed as they are: no capitals, corrections, or
   /// suggestions added.
   func plainEntry() -> some View {
     self

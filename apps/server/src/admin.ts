@@ -1,6 +1,7 @@
 import { randomBytes, randomInt } from "node:crypto";
 
 import {
+  GROUP_PASSCODE_LENGTH,
   normalizeSignInCode,
   SIGN_IN_CODE_ALPHABET,
   SIGN_IN_CODE_LENGTH,
@@ -169,7 +170,15 @@ export const joinGroup = (
       if (!store.passcode) {
         throw new AdminError(403, "Joining is closed.");
       }
-      if (!matchesTokenHash(hashToken(store.passcode), input.passcode.trim())) {
+      // Compares normalized forms, so `abcd-efgh jkmn` matches `ABCDEFGHJKMN`.
+      const presented = normalizeSignInCode(input.passcode);
+      if (
+        !presented ||
+        !matchesTokenHash(
+          hashToken(normalizeSignInCode(store.passcode)),
+          presented
+        )
+      ) {
         throw new AdminError(403, "That passcode is not right.");
       }
       const person = newPerson(store, validUsername(input.username));
@@ -190,9 +199,9 @@ export const joinGroup = (
 
 const SIGN_IN_CODE_TTL_MS = 10 * 60 * 1000;
 
-const newSignInCode = () =>
+const randomCode = (length: number) =>
   Array.from(
-    { length: SIGN_IN_CODE_LENGTH },
+    { length },
     () => SIGN_IN_CODE_ALPHABET[randomInt(SIGN_IN_CODE_ALPHABET.length)]
   ).join("");
 
@@ -209,9 +218,9 @@ export const issueSignInCode = (path: string, personId: string, now: number) =>
       const others = liveSignInCodes(store, now).filter(
         (code) => code.personId !== personId
       );
-      let code = newSignInCode();
+      let code = randomCode(SIGN_IN_CODE_LENGTH);
       while (others.some((other) => other.code === code)) {
-        code = newSignInCode();
+        code = randomCode(SIGN_IN_CODE_LENGTH);
       }
       const issued = {
         code,
@@ -268,24 +277,22 @@ export const readPasscode = (path: string) => ({
   passcode: read(path).passcode ?? null,
 });
 
-/** The passcode alone stands between the public API and open sign-up (ADR 0020). */
-export const PASSCODE_MIN_LENGTH = 8;
-
-/** A blank or null passcode closes joining. */
-export const setPasscode = (path: string, input: string | null) => {
-  const passcode = input?.trim() || null;
-  if (passcode !== null && passcode.length < PASSCODE_MIN_LENGTH) {
-    throw new AdminError(
-      400,
-      `A passcode needs at least ${PASSCODE_MIN_LENGTH} characters.`
-    );
-  }
-  return mutateTrustStore(
+const storePasscode = (path: string, passcode: string | null) =>
+  mutateTrustStore(
     path,
     () => read(path),
     (store) => ({ store: { ...store, passcode }, value: { passcode } })
   );
-};
+
+/**
+ * Opens joining with a fresh random Group Passcode (ADR 0020), so the one
+ * shared before stops working. The Host never chooses it: the passcode alone
+ * stands between the public API and open sign-up.
+ */
+export const newPasscode = (path: string) =>
+  storePasscode(path, randomCode(GROUP_PASSCODE_LENGTH));
+
+export const closeJoining = (path: string) => storePasscode(path, null);
 
 // With `ownerId`, only that Person's device keys match, and every other key
 // answers the same 404 as a missing one.

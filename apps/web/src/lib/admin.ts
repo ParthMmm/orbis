@@ -28,14 +28,12 @@ export type AdminData = Awaited<ReturnType<typeof loadAdmin>>;
 export type AdminPerson = AdminData["people"][number];
 export type AdminKey = AdminData["keys"][number];
 
-/** `null` closes joining. */
-export const setPasscode = (
-  credentials: Credentials,
-  passcode: string | null
-) =>
-  callOrbis(credentials, (client) =>
-    client.admin.setPasscode({ payload: { passcode } })
-  );
+/** Opens joining with a fresh random passcode; the one before stops working. */
+export const newPasscode = (credentials: Credentials) =>
+  callOrbis(credentials, (client) => client.admin.newPasscode());
+
+export const closeJoining = (credentials: Credentials) =>
+  callOrbis(credentials, (client) => client.admin.closeJoining());
 
 export const signInCodeFor = (credentials: Credentials, personId: string) =>
   callOrbis(credentials, (client) =>

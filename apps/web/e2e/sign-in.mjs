@@ -27,17 +27,15 @@ const webPort = 3321;
 const apiUrl = `http://127.0.0.1:${devicePort}`;
 const webUrl = `http://127.0.0.1:${webPort}`;
 const hostKey = randomBytes(24).toString("base64url");
-const passcode = "river stone";
+let passcode = "";
 
+// The Group makes the passcode; the journey reads it like a Host would.
 const openJoining = async () => {
   const response = await fetch(`${apiUrl}/admin/passcode`, {
-    body: JSON.stringify({ passcode }),
-    headers: {
-      authorization: `Bearer ${hostKey}`,
-      "content-type": "application/json",
-    },
-    method: "PUT",
+    headers: { authorization: `Bearer ${hostKey}` },
+    method: "POST",
   });
+  ({ passcode } = await response.json());
   return response.status;
 };
 
@@ -154,7 +152,11 @@ try {
       message: taken.body.message,
     });
 
-    const joined = await join("bob", passcode);
+    // A pasted passcode with spaces and lower case still joins.
+    const joined = await join(
+      "bob",
+      `  ${passcode.slice(0, 6).toLowerCase()} ${passcode.slice(6)}  `
+    );
     assert.equal(joined.status, 201);
     await page.getByRole("heading", { name: "Library" }).waitFor();
     await page.getByText("Signed in as bob").waitFor();

@@ -56,14 +56,22 @@ final class OrbisClientTests: XCTestCase {
     XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/api/sign-in/code")
     XCTAssertEqual(try json(StubProtocol.lastBody), ["code": "ABCDEFGH", "label": "Orbis on Mac"])
 
+    let opener = OrbisClient(
+      address: address, token: "token",
+      session: StubProtocol.session(status: 200, body: #"{"passcode":"K7MPX3QRW9TB"}"#))
+    let opened = try await opener.newPasscode()
+    XCTAssertEqual(opened, "K7MPX3QRW9TB")
+    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "POST")
+    XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/api/admin/passcode")
+    XCTAssertNil(StubProtocol.lastBody, "the Host sends no passcode; the service makes it")
+
     let host = OrbisClient(
       address: address, token: "token",
       session: StubProtocol.session(status: 200, body: #"{"passcode":null}"#))
-    let closed = try await host.setPasscode(nil)
+    let closed = try await host.closeJoining()
     XCTAssertNil(closed)
-    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "PUT")
+    XCTAssertEqual(StubProtocol.lastRequest?.httpMethod, "DELETE")
     XCTAssertEqual(StubProtocol.lastRequest?.url?.path(), "/api/admin/passcode")
-    XCTAssertEqual(try json(StubProtocol.lastBody), ["passcode": NSNull()])
 
     let me = #"{"autoDownload":true,"host":false,"id":"p1","social":true,"username":"ada"}"#
     let person = OrbisClient(

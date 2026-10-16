@@ -59,6 +59,7 @@ export {
 } from "./source-url.js";
 export {
   formatSignInCode,
+  GROUP_PASSCODE_LENGTH,
   normalizeSignInCode,
   SIGN_IN_CODE_ALPHABET,
   SIGN_IN_CODE_LENGTH,

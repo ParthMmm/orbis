@@ -27,7 +27,7 @@ const apiUrl = `http://127.0.0.1:${devicePort}`;
 const webUrl = `http://127.0.0.1:${webPort}`;
 const hostKey = randomBytes(24).toString("base64url");
 const aliceKey = randomBytes(24).toString("base64url");
-const passcode = "river stone";
+const PASSCODE_FORM = /^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{12}$/u;
 
 // What the API itself says, outside the browser.
 const callApi = async (pathname, key) => {
@@ -172,17 +172,27 @@ try {
       "the Host sees the Admin link, and the page opens on their own key with joining closed"
     );
 
-    await passcodeSection.getByLabel("New passcode").fill(passcode);
-    await passcodeSection.getByRole("button", { name: "Save" }).click();
-    await passcodeSection.getByText(passcode, { exact: true }).waitFor();
-    assert.equal(await textOf(passcodeSection.locator("code")), passcode);
+    await passcodeSection.getByRole("button", { name: "Open joining" }).click();
+    const passcodeCode = passcodeSection.getByLabel("Group Passcode");
+    await passcodeCode.waitFor();
+    const passcode = await textOf(passcodeCode);
+    assert.match(passcode, PASSCODE_FORM);
     const stored = await callApi("/admin/passcode", hostKey);
     assert.deepEqual(stored.body, { passcode });
+    await passcodeSection
+      .getByRole("button", { name: "Copy passcode" })
+      .click();
+    await passcodeSection.getByRole("button", { name: "Copied" }).waitFor();
+    const copied = await page.evaluate(() => navigator.clipboard.readText());
+    assert.equal(copied, passcode);
     await shot("passcode");
-    step("the Host sets the Group Passcode, and the page and the API show it");
+    step(
+      "Open joining makes a random 12-character passcode, and Copy puts it on the clipboard",
+      { passcode }
+    );
 
     const carol = await freshBrowser();
-    const joined = await tryJoin(carol.page, "carol", passcode);
+    const joined = await tryJoin(carol.page, "carol", copied);
     assert.equal(joined.status, 201);
     await carol.page.getByText("Signed in as carol").waitFor();
     await carol.context.close();
@@ -190,7 +200,24 @@ try {
     await page.reload();
     await people.getByRole("heading", { name: "carol" }).waitFor();
     step(
-      "a new browser joins as carol with that passcode, and People lists her"
+      "a new browser joins as carol with the copied passcode, and People lists her"
+    );
+
+    await passcodeSection.getByRole("button", { name: "New passcode" }).click();
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name: "New passcode" })
+      .click();
+    await passcodeCode.filter({ hasNotText: passcode }).waitFor();
+    const replaced = await textOf(passcodeCode);
+    assert.match(replaced, PASSCODE_FORM);
+    assert.notEqual(replaced, passcode);
+    const erin = await freshBrowser();
+    const stale = await tryJoin(erin.page, "erin", passcode);
+    assert.equal(stale.status, 403);
+    await erin.context.close();
+    step(
+      "New passcode, after a confirmation, replaces it and the old one fails"
     );
 
     await passcodeSection
@@ -198,16 +225,19 @@ try {
       .click();
     await passcodeSection.getByText("Joining is closed.").waitFor();
     const dave = await freshBrowser();
-    const refused = await tryJoin(dave.page, "dave", passcode);
+    const refused = await tryJoin(dave.page, "dave", replaced);
     assert.equal(refused.status, 403);
     assert.equal(
       await textOf(refused.form.getByRole("alert")),
       refused.body.message
     );
     await dave.context.close();
-    step("Close joining makes the old passcode fail with the API's message", {
-      message: refused.body.message,
-    });
+    step(
+      "Close joining makes the current passcode fail with the API's message",
+      {
+        message: refused.body.message,
+      }
+    );
 
     const reloads = [];
     const watchReload = (request) => {

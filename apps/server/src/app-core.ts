@@ -7,7 +7,6 @@ import {
   AdminKeyPayload,
   AdminPersonPayload,
   CollaborationPayload,
-  GroupPasscodePayload,
   JoinPayload,
   RedeemSignInCodePayload,
   SaveSetPayload,
@@ -57,12 +56,13 @@ import {
   listDevices,
   listKeys,
   listPeople,
+  closeJoining,
+  newPasscode,
   readPasscode,
   redeemSignInCode,
   removePerson,
   revokeDevice,
   revokeKey,
-  setPasscode,
 } from "./admin.js";
 import { makeAttemptLimiter } from "./attempt-limiter.js";
 import { Audio } from "./audio-service.js";
@@ -1707,17 +1707,11 @@ export const createPortableApp = (options: {
           .handleRaw("passcode", () =>
             withFailureResponse(adminCall(readPasscode))
           )
-          .handleRaw("setPasscode", () =>
-            withFailureResponse(
-              Effect.gen(function* updatePasscode() {
-                yield* requireHost;
-                const input =
-                  yield* HttpServerRequest.schemaBodyJson(GroupPasscodePayload);
-                return yield* adminCall((storePath) =>
-                  setPasscode(storePath, input.passcode)
-                );
-              })
-            )
+          .handleRaw("newPasscode", () =>
+            withFailureResponse(adminCall(newPasscode))
+          )
+          .handleRaw("closeJoining", () =>
+            withFailureResponse(adminCall(closeJoining))
           )
       );
       const signInGroup = HttpApiBuilder.group(OrbisApi, "signIn", (handlers) =>

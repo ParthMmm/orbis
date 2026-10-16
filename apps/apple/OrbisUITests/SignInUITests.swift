@@ -6,18 +6,18 @@ import XCTest
 final class SignInUITests: XCTestCase {
   private static let codePattern =
     "^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}-[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{4}$"
+  private static let passcodePattern = "^[ABCDEFGHJKMNPQRSTUVWXYZ23456789]{12}$"
 
   private var steps: [[String: Any]] = []
 
   // MARK: - Journeys
 
-  /// A fresh install joins with the passcode the Host set, keeps its key across a relaunch,
+  /// A fresh install joins with the passcode the service made, keeps its key across a relaunch,
   /// shows a Sign-in Code for another device, has no Host sections, and signs out.
   func testANewPersonJoinsWithThePasscodeAndAddsADevice() throws {
     let host = try LaneService()
-    let passcode = "lane-\(Self.suffix())"
     let username = "journey-\(Self.suffix())"
-    try host.setPasscode(passcode)
+    let passcode = try host.newPasscode()
 
     // The key must reach the keychain, because the relaunch below reads it back.
     let app = launchOrbis(address: host.address, keychain: true)
@@ -36,7 +36,7 @@ final class SignInUITests: XCTestCase {
     XCTAssertTrue(usernameField.waitForExistence(timeout: 10))
     usernameField.tap()
     usernameField.typeText(username)
-    let passcodeField = app.secureTextFields["signin-passcode"]
+    let passcodeField = app.textFields["signin-passcode"]
     passcodeField.tap()
     passcodeField.typeText("not-the-passcode")
     app.buttons["signin-join"].tap()
@@ -50,7 +50,8 @@ final class SignInUITests: XCTestCase {
     capture("02-wrong-passcode")
     step("a wrong passcode shows the service's sentence", ["message": error.label])
 
-    replaceText(in: passcodeField, with: passcode, app: app)
+    // Pasted text often carries spaces around it; the app trims them.
+    replaceText(in: passcodeField, with: " \(passcode) ", app: app)
     app.buttons["signin-join"].tap()
     XCTAssertTrue(
       app.tabBars.buttons["Library"].waitForExistence(timeout: 30),
@@ -175,38 +176,47 @@ final class SignInUITests: XCTestCase {
     capture("unreachable-service")
   }
 
-  /// The Host's Settings shows the Group Passcode and People, changes and clears the passcode,
-  /// shows a Person's Sign-in Code, and removes a Person.
+  /// The Host's Settings shows the Group Passcode the service made, copies it, makes a new one
+  /// after asking, shows a Person's Sign-in Code, removes a Person, and closes joining.
   func testTheHostManagesThePasscodeAndPeople() throws {
     let host = try LaneService()
-    try host.setPasscode("lane-before")
+    let before = try host.newPasscode()
     let leaving = try host.addPerson("journey-leaving-\(Self.suffix())")
     let app = launchOrbis(address: host.address, token: host.token)
 
     openSettings(app)
-    let passcodeRow = app.buttons["settings-passcode-row"]
-    reveal(passcodeRow, in: app)
+    let shown = app.staticTexts["settings-passcode-row"]
+    reveal(shown, in: app)
     XCTAssertTrue(
-      passcodeRow.waitForExistence(timeout: 15), "an open Group offers a new passcode\n\(app.debugDescription)")
-    XCTAssertFalse(
-      app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'lane-before'")).firstMatch.exists,
-      "Settings never shows the passcode")
+      shown.waitForExistence(timeout: 15), "an open Group shows its passcode\n\(app.debugDescription)")
+    XCTAssertEqual(shown.label, before, "Settings shows the passcode the service holds")
+    XCTAssertNotNil(
+      shown.label.range(of: Self.passcodePattern, options: .regularExpression),
+      "the passcode is 12 characters without look-alikes or dashes: \(shown.label)")
+    XCTAssertTrue(app.buttons["settings-passcode-share"].exists, "the passcode can be shared")
+    let copy = app.buttons["settings-passcode-copy"]
+    XCTAssertTrue(copy.exists, "the passcode can be copied\n\(app.debugDescription)")
+    copy.tap()
+    XCTAssertTrue(
+      waitUntil(timeout: 5) { copy.label == "Copied" }, "copying says so: \(copy.label)")
     capture("01-host-settings")
-    step("the Host's Settings offers a new Group Passcode without showing the current one")
+    step("the Host's Settings shows the generated passcode and copies it", ["passcode": before])
 
-    passcodeRow.tap()
-    let passcode = app.secureTextFields["settings-passcode"]
-    XCTAssertTrue(passcode.waitForExistence(timeout: 10), "the passcode page offers a hidden field")
-    passcode.tap()
-    passcode.typeText("lane-after")
-    let confirmation = app.secureTextFields["settings-passcode-confirm"]
-    confirmation.tap()
-    confirmation.typeText("lane-after")
-    app.buttons["settings-passcode-save"].tap()
+    let renew = app.buttons["settings-passcode-new"]
+    reveal(renew, in: app)
+    renew.tap()
+    confirm("New Passcode", besides: "settings-passcode-new", in: app)
+    var after: String?
     XCTAssertTrue(
-      try waitUntil(timeout: 15) { try host.passcode() == "lane-after" },
-      "the new passcode reaches the service")
-    step("changing the passcode reaches the service")
+      try waitUntil(timeout: 15) {
+        after = try host.passcode()
+        return after != nil && after != before
+      }, "a new passcode reaches the service")
+    XCTAssertNotNil(after?.range(of: Self.passcodePattern, options: .regularExpression))
+    XCTAssertTrue(
+      waitUntil(timeout: 10) { shown.label == after }, "Settings shows the new passcode: \(shown.label)")
+    capture("02-new-passcode")
+    step("New Passcode asks first, then replaces the passcode", ["after": after ?? ""])
 
     let friendRow = app.buttons["person-lane-settings"]
     reveal(friendRow, in: app)
@@ -218,7 +228,7 @@ final class SignInUITests: XCTestCase {
     let code = app.staticTexts["person-sign-in-code"]
     XCTAssertTrue(code.waitForExistence(timeout: 15), "the Host can show a friend's code")
     XCTAssertNotNil(code.label.range(of: Self.codePattern, options: .regularExpression))
-    capture("02-person-sign-in-code")
+    capture("03-person-sign-in-code")
     step("the Host shows a Sign-in Code for a friend")
     app.navigationBars.buttons.element(boundBy: 0).tap()
 
@@ -241,11 +251,26 @@ final class SignInUITests: XCTestCase {
     joining.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
     XCTAssertTrue(
       try waitUntil(timeout: 15) { try host.passcode() == nil }, "closing joining clears it")
+    let state = app.staticTexts["settings-passcode-state"]
     XCTAssertTrue(
-      app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Joining is closed'"))
-        .firstMatch.waitForExistence(timeout: 10))
-    capture("03-joining-closed")
+      waitUntil(timeout: 10) { state.exists && state.label.hasPrefix("Joining is closed") },
+      "Settings says joining is closed\n\(app.debugDescription)")
+    XCTAssertFalse(shown.exists, "a closed Group shows no passcode")
+    capture("04-joining-closed")
     step("closing joining clears the passcode")
+
+    joining.coordinate(withNormalizedOffset: CGVector(dx: 0.9, dy: 0.5)).tap()
+    var reopened: String?
+    XCTAssertTrue(
+      try waitUntil(timeout: 15) {
+        reopened = try host.passcode()
+        return reopened != nil
+      }, "turning joining on makes a passcode")
+    XCTAssertTrue(
+      shown.waitForExistence(timeout: 10) && shown.label == reopened,
+      "Settings shows it: \(shown.label)")
+    capture("05-joining-reopened")
+    step("turning joining on makes a new passcode at once", ["passcode": reopened ?? ""])
     app.terminate()
     record("host")
   }

@@ -166,8 +166,10 @@ const SignIn = () => {
             <div className="flex flex-col gap-2">
               <Label htmlFor="passcode">Group Passcode</Label>
               <Input
-                autoCapitalize="none"
+                autoCapitalize="characters"
                 autoComplete="off"
+                autoCorrect="off"
+                className="font-mono tracking-widest uppercase"
                 id="passcode"
                 maxLength={100}
                 name="passcode"

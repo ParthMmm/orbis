@@ -14,3 +14,9 @@ export const formatSignInCode = (code: string): string => {
     ? `${normalized.slice(0, half)}-${normalized.slice(half)}`
     : normalized;
 };
+
+/**
+ * A Group Passcode (ADR 0020): 12 characters from the same alphabet, about 59
+ * bits, with no dashes so a double-click selects all of it.
+ */
+export const GROUP_PASSCODE_LENGTH = 12;

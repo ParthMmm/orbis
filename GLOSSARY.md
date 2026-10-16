@@ -79,11 +79,11 @@ Everyone the Host admits to one Orbis deployment. One Group per deployment.
 _Avoid_: Team, org, server
 
 **Host**:
-The Person who runs the deployment. The Host sets the Group Passcode, shows a Sign-in Code for any Person, revokes keys, and removes People.
+The Person who runs the deployment. The Host opens and closes joining, shows a Sign-in Code for any Person, revokes keys, and removes People.
 _Avoid_: Admin
 
 **Group Passcode**:
-The shared word the Host tells friends so they can join the Group without the Host. Joining is closed while none is set.
+The random code Orbis makes when the Host opens joining, which the Host tells friends so they can join the Group without the Host. Joining is closed while there is none.
 _Avoid_: Invite code, password
 
 **Sign-in Code**:
