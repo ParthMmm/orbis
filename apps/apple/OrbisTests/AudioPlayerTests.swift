@@ -191,6 +191,15 @@ final class AudioPlayerTests: XCTestCase {
   }
 
   #if !os(macOS)
+    /// Waits up to five seconds for `condition`, and fails with `message` if it never holds.
+    private func waitUntil(_ message: String, _ condition: () -> Bool) async {
+      let deadline = ContinuousClock.now + .seconds(5)
+      while !condition(), ContinuousClock.now < deadline {
+        try? await Task.sleep(for: .milliseconds(5))
+      }
+      XCTAssertTrue(condition(), message)
+    }
+
     private func interrupt(_ type: AVAudioSession.InterruptionType, shouldResume: Bool = false) {
       var info: [AnyHashable: Any] = [AVAudioSessionInterruptionTypeKey: type.rawValue]
       if shouldResume {
@@ -235,12 +244,13 @@ final class AudioPlayerTests: XCTestCase {
       XCTAssertEqual(rate(player), 1)
 
       interrupt(.began)
-      try? await Task.sleep(for: .milliseconds(50))
+      await waitUntil("the interruption did not stop the Set") { player.state == .interrupted }
       XCTAssertEqual(rate(player), 0)
       interrupt(.ended, shouldResume: true)
-      try? await Task.sleep(for: .milliseconds(50))
-      XCTAssertEqual(rate(player), 0, "the end of the interruption played before the session")
+      // Asking for the session again is the sign the end was handled, so the rate is read only
+      // once it has asked.
       await gate.waitForStart(2)
+      XCTAssertEqual(rate(player), 0, "the end of the interruption played before the session")
       gate.release()
       await player.sessionWork?.value
 
@@ -266,11 +276,9 @@ final class AudioPlayerTests: XCTestCase {
       player.rateChanged(rate: 0)
       player.stallChanged(status: .paused)
       interrupt(.began)
-      try? await Task.sleep(for: .milliseconds(50))
       interrupt(.ended, shouldResume: true)
-      try? await Task.sleep(for: .milliseconds(50))
 
-      XCTAssertEqual(player.state, .loading, "the end of the interruption did not resume")
+      await waitUntil("the end of the interruption did not resume") { player.state == .loading }
       await gate.waitForStart(2)
       gate.release()
       await player.sessionWork?.value
