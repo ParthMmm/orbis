@@ -11,6 +11,9 @@ import OrbisDesign
 /// Outcomes of a share-extension save attempt. Tests assert these without hosting an extension.
 enum ShareSaveOutcome: Equatable {
   case saved(SavedSet)
+  /// The Set is in the Library, but a step after the save failed. Saving again would only say
+  /// the Set is already there, so this is a save, with a sentence about what did not happen.
+  case savedPartly(SavedSet, message: String)
   case duplicate
   case unreachable(message: String)
   case notConfigured
@@ -50,15 +53,9 @@ enum ShareCapture {
     guard let client = client ?? settings.configuredClient(address: serviceAddress) else {
       return .notConfigured
     }
+    var saved: SavedSet
     do {
-      var saved = try await client.save(url: url.absoluteString, tags: tags)
-      if let playlistId {
-        saved = try await client.updatePlaylists(saved.id, playlistIds: [playlistId])
-      }
-      if downloadAfterSaving {
-        _ = try await client.requestAudioDownload(saved.id)
-      }
-      return .saved(saved)
+      saved = try await client.save(url: url.absoluteString, tags: tags)
     } catch let error as OrbisError {
       switch error {
       case .duplicate:
@@ -74,6 +71,23 @@ enum ShareCapture {
       preserveOnClipboard(url.absoluteString)
       return .failure(message: "Something went wrong while saving.")
     }
+    var unfinished: [String] = []
+    if let playlistId {
+      do {
+        saved = try await client.updatePlaylists(saved.id, playlistIds: [playlistId])
+      } catch {
+        unfinished.append("It was not added to the Playlist.")
+      }
+    }
+    if downloadAfterSaving {
+      do {
+        _ = try await client.requestAudioDownload(saved.id)
+      } catch {
+        unfinished.append("Its download did not start.")
+      }
+    }
+    guard !unfinished.isEmpty else { return .saved(saved) }
+    return .savedPartly(saved, message: (unfinished + ["Open Orbis to try again."]).joined(separator: " "))
   }
 
   static func preserveOnClipboard(_ text: String) {

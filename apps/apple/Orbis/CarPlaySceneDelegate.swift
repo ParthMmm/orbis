@@ -400,7 +400,10 @@
 
     @concurrent
     private nonisolated static func fetch(_ url: URL, size: CGSize, scale: CGFloat) async -> UIImage? {
-      guard let (data, _) = try? await URLSession.shared.data(from: url),
+      guard
+        let (data, response) = try? await URLSession.shared.data(
+          for: URLRequest(url: url, timeoutInterval: 15)),
+        let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
         let source = UIImage(data: data), source.size.width > 0, source.size.height > 0
       else { return nil }
       let fill = max(size.width / source.size.width, size.height / source.size.height)

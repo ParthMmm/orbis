@@ -324,6 +324,12 @@ struct ShareConfirmationView: View {
       )
       .font(.orbis.detail)
       .foregroundStyle(.secondary)
+      if let failure {
+        Label(failure, systemImage: "exclamationmark.triangle.fill")
+          .font(.orbis.detail)
+          .foregroundStyle(.secondary)
+          .multilineTextAlignment(.center)
+      }
     }
     .padding(24)
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -374,6 +380,10 @@ struct ShareConfirmationView: View {
       stage = .saved(set)
       try? await Task.sleep(for: .seconds(1.6))
       dismiss()
+    case .savedPartly(let set, let message):
+      // Held until Done, so the sentence about what did not happen is read.
+      failure = message
+      stage = .saved(set)
     case .duplicate:
       refuse(OrbisError.duplicate.message)
     case .unreachable(let message), .failure(let message):
