@@ -35,7 +35,11 @@ import {
 } from "./db/schema.js";
 import type { DatabaseClient } from "./db/service.js";
 import { Database } from "./db/service.js";
-import { LibraryError } from "./errors.js";
+import {
+  asLibraryError,
+  LibraryError,
+  logUnexpectedFailure,
+} from "./errors.js";
 import { conflict, PresenceConflict } from "./presence-conflict.js";
 import type { ConflictReason } from "./presence-conflict.js";
 import { PresenceJournal } from "./presence-journal.js";
@@ -55,10 +59,14 @@ const databaseError = () =>
   });
 const toLibraryError = <E>(error: E) =>
   error instanceof LibraryError ? error : databaseError();
-const execute = <A, E>(operation: Effect.Effect<A, E>) =>
-  operation.pipe(Effect.mapError(toLibraryError));
+const execute = asLibraryError("Could not complete the presence request.");
 const executeKeepingConflict = <A, E>(operation: Effect.Effect<A, E>) =>
   operation.pipe(
+    Effect.tapError((failure) =>
+      failure instanceof PresenceConflict
+        ? Effect.void
+        : logUnexpectedFailure(failure)
+    ),
     Effect.mapError((failure) =>
       failure instanceof PresenceConflict ? failure : toLibraryError(failure)
     )

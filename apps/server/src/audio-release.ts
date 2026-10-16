@@ -3,15 +3,8 @@ import { Effect } from "effect";
 
 import { downloadJobs, setCues, sets } from "./db/schema.js";
 import { Database } from "./db/service.js";
-import { LibraryError } from "./errors.js";
-
-const releaseError = <E>(error: E) =>
-  error instanceof LibraryError
-    ? error
-    : new LibraryError({
-        message: "Could not release audio.",
-        statusCode: 500,
-      });
+import { asLibraryError } from "./errors.js";
+import type { LibraryError } from "./errors.js";
 
 export const releaseAudio = Effect.fn("AudioRelease.release")(
   function* releaseStoredAudio(
@@ -54,5 +47,5 @@ export const releaseAudio = Effect.fn("AudioRelease.release")(
       yield* afterRelease(id);
     }
   },
-  Effect.mapError(releaseError)
+  asLibraryError("Could not release audio.")
 );

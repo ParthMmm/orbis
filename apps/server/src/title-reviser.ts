@@ -96,8 +96,11 @@ export class TitleReviser extends Context.Service<
                 orElse: () =>
                   unavailable("The title model did not answer in time."),
               }),
-              Effect.catchTag("AiError", () =>
-                unavailable("The title model did not answer.")
+              Effect.catchTag("AiError", (error) =>
+                Effect.logWarning("title model request failed").pipe(
+                  Effect.annotateLogs({ reason: error.message }),
+                  Effect.andThen(unavailable("The title model did not answer."))
+                )
               )
             );
           const title = response.value.title.trim();

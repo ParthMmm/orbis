@@ -3,20 +3,11 @@ import { Context, Effect, Layer } from "effect";
 
 import { listens } from "./db/schema.js";
 import { Database } from "./db/service.js";
-import { LibraryError } from "./errors.js";
+import { asLibraryError } from "./errors.js";
+import type { LibraryError } from "./errors.js";
 import { LibraryPerson } from "./library-person.js";
 
-const databaseError = () =>
-  new LibraryError({
-    message: "Could not complete the library request.",
-    statusCode: 500,
-  });
-
-const toLibraryError = <E>(error: E) =>
-  error instanceof LibraryError ? error : databaseError();
-
-const execute = <A, E>(operation: Effect.Effect<A, E>) =>
-  operation.pipe(Effect.mapError(toLibraryError));
+const execute = asLibraryError("Could not complete the library request.");
 
 export class Stats extends Context.Service<
   Stats,

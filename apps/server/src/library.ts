@@ -21,7 +21,7 @@ import {
   sets,
 } from "./db/schema.js";
 import { Database } from "./db/service.js";
-import { LibraryError } from "./errors.js";
+import { asLibraryError, LibraryError } from "./errors.js";
 import type { PersonRecord } from "./identity.js";
 import {
   MAX_PLAYLISTS_PER_SET,
@@ -99,8 +99,7 @@ const setCapacityError = () =>
 const toLibraryError = <E>(error: E) =>
   error instanceof LibraryError ? error : databaseError();
 
-const execute = <A, E>(operation: Effect.Effect<A, E>) =>
-  operation.pipe(Effect.mapError(toLibraryError));
+const execute = asLibraryError("Could not complete the library request.");
 
 const decodeJsonArray = (value: string) =>
   Schema.decodeUnknownEffect(JsonStringArray)(value);

@@ -477,7 +477,12 @@ export const createPortableApp = (options: {
                 ? Effect.void
                 : logDetailsFailure(set, error.reason).pipe(
                     Effect.andThen(
-                      library.recordDetailsFailure(set.id).pipe(Effect.ignore)
+                      library.recordDetailsFailure(set.id).pipe(
+                        Effect.ignore({
+                          log: "Warn",
+                          message: "set details failure not recorded",
+                        })
+                      )
                     )
                   ),
           }),

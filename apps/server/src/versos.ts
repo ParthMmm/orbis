@@ -135,8 +135,13 @@ export class Versos extends Context.Service<Versos, VersosService>()(
           ? Versos.layer({ key: key.value, url: url.value.toString() })
           : Versos.unconfigured();
       }).pipe(
-        Effect.catchTag("ConfigError", () =>
-          Effect.succeed(Versos.unconfigured())
+        Effect.catchTag("ConfigError", (failure) =>
+          Effect.logWarning(
+            "Versos settings could not be read, so tracklists are unavailable."
+          ).pipe(
+            Effect.annotateLogs({ error: String(failure) }),
+            Effect.as(Versos.unconfigured())
+          )
         )
       )
     );
