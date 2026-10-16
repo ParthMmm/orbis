@@ -85,6 +85,13 @@ struct SidebarShell: View {
         }
       )
     }
+
+    /// A heading over nothing reads as a list that failed to load, so the section waits for a
+    /// Playlist, or for the failure it has to explain.
+    private var showsPlaylistsSection: Bool {
+      if case .failed = model.playlists { return true }
+      return !model.playlistItems.isEmpty
+    }
   #else
     @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
   #endif
@@ -108,18 +115,20 @@ struct SidebarShell: View {
               .tag(Selection.destination(destination))
               .accessibilityIdentifier("sidebar-\(destination.rawValue.lowercased())")
           }
-          Section("Playlists") {
-            ForEach(model.playlistItems) { playlist in
-              PlaylistRow(
-                playlist.name,
-                count: playlist.setCount,
-                category: SetPresentation.category(for: playlist.name)
-              )
-              .tag(Selection.playlist(playlist.id))
-              .accessibilityIdentifier("playlist-\(playlist.name)")
-            }
-            if case .failed(let failure) = model.playlists {
-              playlistsErrorRow(failure)
+          if showsPlaylistsSection {
+            Section("Playlists") {
+              ForEach(model.playlistItems) { playlist in
+                PlaylistRow(
+                  playlist.name,
+                  count: playlist.setCount,
+                  category: SetPresentation.category(for: playlist.name)
+                )
+                .tag(Selection.playlist(playlist.id))
+                .accessibilityIdentifier("playlist-\(playlist.name)")
+              }
+              if case .failed(let failure) = model.playlists {
+                playlistsErrorRow(failure)
+              }
             }
           }
         }

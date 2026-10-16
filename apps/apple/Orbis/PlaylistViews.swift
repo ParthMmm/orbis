@@ -88,6 +88,10 @@ struct PlaylistsDestination: View {
             beginCreate()
           }
           .accessibilityIdentifier("playlists-empty")
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .overlay(alignment: .topLeading) {
+            MacPageTitle.slot("Playlists")?.padding()
+          }
         } else {
           playlistGrid(matchingPlaylists(items))
         }
