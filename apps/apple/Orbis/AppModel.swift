@@ -719,6 +719,29 @@ final class AppModel {
     }
   }
 
+  /// Whether a Set has a place to start over from: a saved position, or a place in the player.
+  func canPlayFromBeginning(_ set: SavedSet) -> Bool {
+    audioPlayer.currentSetId == set.id || set.playbackPositionSeconds > 0
+  }
+
+  /// Starts a Set at its first second. The Set in the player moves back there and plays, so the
+  /// Listen goes on; any other Set starts the way Play would, but not at its saved position. The
+  /// position reporter then writes the new place over the old one.
+  func playFromBeginning(_ id: String) async {
+    let inPlayer =
+      switch audioPlayer.state {
+      case .loading, .playing, .paused, .interrupted: audioPlayer.currentSetId == id
+      // A failed item cannot resume, so a Set that failed in the player starts again too.
+      case .idle, .failed: false
+      }
+    guard inPlayer else {
+      await playSet(id, startAt: 0)
+      return
+    }
+    audioPlayer.seek(to: 0)
+    audioPlayer.resume()
+  }
+
   func playCue(_ cue: Cue, in id: String) async {
     guard let seconds = cue.startSeconds else { return }
     if audioPlayer.currentSetId == id {

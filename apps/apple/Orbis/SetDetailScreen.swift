@@ -74,8 +74,10 @@ struct SetDetailScreen: View {
       VStack(spacing: 12) {
         HStack(spacing: 12) {
           playButton(set, isCurrent: isCurrent)
+          if model.canPlayFromBeginning(set) { playFromBeginningButton(set) }
           queueActions(set)
         }
+        .orbisAnimation(.playbackToggled, value: model.canPlayFromBeginning(set))
         if isCurrent {
           Transport(
             player: model.audioPlayer,
@@ -152,6 +154,24 @@ struct SetDetailScreen: View {
     .fixedSize()
   }
 
+  /// Starts a part-played Set over, beside the Resume that would pick it up. It does not stretch,
+  /// so where its share of the row cannot hold the words it is an icon and leaves Play and Play
+  /// Next their width.
+  private func playFromBeginningButton(_ set: SavedSet) -> some View {
+    Button {
+      Task { await model.playFromBeginning(set.id) }
+    } label: {
+      ViewThatFits(in: .horizontal) {
+        Label("Play from Beginning", systemImage: "backward.end.fill").fixedSize()
+        Label("Play from Beginning", systemImage: "backward.end.fill").labelStyle(.iconOnly)
+      }
+      .albumButton(fills: false)
+    }
+    .buttonStyle(.plain)
+    .help("Play from Beginning")
+    .accessibilityIdentifier("detail-play-from-beginning")
+  }
+
   /// Where a Set goes when it is not the one being started now. Both actions are offered only for
   /// a Set whose audio is kept, because a Set that cannot play cannot be queued either.
   private func queueActions(_ set: SavedSet) -> some View {
@@ -199,14 +219,15 @@ private struct ResumeProgress: View {
 }
 
 extension View {
-  /// The grey button an album page lays two of side by side, its words in the tint.
-  fileprivate func albumButton() -> some View {
+  /// The grey button an album page lays side by side with others, its words in the tint. One
+  /// that does not fill is only as wide as its label.
+  fileprivate func albumButton(fills: Bool = true) -> some View {
     font(.body.weight(.semibold))
       .foregroundStyle(Color.orbis.tint)
       // Inset, so a label that only just fits gives way to its shorter form rather than
       // running to the button's edges.
       .padding(.horizontal, 12)
-      .frame(maxWidth: .infinity, minHeight: 48)
+      .frame(minWidth: 48, maxWidth: fills ? .infinity : nil, minHeight: 48)
       .background(Color.orbis.paperRaised, in: .rect(cornerRadius: Radius.row))
       .contentShape(.rect(cornerRadius: Radius.row))
   }

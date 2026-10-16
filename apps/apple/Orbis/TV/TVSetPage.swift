@@ -116,6 +116,15 @@
       HStack(spacing: 20) {
         if set.downloadState == "ready" {
           playButton(set)
+          if model.canPlayFromBeginning(set) {
+            Button {
+              Task { await model.playFromBeginning(set.id) }
+            } label: {
+              Label("Play from Beginning", systemImage: "backward.end.fill")
+            }
+            .buttonStyle(.glass)
+            .accessibilityIdentifier("detail-play-from-beginning")
+          }
           Button {
             Task { await model.playNext(set.id) }
           } label: {
