@@ -219,11 +219,9 @@ export class MediaStore extends Context.Service<
             onProgress(next, Number.isFinite(total) ? total : null);
             return yield* drain(reader, next);
           });
-        try {
-          yield* drain(response.body.getReader(), 0);
-        } finally {
-          writer.end();
-        }
+        yield* drain(response.body.getReader(), 0).pipe(
+          Effect.ensuring(Effect.sync(() => writer.end()))
+        );
       }
     );
     const storeDownloaded = Effect.fn("MediaStore.storeDownloaded")(
