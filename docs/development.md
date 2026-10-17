@@ -100,6 +100,12 @@ The `Orbis` scheme is iOS and macOS; the `OrbisTV` scheme builds the same app fo
 
 Full and unit lanes run `bun run native:format` first. Journeys-only and `--only` runs leave that check to unit lanes and CI. The style command checks Swift sources with the Xcode toolchain's swift-format against `apps/apple/.swift-format`. swift-format ships with Xcode, so the native style gate needs no install. The check writes nothing; to fix drift, run `xcrun swift-format format --in-place` on the changed files.
 
+The player writes what it does to the unified log under subsystem `app.orbis`, category `player`: each play with its start and the service's length, item readiness and failures with the stream's error log, waits with their reason, stalls, and every seek with where it landed. A Set's id is hashed and titles, addresses and the token are never written. Follow it on a Mac, or a device attached to one, with:
+
+```sh
+log stream --level debug --predicate 'subsystem == "app.orbis" AND category == "player"'
+```
+
 The runner prints its screenshot directory, defaulting to `orbis-lane-shots` in the host's system temporary directory. Set `--out <unique-directory>` to choose it. Successful exports include `xcodebuild.log`, `lane.json`, attachments, and worker manifests. Follow [evidence retention](#retain-verification-evidence) before another run replaces the result bundle. For manual checks, read [UI verification](agents/ui-verification.md).
 
 ## Releases

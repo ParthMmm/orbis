@@ -803,6 +803,19 @@ final class AppModel {
   /// Listen goes on; any other Set starts the way Play would, but not at its saved position. The
   /// position reporter then writes the new place over the old one.
   func playFromBeginning(_ id: String) async {
+    await play(id, from: 0)
+  }
+
+  /// Plays a Set from a Cue's start. A tap on a track means hear it, so a paused Set plays too,
+  /// and one that failed in the player starts again there rather than ignoring the tap.
+  func playCue(_ cue: Cue, in id: String) async {
+    guard let seconds = cue.startSeconds else { return }
+    await play(id, from: seconds)
+  }
+
+  /// Moves the Set in the player to a position and plays it, so the Listen goes on; any other Set,
+  /// or one the player cannot resume, starts there the way Play would.
+  private func play(_ id: String, from seconds: TimeInterval) async {
     let inPlayer =
       switch audioPlayer.state {
       case .loading, .playing, .paused, .interrupted: audioPlayer.currentSetId == id
@@ -810,20 +823,11 @@ final class AppModel {
       case .idle, .failed: false
       }
     guard inPlayer else {
-      await playSet(id, startAt: 0)
+      await playSet(id, startAt: seconds)
       return
     }
-    audioPlayer.seek(to: 0)
+    audioPlayer.seek(to: seconds)
     audioPlayer.resume()
-  }
-
-  func playCue(_ cue: Cue, in id: String) async {
-    guard let seconds = cue.startSeconds else { return }
-    if audioPlayer.currentSetId == id {
-      audioPlayer.seek(to: seconds)
-    } else {
-      await playSet(id, startAt: seconds)
-    }
   }
 
   private func attachTracklist(to set: SavedSet) {
