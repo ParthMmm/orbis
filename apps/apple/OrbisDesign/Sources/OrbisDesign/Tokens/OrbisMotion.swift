@@ -119,7 +119,7 @@ private struct OrbisReduceMotionKey: EnvironmentKey {
 }
 
 extension EnvironmentValues {
-  fileprivate var orbisReduceMotion: Bool? {
+  var orbisReduceMotion: Bool? {
     get { self[OrbisReduceMotionKey.self] }
     set { self[OrbisReduceMotionKey.self] = newValue }
   }
