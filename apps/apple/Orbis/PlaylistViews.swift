@@ -448,6 +448,7 @@ struct PlaylistDetailView: View {
           togglePlayback: { model.togglePlayback(set.id) },
           select: { model.openSet(set.id) }
         )
+        .zoomsSetPage(set.id)
         .accessibilityIdentifier("playlist-member-\(set.id)")
         .swipeActions(edge: .trailing, allowsFullSwipe: true) {
           Button("Remove", role: .destructive) {
