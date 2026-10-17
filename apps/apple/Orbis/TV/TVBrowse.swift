@@ -125,11 +125,11 @@
   }
 
   /// Tags as glass chips a swipe runs along. Pressing one is what the caller decides: a filter on
-  /// the Library, or a jump to it.
+  /// the Library, or a jump to it. Several can be selected, since a Library filter combines them.
   struct TVTagChips: View {
     let tags: [String]
     let counts: [String: Int]
-    var selected: String?
+    var selected: [String] = []
     var identifierPrefix = "tv-tag"
     var hint: String?
     var verticalInset: CGFloat = 24
@@ -153,7 +153,7 @@
     /// One style per chip, varied by tint: a press must not rebuild the button the focus is on.
     private func chip(_ tag: String) -> some View {
       let category = SetPresentation.category(for: tag)
-      let isSelected = tag == selected
+      let isSelected = selected.contains(tag)
       let count = counts[tag]
       return Button {
         press(tag)
@@ -207,8 +207,8 @@
     }
   }
 
-  /// The Library: the Tags to filter by, then every Set as a tile, in the order the person chose
-  /// on their other devices.
+  /// The Library: the Tags to filter by, combined when more than one is chosen, then every Set as
+  /// a tile, in the order the person chose on their other devices.
   struct TVLibrary: View {
     @Bindable var model: AppModel
 
@@ -227,10 +227,10 @@
         VStack(alignment: .leading, spacing: 32) {
           if !model.availableTags.isEmpty {
             TVTagChips(
-              tags: model.availableTags, counts: model.tagCounts, selected: model.activeTags.first,
-              hint: "Filters the library"
+              tags: model.availableTags, counts: model.tagCounts, selected: model.activeTags,
+              hint: "Adds to the library filter, or takes it out"
             ) { tag in
-              model.setTagFilter(model.activeTags == [tag] ? nil : tag)
+              model.toggleTagFilter(tag)
             }
           }
           if let creator = model.activeCreator {
@@ -560,6 +560,39 @@
       .map { $0 }
     }
 
+    /// The recent combinations of Tags the library still holds. A single Tag is already a chip in
+    /// the Tags row.
+    private var recentFilters: [[String]] {
+      model.recentTagFilters.filter { $0.count > 1 && $0.allSatisfy { model.tagCounts[$0] != nil } }
+    }
+
+    private var recentFilterChips: some View {
+      ScrollView(.horizontal) {
+        GlassEffectContainer(spacing: 20) {
+          HStack(spacing: 20) {
+            ForEach(Array(recentFilters.enumerated()), id: \.element) { index, tags in
+              Button {
+                model.showTags(tags)
+              } label: {
+                Label {
+                  Text(tags.joined(separator: " + "))
+                } icon: {
+                  Circle().fill(SetPresentation.category(for: tags[0]).dot).frame(width: 12, height: 12)
+                }
+              }
+              .buttonStyle(.glass)
+              .accessibilityLabel(tags.joined(separator: " and "))
+              .accessibilityHint("Shows the library filtered by these tags")
+              .accessibilityIdentifier("search-recent-filter-\(index)")
+            }
+          }
+        }
+        .padding(.vertical, 24)
+      }
+      .scrollClipDisabled()
+      .focusSection()
+    }
+
     private var topResult: SavedSet? {
       if case .loaded(let sets) = model.search { sets.first } else { nil }
     }
@@ -593,15 +626,17 @@
       VStack(alignment: .leading, spacing: 32) {
         ListingLabel(
           model.totalCount == 1 ? "Search your 1 set." : "Search your \(model.totalCount) sets.")
+        if !recentFilters.isEmpty {
+          SectionHeading("Recent filters")
+          recentFilterChips
+        }
         if !model.availableTags.isEmpty {
           SectionHeading("Tags")
           TVTagChips(
             tags: model.availableTags, counts: model.tagCounts, identifierPrefix: "search-tag",
             hint: "Shows the library filtered by this tag"
           ) { tag in
-            model.setTagFilter(tag)
-            model.openedSets[.library] = nil
-            model.destination = .library
+            model.showTag(tag)
           }
         }
         if !creators.isEmpty {

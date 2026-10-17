@@ -71,9 +71,7 @@
                   tags: set.tags, counts: [:], identifierPrefix: "detail-tag",
                   hint: "Shows the library filtered by this tag", verticalInset: 0
                 ) { tag in
-                  model.setTagFilter(tag)
-                  model.openedSets[.library] = nil
-                  model.destination = .library
+                  model.showTag(tag)
                 }
               }
               actions(set)

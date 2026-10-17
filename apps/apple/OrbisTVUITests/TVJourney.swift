@@ -1,7 +1,8 @@
 import XCTest
 
-/// The TV's journey: launch signed in, walk the tabs with the Siri Remote, open a Set, play it,
-/// read Now Playing, skip forward, and open Up Next. Every screen is captured.
+/// The TV's journey: launch signed in, walk the tabs with the Siri Remote, turn on Share with
+/// Group from People, open a Set, play it, read Now Playing, skip forward, and open Up Next.
+/// Every screen is captured.
 ///
 /// Playback is proven by what the screen says, never by sound: the lane seeds silent audio, and
 /// the app is terminated when the test ends so nothing keeps playing.
@@ -44,7 +45,25 @@ final class TVJourney: XCTestCase {
       "Playlists must show the seeded folder\n\(app.debugDescription)")
     capture("tv-playlists")
 
+    // The lane's Person starts with Social off, so People is the invite; its one button turns
+    // Social on, and the invite gives way to the Group.
     remote.press(.right)
+    XCTAssertTrue(app.descendants(matching: .any)["tv-people"].waitForExistence(timeout: 15))
+    let turnOn = app.buttons["social-turn-on"]
+    XCTAssertTrue(
+      turnOn.waitForExistence(timeout: 30), "People must invite a Person with Social off\n\(app.debugDescription)")
+    capture("tv-people-invite")
+    XCTAssertTrue(moveFocus(to: turnOn, pressing: .down, limit: 3), "Share with Group must take focus")
+    remote.press(.select)
+    XCTAssertTrue(
+      waitUntil(timeout: 30) { !app.descendants(matching: .any)["social-invite"].exists },
+      "Turning Social on must replace the invite with the Group\n\(app.debugDescription)")
+    XCTAssertTrue(app.descendants(matching: .any)["tv-people"].waitForExistence(timeout: 10))
+    capture("tv-people")
+
+    let searchTab = app.tabBars.buttons["Search"]
+    XCTAssertTrue(pressUntil(.up, limit: 4) { app.tabBars.buttons.allElementsBoundByIndex.contains { $0.hasFocus } })
+    XCTAssertTrue(pressUntil(.right, limit: 4) { searchTab.hasFocus }, "The bar must reach Search")
     XCTAssertTrue(app.descendants(matching: .any)["tv-search"].waitForExistence(timeout: 15))
     // The system lays its keyboard out a moment after the tab lands, and the page under it is
     // drawn once focus moves down into it; the lane's Tag is the chip that says it is there.
@@ -151,7 +170,11 @@ final class TVJourney: XCTestCase {
     XCTAssertTrue(app.descendants(matching: .any)["tv-home"].waitForExistence(timeout: 15))
     let hero = app.buttons["home-hero-\(seeded.id)"]
     XCTAssertTrue(hero.waitForExistence(timeout: 15), "Home must lead with the seeded Set\n\(app.debugDescription)")
-    XCTAssertTrue(moveFocus(to: hero, pressing: .down, limit: 4), "The hero must take focus")
+    // Focus comes down onto the hero's Play, and its artwork is at the end of the same row.
+    let heroPlay = app.buttons["home-hero-play"]
+    XCTAssertTrue(
+      pressUntil(.down, limit: 4) { heroPlay.hasFocus || hero.hasFocus }, "The hero must take focus")
+    XCTAssertTrue(moveFocus(to: hero, pressing: .right, limit: 4), "The hero's artwork must take focus")
     remote.press(.select)
     XCTAssertTrue(
       app.descendants(matching: .any)["tv-set-page"].waitForExistence(timeout: 15),
