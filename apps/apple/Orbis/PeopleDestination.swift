@@ -65,6 +65,7 @@ struct PeopleDestination: View {
         } else {
           listeningNow
           group
+          GroupLibrarySection(model: model, people: people)
         }
         if let failure = people.failure {
           Text(failure.message)
