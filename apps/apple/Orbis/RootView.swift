@@ -686,6 +686,7 @@ struct DestinationView: View {
 /// takes its light from the lead Set's artwork, so the glass on it has colour to bend.
 struct HomeRails: View {
   @Bindable var model: AppModel
+  @Environment(\.openURL) private var openURL
   @Environment(\.setZoom) private var zoom
 
   /// The page's own padding, matched so a rail's first card lines up with the list under it.
@@ -741,6 +742,49 @@ struct HomeRails: View {
     )
   }
 
+  /// What a long press on a card offers: the same play, queue, and source actions as a Library
+  /// row, so a Set reads the same wherever it is held.
+  @ViewBuilder private func cardMenu(_ set: SavedSet, place: String) -> some View {
+    let isCurrent = model.audioPlayer.currentSetId == set.id
+    if let playback = SetPresentation.playback(
+      of: set, currentSetId: model.audioPlayer.currentSetId,
+      isPlaying: isCurrent && model.audioPlayer.state == .playing)
+    {
+      Button(playback.label, systemImage: playback.symbol) { model.togglePlayback(set.id) }
+      if !isCurrent {
+        Button("Play Next", systemImage: "text.line.first.and.arrowtriangle.forward") {
+          Task { await model.playNext(set.id) }
+        }
+        Button("Add to Queue", systemImage: "text.line.last.and.arrowtriangle.forward") {
+          Task { await model.addToQueue(set.id) }
+        }
+      }
+    }
+    Button("Details", systemImage: "info.circle") {
+      zoom?.open(from: place)
+      model.openSet(set.id)
+    }
+    if let link = SetPresentation.sourceURL(set) {
+      Button("Open Source", systemImage: "safari") { openURL(link) }
+    }
+  }
+
+  /// The card lifted out under the finger, at a size where the artwork can be read.
+  private func cardPreview(_ set: SavedSet) -> some View {
+    VStack(alignment: .leading, spacing: 10) {
+      Artwork(url: SetPresentation.pageArtwork(set), seed: set.title, size: .header)
+      VStack(alignment: .leading, spacing: 2) {
+        Text(set.title).font(.headline).lineLimit(2)
+        if let creator = set.creator {
+          Text(creator).font(.subheadline).foregroundStyle(.secondary)
+        }
+      }
+    }
+    .padding(14)
+    .frame(width: 300)
+    .background(Color.orbis.paperRaised)
+  }
+
   private var continueCards: some View {
     ForEach(home.continueRail) { set in
       Button {
@@ -752,6 +796,11 @@ struct HomeRails: View {
       }
       .buttonStyle(.orbisPressable)
       .accessibilityIdentifier("continue-card-\(set.id)")
+      .contextMenu {
+        cardMenu(set, place: "continue")
+      } preview: {
+        cardPreview(set)
+      }
     }
   }
 
@@ -769,6 +818,11 @@ struct HomeRails: View {
       }
       .buttonStyle(.orbisPressable)
       .accessibilityIdentifier("recent-card-\(set.id)")
+      .contextMenu {
+        cardMenu(set, place: "recent")
+      } preview: {
+        cardPreview(set)
+      }
     }
   }
 

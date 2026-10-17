@@ -30,6 +30,20 @@ public struct MiniPlayer: View {
   public let next: (() -> Void)?
   public let open: () -> Void
 
+  #if os(iOS)
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
+  #endif
+
+  /// Squeezed in beside the tab bar after it shrinks on scroll. There is room for the title and
+  /// the one control that matters, so the second line and Next step aside.
+  private var isInline: Bool {
+    #if os(iOS)
+      placement == .inline
+    #else
+      false
+    #endif
+  }
+
   public init(
     title: String, subtitle: String? = nil, artwork: URL? = nil, isPlaying: Bool,
     progress: Double? = nil, surface: Surface = .floating, transition: Namespace.ID? = nil,
@@ -68,7 +82,7 @@ public struct MiniPlayer: View {
               .lineLimit(1)
               .contentTransition(.opacity)
               .orbisAnimation(.cueChanged, value: subtitle)
-            if subtitle != nil {
+            if subtitle != nil, !isInline {
               Text(title)
                 .font(.footnote)
                 .foregroundStyle(.secondary)
@@ -92,15 +106,17 @@ public struct MiniPlayer: View {
       .foregroundStyle(.primary)
       .accessibilityLabel(Self.toggleLabel(isPlaying: isPlaying))
       .accessibilityIdentifier("mini-player-toggle")
-      Button("Next track", systemImage: "forward.fill") { next?() }
-        .labelStyle(.iconOnly)
-        .font(.title3)
-        .buttonStyle(.orbisIcon)
-        .disabled(next == nil)
-        .accessibilityIdentifier("mini-player-next")
+      if !isInline {
+        Button("Next track", systemImage: "forward.fill") { next?() }
+          .labelStyle(.iconOnly)
+          .font(.title3)
+          .buttonStyle(.orbisIcon)
+          .disabled(next == nil)
+          .accessibilityIdentifier("mini-player-next")
+      }
     }
     .padding(.horizontal, 8)
-    .frame(height: 60)
+    .frame(height: isInline ? nil : 60)
     .overlay(alignment: .bottom) {
       if Artwork.showsProgress(progress), let progress {
         GeometryReader { proxy in

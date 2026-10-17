@@ -75,6 +75,7 @@ public struct SetCard: View {
               .padding(6)
           }
         }
+        .artworkTilt(cornerRadius: Artwork.Size.card.radius)
       VStack(alignment: .leading, spacing: 1) {
         Text(title)
           .font(.subheadline.weight(.medium))

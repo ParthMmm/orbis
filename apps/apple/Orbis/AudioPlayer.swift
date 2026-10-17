@@ -145,7 +145,8 @@ final class AudioPlayer {
     let center = MPRemoteCommandCenter.shared()
     let commands = [
       center.playCommand, center.pauseCommand, center.togglePlayPauseCommand,
-      center.skipBackwardCommand, center.skipForwardCommand,
+      center.skipBackwardCommand, center.skipForwardCommand, center.changePlaybackPositionCommand,
+      center.nextTrackCommand, center.previousTrackCommand,
     ]
     for command in commands {
       for target in commandTargets { command.removeTarget(target) }
@@ -879,7 +880,30 @@ final class AudioPlayer {
       return .success
     }
     center.skipForwardCommand.isEnabled = true
-    commandTargets = [play, pause, toggle, back, ahead]
+    // Dragging the scrubber on the Lock Screen, in Control Center, or in the Dynamic Island.
+    let scrub = center.changePlaybackPositionCommand.addTarget { [weak self] event in
+      guard let self, let event = event as? MPChangePlaybackPositionCommandEvent else {
+        return .commandFailed
+      }
+      self.seek(to: event.positionTime)
+      return .success
+    }
+    center.changePlaybackPositionCommand.isEnabled = true
+    // Next and previous, from AirPods, headphones, and the car, step through the Cues. A Set
+    // without a timed Tracklist has nothing to step between, so they skip like the buttons do.
+    let next = center.nextTrackCommand.addTarget { [weak self] _ in
+      guard let self else { return .noSuchContent }
+      self.canSkipCues ? self.skipToNextCue() : self.skip(by: Self.skipAhead)
+      return .success
+    }
+    center.nextTrackCommand.isEnabled = true
+    let previous = center.previousTrackCommand.addTarget { [weak self] _ in
+      guard let self else { return .noSuchContent }
+      self.canSkipCues ? self.skipToPreviousCue() : self.skip(by: -Self.skipBack)
+      return .success
+    }
+    center.previousTrackCommand.isEnabled = true
+    commandTargets = [play, pause, toggle, back, ahead, scrub, next, previous]
   }
 
   static let skipBack: TimeInterval = 15
