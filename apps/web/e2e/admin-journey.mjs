@@ -38,7 +38,7 @@ const callApi = async (pathname, key) => {
 };
 
 const tryJoin = async (page, username, value) => {
-  const form = page.getByRole("form", { name: "Join Orbis" });
+  const form = page.getByRole("form", { name: "Join with the Group Passcode" });
   const answer = await submitForm(form, "/sign-in/join", {
     "Group Passcode": value,
     Username: username,
@@ -260,7 +260,7 @@ try {
     await shot("people");
     const recovered = await freshBrowser();
     const codeForm = recovered.page.getByRole("form", {
-      name: "Sign in with a code",
+      name: "Sign in with a login code",
     });
     await codeForm.getByLabel("Sign-in Code").fill(code);
     await codeForm.getByRole("button", { name: "Sign in" }).click();

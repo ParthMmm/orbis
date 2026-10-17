@@ -188,7 +188,9 @@ try {
     const newDevice = await browser.newContext();
     const other = await newDevice.newPage();
     await other.goto(webUrl);
-    const codeForm = other.getByRole("form", { name: "Sign in with a code" });
+    const codeForm = other.getByRole("form", {
+      name: "Sign in with a login code",
+    });
     await codeForm
       .getByLabel("Sign-in Code")
       .fill(code.toLowerCase().replace("-", " "));
@@ -208,7 +210,9 @@ try {
     const thirdDevice = await browser.newContext();
     const third = await thirdDevice.newPage();
     await third.goto(webUrl);
-    const thirdForm = third.getByRole("form", { name: "Sign in with a code" });
+    const thirdForm = third.getByRole("form", {
+      name: "Sign in with a login code",
+    });
     const reused = await submitForm(thirdForm, "/sign-in/code", {
       "Sign-in Code": code,
     });

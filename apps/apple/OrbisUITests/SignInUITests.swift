@@ -23,8 +23,8 @@ final class SignInUITests: XCTestCase {
     let app = launchOrbis(address: host.address, keychain: true)
 
     let new = app.buttons["signin-new"]
-    XCTAssertTrue(new.waitForExistence(timeout: 30), "a fresh install must offer I'm New")
-    XCTAssertTrue(app.buttons["signin-have-code"].exists, "and I Have a Code")
+    XCTAssertTrue(new.waitForExistence(timeout: 30), "a fresh install must offer I Have a Group Passcode")
+    XCTAssertTrue(app.buttons["signin-have-code"].exists, "and I Have a Login Code")
     XCTAssertEqual(
       app.textFields.count + app.secureTextFields.count, 0,
       "the first screen asks for no address, key, or device name\n\(app.debugDescription)")

@@ -88,7 +88,7 @@
         Text("Devices")
       } footer: {
         if settings.code != nil {
-          Text("On the new device, choose I Have a Code and type this.")
+          Text("On the new device, choose I Have a Login Code and type this.")
         }
       }
     }
