@@ -14,7 +14,7 @@ final class GroupLibraryModel {
     /// When its newest saver saved it.
     var savedAt: Date
 
-    var id: String { set.id }
+    var id: String { self.set.id }
   }
 
   struct Content: Equatable {
@@ -282,9 +282,7 @@ struct GroupLibraryScreen: View {
         case .loaded(let content):
           chips(content)
           if !content.missing.isEmpty {
-            Text(
-              "Could not read \(ListFormatter.localizedString(byJoining: content.missing.map(\.username)))’s Library just now. Pull to try again."
-            )
+            Text(missingNote(content.missing))
             .font(.footnote)
             .foregroundStyle(.secondary)
           }
@@ -377,6 +375,11 @@ struct GroupLibraryScreen: View {
         }
       }
     }
+  }
+
+  private func missingNote(_ missing: [PersonFilters]) -> String {
+    let names = ListFormatter.localizedString(byJoining: missing.map(\.username))
+    return "Could not read \(names)’s Library just now. Pull to try again."
   }
 
   private var listTitle: String {
