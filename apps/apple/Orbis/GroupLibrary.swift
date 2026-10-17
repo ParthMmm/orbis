@@ -283,8 +283,8 @@ struct GroupLibraryScreen: View {
           chips(content)
           if !content.missing.isEmpty {
             Text(missingNote(content.missing))
-            .font(.footnote)
-            .foregroundStyle(.secondary)
+              .font(.footnote)
+              .foregroundStyle(.secondary)
           }
           if only == nil, query.isEmpty, !inCommon.isEmpty {
             savedByMore
