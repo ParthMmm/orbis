@@ -1,11 +1,23 @@
 import AVFoundation
 import MediaPlayer
+import os
 
 #if os(macOS)
   import AppKit
 #else
   import UIKit
 #endif
+
+/// What the player did and why, in Console under `app.orbis` / `player`. Positions, states and
+/// error codes are public; a Set's id is hashed so two lines can be matched without naming it,
+/// and titles, addresses and the token are never written.
+private let logger = Logger(subsystem: "app.orbis", category: "player")
+
+/// A position or length for a log line, to a tenth of a second; "unknown" when there is none.
+private func clock(_ seconds: TimeInterval?) -> String {
+  guard let seconds, seconds.isFinite else { return "unknown" }
+  return String(format: "%.1fs", seconds)
+}
 
 /// Plays one Set's retained audio, streamed from the service with the device token.
 ///
@@ -63,13 +75,23 @@ final class AudioPlayer {
   private(set) var player: AVPlayer?
   private var timeObserver: Any?
   private var statusObservation: NSKeyValueObservation?
+  private var durationObservation: NSKeyValueObservation?
   private var rateObservation: NSKeyValueObservation?
   private var stallObservation: NSKeyValueObservation?
+
+  /// The Set's length as the service measured it, used until the item reports its own. Some
+  /// streams never do (an Ogg file, a VBR MP3 without a header), and a seek bar with no length
+  /// cannot be dragged.
+  private var serviceDuration: TimeInterval?
 
   /// Where a resumed Set should start once its item is ready. AVPlayer refuses a seek before the
   /// item knows its own timeline, so the position waits here until it does.
   private var pendingSeek: TimeInterval?
   private var isSeeking = false
+  /// Which seek is the newest. A seek that a later one interrupts still calls back, unfinished,
+  /// and must not end the wait for the later one: a tick in between would put the old position
+  /// back on the bar.
+  @ObservationIgnored private var latestSeek = 0
 
   /// Called with the Set that has just played to its natural end, so the caller can finish its
   /// Listen and start whatever the Listening Queue holds next. Nothing is called when playback
@@ -244,11 +266,17 @@ final class AudioPlayer {
       do {
         try session.setCategory(.playback, mode: .default)
       } catch {
+        logger.error("Audio session category refused: \(Self.describe(error), privacy: .public)")
         return false
       }
       if #available(iOS 27.0, tvOS 27.0, *) {
         return await withCheckedContinuation { continuation in
-          session.activate(options: []) { activated, _ in
+          session.activate(options: []) { activated, error in
+            if !activated {
+              logger.error(
+                "Audio session did not activate: \(error.map(Self.describe) ?? "no error", privacy: .public)"
+              )
+            }
             continuation.resume(returning: activated)
           }
         }
@@ -257,6 +285,7 @@ final class AudioPlayer {
         try session.setActive(true)
         return true
       } catch {
+        logger.error("Audio session did not activate: \(Self.describe(error), privacy: .public)")
         return false
       }
     #endif
@@ -287,11 +316,17 @@ final class AudioPlayer {
     currentArtist = set.creator
     cues = []
     currentArtwork = nil
-    elapsed = startAt
+    serviceDuration = set.durationSeconds.flatMap { $0 > 0 ? TimeInterval($0) : nil }
+    duration = serviceDuration
+    // A saved position at or past the end would finish the Set the moment it began, so such a Set
+    // starts over instead.
+    let start = Self.startPosition(startAt, duration: serviceDuration)
+    elapsed = start
     isSeeking = false
-    pendingSeek = startAt > 0 ? startAt : nil
-    duration = nil
+    pendingSeek = start > 0 ? start : nil
     state = .loading
+    let span = "from \(clock(start)) of \(clock(serviceDuration))"
+    logger.info("Play \(set.id, privacy: .private(mask: .hash)) \(span, privacy: .public)")
     // The asset is the Set's own audio file, not the service root: loading the
     // root answers 404 and the player fails without ever asking for audio.
     let item = AVPlayerItem(
@@ -311,7 +346,17 @@ final class AudioPlayer {
         guard let self, self.playbackGeneration == generation,
           let item = self.player?.currentItem
         else { return }
-        self.itemStatusChanged(status: item.status, durationSeconds: item.duration.seconds)
+        self.itemStatusChanged(item)
+      }
+    }
+    // The item can learn its length after it is ready, or revise it once more of a stream has
+    // arrived; the seek bar follows.
+    durationObservation = item.observe(\.duration, options: [.new]) { [weak self] _, _ in
+      Task { @MainActor in
+        guard let self, self.playbackGeneration == generation,
+          let item = self.player?.currentItem
+        else { return }
+        self.durationChanged(item.duration.seconds)
       }
     }
     rateObservation = player.observe(\.rate, options: [.new]) { [weak self] _, _ in
@@ -325,6 +370,7 @@ final class AudioPlayer {
       Task { @MainActor in
         guard let self, self.playbackGeneration == generation, let player = self.player
         else { return }
+        self.logWaiting(player)
         self.stallChanged(status: player.timeControlStatus)
       }
     }
@@ -333,6 +379,9 @@ final class AudioPlayer {
       queue: .main
     ) { [weak self] time in
       let seconds = time.seconds
+      // Before the item has a timeline the player can report an invalid time, which would put
+      // nonsense on the clock and the bar.
+      guard seconds.isFinite else { return }
       // Registered on the main queue, so this closure is already on the main actor; assuming it
       // avoids a task on every tick.
       MainActor.assumeIsolated {
@@ -346,6 +395,7 @@ final class AudioPlayer {
       }
     }
     observeCompletion(of: item, generation: generation)
+    observeFailures(of: item, generation: generation)
     observeInterruptions()
     // The screen already reads as loading, so the sound can wait for the session rather than
     // the screen waiting for both.
@@ -379,6 +429,7 @@ final class AudioPlayer {
         self.wantsSound
       else { return }
       guard started else {
+        logger.error("Playback not started: the audio session is unavailable")
         self.player?.pause()
         self.state = .failed("Audio could not start on this device.")
         self.publishNowPlaying(isPlaying: false)
@@ -420,6 +471,7 @@ final class AudioPlayer {
   /// Quiets the Set and records that the person asked for quiet, so a session start still in
   /// flight does not play it when it lands.
   func pause() {
+    logger.debug("Pause from \(String(describing: self.state), privacy: .public)")
     player?.pause()
     if wantsSound || state == .interrupted {
       state = .paused
@@ -431,7 +483,11 @@ final class AudioPlayer {
   /// before the session is up, or after a failure or interruption took it down, still has one.
   /// An item that failed to load has nothing to resume; the caller starts the Set again.
   func resume() {
-    guard let item = player?.currentItem, item.status != .failed else { return }
+    guard let item = player?.currentItem, item.status != .failed else {
+      logger.notice("Resume ignored: no playable item")
+      return
+    }
+    logger.debug("Resume from \(String(describing: self.state), privacy: .public)")
     switch state {
     case .paused, .interrupted, .failed:
       // Now Playing turns to playing when the sound does, in `startPlayback()`.
@@ -452,20 +508,25 @@ final class AudioPlayer {
     }
   }
 
+  /// Moves the playhead. An item that is ready moves now; one still loading keeps the position
+  /// and moves once it is ready, whether or not it has reported a length by then. Waiting for
+  /// the length instead stranded the seek on a stream that never reports one: the bar froze at
+  /// the target and the sound never moved.
   func seek(to seconds: TimeInterval) {
-    guard let duration, duration.isFinite else {
-      guard player != nil, wantsSound || state == .paused || state == .interrupted else {
-        return
-      }
-      let target = max(seconds, 0)
+    guard let player, let item = player.currentItem, state != .idle else {
+      logger.notice("Seek to \(clock(seconds), privacy: .public) ignored: nothing in the player")
+      return
+    }
+    let target = duration.map { min(max(seconds, 0), $0) } ?? max(seconds, 0)
+    elapsed = target
+    guard item.status == .readyToPlay else {
+      logger.debug("Seek to \(clock(target), privacy: .public) held until the item is ready")
       pendingSeek = target
-      elapsed = target
       publishNowPlaying(isPlaying: false)
       return
     }
-    let clamped = min(max(seconds, 0), duration)
-    move(to: clamped)
-    elapsed = clamped
+    pendingSeek = nil
+    move(to: target)
     publishNowPlaying(isPlaying: state == .playing)
   }
 
@@ -475,6 +536,7 @@ final class AudioPlayer {
   /// Jumps to the start of the next Cue. Past the last one there is nowhere to go.
   func skipToNextCue() {
     guard let start = nextCue?.startSeconds else { return }
+    logger.debug("Next track at \(clock(start), privacy: .public)")
     seek(to: start)
   }
 
@@ -506,9 +568,15 @@ final class AudioPlayer {
     artworkFetch = nil
     currentArtwork = nil
     cues = []
+    if player != nil {
+      logger.debug("Stop at \(clock(self.elapsed), privacy: .public)")
+    }
     player?.pause()
     dropPlayerObservers()
     player = nil
+    pendingSeek = nil
+    isSeeking = false
+    serviceDuration = nil
     for observer in observers {
       NotificationCenter.default.removeObserver(observer)
     }
@@ -525,13 +593,18 @@ final class AudioPlayer {
     }
   }
 
-  private func itemStatusChanged(status: AVPlayerItem.Status, durationSeconds: Double) {
-    switch status {
+  private func itemStatusChanged(_ item: AVPlayerItem) {
+    switch item.status {
     case .readyToPlay:
-      duration = durationSeconds.isFinite ? durationSeconds : nil
+      let reported = item.duration.seconds
+      let service = clock(serviceDuration)
+      logger.info("Item ready; length \(clock(reported), privacy: .public), service says \(service, privacy: .public)")
+      durationChanged(reported)
       applyPendingSeek()
       publishNowPlaying(isPlaying: wantsSound)
     case .failed:
+      let detail = (item.error.map(Self.describe) ?? "no error") + Self.lastErrorLogEntry(of: item)
+      logger.error("Item failed: \(detail, privacy: .public)")
       state = .failed("This audio would not play.")
       publishNowPlaying(isPlaying: false)
     case .unknown:
@@ -541,6 +614,28 @@ final class AudioPlayer {
     }
   }
 
+  /// The item's own length when it has a usable one, else the service's. A change of more than a
+  /// second is logged, because a mismatch is the sign of a stream whose timing is estimated.
+  private func durationChanged(_ reported: Double) {
+    let next = reported.isFinite && reported > 0 ? reported : serviceDuration
+    guard next != duration else { return }
+    if let next, let duration, abs(next - duration) > 1 {
+      logger.notice(
+        "Length changed from \(clock(duration), privacy: .public) to \(clock(next), privacy: .public)"
+      )
+    }
+    duration = next
+    publishNowPlaying(isPlaying: state == .playing)
+  }
+
+  /// Where a saved position starts: from the beginning when it is at or within a few seconds of
+  /// the end, because a Set resumed there would finish before a sound was heard.
+  static func startPosition(_ requested: TimeInterval, duration: TimeInterval?) -> TimeInterval {
+    let start = max(requested, 0)
+    guard let duration, start >= duration - 5 else { return start }
+    return 0
+  }
+
   /// Where a resumed Set starts. A position past the end of the audio would leave the item
   /// finished the moment it began, so the seek is bounded by the length the item reports.
   private func applyPendingSeek() {
@@ -548,18 +643,39 @@ final class AudioPlayer {
     self.pendingSeek = nil
     guard player != nil else { return }
     let bounded = duration.map { min(pendingSeek, $0) } ?? pendingSeek
+    logger.debug("Applying held seek to \(clock(bounded), privacy: .public)")
     move(to: bounded)
     elapsed = bounded
   }
 
+  /// Seeks exactly. The default tolerance lets the player land seconds early on a compressed
+  /// stream, so a tapped track started inside the one before it, the bar did not show the
+  /// position asked for, and Next track found the same track again.
   private func move(to seconds: TimeInterval) {
     guard let player else { return }
     isSeeking = true
+    latestSeek += 1
+    let seekNumber = latestSeek
     let generation = playbackGeneration
-    player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600)) { [weak self] _ in
+    player.seek(
+      to: CMTime(seconds: seconds, preferredTimescale: 600),
+      toleranceBefore: .zero,
+      toleranceAfter: .zero
+    ) { [weak self] finished in
       Task { @MainActor in
-        guard let self, self.playbackGeneration == generation else { return }
+        guard let self, self.playbackGeneration == generation, self.latestSeek == seekNumber,
+          let player = self.player
+        else { return }
         self.isSeeking = false
+        let landed = player.currentTime().seconds
+        let outcome = finished ? "landed at" : "stopped at"
+        logger.debug(
+          "Seek to \(clock(seconds), privacy: .public) \(outcome, privacy: .public) \(clock(landed), privacy: .public)"
+        )
+        if finished, landed.isFinite {
+          self.elapsed = landed
+        }
+        self.publishNowPlaying(isPlaying: self.state == .playing)
       }
     }
   }
@@ -582,6 +698,86 @@ final class AudioPlayer {
         }
       }
     )
+  }
+
+  /// A stream that breaks after it started playing never fails the item's status, so without this
+  /// the screen would wait on a spinner for good. The player's own stall notice is logged too:
+  /// it says the network fell behind, which reads the same as a stuck load from outside.
+  private func observeFailures(of item: AVPlayerItem, generation: Int) {
+    let center = NotificationCenter.default
+    observers.append(
+      center.addObserver(
+        forName: AVPlayerItem.failedToPlayToEndTimeNotification,
+        object: item,
+        queue: .main
+      ) { [weak self] notification in
+        let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
+        let detail = error.map(Self.describe) ?? "no error"
+        MainActor.assumeIsolated {
+          guard let self, self.playbackGeneration == generation else { return }
+          logger.error(
+            "Playback broke at \(clock(self.elapsed), privacy: .public): \(detail, privacy: .public)"
+          )
+          self.player?.pause()
+          self.state = .failed("The audio stopped loading.")
+          self.publishNowPlaying(isPlaying: false)
+        }
+      }
+    )
+    observers.append(
+      center.addObserver(
+        forName: AVPlayerItem.playbackStalledNotification,
+        object: item,
+        queue: .main
+      ) { [weak self] _ in
+        MainActor.assumeIsolated {
+          guard let self, self.playbackGeneration == generation else { return }
+          logger.notice("Playback stalled at \(clock(self.elapsed), privacy: .public)")
+        }
+      }
+    )
+    observers.append(
+      center.addObserver(
+        forName: AVPlayerItem.newErrorLogEntryNotification,
+        object: item,
+        queue: .main
+      ) { notification in
+        // Read here rather than captured: the item is not Sendable, and the log is all that is
+        // wanted from it.
+        let entry = (notification.object as? AVPlayerItem).map(Self.lastErrorLogEntry) ?? ""
+        logger.notice("Stream error\(entry, privacy: .public)")
+      }
+    )
+  }
+
+  /// Why the player is waiting, when it is. The reason tells a slow network from a player that
+  /// was never asked to play.
+  private func logWaiting(_ player: AVPlayer) {
+    switch player.timeControlStatus {
+    case .waitingToPlayAtSpecifiedRate:
+      let reason = player.reasonForWaitingToPlay?.rawValue ?? "no reason"
+      logger.debug("Waiting at \(clock(self.elapsed), privacy: .public): \(reason, privacy: .public)")
+    case .playing:
+      logger.debug("Playing at \(clock(self.elapsed), privacy: .public)")
+    case .paused:
+      logger.debug("Player paused at \(clock(self.elapsed), privacy: .public)")
+    @unknown default:
+      break
+    }
+  }
+
+  /// An error as its domain and code with the system's description, which names no address or
+  /// token.
+  nonisolated static func describe(_ error: any Error) -> String {
+    let error = error as NSError
+    return "\(error.domain) \(error.code) \(error.localizedDescription)"
+  }
+
+  /// The newest entry of the item's own error log, as its status and comment: the HTTP status
+  /// of a request the service refused shows up here and nowhere else.
+  nonisolated static func lastErrorLogEntry(of item: AVPlayerItem) -> String {
+    guard let entry = item.errorLog()?.events.last else { return "" }
+    return "; log: \(entry.errorDomain) \(entry.errorStatusCode) \(entry.errorComment ?? "")"
   }
 
   /// A rate the player reached by itself. A drop to zero the person did not ask for is the
@@ -642,9 +838,11 @@ final class AudioPlayer {
       self.timeObserver = nil
     }
     statusObservation?.invalidate()
+    durationObservation?.invalidate()
     rateObservation?.invalidate()
     stallObservation?.invalidate()
     statusObservation = nil
+    durationObservation = nil
     rateObservation = nil
     stallObservation = nil
   }
@@ -740,6 +938,7 @@ final class AudioPlayer {
             let reason = AVAudioSession.RouteChangeReason(rawValue: raw)
           else { return }
           guard reason == .oldDeviceUnavailable else { return }
+          logger.info("Audio route lost its output; pausing")
           MainActor.assumeIsolated {
             self?.pause()
           }
@@ -752,6 +951,8 @@ final class AudioPlayer {
     private func applyInterruption(
       type: AVAudioSession.InterruptionType, shouldResume: Bool
     ) {
+      let phase = type == .began ? "began" : "ended"
+      logger.info("Interruption \(phase, privacy: .public), resume allowed: \(shouldResume, privacy: .public)")
       switch type {
       case .began:
         // Only a Set the person wanted is marked interrupted; a paused one stays paused.
