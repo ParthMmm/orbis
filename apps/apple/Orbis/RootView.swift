@@ -763,7 +763,8 @@ struct HomeRails: View {
       } label: {
         card(
           set,
-          detail: set.creator ?? set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil })
+          detail: set.creator ?? set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil }
+        )
         .zoomsSetPage(set.id, place: "recent")
       }
       .buttonStyle(.orbisPressable)
@@ -1413,7 +1414,8 @@ private struct TopResult: View {
         HStack(spacing: 14) {
           Artwork(
             url: SetPresentation.row(set).artwork, seed: set.title, size: .rail,
-            progress: SetPresentation.progress(of: set))
+            progress: SetPresentation.progress(of: set)
+          )
           .zoomsSetPage(set.id)
           VStack(alignment: .leading, spacing: 2) {
             Text(set.title)

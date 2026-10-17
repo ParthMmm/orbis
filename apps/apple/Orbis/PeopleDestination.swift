@@ -599,7 +599,8 @@ struct PersonScreen: View {
                 PlaylistSleeve(
                   name: playlist.name, count: playlist.setCount,
                   artwork: playlist.sets.prefix(3).map { SetPresentation.row($0).artwork },
-                  category: SetPresentation.category(for: playlist.name))
+                  category: SetPresentation.category(for: playlist.name)
+                )
                 .zoomSource(playlist.id, in: playlistZoom, cornerRadius: 20)
               }
               .buttonStyle(.orbisPressable)
