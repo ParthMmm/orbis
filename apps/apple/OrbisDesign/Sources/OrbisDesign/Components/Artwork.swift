@@ -1,5 +1,44 @@
 import SwiftUI
 
+/// Names a piece of artwork as the place a zoom transition grows out of and shrinks back into.
+/// A screen puts it in the environment around a row or card whose artwork opens a page, so a
+/// component that draws one `Artwork` needs no parameter for it and the design system needs no
+/// idea of what the page is.
+public struct ArtworkTransition {
+  public let id: String
+  public let namespace: Namespace.ID
+
+  public init(id: String, namespace: Namespace.ID) {
+    self.id = id
+    self.namespace = namespace
+  }
+}
+
+private struct ArtworkTransitionKey: EnvironmentKey {
+  static var defaultValue: ArtworkTransition? { nil }
+}
+
+extension EnvironmentValues {
+  public var artworkTransition: ArtworkTransition? {
+    get { self[ArtworkTransitionKey.self] }
+    set { self[ArtworkTransitionKey.self] = newValue }
+  }
+}
+
+extension View {
+  @ViewBuilder fileprivate func transitionSource(
+    _ transition: ArtworkTransition?, radius: CGFloat
+  ) -> some View {
+    if let transition {
+      matchedTransitionSource(id: transition.id, in: transition.namespace) {
+        $0.clipShape(.rect(cornerRadius: radius))
+      }
+    } else {
+      self
+    }
+  }
+}
+
 /// A Set's artwork, as the provider supplies it: a 16:9 thumbnail.
 ///
 /// The box is 16:9 and the image is cropped into it, because a provider's image does not always
@@ -76,14 +115,18 @@ public struct Artwork: View {
     return progress > 0 && progress < 1
   }
 
+  @Environment(\.artworkTransition) private var transition
+
   public var body: some View {
-    Self.box(size: size, radius: cornerRadius ?? size.radius) {
+    let radius = cornerRadius ?? size.radius
+    Self.box(size: size, radius: radius) {
       image.overlay(alignment: .bottom) {
         if Self.showsProgress(progress), let progress {
           ProgressBar(fraction: progress)
         }
       }
     }
+    .transitionSource(transition, radius: radius)
     .accessibilityHidden(true)
   }
 

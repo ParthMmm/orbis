@@ -7,6 +7,10 @@ struct PeopleDestination: View {
   @Bindable var model: AppModel
   @State private var people: PeopleModel
   @State private var openedPerson: String?
+  /// A Person's page zooms out of what was tapped: their listening card or their disc. Someone
+  /// listening shows as both, so the id says which.
+  @Namespace private var personZoom
+  @State private var personZoomID: String?
   @ScaledMetric(relativeTo: .title) private var emptyBadgeSide: CGFloat = 64
 
   init(model: AppModel) {
@@ -25,6 +29,7 @@ struct PeopleDestination: View {
       }
       .navigationDestination(item: $openedPerson) { id in
         PersonScreen(model: model, people: people, personId: id)
+          .zoomTransition(from: personZoomID ?? id, in: personZoom)
       }
       .onChange(of: model.peopleRootRequests) { openedPerson = nil }
   }
@@ -95,8 +100,12 @@ struct PeopleDestination: View {
       VStack(alignment: .leading, spacing: 10) {
         SectionHeading("Listening now")
         ForEach(people.listening, id: \.personId) { presence in
-          ListeningCard(model: model, presence: presence) { openedPerson = presence.personId }
-            .accessibilityIdentifier("listening-\(presence.username)")
+          ListeningCard(model: model, presence: presence) {
+            personZoomID = "listening/\(presence.personId)"
+            openedPerson = presence.personId
+          }
+          .zoomSource("listening/\(presence.personId)", in: personZoom, cornerRadius: 22)
+          .accessibilityIdentifier("listening-\(presence.username)")
         }
       }
     }
@@ -117,10 +126,12 @@ struct PeopleDestination: View {
           ForEach(ordered) { person in
             let isListening = people.presence(of: person.id) != nil
             Button {
+              personZoomID = "group/\(person.id)"
               openedPerson = person.id
             } label: {
               VStack(spacing: 8) {
                 PersonAvatar(person.username, diameter: 68, isListening: isListening)
+                  .zoomSource("group/\(person.id)", in: personZoom, cornerRadius: 34)
                   .shadow(color: .black.opacity(0.15), radius: 10, y: 6)
                 Text(person.username)
                   .font(.footnote.weight(.semibold))
@@ -344,6 +355,8 @@ struct PersonScreen: View {
   let personId: String
   @State private var friend: FriendModel?
   @State private var openedPlaylist: FriendPlaylist?
+  /// A Playlist's sheet zooms out of its folder.
+  @Namespace private var playlistZoom
   @State private var showsTitle = false
   @ScaledMetric(relativeTo: .body) private var switchGlyphSize: CGFloat = 14
   @ScaledMetric(relativeTo: .body) private var switchBadgeSide: CGFloat = 30
@@ -393,6 +406,7 @@ struct PersonScreen: View {
     }
     .sheet(item: $openedPlaylist) { playlist in
       FriendPlaylistSheet(model: model, playlist: playlist)
+        .zoomTransition(from: playlist.id, in: playlistZoom)
     }
     .accessibilityIdentifier("person-page")
   }
@@ -586,6 +600,7 @@ struct PersonScreen: View {
                   name: playlist.name, count: playlist.setCount,
                   artwork: playlist.sets.prefix(3).map { SetPresentation.row($0).artwork },
                   category: SetPresentation.category(for: playlist.name))
+                .zoomSource(playlist.id, in: playlistZoom, cornerRadius: 20)
               }
               .buttonStyle(.orbisPressable)
             }
