@@ -116,7 +116,7 @@ const SignIn = () => {
             description="On a device where you use Orbis, open Devices and choose Sign in another device."
             pendingLabel="Signing in…"
             submitLabel="Sign in"
-            title="Sign in with a code"
+            title="Sign in with a login code"
           >
             <div className="flex flex-col gap-2">
               <Label htmlFor="sign-in-code">Sign-in Code</Label>
@@ -150,7 +150,7 @@ const SignIn = () => {
             description="Ask your Host for the Group Passcode."
             pendingLabel="Joining…"
             submitLabel="Join"
-            title="Join Orbis"
+            title="Join with the Group Passcode"
           >
             <div className="flex flex-col gap-2">
               <Label htmlFor="username">Username</Label>

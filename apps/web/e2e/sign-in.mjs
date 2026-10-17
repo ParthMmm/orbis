@@ -108,8 +108,12 @@ try {
     });
     const shot = (name) =>
       page.screenshot({ path: path.join(artifacts, `${name}.png`) });
-    const codeForm = page.getByRole("form", { name: "Sign in with a code" });
-    const joinForm = page.getByRole("form", { name: "Join Orbis" });
+    const codeForm = page.getByRole("form", {
+      name: "Sign in with a login code",
+    });
+    const joinForm = page.getByRole("form", {
+      name: "Join with the Group Passcode",
+    });
     const join = (username, value) =>
       submitForm(joinForm, "/sign-in/join", {
         "Group Passcode": value,
