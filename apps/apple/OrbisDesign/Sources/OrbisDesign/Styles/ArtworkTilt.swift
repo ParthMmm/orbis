@@ -144,7 +144,11 @@ private struct ArtworkTiltModifier: ViewModifier {
           syncSensors()
         }
         .onChange(of: readsSensors, initial: true) { syncSensors() }
-        .onGeometryChange(for: CGSize.self) { $0.size } action: { size = $0 }
+        .onGeometryChange(for: CGSize.self) {
+          $0.size
+        } action: {
+          size = $0
+        }
         #if os(macOS)
           .onContinuousHover { phase in
             guard case .active(let point) = phase, size.width > 0, size.height > 0 else {
