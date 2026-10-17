@@ -22,14 +22,14 @@ struct SignInView: View {
           Button {
             choice = .join
           } label: {
-            Text("I'm New").frame(maxWidth: .infinity)
+            Text("I Have a Group Passcode").frame(maxWidth: .infinity)
           }
           .buttonStyle(.orbisPrimary)
           .accessibilityIdentifier("signin-new")
           Button {
             choice = .code
           } label: {
-            Text("I Have a Code").font(.orbis.body.weight(.semibold)).frame(maxWidth: .infinity)
+            Text("I Have a Login Code").font(.orbis.body.weight(.semibold)).frame(maxWidth: .infinity)
           }
           .buttonStyle(.orbisSecondary)
           .accessibilityIdentifier("signin-have-code")

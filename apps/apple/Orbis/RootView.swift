@@ -277,6 +277,9 @@ struct DestinationView: View {
   /// The Sets picked in the Library's selection mode, or nil when it is not selecting.
   @State private var selectedIds: Set<String>?
   @State private var isBulkTagging = false
+  /// A Set's page zooms out of the artwork that opened it.
+  @Namespace private var setZoomNamespace
+  @State private var setZoomOrigin: String?
 
   #if os(macOS)
     private var matchingLibrary: Loadable<[SavedSet]> {
@@ -293,6 +296,11 @@ struct DestinationView: View {
   #endif
 
   var body: some View {
+    page
+      .environment(\.setZoom, SetZoom(namespace: setZoomNamespace, origin: $setZoomOrigin))
+  }
+
+  @ViewBuilder private var page: some View {
     switch destination {
     case .home:
       home
@@ -375,22 +383,16 @@ struct DestinationView: View {
       } message: {
         Text("This replaces what is playing now and starts the first set in the playlist.")
       }
-      .navigationDestination(item: openedSet) { id in
-        SetDetailScreen(model: model, setId: id)
-      }
+      .navigationDestination(item: openedSet) { id in setPage(id) }
     case .playlists:
       PlaylistsDestination(model: model)
-        .navigationDestination(item: openedSet) { id in
-          SetDetailScreen(model: model, setId: id)
-        }
+        .navigationDestination(item: openedSet) { id in setPage(id) }
     case .people:
       PeopleDestination(model: model)
     case .search:
       SearchDestination(model: model)
         // The one open Set is shared with the Library, so a Set found here opens the same page.
-        .navigationDestination(item: openedSet) { id in
-          SetDetailScreen(model: model, setId: id)
-        }
+        .navigationDestination(item: openedSet) { id in setPage(id) }
     }
   }
 
@@ -488,9 +490,12 @@ struct DestinationView: View {
     .onChange(of: model.reveal != nil) { _, hasReveal in
       if hasReveal { isFilingSheetShown = true }
     }
-    .navigationDestination(item: openedSet) { id in
-      SetDetailScreen(model: model, setId: id)
-    }
+    .navigationDestination(item: openedSet) { id in setPage(id) }
+  }
+
+  private func setPage(_ id: String) -> some View {
+    SetDetailScreen(model: model, setId: id)
+      .zoomTransition(from: SetZoom.sourceID(id, place: setZoomOrigin), in: setZoomNamespace)
   }
 
   private var openedSet: Binding<String?> {
@@ -682,6 +687,7 @@ struct DestinationView: View {
 struct HomeRails: View {
   @Bindable var model: AppModel
   @Environment(\.openURL) private var openURL
+  @Environment(\.setZoom) private var zoom
 
   /// The page's own padding, matched so a rail's first card lines up with the list under it.
   private static let edgeInset: CGFloat = 16
@@ -738,7 +744,7 @@ struct HomeRails: View {
 
   /// What a long press on a card offers: the same play, queue, and source actions as a Library
   /// row, so a Set reads the same wherever it is held.
-  @ViewBuilder private func cardMenu(_ set: SavedSet) -> some View {
+  @ViewBuilder private func cardMenu(_ set: SavedSet, place: String) -> some View {
     let isCurrent = model.audioPlayer.currentSetId == set.id
     if let playback = SetPresentation.playback(
       of: set, currentSetId: model.audioPlayer.currentSetId,
@@ -754,7 +760,10 @@ struct HomeRails: View {
         }
       }
     }
-    Button("Details", systemImage: "info.circle") { model.openSet(set.id) }
+    Button("Details", systemImage: "info.circle") {
+      zoom?.open(from: place)
+      model.openSet(set.id)
+    }
     if let link = SetPresentation.sourceURL(set) {
       Button("Open Source", systemImage: "safari") { openURL(link) }
     }
@@ -779,14 +788,16 @@ struct HomeRails: View {
   private var continueCards: some View {
     ForEach(home.continueRail) { set in
       Button {
+        zoom?.open(from: "continue")
         model.openSet(set.id)
       } label: {
         card(set, detail: SetPresentation.timeLeft(set))
+          .zoomsSetPage(set.id, place: "continue")
       }
       .buttonStyle(.orbisPressable)
       .accessibilityIdentifier("continue-card-\(set.id)")
       .contextMenu {
-        cardMenu(set)
+        cardMenu(set, place: "continue")
       } preview: {
         cardPreview(set)
       }
@@ -796,16 +807,19 @@ struct HomeRails: View {
   private var recentCards: some View {
     ForEach(home.recentlyFiled) { set in
       Button {
+        zoom?.open(from: "recent")
         model.openSet(set.id)
       } label: {
         card(
           set,
-          detail: set.creator ?? set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil })
+          detail: set.creator ?? set.durationSeconds.flatMap { $0 > 0 ? SetPresentation.length($0) : nil }
+        )
+        .zoomsSetPage(set.id, place: "recent")
       }
       .buttonStyle(.orbisPressable)
       .accessibilityIdentifier("recent-card-\(set.id)")
       .contextMenu {
-        cardMenu(set)
+        cardMenu(set, place: "recent")
       } preview: {
         cardPreview(set)
       }
@@ -896,6 +910,7 @@ private struct HomeHero: View {
   /// The Set was left part-way, so the button resumes and says how long is left.
   let isResume: Bool
   @Environment(\.horizontalSizeClass) private var sizeClass
+  @Environment(\.setZoom) private var zoom
 
   private var hero: HeroLayout { HeroLayout(sizeClass) }
   /// The artwork spans a phone's width; beside the words in a wide window it is a cover's size.
@@ -915,12 +930,14 @@ private struct HomeHero: View {
     let layout = hero.stack(spacing: 16)
     layout {
       Button {
+        zoom?.open(from: nil)
         model.openSet(set.id)
       } label: {
         Artwork(
           url: SetPresentation.pageArtwork(set), seed: set.title, size: .header,
           progress: SetPresentation.progress(of: set)
         )
+        .zoomsSetPage(set.id)
         .shadow(color: .black.opacity(0.45), radius: 28, y: 16)
         .frame(maxWidth: maxArtworkWidth)
       }
@@ -977,6 +994,7 @@ private struct HomeHero: View {
         }
       }
       Button {
+        zoom?.open(from: nil)
         model.openSet(set.id)
       } label: {
         Label(canPlay ? "Details" : "Open set", systemImage: canPlay ? "ellipsis" : "arrow.right")
@@ -1450,7 +1468,9 @@ private struct TopResult: View {
         HStack(spacing: 14) {
           Artwork(
             url: SetPresentation.row(set).artwork, seed: set.title, size: .rail,
-            progress: SetPresentation.progress(of: set))
+            progress: SetPresentation.progress(of: set)
+          )
+          .zoomsSetPage(set.id)
           VStack(alignment: .leading, spacing: 2) {
             Text(set.title)
               .font(.headline)

@@ -8,8 +8,8 @@ The [API Worker and Group](../api/README.md) own the application API and product
 
 The sign-in page offers two ways in ([ADR 0020](../../docs/adr/0020-sign-in-by-group-passcode-and-sign-in-code.md)):
 
-- **Sign in with a code.** On a device that is already signed in, open Devices and choose Sign in another device. Type the eight-character code on the new browser. The page accepts lower case, spaces, and the dash. A code works once and expires after 10 minutes.
-- **Join Orbis.** A new Person chooses a username and types the Group Passcode. On the Admin page the Host opens joining, which makes a random passcode, and can copy it, make a new one, or close joining. While joining is closed, there is no passcode.
+- **Sign in with a login code.** On a device that is already signed in, open Devices and choose Sign in another device. Type the eight-character code on the new browser. The page accepts lower case, spaces, and the dash. A code works once and expires after 10 minutes.
+- **Join with the Group Passcode.** A new Person chooses a username and types the Group Passcode. On the Admin page the Host opens joining, which makes a random passcode, and can copy it, make a new one, or close joining. While joining is closed, there is no passcode.
 
 The API returns a daily key, which the browser keeps in `localStorage` and labels with the browser and system, such as "Chrome on Mac". The page shows the API's own message when it refuses a passcode, a username, or a code.
 

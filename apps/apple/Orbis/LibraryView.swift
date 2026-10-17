@@ -252,6 +252,7 @@ struct SetList: View {
       togglePlayback: togglePlayback.map { toggle in { toggle(set) } },
       select: select.map { select in { select(set) } }
     )
+    .zoomsSetPage(set.id)
     .accessibilityIdentifier("set-row-\(set.id)")
     .contextMenu {
       if let playback, let togglePlayback {

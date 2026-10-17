@@ -90,8 +90,8 @@ const SignInAnotherDevice = ({ session }: { readonly session: Session }) => {
         <>
           <SignInCode issued={code} label="Your Sign-in Code" />
           <p className="text-muted-foreground text-sm">
-            On the new device, open Orbis, choose Sign in with a code, and type
-            this code.
+            On the new device, open Orbis, choose Sign in with a login code, and
+            type this code.
           </p>
         </>
       )}
